@@ -7,6 +7,8 @@ const config: CapacitorConfig = {
   server: {
     url: 'https://madyawph.onrender.com',
     cleartext: false,
+    androidScheme: 'https',
+    allowNavigation: ['madyawph.onrender.com'],
   },
 };
 

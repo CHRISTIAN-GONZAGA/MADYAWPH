@@ -44,7 +44,22 @@ Route::get('/', function () {
     return Inertia::render('Welcome');
 })->name('welcome');
 
-Route::get('/auth/hotel', fn () => Inertia::render('Auth/HotelAccess'))->name('auth.hotel');
+Route::get('/auth/hotel', function (Request $request) {
+    $activeHotelId = (string) ($request->session()->get('active_hotel_id')
+        ?? $request->cookie('active_hotel_id')
+        ?? $request->query('hotel')
+        ?? $request->user()?->hotel_id
+        ?? '');
+    if ($activeHotelId !== '') {
+        if (! $request->session()->has('active_hotel_id')) {
+            $request->session()->put('active_hotel_id', $activeHotelId);
+        }
+
+        return redirect()->route('auth.category', ['hotel' => $activeHotelId]);
+    }
+
+    return Inertia::render('Auth/HotelAccess');
+})->name('auth.hotel');
 Route::get('/auth/forgot-password', [AuthController::class, 'showForgotPassword'])->name('auth.password.forgot');
 Route::post('/auth/forgot-password/send', [AuthController::class, 'sendResetCode'])->name('auth.password.send-code');
 Route::post('/auth/forgot-password/reset', [AuthController::class, 'resetPasswordWithCode'])->name('auth.password.reset');
@@ -81,7 +96,7 @@ Route::post('/auth/hotel/login', function (Request $request) {
             'lax'
         ));
 
-        return redirect()->route('auth.category');
+        return redirect()->route('auth.category', ['hotel' => (string) $hotel->id]);
     }
     $legacyAdmin = User::withoutGlobalScopes()
         ->where('name', $validated['username'])
@@ -105,7 +120,7 @@ Route::post('/auth/hotel/login', function (Request $request) {
         'lax'
     ));
 
-    return redirect()->route('auth.category');
+    return redirect()->route('auth.category', ['hotel' => (string) $legacyAdmin->hotel_id]);
 })->middleware('throttle:8,1')->name('auth.hotel.login');
 Route::post('/auth/hotel/register', function (Request $request) {
     $appUrl = rtrim((string) config('app.url'), '/');
@@ -166,7 +181,7 @@ Route::post('/auth/hotel/register', function (Request $request) {
     Auth::logout();
     $request->session()->regenerateToken();
 
-    return redirect()->route('auth.category');
+    return redirect()->route('auth.category', ['hotel' => (string) $hotel->id]);
 })->middleware('throttle:3,1')->name('auth.hotel.register');
 Route::get('/auth/select', function (Request $request) {
     $activeHotelId = (string) ($request->session()->get('active_hotel_id')
