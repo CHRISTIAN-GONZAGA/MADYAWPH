@@ -35,6 +35,8 @@ class AuthController extends Controller
         ]);
         $activeHotelId = (string) ($request->session()->get('active_hotel_id')
             ?? $request->cookie('active_hotel_id')
+            ?? $request->input('hotel_id')
+            ?? $request->query('hotel')
             ?? '');
         if ($activeHotelId === '') {
             return redirect()->route('auth.hotel')->withErrors([
@@ -94,6 +96,7 @@ class AuthController extends Controller
         ]);
         $activeHotelId = (string) ($request->session()->get('active_hotel_id')
             ?? $request->cookie('active_hotel_id')
+            ?? $request->query('hotel')
             ?? '');
         $userQuery = User::withoutGlobalScopes()
             ->where('name', $validated['username']);

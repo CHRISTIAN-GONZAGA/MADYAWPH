@@ -7,10 +7,14 @@ import AuthLayout from '../../Layouts/AuthLayout';
 
 export default function AdminLogin() {
     const [showPassword, setShowPassword] = useState(false);
+    const hotelId = typeof window !== 'undefined'
+        ? (new URLSearchParams(window.location.search).get('hotel') ?? '')
+        : '';
     const { data, setData, post, processing, errors } = useForm({
         username: '',
         password: '',
         role: 'admin',
+        hotel_id: hotelId,
     });
 
     function submit(e) {
@@ -26,6 +30,7 @@ export default function AdminLogin() {
             </div>
             <motion.form initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} onSubmit={submit} className="space-y-4">
                 <input className="w-full border border-border rounded-lg px-3 py-2" placeholder="Username" value={data.username} onChange={(e) => setData('username', e.target.value)} />
+                <input type="hidden" value={data.hotel_id} readOnly />
                 <div className="relative">
                     <input className="w-full border border-border rounded-lg px-3 py-2 pr-10" type={showPassword ? 'text' : 'password'} placeholder="Password" value={data.password} onChange={(e) => setData('password', e.target.value)} />
                     <button type="button" onClick={() => setShowPassword((prev) => !prev)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground">
@@ -33,7 +38,7 @@ export default function AdminLogin() {
                     </button>
                 </div>
                 {Object.keys(errors).length > 0 && <p className="text-sm text-destructive">{Object.values(errors)[0]}</p>}
-                <a href={`/auth/forgot-password?role=admin&username=${encodeURIComponent(data.username || '')}`} className="text-xs text-primary hover:underline">Forgot password?</a>
+                <a href={`/auth/forgot-password?role=admin&username=${encodeURIComponent(data.username || '')}${data.hotel_id ? `&hotel=${encodeURIComponent(data.hotel_id)}` : ''}`} className="text-xs text-primary hover:underline">Forgot password?</a>
                 <button disabled={processing} className="w-full bg-primary text-primary-foreground rounded-full py-2.5">
                     {processing ? 'Signing in...' : 'Sign in'}
                 </button>

@@ -1,14 +1,17 @@
 import { motion } from 'motion/react';
 import { Link } from '@inertiajs/react';
+import { usePage } from '@inertiajs/react';
 import { Users, Hotel as HotelIcon, UserCog, DoorOpen } from 'lucide-react';
 import BackButton from '../../Components/BackButton';
 
 export default function CategorySelection() {
+    const { activeHotelId = '' } = usePage().props;
+    const hotelQuery = activeHotelId ? `?hotel=${encodeURIComponent(activeHotelId)}` : '';
     const categories = [
-        { id: 'customer', label: 'Public Customer', subtitle: 'Browse & Book Rooms', icon: Users, href: '/customer/categories' },
-        { id: 'admin', label: 'Admin', subtitle: 'Hotel Management', icon: HotelIcon, href: '/auth/admin' },
-        { id: 'staff', label: 'Staff', subtitle: 'Employee Portal', icon: UserCog, href: '/auth/staff' },
-        { id: 'guest', label: 'Guest In-House', subtitle: 'Room Access', icon: DoorOpen, href: '/auth/guest' },
+        { id: 'customer', label: 'Public Customer', subtitle: 'Browse & Book Rooms', icon: Users, href: `/customer/categories${hotelQuery}` },
+        { id: 'admin', label: 'Admin', subtitle: 'Hotel Management', icon: HotelIcon, href: `/auth/admin${hotelQuery}` },
+        { id: 'staff', label: 'Staff', subtitle: 'Employee Portal', icon: UserCog, href: `/auth/staff${hotelQuery}` },
+        { id: 'guest', label: 'Guest In-House', subtitle: 'Room Access', icon: DoorOpen, href: `/auth/guest${hotelQuery}` },
     ];
 
     return (

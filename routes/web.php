@@ -171,6 +171,7 @@ Route::post('/auth/hotel/register', function (Request $request) {
 Route::get('/auth/select', function (Request $request) {
     $activeHotelId = (string) ($request->session()->get('active_hotel_id')
         ?? $request->cookie('active_hotel_id')
+        ?? $request->query('hotel')
         ?? $request->user()?->hotel_id
         ?? '');
     if ($activeHotelId === '') {
@@ -181,11 +182,14 @@ Route::get('/auth/select', function (Request $request) {
         $request->session()->put('active_hotel_id', $activeHotelId);
     }
 
-    return Inertia::render('Auth/CategorySelection');
+    return Inertia::render('Auth/CategorySelection', [
+        'activeHotelId' => $activeHotelId,
+    ]);
 })->name('auth.category');
 Route::get('/auth/admin', function (Request $request) {
     $activeHotelId = (string) ($request->session()->get('active_hotel_id')
         ?? $request->cookie('active_hotel_id')
+        ?? $request->query('hotel')
         ?? '');
     if ($activeHotelId === '') {
         return redirect()->route('auth.hotel');
@@ -200,6 +204,7 @@ Route::get('/auth/admin', function (Request $request) {
 Route::get('/auth/staff', function (Request $request) {
     $activeHotelId = (string) ($request->session()->get('active_hotel_id')
         ?? $request->cookie('active_hotel_id')
+        ?? $request->query('hotel')
         ?? '');
     if ($activeHotelId === '') {
         return redirect()->route('auth.hotel');
@@ -214,6 +219,7 @@ Route::get('/auth/staff', function (Request $request) {
 Route::get('/auth/guest', function (Request $request) {
     $activeHotelId = (string) ($request->session()->get('active_hotel_id')
         ?? $request->cookie('active_hotel_id')
+        ?? $request->query('hotel')
         ?? '');
     if ($activeHotelId === '') {
         return redirect()->route('auth.hotel');
@@ -232,10 +238,16 @@ Route::post('/auth/guest/login', function (Request $request) {
     ]);
     $activeHotelId = (string) ($request->session()->get('active_hotel_id')
         ?? $request->cookie('active_hotel_id')
+        ?? $request->input('hotel_id')
+        ?? $request->query('hotel')
         ?? $request->user()?->hotel_id
         ?? '');
     if ($activeHotelId === '') {
         return redirect()->route('auth.hotel')->withErrors(['room' => 'Sign in to your hotel first.']);
+    }
+
+    if (! $request->session()->has('active_hotel_id')) {
+        $request->session()->put('active_hotel_id', $activeHotelId);
     }
 
     $room = Room::withoutGlobalScopes()
@@ -677,10 +689,14 @@ Route::prefix('customer')->group(function (): void {
     Route::get('/categories', function (Request $request) {
         $hotelId = (string) ($request->session()->get('active_hotel_id')
             ?? $request->cookie('active_hotel_id')
+            ?? $request->query('hotel')
             ?? $request->user()?->hotel_id
             ?? '');
         if ($hotelId === '') {
             return redirect()->route('auth.hotel');
+        }
+        if (! $request->session()->has('active_hotel_id')) {
+            $request->session()->put('active_hotel_id', $hotelId);
         }
         $hotel = Hotel::withoutGlobalScopes()->select('id', 'name', 'location')->find($hotelId);
         $categories = RoomCategory::withoutGlobalScopes()
@@ -711,10 +727,14 @@ Route::prefix('customer')->group(function (): void {
     Route::get('/categories/{categoryId}/rooms', function (Request $request, string $categoryId) {
         $hotelId = (string) ($request->session()->get('active_hotel_id')
             ?? $request->cookie('active_hotel_id')
+            ?? $request->query('hotel')
             ?? $request->user()?->hotel_id
             ?? '');
         if ($hotelId === '') {
             return redirect()->route('auth.hotel');
+        }
+        if (! $request->session()->has('active_hotel_id')) {
+            $request->session()->put('active_hotel_id', $hotelId);
         }
         $hotel = Hotel::withoutGlobalScopes()->select('id', 'name', 'location')->find($hotelId);
         $category = RoomCategory::withoutGlobalScopes()
@@ -769,6 +789,7 @@ Route::prefix('customer')->group(function (): void {
         ]);
         $hotelId = (string) ($request->session()->get('active_hotel_id')
             ?? $request->cookie('active_hotel_id')
+            ?? $request->input('hotel_id')
             ?? $request->user()?->hotel_id
             ?? '');
         if ($hotelId === '') {
@@ -826,6 +847,7 @@ Route::prefix('customer')->group(function (): void {
 
         $hotelId = (string) ($request->session()->get('active_hotel_id')
             ?? $request->cookie('active_hotel_id')
+            ?? $request->input('hotel_id')
             ?? $request->user()?->hotel_id
             ?? '');
         if ($hotelId === '') {
