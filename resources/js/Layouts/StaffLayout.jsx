@@ -2,7 +2,7 @@ import { Link } from '@inertiajs/react';
 import { useState } from 'react';
 import axios from 'axios';
 import { Palette, RotateCcw, X } from 'lucide-react';
-import { applyThemeColor } from '../utils/theme';
+import { applyThemeColor } from '../Utils/theme';
 
 const DEFAULT_THEME = '#2563eb';
 
