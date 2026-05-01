@@ -54,19 +54,6 @@ Route::get('/auth/hotel', function (Request $request) {
         return redirect()->route('staff.dashboard.v2');
     }
 
-    $activeHotelId = (string) ($request->session()->get('active_hotel_id')
-        ?? $request->cookie('active_hotel_id')
-        ?? $request->query('hotel')
-        ?? $request->user()?->hotel_id
-        ?? '');
-    if ($activeHotelId !== '') {
-        if (! $request->session()->has('active_hotel_id')) {
-            $request->session()->put('active_hotel_id', $activeHotelId);
-        }
-
-        return redirect()->route('auth.category', ['hotel' => $activeHotelId]);
-    }
-
     return Inertia::render('Auth/HotelAccess');
 })->name('auth.hotel');
 Route::get('/auth/forgot-password', [AuthController::class, 'showForgotPassword'])->name('auth.password.forgot');
