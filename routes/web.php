@@ -45,6 +45,15 @@ Route::get('/', function () {
 })->name('welcome');
 
 Route::get('/auth/hotel', function (Request $request) {
+    $currentUser = $request->user();
+    $currentRole = (string) ($currentUser?->role?->value ?? $currentUser?->role ?? '');
+    if ($currentRole === 'admin') {
+        return redirect()->route('admin.dashboard.v2');
+    }
+    if ($currentRole === 'staff') {
+        return redirect()->route('staff.dashboard.v2');
+    }
+
     $activeHotelId = (string) ($request->session()->get('active_hotel_id')
         ?? $request->cookie('active_hotel_id')
         ?? $request->query('hotel')
@@ -188,6 +197,15 @@ Route::post('/auth/hotel/register', function (Request $request) {
     return redirect()->route('auth.category', ['hotel' => (string) $hotel->id]);
 })->middleware(['same.origin', 'throttle:3,1'])->name('auth.hotel.register');
 Route::get('/auth/select', function (Request $request) {
+    $currentUser = $request->user();
+    $currentRole = (string) ($currentUser?->role?->value ?? $currentUser?->role ?? '');
+    if ($currentRole === 'admin') {
+        return redirect()->route('admin.dashboard.v2');
+    }
+    if ($currentRole === 'staff') {
+        return redirect()->route('staff.dashboard.v2');
+    }
+
     $activeHotelId = (string) ($request->session()->get('active_hotel_id')
         ?? $request->cookie('active_hotel_id')
         ?? $request->query('hotel')
@@ -206,6 +224,15 @@ Route::get('/auth/select', function (Request $request) {
     ]);
 })->name('auth.category');
 Route::get('/auth/admin', function (Request $request) {
+    $currentUser = $request->user();
+    $currentRole = (string) ($currentUser?->role?->value ?? $currentUser?->role ?? '');
+    if ($currentRole === 'admin') {
+        return redirect()->route('admin.dashboard.v2');
+    }
+    if ($currentRole === 'staff') {
+        return redirect()->route('staff.dashboard.v2');
+    }
+
     $activeHotelId = (string) ($request->session()->get('active_hotel_id')
         ?? $request->cookie('active_hotel_id')
         ?? $request->query('hotel')
@@ -221,6 +248,15 @@ Route::get('/auth/admin', function (Request $request) {
     return Inertia::render('Auth/AdminLogin');
 })->name('auth.admin');
 Route::get('/auth/staff', function (Request $request) {
+    $currentUser = $request->user();
+    $currentRole = (string) ($currentUser?->role?->value ?? $currentUser?->role ?? '');
+    if ($currentRole === 'admin') {
+        return redirect()->route('admin.dashboard.v2');
+    }
+    if ($currentRole === 'staff') {
+        return redirect()->route('staff.dashboard.v2');
+    }
+
     $activeHotelId = (string) ($request->session()->get('active_hotel_id')
         ?? $request->cookie('active_hotel_id')
         ?? $request->query('hotel')
