@@ -205,6 +205,19 @@ Route::get('/auth/select', function (Request $request) {
     if (! $request->session()->has('active_hotel_id')) {
         $request->session()->put('active_hotel_id', $activeHotelId);
     }
+    
+    // Ensure hotel ID is in cookie (for Render stateless deployment)
+    cookie()->queue(cookie(
+        'active_hotel_id',
+        $activeHotelId,
+        60 * 24 * 30,
+        '/',
+        config('session.domain'),
+        true,
+        false,
+        false,
+        'lax'
+    ));
 
     return Inertia::render('Auth/CategorySelection', [
         'activeHotelId' => $activeHotelId,
@@ -220,17 +233,33 @@ Route::get('/auth/admin', function (Request $request) {
         return redirect()->route('staff.dashboard.v2');
     }
 
+    // Try to get hotel ID from session first (most reliable), then cookie, then query
     $activeHotelId = (string) ($request->session()->get('active_hotel_id')
         ?? $request->cookie('active_hotel_id')
         ?? $request->query('hotel')
         ?? '');
+    
     if ($activeHotelId === '') {
         return redirect()->route('auth.hotel');
     }
 
+    // Ensure hotel ID is in session (for this request and forward)
     if (! $request->session()->has('active_hotel_id')) {
         $request->session()->put('active_hotel_id', $activeHotelId);
     }
+    
+    // Ensure hotel ID is in cookie (for Render stateless deployment)
+    cookie()->queue(cookie(
+        'active_hotel_id',
+        $activeHotelId,
+        60 * 24 * 30,
+        '/',
+        config('session.domain'),
+        true,
+        false,
+        false,
+        'lax'
+    ));
 
     return Inertia::render('Auth/AdminLogin');
 })->name('auth.admin');
@@ -244,6 +273,7 @@ Route::get('/auth/staff', function (Request $request) {
         return redirect()->route('staff.dashboard.v2');
     }
 
+    // Try to get hotel ID from session first (most reliable), then cookie, then query
     $activeHotelId = (string) ($request->session()->get('active_hotel_id')
         ?? $request->cookie('active_hotel_id')
         ?? $request->query('hotel')
@@ -252,9 +282,23 @@ Route::get('/auth/staff', function (Request $request) {
         return redirect()->route('auth.hotel');
     }
 
+    // Ensure hotel ID is in session (for this request and forward)
     if (! $request->session()->has('active_hotel_id')) {
         $request->session()->put('active_hotel_id', $activeHotelId);
     }
+    
+    // Ensure hotel ID is in cookie (for Render stateless deployment)
+    cookie()->queue(cookie(
+        'active_hotel_id',
+        $activeHotelId,
+        60 * 24 * 30,
+        '/',
+        config('session.domain'),
+        true,
+        false,
+        false,
+        'lax'
+    ));
 
     return Inertia::render('Auth/StaffLogin');
 })->name('auth.staff');

@@ -17,6 +17,13 @@ class RestoreAuthFromCookie
      */
     public function handle(Request $request, Closure $next): Response
     {
+        // Restore hotel context from cookie (Render stateless session)
+        $hotelIdFromCookie = (string) ($request->cookie('active_hotel_id') ?? '');
+        if ($hotelIdFromCookie !== '' && ! $request->session()->has('active_hotel_id')) {
+            $request->session()->put('active_hotel_id', $hotelIdFromCookie);
+        }
+
+        // Restore auth from cookies when session is lost (Render ephemeral storage)
         if (! Auth::check()) {
             $userId = (string) ($request->cookie('auth_uid') ?? '');
             $role = (string) ($request->cookie('auth_role') ?? '');
