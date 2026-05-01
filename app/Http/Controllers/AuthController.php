@@ -60,12 +60,39 @@ class AuthController extends Controller
             $request->session()->put('active_hotel_id', $activeHotelId);
         }
 
-        if (! Auth::attempt([
+        $attemptCredentials = [
             $identifierField => $identifier,
             'password' => $validated['password'],
             'role' => $role,
             'hotel_id' => $activeHotelId,
-        ], true)) {
+        ];
+
+        if (! Auth::attempt($attemptCredentials, true)) {
+            // Recover from stale hotel context by validating against the account's
+            // actual hotel for admin sign-ins.
+            if ($role === UserRole::ADMIN->value) {
+                $account = User::withoutGlobalScopes()
+                    ->where($identifierField, $identifier)
+                    ->where('role', $role)
+                    ->first();
+
+                if ($account && Hash::check($validated['password'], (string) $account->password)) {
+                    Auth::login($account, true);
+                    $activeHotelId = (string) $account->hotel_id;
+                    $request->session()->put('active_hotel_id', $activeHotelId);
+                } else {
+                    return back()->withErrors([
+                        'username' => 'Credentials do not match your current hotel.',
+                    ])->onlyInput('username', 'email');
+                }
+            } else {
+                return back()->withErrors([
+                    'username' => 'Credentials do not match your current hotel.',
+                ])->onlyInput('username', 'email');
+            }
+        }
+
+        if (! Auth::check()) {
             return back()->withErrors([
                 'username' => 'Credentials do not match your current hotel.',
             ])->onlyInput('username', 'email');
@@ -110,9 +137,11 @@ class AuthController extends Controller
             'lax'
         ));
 
+        // Always land directly on role dashboard after successful auth.
+        // This avoids accidental fallback into auth selection/menu routes.
         return $role === UserRole::ADMIN->value
-            ? redirect()->route('admin.dashboard.v2')
-            : redirect()->route('staff.dashboard.v2');
+            ? redirect('/admin/dashboard')
+            : redirect('/staff/dashboard');
     }
 
     public function logout(Request $request): RedirectResponse
