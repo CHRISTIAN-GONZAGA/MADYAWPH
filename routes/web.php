@@ -49,6 +49,14 @@ Route::get('/auth/forgot-password', [AuthController::class, 'showForgotPassword'
 Route::post('/auth/forgot-password/send', [AuthController::class, 'sendResetCode'])->name('auth.password.send-code');
 Route::post('/auth/forgot-password/reset', [AuthController::class, 'resetPasswordWithCode'])->name('auth.password.reset');
 Route::post('/auth/hotel/login', function (Request $request) {
+    $appUrl = rtrim((string) config('app.url'), '/');
+    $origin = (string) ($request->headers->get('origin') ?? '');
+    $referer = (string) ($request->headers->get('referer') ?? '');
+    if (($origin !== '' && ! str_starts_with($origin, $appUrl))
+        || ($referer !== '' && ! str_starts_with($referer, $appUrl))) {
+        abort(403, 'Invalid request origin.');
+    }
+
     $validated = $request->validate([
         'username' => ['required', 'string', 'max:255'],
         'password' => ['required', 'string', 'min:6', 'max:64'],
@@ -76,8 +84,16 @@ Route::post('/auth/hotel/login', function (Request $request) {
     $request->session()->regenerateToken();
 
     return redirect()->route('auth.category');
-})->name('auth.hotel.login');
+})->middleware('throttle:8,1')->name('auth.hotel.login');
 Route::post('/auth/hotel/register', function (Request $request) {
+    $appUrl = rtrim((string) config('app.url'), '/');
+    $origin = (string) ($request->headers->get('origin') ?? '');
+    $referer = (string) ($request->headers->get('referer') ?? '');
+    if (($origin !== '' && ! str_starts_with($origin, $appUrl))
+        || ($referer !== '' && ! str_starts_with($referer, $appUrl))) {
+        abort(403, 'Invalid request origin.');
+    }
+
     $validated = $request->validate([
         'username' => ['required', 'string', 'max:255', 'unique:users,name'],
         'password' => ['required', 'string', 'min:6', 'max:64', 'confirmed'],
@@ -118,7 +134,7 @@ Route::post('/auth/hotel/register', function (Request $request) {
     $request->session()->regenerateToken();
 
     return redirect()->route('auth.category');
-})->name('auth.hotel.register');
+})->middleware('throttle:3,1')->name('auth.hotel.register');
 Route::get('/auth/select', fn () => Inertia::render('Auth/CategorySelection'))->name('auth.category');
 Route::get('/auth/admin', fn () => Inertia::render('Auth/AdminLogin'))->name('auth.admin');
 Route::get('/auth/staff', fn () => Inertia::render('Auth/StaffLogin'))->name('auth.staff');

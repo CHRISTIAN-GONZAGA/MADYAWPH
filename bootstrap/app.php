@@ -26,6 +26,8 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->validateCsrfTokens(except: [
             'webhooks/paymongo',
+            'auth/hotel/login',
+            'auth/hotel/register',
         ]);
 
         $middleware->web(append: [
