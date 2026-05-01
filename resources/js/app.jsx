@@ -2,7 +2,7 @@ import './bootstrap';
 import '../css/app.css';
 import { createInertiaApp } from '@inertiajs/react';
 import { createRoot } from 'react-dom/client';
-import { applyStoredThemeColor } from './utils/theme';
+import { applyStoredThemeColor } from './Utils/theme';
 
 applyStoredThemeColor();
 
