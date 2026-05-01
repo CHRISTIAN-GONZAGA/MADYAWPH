@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, router } from '@inertiajs/react';
 import axios from 'axios';
 import { CreditCard, LogOut, Palette, RotateCcw, X } from 'lucide-react';
-import { applyThemeColor } from '../utils/theme';
+import { applyThemeColor } from '../Utils/theme';
 
 const DEFAULT_THEME = '#2563eb';
 
