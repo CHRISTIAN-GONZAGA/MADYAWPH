@@ -49,11 +49,11 @@ Update `c:\GLORETTO_APP\.env` with real values:
 - `CORS_ALLOWED_ORIGINS=https://your-domain.example`
 - `SESSION_SECURE_COOKIE=true` (HTTPS deployment)
 
-Generate app key if empty:
+Generate app key only once (do not rotate on a live system unless planned):
 
 ```powershell
 cd c:\GLORETTO_APP
-php artisan key:generate --force
+php artisan key:generate
 ```
 
 ---
@@ -152,7 +152,9 @@ npm run cap:open:android
 
 ```powershell
 cd c:\GLORETTO_APP
-php artisan key:generate --force
+# Run key:generate only if APP_KEY is missing on first setup.
+# Do not run this on an already live deployment.
+php artisan key:generate
 composer install
 npm install
 php artisan config:clear

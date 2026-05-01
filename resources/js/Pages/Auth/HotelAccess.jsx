@@ -23,13 +23,19 @@ export default function HotelAccess() {
         admin_email: '',
     });
 
-    function submitSignIn(event) {
+    async function ensureCsrfCookie() {
+        await window.axios.get('/sanctum/csrf-cookie');
+    }
+
+    async function submitSignIn(event) {
         event.preventDefault();
+        await ensureCsrfCookie();
         signInForm.post('/auth/hotel/login');
     }
 
-    function submitSignUp(event) {
+    async function submitSignUp(event) {
         event.preventDefault();
+        await ensureCsrfCookie();
         signUpForm.post('/auth/hotel/register');
     }
 
