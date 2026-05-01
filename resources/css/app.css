@@ -1,0 +1,131 @@
+@import 'tailwindcss';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../**/*.blade.php';
+@source '../**/*.js';
+@source '../**/*.jsx';
+
+/* Multi-Hotel HMS — design specification tokens */
+@theme {
+    --font-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+    --font-serif: 'Cormorant Garamond', ui-serif, Georgia, 'Times New Roman', serif;
+
+    --color-background: #fdfaf7;
+    --color-card: #fdf8f3;
+    --color-primary: #8b6f47;
+    --color-primary-foreground: #ffffff;
+    --color-foreground: #2d1f16;
+    --color-muted-foreground: #6b5d52;
+    --color-muted: #b9977c;
+    --color-border: #e8dcc8;
+    --color-accent: #d4a574;
+    --color-destructive: #c44b3a;
+    --color-success: #4a7c59;
+
+    --color-status-available: #10b981;
+    --color-status-available-bg: #ecfdf5;
+    --color-status-booked: #ef4444;
+    --color-status-booked-bg: #fef2f2;
+    --color-status-maintenance: #f59e0b;
+    --color-status-maintenance-bg: #fffbeb;
+    --color-status-reserved: #3b82f6;
+    --color-status-reserved-bg: #eff6ff;
+    --color-status-pending: #d97706;
+    --color-status-pending-bg: #fef3c7;
+    --color-status-fulfilled: #059669;
+    --color-status-fulfilled-bg: #d1fae5;
+
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 20px;
+    --radius-2xl: 24px;
+
+    --shadow-sm: 0 1px 2px 0 rgb(45 31 22 / 0.05);
+    --shadow-card: 0 1px 3px 0 rgb(45 31 22 / 0.06), 0 1px 2px -1px rgb(45 31 22 / 0.06);
+    --shadow-md: 0 4px 6px -1px rgb(45 31 22 / 0.08), 0 2px 4px -2px rgb(45 31 22 / 0.06);
+    --shadow-lg: 0 10px 15px -3px rgb(45 31 22 / 0.08), 0 4px 6px -4px rgb(45 31 22 / 0.06);
+    --shadow-xl: 0 20px 25px -5px rgb(45 31 22 / 0.1), 0 8px 10px -6px rgb(45 31 22 / 0.08);
+}
+
+@layer base {
+    html {
+        @apply antialiased;
+    }
+    body {
+        @apply text-foreground;
+    }
+    a,
+    button,
+    [role='button'] {
+        transition: transform 220ms ease, box-shadow 220ms ease, background-color 220ms ease, color 220ms ease, border-color 220ms ease, opacity 220ms ease;
+        -webkit-tap-highlight-color: transparent;
+    }
+    a:active,
+    button:active,
+    [role='button']:active {
+        transform: scale(0.985);
+    }
+    h1,
+    h2,
+    h3 {
+        @apply font-serif text-foreground;
+    }
+}
+
+@keyframes fade-up-soft {
+    from {
+        opacity: 0;
+        transform: translateY(14px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes pulse-glow {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgb(139 111 71 / 0.15);
+    }
+    50% {
+        box-shadow: 0 0 0 10px rgb(139 111 71 / 0);
+    }
+}
+
+/* Subtle linen / fabric texture (~10% visual weight via opacity) */
+@utility bg-linen {
+    background-color: var(--color-background);
+    background-image:
+        repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent 3px,
+            rgb(139 111 71 / 0.04) 3px,
+            rgb(139 111 71 / 0.04) 4px
+        ),
+        repeating-linear-gradient(
+            90deg,
+            transparent,
+            transparent 3px,
+            rgb(139 111 71 / 0.03) 3px,
+            rgb(139 111 71 / 0.03) 4px
+        );
+}
+
+@utility shadow-elevated {
+    box-shadow: var(--shadow-md);
+}
+
+@utility backdrop-modal {
+    backdrop-filter: blur(8px);
+}
+
+@utility animate-fade-up {
+    animation: fade-up-soft 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@utility animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+}

@@ -1,0 +1,23 @@
+{
+  "name": "hotel-hms-mobile-wrapper",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "build": "node -e \"console.log('No bundler configured. Using static assets from mobile/www.')\"",
+    "cap:add:android": "npx cap add android",
+    "cap:add:ios": "npx cap add ios",
+    "cap:sync": "npx cap sync",
+    "cap:open": "npx cap open android",
+    "cap:open:android": "npx cap open android",
+    "cap:open:ios": "npx cap open ios",
+    "android:assemble:debug": "node scripts/gradle.mjs assembleDebug",
+    "android:assemble:release": "node scripts/gradle.mjs assembleRelease"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^7.4.3",
+    "@capacitor/cli": "^7.4.3",
+    "@capacitor/core": "^7.4.3",
+    "@capacitor/ios": "^7.6.1",
+    "typescript": "^6.0.2"
+  }
+}

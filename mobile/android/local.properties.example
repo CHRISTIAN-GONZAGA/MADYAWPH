@@ -1,0 +1,5 @@
+# Copy to local.properties (gitignored) and set your Android SDK path.
+# Typical Windows (Android Studio default):
+# sdk.dir=C\:\\Users\\YOUR_USER\\AppData\\Local\\Android\\Sdk
+# Or set ANDROID_HOME to that folder and Gradle will often pick it up when using Android Studio.
+sdk.dir=
