@@ -5,8 +5,8 @@ const config: CapacitorConfig = {
   appName: 'Gloretto Hotel HMS',
   webDir: 'www',
   server: {
-    url: 'http://192.168.1.224:8000',
-    cleartext: true,
+    url: 'https://madyawph.onrender.com',
+    cleartext: false,
   },
 };
 

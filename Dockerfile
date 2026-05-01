@@ -49,17 +49,8 @@ RUN npm install
 RUN npm run build
 
 # =========================
-# Laravel safe production setup
-# =========================
-RUN php artisan config:clear || true
-RUN php artisan cache:clear || true
-RUN php artisan package:discover || true
-RUN php artisan config:cache || true
-RUN php artisan route:cache || true
-
-# =========================
 # Run server
 # =========================
 EXPOSE 10000
 
-CMD ["sh", "-lc", "php artisan serve --host=0.0.0.0 --port=${PORT:-10000}"]
+CMD ["sh", "-lc", "php artisan optimize:clear && php artisan serve --host=0.0.0.0 --port=${PORT:-10000}"]
