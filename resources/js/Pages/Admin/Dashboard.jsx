@@ -372,8 +372,8 @@ export default function Dashboard({ auth, rooms = [], credits = null, amenityCla
                     <section className="bg-card border border-border rounded-2xl p-5">
                         <h3 className="font-serif text-xl mb-3">Sales Reports</h3>
                         <div className="flex gap-2">
-                            <button onClick={() => window.open('/api/reports/sales-pdf', '_blank')} className="px-3 py-2 rounded-full bg-primary text-primary-foreground text-sm">Open Sales PDF</button>
-                            <button onClick={() => window.open('/api/reports/sales-csv', '_blank')} className="px-3 py-2 rounded-full bg-secondary text-sm">Export CSV</button>
+                            <button onClick={() => { window.location.href = '/api/reports/sales-pdf'; }} className="px-3 py-2 rounded-full bg-primary text-primary-foreground text-sm">Open Sales PDF</button>
+                            <button onClick={() => { window.location.href = '/api/reports/sales-csv'; }} className="px-3 py-2 rounded-full bg-secondary text-sm">Export CSV</button>
                         </div>
                         <div className="mt-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-2">
                             {salesSummary.map((period) => (

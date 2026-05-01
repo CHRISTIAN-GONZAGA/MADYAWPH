@@ -85,7 +85,7 @@ export default function MyBookings() {
                                     </div>
                                     <button
                                         type="button"
-                                        onClick={() => window.open(`/api/bookings/${booking.booking_reference}/pdf`, '_blank')}
+                                        onClick={() => { window.location.href = `/api/bookings/${booking.booking_reference}/pdf`; }}
                                         className="rounded-full border border-primary px-3 py-1 text-xs text-primary"
                                     >
                                         Download PDF

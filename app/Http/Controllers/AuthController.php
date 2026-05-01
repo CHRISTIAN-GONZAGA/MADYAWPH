@@ -10,6 +10,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -137,11 +138,17 @@ class AuthController extends Controller
             'lax'
         ));
 
-        // Always land directly on role dashboard after successful auth.
-        // This avoids accidental fallback into auth selection/menu routes.
-        return $role === UserRole::ADMIN->value
-            ? redirect('/admin/dashboard')
-            : redirect('/staff/dashboard');
+        Log::info('Auth login success', [
+            'auth_check' => Auth::check(),
+            'user_id' => (string) ($user?->id ?? ''),
+            'role' => $role,
+            'hotel_id' => (string) ($user?->hotel_id ?? ''),
+            'session_id' => $request->session()->getId(),
+        ]);
+
+        $target = $role === UserRole::ADMIN->value ? '/admin/dashboard' : '/staff/dashboard';
+
+        return redirect()->intended($target);
     }
 
     public function logout(Request $request): RedirectResponse

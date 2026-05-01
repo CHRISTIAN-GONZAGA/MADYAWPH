@@ -384,6 +384,13 @@ Route::middleware(['auth', 'role:admin'])->group(function (): void {
 
     Route::get('/admin/dashboard', function (Request $request) {
         $user = $request->user();
+        \Illuminate\Support\Facades\Log::info('Admin dashboard request', [
+            'auth_check' => Auth::check(),
+            'user_id' => (string) ($user?->id ?? ''),
+            'role' => (string) ($user?->role?->value ?? $user?->role ?? ''),
+            'hotel_id' => (string) ($user?->hotel_id ?? ''),
+            'session_id' => $request->session()->getId(),
+        ]);
         $hotel = Hotel::withoutGlobalScopes()->find($user?->hotel_id);
         $rooms = Room::query()->get();
         $latestBookingsByRoom = Booking::withoutGlobalScopes()

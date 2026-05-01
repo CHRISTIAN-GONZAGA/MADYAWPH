@@ -14,7 +14,7 @@ export default function AdminDashboard() {
     return (
         <AppLayout title="Administrator dashboard" subtitle="Balanghai Hotel">
             <div className="mb-6 flex flex-wrap gap-2">
-                <Button variant="secondary" className="gap-2 py-2 text-sm" onClick={() => window.open('/api/reports/sales-pdf', '_blank')}>
+                <Button variant="secondary" className="gap-2 py-2 text-sm" onClick={() => { window.location.href = '/api/reports/sales-pdf'; }}>
                     <Crown className="h-4 w-4" />
                     Sales PDF
                 </Button>
@@ -100,7 +100,7 @@ export default function AdminDashboard() {
                                 {p}
                             </span>
                         ))}
-                        <Button variant="secondary" className="py-1 text-xs" onClick={() => window.open('/api/reports/sales-csv', '_blank')}>
+                        <Button variant="secondary" className="py-1 text-xs" onClick={() => { window.location.href = '/api/reports/sales-csv'; }}>
                             Export
                         </Button>
                     </div>
