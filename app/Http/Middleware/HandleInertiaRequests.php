@@ -23,7 +23,9 @@ class HandleInertiaRequests extends Middleware
      */
     public function version(Request $request): ?string
     {
-        return parent::version($request);
+        // Disable asset version conflict responses (409) for environments
+        // where stale CDN/proxy/app cache can linger across deploys.
+        return null;
     }
 
     /**
