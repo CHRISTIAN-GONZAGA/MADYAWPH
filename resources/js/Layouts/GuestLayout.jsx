@@ -1,7 +1,7 @@
 import { Link } from '@inertiajs/react';
 import { useState } from 'react';
 import { Palette, RotateCcw, X } from 'lucide-react';
-import { applyThemeColor } from '../utils/theme';
+import { applyThemeColor } from '../Utils/theme';
 
 export default function GuestLayout({ user, roomInfo, children }) {
     const [showTheme, setShowTheme] = useState(false);
