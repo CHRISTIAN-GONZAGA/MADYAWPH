@@ -4,9 +4,11 @@ import { useState } from 'react';
 import BackButton from '../../Components/BackButton';
 
 export default function RoomBooking({ hotel = null, category = null, rooms = [] }) {
+    const hotelQuery = hotel?.id ? `?hotel=${encodeURIComponent(hotel.id)}` : '';
     const [actionMode, setActionMode] = useState('book');
     const { data, setData, post, processing, reset } = useForm({
         room_id: '',
+        hotel_id: hotel?.id ?? '',
         guest_name: '',
         guest_email: '',
         guest_phone: '',
@@ -14,8 +16,13 @@ export default function RoomBooking({ hotel = null, category = null, rooms = [] 
         check_out: '',
     });
 
-    function submit(e) {
+    async function ensureCsrfCookie() {
+        await window.axios.get('/sanctum/csrf-cookie');
+    }
+
+    async function submit(e) {
         e.preventDefault();
+        await ensureCsrfCookie();
         post(actionMode === 'reserve' ? '/customer/reservations' : '/customer/bookings', {
             onSuccess: () => reset('guest_name', 'guest_email', 'guest_phone', 'check_in', 'check_out'),
         });
@@ -27,7 +34,7 @@ export default function RoomBooking({ hotel = null, category = null, rooms = [] 
             <div className="max-w-4xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <motion.div initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} className="bg-card border border-border rounded-xl p-4">
                     <div className="mb-3">
-                        <BackButton fallback="/customer/categories" />
+                        <BackButton fallback={`/customer/categories${hotelQuery}`} />
                     </div>
                     <h1 className="font-serif text-2xl mb-2">Available Rooms</h1>
                     <p className="text-sm text-muted-foreground mb-4">{hotel?.name} • {category?.name}</p>
@@ -68,6 +75,7 @@ export default function RoomBooking({ hotel = null, category = null, rooms = [] 
 
                 <motion.form initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} onSubmit={submit} className="bg-card border border-border rounded-xl p-4 space-y-3">
                     <h2 className="font-serif text-xl">{actionMode === 'reserve' ? 'Reservation Details' : 'Booking Details'}</h2>
+                    <input type="hidden" value={data.hotel_id} readOnly />
                     <div className="flex gap-2">
                         <button type="button" onClick={() => setActionMode('book')} className={`flex-1 px-3 py-2 rounded-lg text-sm ${actionMode === 'book' ? 'bg-primary text-primary-foreground' : 'border border-border'}`}>Book now</button>
                         <button type="button" onClick={() => setActionMode('reserve')} className={`flex-1 px-3 py-2 rounded-lg text-sm ${actionMode === 'reserve' ? 'bg-primary text-primary-foreground' : 'border border-border'}`}>Reserve for dates</button>

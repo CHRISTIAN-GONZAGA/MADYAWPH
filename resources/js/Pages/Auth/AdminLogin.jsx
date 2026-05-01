@@ -17,8 +17,13 @@ export default function AdminLogin() {
         hotel_id: hotelId,
     });
 
-    function submit(e) {
+    async function ensureCsrfCookie() {
+        await window.axios.get('/sanctum/csrf-cookie');
+    }
+
+    async function submit(e) {
         e.preventDefault();
+        await ensureCsrfCookie();
         post('/login');
     }
 

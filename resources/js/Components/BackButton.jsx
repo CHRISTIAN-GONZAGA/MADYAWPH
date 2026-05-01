@@ -1,4 +1,3 @@
-import { router } from '@inertiajs/react';
 import { ArrowLeft } from 'lucide-react';
 
 export default function BackButton({ fallback = '/login', className = '' }) {
@@ -8,7 +7,7 @@ export default function BackButton({ fallback = '/login', className = '' }) {
             return;
         }
 
-        router.visit(fallback);
+        window.location.assign(fallback);
     };
 
     return (

@@ -17,6 +17,10 @@ export default function ForgotPassword({ prefill = {} }) {
         new_password_confirmation: '',
     });
 
+    async function ensureCsrfCookie() {
+        await window.axios.get('/sanctum/csrf-cookie');
+    }
+
     return (
         <AuthLayout title="MADYAW" subtitle="Forgot Password">
             <Head title="Forgot Password" />
@@ -24,8 +28,9 @@ export default function ForgotPassword({ prefill = {} }) {
                 <BackButton fallback="/auth/select" />
             </div>
             <form
-                onSubmit={(event) => {
+                onSubmit={async (event) => {
                     event.preventDefault();
+                    await ensureCsrfCookie();
                     sendForm.post('/auth/forgot-password/send');
                 }}
                 className="space-y-3 mb-6"
@@ -41,8 +46,9 @@ export default function ForgotPassword({ prefill = {} }) {
             </form>
 
             <form
-                onSubmit={(event) => {
+                onSubmit={async (event) => {
                     event.preventDefault();
+                    await ensureCsrfCookie();
                     resetForm.post('/auth/forgot-password/reset');
                 }}
                 className="space-y-3"
