@@ -27,16 +27,34 @@ export default function HotelAccess() {
         await window.axios.get('/sanctum/csrf-cookie');
     }
 
+    function csrfHeader() {
+        const metaToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        if (metaToken) {
+            return { 'X-CSRF-TOKEN': metaToken };
+        }
+
+        const xsrfCookie = document.cookie
+            .split('; ')
+            .find((row) => row.startsWith('XSRF-TOKEN='))
+            ?.split('=')[1];
+
+        return xsrfCookie ? { 'X-CSRF-TOKEN': decodeURIComponent(xsrfCookie) } : {};
+    }
+
     async function submitSignIn(event) {
         event.preventDefault();
         await ensureCsrfCookie();
-        signInForm.post('/auth/hotel/login');
+        signInForm.post('/auth/hotel/login', {
+            headers: csrfHeader(),
+        });
     }
 
     async function submitSignUp(event) {
         event.preventDefault();
         await ensureCsrfCookie();
-        signUpForm.post('/auth/hotel/register');
+        signUpForm.post('/auth/hotel/register', {
+            headers: csrfHeader(),
+        });
     }
 
     const errors = mode === 'signin' ? signInForm.errors : signUpForm.errors;
