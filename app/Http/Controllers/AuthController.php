@@ -30,7 +30,8 @@ class AuthController extends Controller
     {
         $validated = $request->validate([
             'role' => ['required', 'in:admin,staff'],
-            'username' => ['required', 'string', 'max:255'],
+            'username' => ['required_without:email', 'string', 'max:255'],
+            'email' => ['required_without:username', 'email', 'max:255'],
             'password' => ['required', 'string'],
         ]);
         $activeHotelId = (string) ($request->session()->get('active_hotel_id')
@@ -38,9 +39,13 @@ class AuthController extends Controller
             ?? $request->input('hotel_id')
             ?? $request->query('hotel')
             ?? '');
-        if ($activeHotelId === '' && ($validated['role'] ?? '') === 'admin') {
+        $role = (string) ($validated['role'] ?? '');
+        $identifier = (string) ($validated['username'] ?? $validated['email'] ?? '');
+        $identifierField = isset($validated['username']) ? 'name' : 'email';
+
+        if ($activeHotelId === '' && $role === 'admin') {
             $candidate = User::withoutGlobalScopes()
-                ->where('name', $validated['username'])
+                ->where($identifierField, $identifier)
                 ->where('role', 'admin')
                 ->first();
             $activeHotelId = (string) ($candidate?->hotel_id ?? '');
@@ -56,14 +61,14 @@ class AuthController extends Controller
         }
 
         if (! Auth::attempt([
-            'name' => $validated['username'],
+            $identifierField => $identifier,
             'password' => $validated['password'],
-            'role' => $validated['role'],
+            'role' => $role,
             'hotel_id' => $activeHotelId,
         ], true)) {
             return back()->withErrors([
                 'username' => 'Credentials do not match your current hotel.',
-            ])->onlyInput('username');
+            ])->onlyInput('username', 'email');
         }
 
         $request->session()->regenerate();

@@ -334,7 +334,18 @@ Route::post('/auth/guest/login', function (Request $request) {
 
 // Legacy route retained for backward compatibility.
 Route::redirect('/legacy-login', '/login');
-Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
+Route::get('/login', function (Request $request) {
+    $currentUser = $request->user();
+    $currentRole = (string) ($currentUser?->role?->value ?? $currentUser?->role ?? '');
+    if ($currentRole === 'admin') {
+        return redirect()->route('admin.dashboard.v2');
+    }
+    if ($currentRole === 'staff') {
+        return redirect()->route('staff.dashboard.v2');
+    }
+
+    return redirect()->route('auth.hotel');
+})->name('login');
 Route::post('/login', [AuthController::class, 'login'])
     ->middleware(['same.origin', 'throttle:10,1'])
     ->name('login.attempt');
