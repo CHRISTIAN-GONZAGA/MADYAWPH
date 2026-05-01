@@ -12,27 +12,32 @@ RUN docker-php-ext-install zip
 RUN pecl install mongodb \
     && docker-php-ext-enable mongodb
 
-# Install Node.js (stable LTS version)
+# Node.js (LTS)
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs
 
-# Install Composer
+# Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 WORKDIR /app
 
-# Copy only composer files first (better caching)
+# Copy composer files first (better caching)
 COPY composer.json composer.lock ./
-RUN composer install --no-dev --optimize-autoloader
 
-# Copy rest of project
+# IMPORTANT: disable scripts to avoid package:discover crash
+RUN composer install --no-dev --optimize-autoloader --no-scripts
+
+# Copy full project
 COPY . .
 
-# Install frontend dependencies + build Vite
+# Install frontend + build Vite
 RUN npm install
 RUN npm run build
 
-# Optimize Laravel
+# Laravel safe setup (avoid crash if env not ready)
+RUN php artisan config:clear || true
+RUN php artisan cache:clear || true
+RUN php artisan package:discover || true
 RUN php artisan config:cache || true
 RUN php artisan route:cache || true
 
