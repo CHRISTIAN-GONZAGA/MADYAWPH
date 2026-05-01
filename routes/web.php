@@ -61,8 +61,12 @@ Route::get('/auth/hotel', function (Request $request) {
     return Inertia::render('Auth/HotelAccess');
 })->name('auth.hotel');
 Route::get('/auth/forgot-password', [AuthController::class, 'showForgotPassword'])->name('auth.password.forgot');
-Route::post('/auth/forgot-password/send', [AuthController::class, 'sendResetCode'])->name('auth.password.send-code');
-Route::post('/auth/forgot-password/reset', [AuthController::class, 'resetPasswordWithCode'])->name('auth.password.reset');
+Route::post('/auth/forgot-password/send', [AuthController::class, 'sendResetCode'])
+    ->middleware(['same.origin', 'throttle:5,1'])
+    ->name('auth.password.send-code');
+Route::post('/auth/forgot-password/reset', [AuthController::class, 'resetPasswordWithCode'])
+    ->middleware(['same.origin', 'throttle:8,1'])
+    ->name('auth.password.reset');
 Route::post('/auth/hotel/login', function (Request $request) {
     $appUrl = rtrim((string) config('app.url'), '/');
     $origin = (string) ($request->headers->get('origin') ?? '');
@@ -121,7 +125,7 @@ Route::post('/auth/hotel/login', function (Request $request) {
     ));
 
     return redirect()->route('auth.category', ['hotel' => (string) $legacyAdmin->hotel_id]);
-})->middleware('throttle:8,1')->name('auth.hotel.login');
+})->middleware(['same.origin', 'throttle:8,1'])->name('auth.hotel.login');
 Route::post('/auth/hotel/register', function (Request $request) {
     $appUrl = rtrim((string) config('app.url'), '/');
     $origin = (string) ($request->headers->get('origin') ?? '');
@@ -182,7 +186,7 @@ Route::post('/auth/hotel/register', function (Request $request) {
     $request->session()->regenerateToken();
 
     return redirect()->route('auth.category', ['hotel' => (string) $hotel->id]);
-})->middleware('throttle:3,1')->name('auth.hotel.register');
+})->middleware(['same.origin', 'throttle:3,1'])->name('auth.hotel.register');
 Route::get('/auth/select', function (Request $request) {
     $activeHotelId = (string) ($request->session()->get('active_hotel_id')
         ?? $request->cookie('active_hotel_id')
@@ -290,12 +294,14 @@ Route::post('/auth/guest/login', function (Request $request) {
     ]);
 
     return redirect()->route('guest.dashboard');
-})->name('auth.guest.login');
+})->middleware(['same.origin', 'throttle:8,1'])->name('auth.guest.login');
 
 // Legacy route retained for backward compatibility.
 Route::redirect('/legacy-login', '/login');
 Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
-Route::post('/login', [AuthController::class, 'login'])->name('login.attempt');
+Route::post('/login', [AuthController::class, 'login'])
+    ->middleware(['same.origin', 'throttle:10,1'])
+    ->name('login.attempt');
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
 Route::get('/kiosk', function (Request $request) {

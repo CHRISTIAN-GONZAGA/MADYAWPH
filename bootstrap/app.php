@@ -29,6 +29,10 @@ return Application::configure(basePath: dirname(__DIR__))
             'webhooks/paymongo',
             'auth/hotel/login',
             'auth/hotel/register',
+            'login',
+            'auth/guest/login',
+            'auth/forgot-password/send',
+            'auth/forgot-password/reset',
         ]);
 
         $middleware->web(append: [
@@ -42,6 +46,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => \App\Http\Middleware\RoleCheck::class,
             'prevent.double.booking' => \App\Http\Middleware\PreventDoubleBooking::class,
+            'same.origin' => \App\Http\Middleware\EnsureSameOrigin::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
