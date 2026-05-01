@@ -1,24 +1,40 @@
 FROM php:8.4-cli
 
-# Install system dependencies
+# System dependencies
 RUN apt-get update && apt-get install -y \
-    git unzip curl libssl-dev pkg-config libzip-dev
+    git unzip curl libssl-dev pkg-config libzip-dev \
+    build-essential python3
 
-# Install PHP extensions
+# PHP extensions
 RUN docker-php-ext-install zip
 
-# Install MongoDB extension
+# MongoDB extension
 RUN pecl install mongodb \
     && docker-php-ext-enable mongodb
+
+# Install Node.js (stable LTS version)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs
 
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 WORKDIR /app
 
+# Copy only composer files first (better caching)
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --optimize-autoloader
+
+# Copy rest of project
 COPY . .
 
-RUN composer install --no-dev --optimize-autoloader
+# Install frontend dependencies + build Vite
+RUN npm install
+RUN npm run build
+
+# Optimize Laravel
+RUN php artisan config:cache || true
+RUN php artisan route:cache || true
 
 EXPOSE 10000
 
