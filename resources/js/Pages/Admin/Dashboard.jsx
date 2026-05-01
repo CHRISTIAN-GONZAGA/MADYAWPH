@@ -65,7 +65,7 @@ export default function Dashboard({ auth, rooms = [], credits = null, amenityCla
             <div className="space-y-6">
                 <motion.header initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-card border border-border rounded-2xl p-4 sm:p-6">
                     <div className="mb-4">
-                        <BackButton fallback="/admin/dashboard" />
+                        <BackButton fallback="/auth/category" />
                     </div>
                     <div className="flex flex-wrap items-center justify-between gap-4">
                         <div>
