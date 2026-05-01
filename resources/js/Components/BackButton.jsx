@@ -2,11 +2,6 @@ import { ArrowLeft } from 'lucide-react';
 
 export default function BackButton({ fallback = '/login', className = '' }) {
     const goBack = () => {
-        if (typeof window !== 'undefined' && window.history.length > 1) {
-            window.history.back();
-            return;
-        }
-
         window.location.assign(fallback);
     };
 

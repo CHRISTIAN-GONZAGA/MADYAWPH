@@ -38,6 +38,13 @@ class AuthController extends Controller
             ?? $request->input('hotel_id')
             ?? $request->query('hotel')
             ?? '');
+        if ($activeHotelId === '' && ($validated['role'] ?? '') === 'admin') {
+            $candidate = User::withoutGlobalScopes()
+                ->where('name', $validated['username'])
+                ->where('role', 'admin')
+                ->first();
+            $activeHotelId = (string) ($candidate?->hotel_id ?? '');
+        }
         if ($activeHotelId === '') {
             return redirect()->route('auth.hotel')->withErrors([
                 'username' => 'Sign in to your hotel first.',
@@ -75,6 +82,28 @@ class AuthController extends Controller
         ));
 
         $role = (string) ($user->role?->value ?? $user->role ?? '');
+        cookie()->queue(cookie(
+            'auth_uid',
+            (string) $user->id,
+            60 * 24 * 30,
+            '/',
+            config('session.domain'),
+            true,
+            true,
+            false,
+            'lax'
+        ));
+        cookie()->queue(cookie(
+            'auth_role',
+            $role,
+            60 * 24 * 30,
+            '/',
+            config('session.domain'),
+            true,
+            true,
+            false,
+            'lax'
+        ));
 
         return $role === UserRole::ADMIN->value
             ? redirect()->route('admin.dashboard.v2')
@@ -87,6 +116,8 @@ class AuthController extends Controller
         $request->session()->invalidate();
         $request->session()->regenerateToken();
         cookie()->queue(cookie()->forget('active_hotel_id'));
+        cookie()->queue(cookie()->forget('auth_uid'));
+        cookie()->queue(cookie()->forget('auth_role'));
 
         return redirect()->route('auth.hotel');
     }
