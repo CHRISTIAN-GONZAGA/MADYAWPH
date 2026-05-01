@@ -1,5 +1,4 @@
 import { motion } from 'motion/react';
-import { Link } from '@inertiajs/react';
 import { usePage } from '@inertiajs/react';
 import { Users, Hotel as HotelIcon, UserCog, DoorOpen } from 'lucide-react';
 import BackButton from '../../Components/BackButton';
@@ -32,7 +31,7 @@ export default function CategorySelection() {
                 <div className="w-full max-w-2xl grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                     {categories.map((category, index) => (
                         <motion.div key={category.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.1 }}>
-                            <Link href={category.href} className="block bg-card border border-border rounded-2xl p-6 sm:p-8 shadow-sm hover:shadow-md transition-all">
+                            <a href={category.href} className="block bg-card border border-border rounded-2xl p-6 sm:p-8 shadow-sm hover:shadow-md transition-all">
                                 <div className="flex flex-col items-center text-center gap-3">
                                     <div className="w-14 h-14 bg-primary/10 rounded-full flex items-center justify-center">
                                         <category.icon className="w-7 h-7 text-primary" />
@@ -42,7 +41,7 @@ export default function CategorySelection() {
                                         <p className="text-sm text-muted-foreground">{category.subtitle}</p>
                                     </div>
                                 </div>
-                            </Link>
+                            </a>
                         </motion.div>
                     ))}
                 </div>
