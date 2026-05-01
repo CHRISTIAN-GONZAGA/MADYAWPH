@@ -69,6 +69,17 @@ Route::post('/auth/hotel/login', function (Request $request) {
         $request->session()->regenerate();
         $request->session()->put('active_hotel_id', (string) $hotel->id);
         $request->session()->regenerateToken();
+        cookie()->queue(cookie(
+            'active_hotel_id',
+            (string) $hotel->id,
+            60 * 24 * 30,
+            '/',
+            config('session.domain'),
+            true,
+            false,
+            false,
+            'lax'
+        ));
 
         return redirect()->route('auth.category');
     }
@@ -82,6 +93,17 @@ Route::post('/auth/hotel/login', function (Request $request) {
     $request->session()->regenerate();
     $request->session()->put('active_hotel_id', (string) $legacyAdmin->hotel_id);
     $request->session()->regenerateToken();
+    cookie()->queue(cookie(
+        'active_hotel_id',
+        (string) $legacyAdmin->hotel_id,
+        60 * 24 * 30,
+        '/',
+        config('session.domain'),
+        true,
+        false,
+        false,
+        'lax'
+    ));
 
     return redirect()->route('auth.category');
 })->middleware('throttle:8,1')->name('auth.hotel.login');
@@ -122,6 +144,17 @@ Route::post('/auth/hotel/register', function (Request $request) {
     Auth::login($admin);
     $request->session()->regenerate();
     $request->session()->put('active_hotel_id', (string) $hotel->id);
+    cookie()->queue(cookie(
+        'active_hotel_id',
+        (string) $hotel->id,
+        60 * 24 * 30,
+        '/',
+        config('session.domain'),
+        true,
+        false,
+        false,
+        'lax'
+    ));
     $verificationCode = (string) random_int(100000, 999999);
     $request->session()->put('hotel_verification_code', $verificationCode);
     app(SmsService::class)->send(
@@ -135,16 +168,72 @@ Route::post('/auth/hotel/register', function (Request $request) {
 
     return redirect()->route('auth.category');
 })->middleware('throttle:3,1')->name('auth.hotel.register');
-Route::get('/auth/select', fn () => Inertia::render('Auth/CategorySelection'))->name('auth.category');
-Route::get('/auth/admin', fn () => Inertia::render('Auth/AdminLogin'))->name('auth.admin');
-Route::get('/auth/staff', fn () => Inertia::render('Auth/StaffLogin'))->name('auth.staff');
-Route::get('/auth/guest', fn () => Inertia::render('Auth/GuestRoomLogin'))->name('auth.guest');
+Route::get('/auth/select', function (Request $request) {
+    $activeHotelId = (string) ($request->session()->get('active_hotel_id')
+        ?? $request->cookie('active_hotel_id')
+        ?? $request->user()?->hotel_id
+        ?? '');
+    if ($activeHotelId === '') {
+        return redirect()->route('auth.hotel');
+    }
+
+    if (! $request->session()->has('active_hotel_id')) {
+        $request->session()->put('active_hotel_id', $activeHotelId);
+    }
+
+    return Inertia::render('Auth/CategorySelection');
+})->name('auth.category');
+Route::get('/auth/admin', function (Request $request) {
+    $activeHotelId = (string) ($request->session()->get('active_hotel_id')
+        ?? $request->cookie('active_hotel_id')
+        ?? '');
+    if ($activeHotelId === '') {
+        return redirect()->route('auth.hotel');
+    }
+
+    if (! $request->session()->has('active_hotel_id')) {
+        $request->session()->put('active_hotel_id', $activeHotelId);
+    }
+
+    return Inertia::render('Auth/AdminLogin');
+})->name('auth.admin');
+Route::get('/auth/staff', function (Request $request) {
+    $activeHotelId = (string) ($request->session()->get('active_hotel_id')
+        ?? $request->cookie('active_hotel_id')
+        ?? '');
+    if ($activeHotelId === '') {
+        return redirect()->route('auth.hotel');
+    }
+
+    if (! $request->session()->has('active_hotel_id')) {
+        $request->session()->put('active_hotel_id', $activeHotelId);
+    }
+
+    return Inertia::render('Auth/StaffLogin');
+})->name('auth.staff');
+Route::get('/auth/guest', function (Request $request) {
+    $activeHotelId = (string) ($request->session()->get('active_hotel_id')
+        ?? $request->cookie('active_hotel_id')
+        ?? '');
+    if ($activeHotelId === '') {
+        return redirect()->route('auth.hotel');
+    }
+
+    if (! $request->session()->has('active_hotel_id')) {
+        $request->session()->put('active_hotel_id', $activeHotelId);
+    }
+
+    return Inertia::render('Auth/GuestRoomLogin');
+})->name('auth.guest');
 Route::post('/auth/guest/login', function (Request $request) {
     $validated = $request->validate([
         'room' => ['required', 'string'],
         'password' => ['required', 'string', 'min:6', 'max:32'],
     ]);
-    $activeHotelId = (string) ($request->session()->get('active_hotel_id') ?? $request->user()?->hotel_id ?? '');
+    $activeHotelId = (string) ($request->session()->get('active_hotel_id')
+        ?? $request->cookie('active_hotel_id')
+        ?? $request->user()?->hotel_id
+        ?? '');
     if ($activeHotelId === '') {
         return redirect()->route('auth.hotel')->withErrors(['room' => 'Sign in to your hotel first.']);
     }
@@ -586,7 +675,10 @@ Route::middleware(['auth', 'role:staff'])->group(function (): void {
 
 Route::prefix('customer')->group(function (): void {
     Route::get('/categories', function (Request $request) {
-        $hotelId = (string) ($request->session()->get('active_hotel_id') ?? $request->user()?->hotel_id ?? '');
+        $hotelId = (string) ($request->session()->get('active_hotel_id')
+            ?? $request->cookie('active_hotel_id')
+            ?? $request->user()?->hotel_id
+            ?? '');
         if ($hotelId === '') {
             return redirect()->route('auth.hotel');
         }
@@ -617,7 +709,10 @@ Route::prefix('customer')->group(function (): void {
     })->name('customer.categories');
 
     Route::get('/categories/{categoryId}/rooms', function (Request $request, string $categoryId) {
-        $hotelId = (string) ($request->session()->get('active_hotel_id') ?? $request->user()?->hotel_id ?? '');
+        $hotelId = (string) ($request->session()->get('active_hotel_id')
+            ?? $request->cookie('active_hotel_id')
+            ?? $request->user()?->hotel_id
+            ?? '');
         if ($hotelId === '') {
             return redirect()->route('auth.hotel');
         }
@@ -672,7 +767,10 @@ Route::prefix('customer')->group(function (): void {
             'check_in' => ['required', 'date'],
             'check_out' => ['required', 'date', 'after:check_in'],
         ]);
-        $hotelId = (string) ($request->session()->get('active_hotel_id') ?? $request->user()?->hotel_id ?? '');
+        $hotelId = (string) ($request->session()->get('active_hotel_id')
+            ?? $request->cookie('active_hotel_id')
+            ?? $request->user()?->hotel_id
+            ?? '');
         if ($hotelId === '') {
             return redirect()->route('auth.hotel');
         }
@@ -726,7 +824,10 @@ Route::prefix('customer')->group(function (): void {
             'check_out' => ['required', 'date', 'after:check_in'],
         ]);
 
-        $hotelId = (string) ($request->session()->get('active_hotel_id') ?? $request->user()?->hotel_id ?? '');
+        $hotelId = (string) ($request->session()->get('active_hotel_id')
+            ?? $request->cookie('active_hotel_id')
+            ?? $request->user()?->hotel_id
+            ?? '');
         if ($hotelId === '') {
             return redirect()->route('auth.hotel');
         }

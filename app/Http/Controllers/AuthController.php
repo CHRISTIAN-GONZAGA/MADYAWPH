@@ -33,11 +33,17 @@ class AuthController extends Controller
             'username' => ['required', 'string', 'max:255'],
             'password' => ['required', 'string'],
         ]);
-        $activeHotelId = (string) ($request->session()->get('active_hotel_id') ?? '');
+        $activeHotelId = (string) ($request->session()->get('active_hotel_id')
+            ?? $request->cookie('active_hotel_id')
+            ?? '');
         if ($activeHotelId === '') {
             return redirect()->route('auth.hotel')->withErrors([
                 'username' => 'Sign in to your hotel first.',
             ]);
+        }
+
+        if (! $request->session()->has('active_hotel_id')) {
+            $request->session()->put('active_hotel_id', $activeHotelId);
         }
 
         if (! Auth::attempt([
@@ -65,6 +71,7 @@ class AuthController extends Controller
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
+        cookie()->queue(cookie()->forget('active_hotel_id'));
 
         return redirect()->route('auth.hotel');
     }
@@ -85,7 +92,9 @@ class AuthController extends Controller
             'role' => ['nullable', 'in:admin,staff'],
             'username' => ['required', 'string', 'max:255'],
         ]);
-        $activeHotelId = (string) ($request->session()->get('active_hotel_id') ?? '');
+        $activeHotelId = (string) ($request->session()->get('active_hotel_id')
+            ?? $request->cookie('active_hotel_id')
+            ?? '');
         $userQuery = User::withoutGlobalScopes()
             ->where('name', $validated['username']);
         if ($activeHotelId !== '') {
