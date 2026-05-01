@@ -53,7 +53,7 @@ class AuthController extends Controller
             'password' => $validated['password'],
             'role' => $validated['role'],
             'hotel_id' => $activeHotelId,
-        ])) {
+        ], true)) {
             return back()->withErrors([
                 'username' => 'Credentials do not match your current hotel.',
             ])->onlyInput('username');
@@ -62,8 +62,21 @@ class AuthController extends Controller
         $request->session()->regenerate();
         $user = $request->user();
         $request->session()->put('active_hotel_id', (string) $user->hotel_id);
+        cookie()->queue(cookie(
+            'active_hotel_id',
+            (string) $user->hotel_id,
+            60 * 24 * 30,
+            '/',
+            config('session.domain'),
+            true,
+            false,
+            false,
+            'lax'
+        ));
 
-        return $user->role === UserRole::ADMIN
+        $role = (string) ($user->role?->value ?? $user->role ?? '');
+
+        return $role === UserRole::ADMIN->value
             ? redirect()->route('admin.dashboard.v2')
             : redirect()->route('staff.dashboard.v2');
     }
