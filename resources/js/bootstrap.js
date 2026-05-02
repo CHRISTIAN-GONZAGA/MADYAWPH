@@ -1,7 +1,50 @@
 import axios from 'axios';
+import { http } from '@inertiajs/core';
+
 window.axios = axios;
 
 window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
 window.axios.defaults.withCredentials = true;
 window.axios.defaults.xsrfCookieName = 'XSRF-TOKEN';
 window.axios.defaults.xsrfHeaderName = 'X-XSRF-TOKEN';
+
+/**
+ * When the browser treats the request as cross-origin, custom response headers like
+ * X-Inertia are hidden unless Access-Control-Expose-Headers lists them. Inertia's
+ * XHR client then sees no x-inertia header and throws "plain JSON response".
+ * If the body is clearly an Inertia page payload, mark it as a valid Inertia response.
+ */
+function looksLikeInertiaPage(data) {
+    return (
+        data !== null &&
+        typeof data === 'object' &&
+        typeof data.component === 'string' &&
+        'props' in data &&
+        typeof data.url === 'string'
+    );
+}
+
+http.onResponse((response) => {
+    if (!response.headers) {
+        response.headers = {};
+    }
+    const { headers } = response;
+    if (headers['x-inertia']) {
+        return response;
+    }
+
+    let parsed = response.data;
+    if (typeof parsed === 'string') {
+        try {
+            parsed = JSON.parse(parsed);
+        } catch {
+            return response;
+        }
+    }
+
+    if (looksLikeInertiaPage(parsed)) {
+        headers['x-inertia'] = 'true';
+    }
+
+    return response;
+});
