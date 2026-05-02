@@ -50,7 +50,7 @@ export default function HotelAccess() {
             </div>
 
             {mode === 'signin' ? (
-                <motion.form initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} onSubmit={submitSignIn} className="space-y-4">
+                <motion.form method="post" target="_self" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} onSubmit={submitSignIn} className="space-y-4">
                     <input className="w-full border border-border rounded-lg px-3 py-2" placeholder="Hotel Username" value={signInForm.data.username} onChange={(event) => signInForm.setData('username', event.target.value)} required />
                     <div className="relative">
                         <input className="w-full border border-border rounded-lg px-3 py-2 pr-10" type={showSignInPassword ? 'text' : 'password'} placeholder="Password" value={signInForm.data.password} onChange={(event) => signInForm.setData('password', event.target.value)} required />
@@ -60,10 +60,10 @@ export default function HotelAccess() {
                     </div>
                     {Object.keys(errors).length > 0 && <p className="text-sm text-destructive">{Object.values(errors)[0]}</p>}
                     <a href={`/auth/forgot-password?role=admin&username=${encodeURIComponent(signInForm.data.username || '')}`} className="text-xs text-primary hover:underline">Forgot password?</a>
-                    <button disabled={signInForm.processing} className="w-full bg-primary text-primary-foreground rounded-full py-2.5">{signInForm.processing ? 'Signing in...' : 'Continue'}</button>
+                    <button type="submit" disabled={signInForm.processing} className="w-full bg-primary text-primary-foreground rounded-full py-2.5">{signInForm.processing ? 'Signing in...' : 'Continue'}</button>
                 </motion.form>
             ) : (
-                <motion.form initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} onSubmit={submitSignUp} className="space-y-3">
+                <motion.form method="post" target="_self" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} onSubmit={submitSignUp} className="space-y-3">
                     <input className="w-full border border-border rounded-lg px-3 py-2" placeholder="Hotel Username" value={signUpForm.data.username} onChange={(event) => signUpForm.setData('username', event.target.value)} required />
                     <input className="w-full border border-border rounded-lg px-3 py-2" placeholder="Admin Email" type="email" value={signUpForm.data.admin_email} onChange={(event) => signUpForm.setData('admin_email', event.target.value)} required />
                     <input className="w-full border border-border rounded-lg px-3 py-2" placeholder="Hotel Name" value={signUpForm.data.hotel_name} onChange={(event) => signUpForm.setData('hotel_name', event.target.value)} required />
@@ -82,7 +82,7 @@ export default function HotelAccess() {
                         </button>
                     </div>
                     {Object.keys(errors).length > 0 && <p className="text-sm text-destructive">{Object.values(errors)[0]}</p>}
-                    <button disabled={signUpForm.processing} className="w-full bg-primary text-primary-foreground rounded-full py-2.5">{signUpForm.processing ? 'Registering...' : 'Create Hotel Account'}</button>
+                    <button type="submit" disabled={signUpForm.processing} className="w-full bg-primary text-primary-foreground rounded-full py-2.5">{signUpForm.processing ? 'Registering...' : 'Create Hotel Account'}</button>
                 </motion.form>
             )}
         </AuthLayout>

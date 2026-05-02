@@ -42,7 +42,7 @@ class AuthController extends Controller
             ?? '');
         $role = (string) ($validated['role'] ?? '');
         $identifier = (string) ($validated['username'] ?? $validated['email'] ?? '');
-        $identifierField = isset($validated['username']) ? 'name' : 'email';
+        $identifierField = filled($validated['username']) ? 'name' : 'email';
 
         if ($activeHotelId === '' && $role === 'admin') {
             $candidate = User::withoutGlobalScopes()
@@ -102,16 +102,21 @@ class AuthController extends Controller
         $request->session()->regenerate();
         $user = $request->user();
         $request->session()->put('active_hotel_id', (string) $user->hotel_id);
+
+        $cookieDomain = $this->normalizeCookieDomain();
+        $cookieSecure = config('session.secure');
+        $cookieSameSite = config('session.same_site') ?: 'lax';
+
         cookie()->queue(cookie(
             'active_hotel_id',
             (string) $user->hotel_id,
             60 * 24 * 30,
             '/',
-            config('session.domain'),
-            true,
+            $cookieDomain,
+            $cookieSecure,
             false,
             false,
-            'lax'
+            $cookieSameSite
         ));
 
         $role = (string) ($user->role?->value ?? $user->role ?? '');
@@ -120,22 +125,22 @@ class AuthController extends Controller
             (string) $user->id,
             60 * 24 * 30,
             '/',
-            config('session.domain'),
-            true,
+            $cookieDomain,
+            $cookieSecure,
             true,
             false,
-            'lax'
+            $cookieSameSite
         ));
         cookie()->queue(cookie(
             'auth_role',
             $role,
             60 * 24 * 30,
             '/',
-            config('session.domain'),
-            true,
+            $cookieDomain,
+            $cookieSecure,
             true,
             false,
-            'lax'
+            $cookieSameSite
         ));
 
         Log::info('Auth login success', [
@@ -149,6 +154,17 @@ class AuthController extends Controller
         $target = $role === UserRole::ADMIN->value ? '/admin/dashboard' : '/staff/dashboard';
 
         return redirect()->intended($target);
+    }
+
+    private function normalizeCookieDomain(): ?string
+    {
+        $domain = config('session.domain');
+
+        if ($domain === 'null' || $domain === '') {
+            return null;
+        }
+
+        return $domain;
     }
 
     public function logout(Request $request): RedirectResponse
