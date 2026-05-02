@@ -33,6 +33,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -208,7 +209,7 @@ Route::get('/auth/select', function (Request $request) {
     if (! $request->session()->has('active_hotel_id')) {
         $request->session()->put('active_hotel_id', $activeHotelId);
     }
-    
+
     // Ensure hotel ID is in cookie (for Render stateless deployment)
     queueActiveHotelCookie($activeHotelId);
 
@@ -237,7 +238,7 @@ Route::get('/auth/admin', function (Request $request) {
         ?? $request->cookie('active_hotel_id')
         ?? $request->query('hotel')
         ?? '');
-    
+
     if ($activeHotelId === '') {
         return redirect()->route('auth.hotel');
     }
@@ -246,11 +247,13 @@ Route::get('/auth/admin', function (Request $request) {
     if (! $request->session()->has('active_hotel_id')) {
         $request->session()->put('active_hotel_id', $activeHotelId);
     }
-    
+
     // Ensure hotel ID is in cookie (for Render stateless deployment)
     queueActiveHotelCookie($activeHotelId);
 
-    return Inertia::render('Auth/AdminLogin');
+    return Inertia::render('Auth/AdminLogin', [
+        'activeHotelId' => $activeHotelId,
+    ]);
 })->name('auth.admin');
 Route::get('/auth/staff', function (Request $request) {
     $currentUser = $request->user();
@@ -275,11 +278,13 @@ Route::get('/auth/staff', function (Request $request) {
     if (! $request->session()->has('active_hotel_id')) {
         $request->session()->put('active_hotel_id', $activeHotelId);
     }
-    
+
     // Ensure hotel ID is in cookie (for Render stateless deployment)
     queueActiveHotelCookie($activeHotelId);
 
-    return Inertia::render('Auth/StaffLogin');
+    return Inertia::render('Auth/StaffLogin', [
+        'activeHotelId' => $activeHotelId,
+    ]);
 })->name('auth.staff');
 Route::get('/auth/guest', function (Request $request) {
     $activeHotelId = (string) ($request->session()->get('active_hotel_id')
@@ -394,7 +399,7 @@ Route::middleware(['auth', 'role:admin'])->group(function (): void {
 
     Route::get('/admin/dashboard', function (Request $request) {
         $user = $request->user();
-        \Illuminate\Support\Facades\Log::info('Admin dashboard request', [
+        Log::info('Admin dashboard request', [
             'auth_check' => Auth::check(),
             'user_id' => (string) ($user?->id ?? ''),
             'role' => (string) ($user?->role?->value ?? $user?->role ?? ''),

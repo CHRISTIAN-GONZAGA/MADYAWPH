@@ -16,9 +16,7 @@ use Inertia\Response;
 
 class AuthController extends Controller
 {
-    public function __construct(private readonly SmsService $smsService)
-    {
-    }
+    public function __construct(private readonly SmsService $smsService) {}
 
     public function showLogin(): Response
     {
@@ -35,66 +33,71 @@ class AuthController extends Controller
             'email' => ['required_without:username', 'email', 'max:255'],
             'password' => ['required', 'string'],
         ]);
+
+        $role = (string) ($validated['role'] ?? '');
+        $identifier = (string) ($validated['username'] ?? $validated['email'] ?? '');
+        $identifierField = filled($validated['username']) ? 'name' : 'email';
+
+        /** @var User|null $user */
+        $user = User::withoutGlobalScopes()
+            ->where($identifierField, $identifier)
+            ->first();
+
+        if (! $user) {
+            return back()->withErrors([
+                'username' => 'These credentials do not match our records.',
+            ])->onlyInput('username', 'email');
+        }
+
+        $userRole = (string) ($user->role?->value ?? $user->role ?? '');
+        if ($userRole !== $role) {
+            return back()->withErrors([
+                'username' => 'Use the login page that matches this account (admin or staff).',
+            ])->onlyInput('username', 'email');
+        }
+
         $activeHotelId = (string) ($request->session()->get('active_hotel_id')
             ?? $request->cookie('active_hotel_id')
             ?? $request->input('hotel_id')
             ?? $request->query('hotel')
             ?? '');
-        $role = (string) ($validated['role'] ?? '');
-        $identifier = (string) ($validated['username'] ?? $validated['email'] ?? '');
-        $identifierField = filled($validated['username']) ? 'name' : 'email';
+
+        $userHotelId = (string) ($user->hotel_id ?? '');
 
         if ($activeHotelId === '') {
-            $candidate = User::withoutGlobalScopes()
-                ->where($identifierField, $identifier)
-                ->where('role', $role)
-                ->first();
-            $activeHotelId = (string) ($candidate?->hotel_id ?? '');
+            $activeHotelId = $userHotelId;
         }
+
         if ($activeHotelId === '') {
             return redirect()->route('auth.hotel')->withErrors([
                 'username' => 'Sign in to your hotel first.',
             ]);
         }
 
-        if (! $request->session()->has('active_hotel_id')) {
-            $request->session()->put('active_hotel_id', $activeHotelId);
-        }
-
-        $attemptCredentials = [
-            $identifierField => $identifier,
-            'password' => $validated['password'],
-            'role' => $role,
-            'hotel_id' => $activeHotelId,
-        ];
-
-        if (! Auth::attempt($attemptCredentials, true)) {
-            // Recover when credentials match but attempt failed (e.g. stale hotel_id on user record).
-            $account = User::withoutGlobalScopes()
-                ->where($identifierField, $identifier)
-                ->where('role', $role)
-                ->first();
-
-            if ($account && Hash::check($validated['password'], (string) $account->password)) {
-                Auth::login($account, true);
-                $activeHotelId = (string) $account->hotel_id;
-                $request->session()->put('active_hotel_id', $activeHotelId);
-            } else {
-                return back()->withErrors([
-                    'username' => 'Credentials do not match your current hotel.',
-                ])->onlyInput('username', 'email');
-            }
-        }
-
-        if (! Auth::check()) {
+        if ($userHotelId !== $activeHotelId) {
             return back()->withErrors([
-                'username' => 'Credentials do not match your current hotel.',
+                'username' => 'This account belongs to another hotel. Open Hotel Access for the correct hotel, then try again.',
             ])->onlyInput('username', 'email');
         }
 
+        if (! Hash::check($validated['password'], $user->getAuthPassword())) {
+            return back()->withErrors([
+                'username' => 'These credentials do not match our records.',
+            ])->onlyInput('username', 'email');
+        }
+
+        Auth::login($user, true);
+
+        $request->session()->put('active_hotel_id', $userHotelId);
+
         $request->session()->regenerate();
+
         $user = $request->user();
-        $request->session()->put('active_hotel_id', (string) $user->hotel_id);
+        if (! $user) {
+            return redirect()->route('auth.hotel')->withErrors([
+                'username' => 'Session could not be started. Please try again.',
+            ]);
+        }
 
         $cookieDomain = $this->normalizeCookieDomain();
         $cookieSecure = config('session.secure');
@@ -225,7 +228,7 @@ class AuthController extends Controller
             $user
         );
 
-        return back()->with('success', "Reset code sent to the hotel number ending in ".substr($hotelContact, -4).'.');
+        return back()->with('success', 'Reset code sent to the hotel number ending in '.substr($hotelContact, -4).'.');
     }
 
     public function resetPasswordWithCode(Request $request): RedirectResponse

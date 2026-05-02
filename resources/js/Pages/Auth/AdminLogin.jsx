@@ -1,4 +1,4 @@
-import { Head, Link, useForm } from '@inertiajs/react';
+import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { motion } from 'motion/react';
 import { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
@@ -7,14 +7,18 @@ import AuthLayout from '../../Layouts/AuthLayout';
 
 export default function AdminLogin() {
     const [showPassword, setShowPassword] = useState(false);
-    const hotelId = typeof window !== 'undefined'
+    const { activeHotelId: activeHotelIdProp = '' } = usePage().props;
+    const hotelFromUrl = typeof window !== 'undefined'
         ? (new URLSearchParams(window.location.search).get('hotel') ?? '')
         : '';
+    const resolvedHotelId = (typeof activeHotelIdProp === 'string' && activeHotelIdProp !== '')
+        ? activeHotelIdProp
+        : hotelFromUrl;
     const { data, setData, post, processing, errors } = useForm({
         username: '',
         password: '',
         role: 'admin',
-        hotel_id: hotelId,
+        hotel_id: resolvedHotelId,
     });
 
     async function ensureCsrfCookie() {
