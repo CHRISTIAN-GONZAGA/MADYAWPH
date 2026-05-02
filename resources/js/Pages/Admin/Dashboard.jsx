@@ -6,8 +6,9 @@ import AdminLayout from '../../Layouts/AdminLayout';
 import RoomManagement from '../../Components/Admin/RoomManagement';
 import AmenityRequestList from '../../Components/Admin/AmenityRequestList';
 import QuickActions from '../../Components/Admin/QuickActions';
+import CreditOverview from '../../Components/Admin/CreditOverview';
 import BackButton from '../../Components/BackButton';
-import { Bell, Activity, MessageCircle, ClipboardList, BookOpenText, Users, ShieldAlert, BarChart3, Eye, EyeOff } from 'lucide-react';
+import { Bell, Activity, MessageCircle, ClipboardList, BookOpenText, Users, ShieldAlert, BarChart3, Eye, EyeOff, CreditCard } from 'lucide-react';
 
 export default function Dashboard({ auth, rooms = [], credits = null, amenityClaims = [], tasks = [], staff = [], categories = [], activityLogs = [], guestMessages = [], theme = null, reservations = [], reminders = [], reviews = [], transfers = [] }) {
     const [activeTab, setActiveTab] = useState('overview');
@@ -91,6 +92,7 @@ export default function Dashboard({ auth, rooms = [], credits = null, amenityCla
                             { id: 'logs', label: 'Logs', icon: BookOpenText },
                             { id: 'staff', label: 'Staff', icon: Users },
                             { id: 'setup', label: 'Setup', icon: BarChart3 },
+                            { id: 'credits', label: 'Credits', icon: CreditCard },
                             { id: 'sos', label: 'SOS', icon: ShieldAlert },
                             { id: 'sales', label: 'Sales', icon: BarChart3 },
                         ].map((tab) => (
@@ -152,9 +154,13 @@ export default function Dashboard({ auth, rooms = [], credits = null, amenityCla
                                                     form.append('guest_name', message.guest_name ?? 'Guest');
                                                     form.append('message', payload.text?.trim() || 'Photo reply');
                                                     if (payload.file) form.append('image_file', payload.file);
-                                                    await axios.post('/admin/chat/reply', form, { headers: { 'Content-Type': 'multipart/form-data' } });
-                                                    setReplyByMessage((prev) => ({ ...prev, [message.id]: { text: '', file: null } }));
-                                                    router.reload({ only: ['guestMessages', 'activityLogs'] });
+                                                    try {
+                                                        await axios.post('/admin/chat/reply', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+                                                        setReplyByMessage((prev) => ({ ...prev, [message.id]: { text: '', file: null } }));
+                                                        router.reload({ only: ['guestMessages', 'activityLogs'] });
+                                                    } catch (error) {
+                                                        alert(error?.response?.data?.message ?? 'Could not send reply.');
+                                                    }
                                                 }}
                                             >
                                                 Reply
@@ -257,18 +263,32 @@ export default function Dashboard({ auth, rooms = [], credits = null, amenityCla
                     </section>
                 )}
 
+                {activeTab === 'credits' && (
+                    <section className="bg-card border border-border rounded-2xl p-5">
+                        <h3 className="font-serif text-xl mb-4">Credits &amp; billing balance</h3>
+                        <CreditOverview credits={credits} />
+                    </section>
+                )}
+
                 {activeTab === 'setup' && (
                     <section className="bg-card border border-border rounded-2xl p-5 space-y-5">
                         <h3 className="font-serif text-xl">Hotel Setup</h3>
                         <div className="grid lg:grid-cols-3 gap-4">
                             <form className="border border-border rounded-xl p-3 space-y-2" onSubmit={async (event) => {
                                 event.preventDefault();
-                                await axios.post('/api/room-categories', {
-                                    ...categoryForm,
-                                    default_price: Number(categoryForm.default_price || 0),
-                                });
-                                setCategoryForm({ name: '', description: '', default_price: '' });
-                                router.reload({ only: ['categories'] });
+                                try {
+                                    await axios.post('/api/room-categories', {
+                                        ...categoryForm,
+                                        default_price: Number(categoryForm.default_price || 0),
+                                    });
+                                    setCategoryForm({ name: '', description: '', default_price: '' });
+                                    router.reload({ only: ['categories'] });
+                                } catch (error) {
+                                    const msg = error?.response?.data?.message
+                                        ?? (error?.response?.data?.errors && Object.values(error.response.data.errors).flat().join(' '))
+                                        ?? 'Could not save category.';
+                                    alert(msg);
+                                }
                             }}>
                                 <p className="font-medium text-sm">Add Category</p>
                                 <input className="w-full border border-border rounded-lg px-2 py-1 text-sm" placeholder="Category name" value={categoryForm.name} onChange={(event) => setCategoryForm((prev) => ({ ...prev, name: event.target.value }))} required />
@@ -278,13 +298,20 @@ export default function Dashboard({ auth, rooms = [], credits = null, amenityCla
                             </form>
                             <form className="border border-border rounded-xl p-3 space-y-2" onSubmit={async (event) => {
                                 event.preventDefault();
-                                await axios.post('/api/rooms', {
-                                    ...roomForm,
-                                    price_per_night: Number(roomForm.price_per_night || 0),
-                                    status: 'available',
-                                });
-                                setRoomForm({ category_id: '', display_name: '', room_number: '', room_type: 'Single', price_per_night: '' });
-                                router.reload({ only: ['rooms'] });
+                                try {
+                                    await axios.post('/api/rooms', {
+                                        ...roomForm,
+                                        price_per_night: Number(roomForm.price_per_night || 0),
+                                        status: 'available',
+                                    });
+                                    setRoomForm({ category_id: '', display_name: '', room_number: '', room_type: 'Single', price_per_night: '' });
+                                    router.reload({ only: ['rooms'] });
+                                } catch (error) {
+                                    const msg = error?.response?.data?.message
+                                        ?? (error?.response?.data?.errors && Object.values(error.response.data.errors).flat().join(' '))
+                                        ?? 'Could not save room.';
+                                    alert(msg);
+                                }
                             }}>
                                 <p className="font-medium text-sm">Add Room</p>
                                 <select className="w-full border border-border rounded-lg px-2 py-1 text-sm bg-background" value={roomForm.category_id} onChange={(event) => setRoomForm((prev) => ({ ...prev, category_id: event.target.value }))} required>
@@ -304,9 +331,16 @@ export default function Dashboard({ auth, rooms = [], credits = null, amenityCla
                             </form>
                             <form className="border border-border rounded-xl p-3 space-y-2" onSubmit={async (event) => {
                                 event.preventDefault();
-                                await axios.post('/api/staff', staffForm);
-                                setStaffForm({ name: '', role: 'receptionist', username: '', password: '' });
-                                router.reload({ only: ['staff'] });
+                                try {
+                                    await axios.post('/api/staff', staffForm);
+                                    setStaffForm({ name: '', role: 'receptionist', username: '', password: '' });
+                                    router.reload({ only: ['staff'] });
+                                } catch (error) {
+                                    const msg = error?.response?.data?.message
+                                        ?? (error?.response?.data?.errors && Object.values(error.response.data.errors).flat().join(' '))
+                                        ?? 'Could not create staff.';
+                                    alert(msg);
+                                }
                             }}>
                                 <p className="font-medium text-sm">Create Staff</p>
                                 <input className="w-full border border-border rounded-lg px-2 py-1 text-sm" placeholder="Staff name" value={staffForm.name} onChange={(event) => setStaffForm((prev) => ({ ...prev, name: event.target.value }))} required />
@@ -327,17 +361,25 @@ export default function Dashboard({ auth, rooms = [], credits = null, amenityCla
                             </form>
                             <form className="border border-border rounded-xl p-3 space-y-2" onSubmit={async (event) => {
                                 event.preventDefault();
-                                await axios.post('/admin/password/change', passwordForm);
-                                setPasswordForm({ code: '', new_password: '', new_password_confirmation: '' });
-                                alert('Password updated successfully.');
+                                try {
+                                    await axios.post('/admin/password/change', passwordForm);
+                                    setPasswordForm({ code: '', new_password: '', new_password_confirmation: '' });
+                                    alert('Password updated successfully.');
+                                } catch (error) {
+                                    alert(error?.response?.data?.message ?? 'Could not update password.');
+                                }
                             }}>
                                 <p className="font-medium text-sm">Change Admin Password (SMS verified)</p>
                                 <button
                                     type="button"
                                     className="w-full px-3 py-2 rounded-lg border border-border text-sm"
                                     onClick={async () => {
-                                        await axios.post('/admin/password/send-code');
-                                        alert('Verification code sent to hotel contact number.');
+                                        try {
+                                            await axios.post('/admin/password/send-code');
+                                            alert('Verification code sent to hotel contact number.');
+                                        } catch (error) {
+                                            alert(error?.response?.data?.message ?? 'Could not send code.');
+                                        }
                                     }}
                                 >
                                     Send verification code

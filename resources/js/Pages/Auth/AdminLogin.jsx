@@ -1,4 +1,4 @@
-import { Head, Link, useForm, usePage } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import { motion } from 'motion/react';
 import { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
@@ -7,29 +7,17 @@ import AuthLayout from '../../Layouts/AuthLayout';
 
 export default function AdminLogin() {
     const [showPassword, setShowPassword] = useState(false);
-    const { activeHotelId: activeHotelIdProp = '' } = usePage().props;
+    const [forgotLinkUsername, setForgotLinkUsername] = useState('');
+    const { activeHotelId: activeHotelIdProp = '', errors: pageErrors = {} } = usePage().props;
     const hotelFromUrl = typeof window !== 'undefined'
         ? (new URLSearchParams(window.location.search).get('hotel') ?? '')
         : '';
     const resolvedHotelId = (typeof activeHotelIdProp === 'string' && activeHotelIdProp !== '')
         ? activeHotelIdProp
         : hotelFromUrl;
-    const { data, setData, post, processing, errors } = useForm({
-        username: '',
-        password: '',
-        role: 'admin',
-        hotel_id: resolvedHotelId,
-    });
 
-    async function ensureCsrfCookie() {
-        await window.axios.get('/sanctum/csrf-cookie');
-    }
-
-    async function submit(e) {
-        e.preventDefault();
-        await ensureCsrfCookie();
-        post('/login');
-    }
+    const errors = pageErrors && typeof pageErrors === 'object' ? pageErrors : {};
+    const firstError = [...Object.values(errors).flat()][0];
 
     return (
         <AuthLayout title="MADYAW" subtitle="Admin Login">
@@ -37,19 +25,41 @@ export default function AdminLogin() {
             <div className="mb-4">
                 <BackButton fallback="/auth/select" />
             </div>
-            <motion.form method="post" target="_self" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} onSubmit={submit} className="space-y-4">
-                <input className="w-full border border-border rounded-lg px-3 py-2" placeholder="Username" value={data.username} onChange={(e) => setData('username', e.target.value)} />
-                <input type="hidden" name="hotel_id" value={data.hotel_id} readOnly />
+            <motion.form
+                method="post"
+                action="/login"
+                target="_self"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-4"
+            >
+                <input type="hidden" name="role" value="admin" />
+                <input type="hidden" name="hotel_id" value={resolvedHotelId} />
+                <input
+                    className="w-full border border-border rounded-lg px-3 py-2"
+                    name="username"
+                    placeholder="Username"
+                    autoComplete="username"
+                    required
+                    onChange={(e) => setForgotLinkUsername(e.target.value)}
+                />
                 <div className="relative">
-                    <input className="w-full border border-border rounded-lg px-3 py-2 pr-10" type={showPassword ? 'text' : 'password'} placeholder="Password" value={data.password} onChange={(e) => setData('password', e.target.value)} />
+                    <input
+                        className="w-full border border-border rounded-lg px-3 py-2 pr-10"
+                        name="password"
+                        type={showPassword ? 'text' : 'password'}
+                        placeholder="Password"
+                        autoComplete="current-password"
+                        required
+                    />
                     <button type="button" onClick={() => setShowPassword((prev) => !prev)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground">
                         {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                 </div>
-                {Object.keys(errors).length > 0 && <p className="text-sm text-destructive">{Object.values(errors)[0]}</p>}
-                <Link href={`/auth/forgot-password?role=admin&username=${encodeURIComponent(data.username || '')}${data.hotel_id ? `&hotel=${encodeURIComponent(data.hotel_id)}` : ''}`} className="text-xs text-primary hover:underline">Forgot password?</Link>
-                <button type="submit" disabled={processing} className="w-full bg-primary text-primary-foreground rounded-full py-2.5">
-                    {processing ? 'Signing in...' : 'Sign in'}
+                {firstError ? <p className="text-sm text-destructive">{String(firstError)}</p> : null}
+                <Link href={`/auth/forgot-password?role=admin&username=${encodeURIComponent(forgotLinkUsername || '')}${resolvedHotelId ? `&hotel=${encodeURIComponent(resolvedHotelId)}` : ''}`} className="text-xs text-primary hover:underline">Forgot password?</Link>
+                <button type="submit" className="w-full bg-primary text-primary-foreground rounded-full py-2.5">
+                    Sign in
                 </button>
             </motion.form>
         </AuthLayout>

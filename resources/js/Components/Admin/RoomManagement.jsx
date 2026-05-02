@@ -49,18 +49,22 @@ export default function RoomManagement({ rooms = [], allRooms = [] }) {
             alert('Enter a valid amount.');
             return;
         }
-        await axios.post('/api/billing/charges', {
-            booking_id: selectedRoom.latest_booking.id,
-            room_id: chargeRoomId || selectedRoom.id,
-            type,
-            label: chargeReason || type,
-            amount,
-            quantity: 1,
-            is_manual: true,
-        });
-        setChargeAmount('');
-        setChargeReason('');
-        router.reload({ only: ['rooms', 'activityLogs'] });
+        try {
+            await axios.post('/api/billing/charges', {
+                booking_id: selectedRoom.latest_booking.id,
+                room_id: chargeRoomId || selectedRoom.id,
+                type,
+                label: chargeReason || type,
+                amount,
+                quantity: 1,
+                is_manual: true,
+            });
+            setChargeAmount('');
+            setChargeReason('');
+            router.reload({ only: ['rooms', 'activityLogs'] });
+        } catch (error) {
+            alert(error?.response?.data?.message ?? 'Could not add charge.');
+        }
     }
 
     async function createReservation() {
@@ -68,14 +72,22 @@ export default function RoomManagement({ rooms = [], allRooms = [] }) {
             alert('Pick a reservation date.');
             return;
         }
-        await axios.post('/api/reservations/external', {
-            source: 'website-preconnect',
-            external_reference: `WEB-${Date.now()}`,
-            guest_name: 'Website Guest',
-            check_in_date: reservationDate,
-            check_out_date: reservationDate,
-        });
-        alert('Reservation placeholder captured for website sync.');
+        const checkIn = new Date(`${reservationDate}T12:00:00`);
+        const checkOut = new Date(checkIn);
+        checkOut.setDate(checkOut.getDate() + 1);
+        const outStr = checkOut.toISOString().slice(0, 10);
+        try {
+            await axios.post('/api/reservations/external', {
+                source: 'website-preconnect',
+                external_reference: `WEB-${Date.now()}`,
+                guest_name: 'Website Guest',
+                check_in_date: reservationDate,
+                check_out_date: outStr,
+            });
+            alert('Reservation placeholder captured for website sync.');
+        } catch (error) {
+            alert(error?.response?.data?.message ?? 'Could not save reservation.');
+        }
     }
 
     async function transferRoom() {
@@ -83,15 +95,19 @@ export default function RoomManagement({ rooms = [], allRooms = [] }) {
             alert('Choose destination room first.');
             return;
         }
-        await axios.post('/api/room-transfers', {
-            booking_id: selectedRoom.latest_booking.id,
-            from_room_id: selectedRoom.id,
-            to_room_id: transferRoomId,
-            reason: 'Admin transfer',
-        });
-        router.reload({ only: ['rooms', 'activityLogs', 'transfers'] });
-        setTransferRoomId('');
-        setSelectedRoom(null);
+        try {
+            await axios.post('/api/room-transfers', {
+                booking_id: selectedRoom.latest_booking.id,
+                from_room_id: selectedRoom.id,
+                to_room_id: transferRoomId,
+                reason: 'Admin transfer',
+            });
+            router.reload({ only: ['rooms', 'activityLogs', 'transfers'] });
+            setTransferRoomId('');
+            setSelectedRoom(null);
+        } catch (error) {
+            alert(error?.response?.data?.message ?? 'Could not transfer guest.');
+        }
     }
 
     return (

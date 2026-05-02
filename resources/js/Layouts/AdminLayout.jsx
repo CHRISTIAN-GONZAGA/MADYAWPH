@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, router } from '@inertiajs/react';
 import axios from 'axios';
 import { CreditCard, LogOut, Palette, RotateCcw, X } from 'lucide-react';
+import CreditOverview from '../Components/Admin/CreditOverview';
 import { applyThemeColor } from '../Utils/theme';
 
 const DEFAULT_THEME = '#2563eb';
@@ -10,8 +11,6 @@ export default function AdminLayout({ user, children, credits = null, theme = nu
     const [showCreditsModal, setShowCreditsModal] = useState(false);
     const [showLogoutModal, setShowLogoutModal] = useState(false);
     const [showThemePanel, setShowThemePanel] = useState(false);
-    const [depositAmount, setDepositAmount] = useState('');
-    const [depositMethod, setDepositMethod] = useState('gcash');
     const [scope, setScope] = useState('user');
     const initialColor = theme?.userThemeColor ?? theme?.hotelThemeColor ?? DEFAULT_THEME;
     const [themeColor, setThemeColor] = useState(initialColor);
@@ -19,24 +18,6 @@ export default function AdminLayout({ user, children, credits = null, theme = nu
     useEffect(() => {
         applyThemeColor(initialColor);
     }, [initialColor]);
-
-    const balance = credits?.currentCredits ?? 0;
-
-    async function rechargeCredits() {
-        const amount = Number(depositAmount);
-        if (!Number.isFinite(amount) || amount <= 0) {
-            alert('Enter a valid deposit amount.');
-            return;
-        }
-        const { data } = await axios.post('/admin/credits/recharge', { amount, method: depositMethod });
-        if (data?.redirect_url) {
-            window.location.href = data.redirect_url;
-            return;
-        }
-        setShowCreditsModal(false);
-        setDepositAmount('');
-        router.reload({ only: ['credits'] });
-    }
 
     async function persistTheme(nextColor) {
         await axios.post('/admin/theme', { theme_color: nextColor, scope });
@@ -69,19 +50,15 @@ export default function AdminLayout({ user, children, credits = null, theme = nu
             <main className="max-w-7xl mx-auto px-4 py-6">{children}</main>
 
             {showCreditsModal && (
-                <div className="fixed inset-0 z-50 bg-black/40 p-4 flex items-center justify-center" onClick={() => setShowCreditsModal(false)}>
-                    <div className="w-full max-w-md rounded-2xl border border-border bg-card p-5 space-y-3" onClick={(event) => event.stopPropagation()}>
-                        <div className="flex items-center justify-between">
+                <div className="fixed inset-0 z-50 bg-black/40 p-4 flex items-center justify-center overflow-y-auto" onClick={() => setShowCreditsModal(false)}>
+                    <div className="my-4 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-lg" onClick={(event) => event.stopPropagation()}>
+                        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-5 py-4">
                             <h3 className="font-serif text-xl">Credits</h3>
-                            <button type="button" onClick={() => setShowCreditsModal(false)}><X className="w-4 h-4" /></button>
+                            <button type="button" aria-label="Close credits" onClick={() => setShowCreditsModal(false)}><X className="w-4 h-4" /></button>
                         </div>
-                        <p className="text-sm text-muted-foreground">Current balance: <span className="font-semibold text-foreground">PHP {Number(balance).toLocaleString()}</span></p>
-                        <select value={depositMethod} onChange={(event) => setDepositMethod(event.target.value)} className="w-full border border-border rounded-lg px-3 py-2 bg-background text-sm">
-                            <option value="gcash">GCash (PayMongo)</option>
-                            <option value="paymaya">PayMaya (PayMongo)</option>
-                        </select>
-                        <input value={depositAmount} onChange={(event) => setDepositAmount(event.target.value)} type="number" min="1" className="w-full border border-border rounded-lg px-3 py-2 bg-background" placeholder="Custom deposit amount" />
-                        <button type="button" onClick={rechargeCredits} className="w-full px-3 py-2 rounded-lg bg-primary text-primary-foreground">Recharge</button>
+                        <div className="p-5">
+                            <CreditOverview credits={credits} />
+                        </div>
                     </div>
                 </div>
             )}

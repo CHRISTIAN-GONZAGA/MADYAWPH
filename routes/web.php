@@ -317,7 +317,9 @@ Route::get('/auth/guest', function (Request $request) {
         $request->session()->put('active_hotel_id', $activeHotelId);
     }
 
-    return Inertia::render('Auth/GuestRoomLogin');
+    return Inertia::render('Auth/GuestRoomLogin', [
+        'activeHotelId' => $activeHotelId,
+    ]);
 })->name('auth.guest');
 Route::post('/auth/guest/login', function (Request $request) {
     $validated = $request->validate([
@@ -580,6 +582,31 @@ Route::middleware(['auth', 'role:admin'])->group(function (): void {
             'transactionId' => $paymentResult['transaction_id'] ?? null,
         ]);
     })->name('admin.credits.recharge');
+
+    Route::patch('/admin/credits/markup', function (Request $request) {
+        $validated = $request->validate([
+            'percentage' => ['required', 'numeric', 'min:0', 'max:100'],
+        ]);
+        $credit = HotelCredit::query()->firstOrCreate(
+            ['hotel_id' => (string) $request->user()->hotel_id],
+            [
+                'current_credits' => 0,
+                'warning_threshold' => 5000,
+                'custom_markup_percentage' => 10,
+                'total_spent' => 0,
+                'transactions' => [],
+            ]
+        );
+        $credit->update([
+            'custom_markup_percentage' => (float) $validated['percentage'],
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'customMarkupPercentage' => (float) $credit->custom_markup_percentage,
+        ]);
+    })->name('admin.credits.markup');
+
     Route::post('/admin/password/send-code', function (Request $request) {
         $hotel = Hotel::withoutGlobalScopes()->find((string) $request->user()->hotel_id);
         $contact = (string) ($hotel?->contact_number ?? '');
