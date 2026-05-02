@@ -1,6 +1,28 @@
 import axios from 'axios';
 import { http } from '@inertiajs/core';
 
+/**
+ * Inertia shows a modal + iframe for non-Inertia HTML responses. Prevent that and
+ * use a normal browser navigation instead (avoids the "small window" overlay).
+ */
+if (typeof document !== 'undefined') {
+    document.addEventListener(
+        'inertia:httpException',
+        (event) => {
+            event.preventDefault();
+            const response = event.detail?.response;
+            const headers = response?.headers ?? {};
+            const loc = headers.location ?? headers.Location;
+            if (typeof loc === 'string' && loc.length > 0) {
+                window.location.assign(loc);
+            } else {
+                window.location.reload();
+            }
+        },
+        true,
+    );
+}
+
 window.axios = axios;
 
 window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';

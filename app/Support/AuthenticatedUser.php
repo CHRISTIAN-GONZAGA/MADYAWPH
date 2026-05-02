@@ -6,15 +6,13 @@ use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 
 /**
- * Session login uses auth:admin / auth:staff guards; default web is often empty.
+ * Single-session guard (`web`) for staff/admin UI routes.
  */
 final class AuthenticatedUser
 {
     public static function user(): ?User
     {
-        $user = Auth::guard('admin')->user()
-            ?? Auth::guard('staff')->user()
-            ?? Auth::guard('web')->user();
+        $user = Auth::user();
 
         return $user instanceof User ? $user : null;
     }

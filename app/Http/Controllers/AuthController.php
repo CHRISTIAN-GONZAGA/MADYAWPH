@@ -41,14 +41,13 @@ class AuthController extends Controller
             ?? $request->query('hotel')
             ?? '');
         $role = (string) ($validated['role'] ?? '');
-        $guard = $role === UserRole::ADMIN->value ? 'admin' : 'staff';
         $identifier = (string) ($validated['username'] ?? $validated['email'] ?? '');
         $identifierField = filled($validated['username']) ? 'name' : 'email';
 
-        if ($activeHotelId === '' && $role === 'admin') {
+        if ($activeHotelId === '') {
             $candidate = User::withoutGlobalScopes()
                 ->where($identifierField, $identifier)
-                ->where('role', 'admin')
+                ->where('role', $role)
                 ->first();
             $activeHotelId = (string) ($candidate?->hotel_id ?? '');
         }
@@ -69,24 +68,17 @@ class AuthController extends Controller
             'hotel_id' => $activeHotelId,
         ];
 
-        if (! Auth::guard($guard)->attempt($attemptCredentials, true)) {
-            // Recover from stale hotel context by validating against the account's
-            // actual hotel for admin sign-ins.
-            if ($role === UserRole::ADMIN->value) {
-                $account = User::withoutGlobalScopes()
-                    ->where($identifierField, $identifier)
-                    ->where('role', $role)
-                    ->first();
+        if (! Auth::attempt($attemptCredentials, true)) {
+            // Recover when credentials match but attempt failed (e.g. stale hotel_id on user record).
+            $account = User::withoutGlobalScopes()
+                ->where($identifierField, $identifier)
+                ->where('role', $role)
+                ->first();
 
-                if ($account && Hash::check($validated['password'], (string) $account->password)) {
-                    Auth::guard($guard)->login($account, true);
-                    $activeHotelId = (string) $account->hotel_id;
-                    $request->session()->put('active_hotel_id', $activeHotelId);
-                } else {
-                    return back()->withErrors([
-                        'username' => 'Credentials do not match your current hotel.',
-                    ])->onlyInput('username', 'email');
-                }
+            if ($account && Hash::check($validated['password'], (string) $account->password)) {
+                Auth::login($account, true);
+                $activeHotelId = (string) $account->hotel_id;
+                $request->session()->put('active_hotel_id', $activeHotelId);
             } else {
                 return back()->withErrors([
                     'username' => 'Credentials do not match your current hotel.',
@@ -94,14 +86,14 @@ class AuthController extends Controller
             }
         }
 
-        if (! Auth::guard($guard)->check()) {
+        if (! Auth::check()) {
             return back()->withErrors([
                 'username' => 'Credentials do not match your current hotel.',
             ])->onlyInput('username', 'email');
         }
 
         $request->session()->regenerate();
-        $user = Auth::guard($guard)->user();
+        $user = $request->user();
         $request->session()->put('active_hotel_id', (string) $user->hotel_id);
 
         $cookieDomain = $this->normalizeCookieDomain();
@@ -145,8 +137,7 @@ class AuthController extends Controller
         ));
 
         Log::info('Auth login success', [
-            'auth_check' => Auth::guard($guard)->check(),
-            'guard' => $guard,
+            'auth_check' => Auth::check(),
             'user_id' => (string) ($user?->id ?? ''),
             'role' => $role,
             'hotel_id' => (string) ($user?->hotel_id ?? ''),
@@ -155,7 +146,8 @@ class AuthController extends Controller
 
         $target = $role === UserRole::ADMIN->value ? '/admin/dashboard' : '/staff/dashboard';
 
-        return redirect()->intended($target);
+        // Avoid sending users to a stale session "intended" URL (often points back at auth flows).
+        return redirect()->to($target);
     }
 
     private function normalizeCookieDomain(): ?string
@@ -171,9 +163,7 @@ class AuthController extends Controller
 
     public function logout(Request $request): RedirectResponse
     {
-        Auth::guard('admin')->logout();
-        Auth::guard('staff')->logout();
-        Auth::guard('web')->logout();
+        Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
         cookie()->queue(cookie()->forget('active_hotel_id'));

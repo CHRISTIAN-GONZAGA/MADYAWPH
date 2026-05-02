@@ -23,9 +23,8 @@ class RestoreAuthFromCookie
             $request->session()->put('active_hotel_id', $hotelIdFromCookie);
         }
 
-        // Restore auth from cookies when session is lost (Render ephemeral storage).
-        // Routes use auth:admin / auth:staff — must log into the matching guard, not default web.
-        if (! Auth::guard('admin')->check() && ! Auth::guard('staff')->check()) {
+        // Restore auth from cookies when session is lost (Render ephemeral storage)
+        if (! Auth::check()) {
             $userId = (string) ($request->cookie('auth_uid') ?? '');
             $role = (string) ($request->cookie('auth_role') ?? '');
 
@@ -34,8 +33,7 @@ class RestoreAuthFromCookie
                 $userRole = (string) ($user?->role?->value ?? $user?->role ?? '');
 
                 if ($user && $userRole === $role) {
-                    $guard = $role === 'admin' ? 'admin' : 'staff';
-                    Auth::guard($guard)->login($user);
+                    Auth::login($user);
                     if (! $request->session()->has('active_hotel_id')) {
                         $request->session()->put('active_hotel_id', (string) $user->hotel_id);
                     }
