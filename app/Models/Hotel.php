@@ -14,6 +14,8 @@ class Hotel extends Model
         'name',
         'location',
         'contact_number',
+        'access_username',
+        'access_password',
     ];
 
     public function users(): HasMany

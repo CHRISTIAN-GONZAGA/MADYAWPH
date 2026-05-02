@@ -4,6 +4,7 @@ use App\Enums\BookingSource;
 use App\Enums\BookingStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\RoomStatus;
+use App\Enums\UserRole;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\PayMongoWebhookController;
@@ -98,14 +99,6 @@ Route::post('/auth/forgot-password/reset', [AuthController::class, 'resetPasswor
     ->middleware(['same.origin', 'throttle:8,1'])
     ->name('auth.password.reset');
 Route::post('/auth/hotel/login', function (Request $request) {
-    $appUrl = rtrim((string) config('app.url'), '/');
-    $origin = (string) ($request->headers->get('origin') ?? '');
-    $referer = (string) ($request->headers->get('referer') ?? '');
-    if (($origin !== '' && ! str_starts_with($origin, $appUrl))
-        || ($referer !== '' && ! str_starts_with($referer, $appUrl))) {
-        abort(403, 'Invalid request origin.');
-    }
-
     $validated = $request->validate([
         'username' => ['required', 'string', 'max:255'],
         'password' => ['required', 'string', 'min:6', 'max:64'],
@@ -114,37 +107,38 @@ Route::post('/auth/hotel/login', function (Request $request) {
     $hotel = Hotel::withoutGlobalScopes()
         ->where('access_username', $validated['username'])
         ->first();
-    if ($hotel && Hash::check($validated['password'], (string) ($hotel->access_password ?? ''))) {
-        $request->session()->regenerate();
-        $request->session()->put('active_hotel_id', (string) $hotel->id);
-        $request->session()->regenerateToken();
-        queueActiveHotelCookie((string) $hotel->id);
 
-        return redirect()->route('auth.category', ['hotel' => (string) $hotel->id]);
+    if ($hotel && filled($hotel->access_password ?? null)) {
+        if (Hash::check($validated['password'], (string) $hotel->access_password)) {
+            $request->session()->regenerate();
+            $request->session()->put('active_hotel_id', (string) $hotel->id);
+            $request->session()->regenerateToken();
+            queueActiveHotelCookie((string) $hotel->id);
+
+            return redirect()->route('auth.category', ['hotel' => (string) $hotel->id]);
+        }
     }
+
+    // Seeded hotels often have no access_* fields; accept hotel admin username/password instead.
     $legacyAdmin = User::withoutGlobalScopes()
         ->where('name', $validated['username'])
-        ->where('role', 'admin')
         ->first();
-    if (! $legacyAdmin || ! Hash::check($validated['password'], (string) $legacyAdmin->password)) {
-        return back()->withErrors(['username' => 'Invalid hotel credentials.'])->withInput();
-    }
-    $request->session()->regenerate();
-    $request->session()->put('active_hotel_id', (string) $legacyAdmin->hotel_id);
-    $request->session()->regenerateToken();
-    queueActiveHotelCookie((string) $legacyAdmin->hotel_id);
 
-    return redirect()->route('auth.category', ['hotel' => (string) $legacyAdmin->hotel_id]);
+    $legacyRole = (string) ($legacyAdmin?->role?->value ?? $legacyAdmin?->role ?? '');
+    if ($legacyAdmin
+        && $legacyRole === UserRole::ADMIN->value
+        && Hash::check($validated['password'], $legacyAdmin->getAuthPassword())) {
+        $request->session()->regenerate();
+        $request->session()->put('active_hotel_id', (string) $legacyAdmin->hotel_id);
+        $request->session()->regenerateToken();
+        queueActiveHotelCookie((string) $legacyAdmin->hotel_id);
+
+        return redirect()->route('auth.category', ['hotel' => (string) $legacyAdmin->hotel_id]);
+    }
+
+    return back()->withErrors(['username' => 'Invalid hotel credentials.'])->withInput();
 })->middleware(['same.origin', 'throttle:8,1'])->name('auth.hotel.login');
 Route::post('/auth/hotel/register', function (Request $request) {
-    $appUrl = rtrim((string) config('app.url'), '/');
-    $origin = (string) ($request->headers->get('origin') ?? '');
-    $referer = (string) ($request->headers->get('referer') ?? '');
-    if (($origin !== '' && ! str_starts_with($origin, $appUrl))
-        || ($referer !== '' && ! str_starts_with($referer, $appUrl))) {
-        abort(403, 'Invalid request origin.');
-    }
-
     $validated = $request->validate([
         'username' => ['required', 'string', 'max:255', 'unique:users,name'],
         'password' => ['required', 'string', 'min:6', 'max:64', 'confirmed'],

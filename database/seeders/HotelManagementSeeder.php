@@ -50,8 +50,11 @@ class HotelManagementSeeder extends Seeder
         ];
 
         foreach ($hotels as $index => $hotelData) {
-            $hotel = Hotel::create($hotelData);
             $hotelNumber = $index + 1;
+            $hotel = Hotel::create(array_merge($hotelData, [
+                'access_username' => "admin{$hotelNumber}",
+                'access_password' => Hash::make('admin123'),
+            ]));
 
             $admin = User::create([
                 'hotel_id' => $hotel->id,
