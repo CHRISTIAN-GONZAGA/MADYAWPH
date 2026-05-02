@@ -1,4 +1,4 @@
-import { Head, Link, useForm } from '@inertiajs/react';
+import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import { motion } from 'motion/react';
 import { Eye, EyeOff } from 'lucide-react';
@@ -6,13 +6,11 @@ import AuthLayout from '../../Layouts/AuthLayout';
 
 export default function HotelAccess() {
     const [mode, setMode] = useState('signin');
+    const [forgotLinkUsername, setForgotLinkUsername] = useState('');
     const [showSignInPassword, setShowSignInPassword] = useState(false);
     const [showSignUpPassword, setShowSignUpPassword] = useState(false);
     const [showSignUpConfirmPassword, setShowSignUpConfirmPassword] = useState(false);
-    const signInForm = useForm({
-        username: '',
-        password: '',
-    });
+    const { errors: pageErrors } = usePage().props;
     const signUpForm = useForm({
         username: '',
         password: '',
@@ -27,19 +25,14 @@ export default function HotelAccess() {
         await window.axios.get('/sanctum/csrf-cookie');
     }
 
-    async function submitSignIn(event) {
-        event.preventDefault();
-        await ensureCsrfCookie();
-        signInForm.post('/auth/hotel/login');
-    }
-
     async function submitSignUp(event) {
         event.preventDefault();
         await ensureCsrfCookie();
         signUpForm.post('/auth/hotel/register');
     }
 
-    const errors = mode === 'signin' ? signInForm.errors : signUpForm.errors;
+    const signInErrors = pageErrors && typeof pageErrors === 'object' ? pageErrors : {};
+    const errors = mode === 'signin' ? signInErrors : signUpForm.errors;
 
     return (
         <AuthLayout title="MADYAW" subtitle="Hotel Access">
@@ -50,17 +43,39 @@ export default function HotelAccess() {
             </div>
 
             {mode === 'signin' ? (
-                <motion.form method="post" target="_self" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} onSubmit={submitSignIn} className="space-y-4">
-                    <input className="w-full border border-border rounded-lg px-3 py-2" placeholder="Hotel Username" value={signInForm.data.username} onChange={(event) => signInForm.setData('username', event.target.value)} required />
+                <motion.form
+                    method="post"
+                    action="/auth/hotel/login"
+                    target="_self"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="space-y-4"
+                >
+                    <input
+                        className="w-full border border-border rounded-lg px-3 py-2"
+                        name="username"
+                        placeholder="Hotel Username"
+                        autoComplete="username"
+                        defaultValue=""
+                        onChange={(event) => setForgotLinkUsername(event.target.value)}
+                        required
+                    />
                     <div className="relative">
-                        <input className="w-full border border-border rounded-lg px-3 py-2 pr-10" type={showSignInPassword ? 'text' : 'password'} placeholder="Password" value={signInForm.data.password} onChange={(event) => signInForm.setData('password', event.target.value)} required />
+                        <input
+                            className="w-full border border-border rounded-lg px-3 py-2 pr-10"
+                            name="password"
+                            type={showSignInPassword ? 'text' : 'password'}
+                            placeholder="Password"
+                            autoComplete="current-password"
+                            required
+                        />
                         <button type="button" onClick={() => setShowSignInPassword((prev) => !prev)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground">
                             {showSignInPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                         </button>
                     </div>
-                    {Object.keys(errors).length > 0 && <p className="text-sm text-destructive">{Object.values(errors)[0]}</p>}
-                    <Link href={`/auth/forgot-password?role=admin&username=${encodeURIComponent(signInForm.data.username || '')}`} className="text-xs text-primary hover:underline">Forgot password?</Link>
-                    <button type="submit" disabled={signInForm.processing} className="w-full bg-primary text-primary-foreground rounded-full py-2.5">{signInForm.processing ? 'Signing in...' : 'Continue'}</button>
+                    {Object.keys(errors).length > 0 && <p className="text-sm text-destructive">{String([...Object.values(errors).flat()][0] ?? '')}</p>}
+                    <Link href={`/auth/forgot-password?role=admin&username=${encodeURIComponent(forgotLinkUsername || '')}`} className="text-xs text-primary hover:underline">Forgot password?</Link>
+                    <button type="submit" className="w-full bg-primary text-primary-foreground rounded-full py-2.5">Continue</button>
                 </motion.form>
             ) : (
                 <motion.form method="post" target="_self" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} onSubmit={submitSignUp} className="space-y-3">

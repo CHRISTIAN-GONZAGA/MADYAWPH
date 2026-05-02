@@ -12,7 +12,13 @@ if (typeof document !== 'undefined') {
             event.preventDefault();
             const response = event.detail?.response;
             const headers = response?.headers ?? {};
-            const loc = headers.location ?? headers.Location;
+            const headerGet = (name) => {
+                const lower = name.toLowerCase();
+                const key = Object.keys(headers).find((k) => k.toLowerCase() === lower);
+                return key ? headers[key] : undefined;
+            };
+            // 409 external redirects use X-Inertia-Location, not Location — reloading would loop on /auth/hotel.
+            const loc = headerGet('location') ?? headerGet('x-inertia-location');
             if (typeof loc === 'string' && loc.length > 0) {
                 window.location.assign(loc);
             } else {
