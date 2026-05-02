@@ -1,4 +1,4 @@
-import { Head } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import { motion } from 'motion/react';
 import BackButton from '../../Components/BackButton';
 
@@ -27,7 +27,7 @@ export default function CategorySelection({ hotel = null, categories = [] }) {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {categories.map((category, index) => (
                         <motion.div key={category.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }}>
-                            <a href={`/customer/categories/${category.id}/rooms${hotelQuery}`} className="group block bg-card border border-border rounded-xl overflow-hidden hover:border-primary">
+                            <Link href={`/customer/categories/${category.id}/rooms${hotelQuery}`} className="group block bg-card border border-border rounded-xl overflow-hidden hover:border-primary">
                                 <div className="h-36 overflow-hidden">
                                     <img
                                         src={CATEGORY_IMAGES[category.id] ?? CATEGORY_IMAGES.suite}
@@ -39,7 +39,7 @@ export default function CategorySelection({ hotel = null, categories = [] }) {
                                     <p className="font-medium">{category.name}</p>
                                     <p className="text-sm text-muted-foreground">{category.description}</p>
                                 </div>
-                            </a>
+                            </Link>
                         </motion.div>
                     ))}
                     {categories.length === 0 && <p className="text-sm text-muted-foreground">No categories available.</p>}

@@ -1,4 +1,4 @@
-import { Head, useForm } from '@inertiajs/react';
+import { Head, Link, useForm } from '@inertiajs/react';
 import { useState } from 'react';
 import { motion } from 'motion/react';
 import { Eye, EyeOff } from 'lucide-react';
@@ -59,7 +59,7 @@ export default function HotelAccess() {
                         </button>
                     </div>
                     {Object.keys(errors).length > 0 && <p className="text-sm text-destructive">{Object.values(errors)[0]}</p>}
-                    <a href={`/auth/forgot-password?role=admin&username=${encodeURIComponent(signInForm.data.username || '')}`} className="text-xs text-primary hover:underline">Forgot password?</a>
+                    <Link href={`/auth/forgot-password?role=admin&username=${encodeURIComponent(signInForm.data.username || '')}`} className="text-xs text-primary hover:underline">Forgot password?</Link>
                     <button type="submit" disabled={signInForm.processing} className="w-full bg-primary text-primary-foreground rounded-full py-2.5">{signInForm.processing ? 'Signing in...' : 'Continue'}</button>
                 </motion.form>
             ) : (

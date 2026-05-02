@@ -1,17 +1,18 @@
 import { useEffect } from 'react';
+import { router } from '@inertiajs/react';
 import { motion } from 'motion/react';
 
 export default function Welcome() {
     useEffect(() => {
-        const seen = sessionStorage.getItem('hasSeenWelcome');
+        const seen = localStorage.getItem('hasSeenWelcome');
         if (seen === 'true') {
-            window.location.assign('/auth/hotel');
+            router.visit('/auth/hotel');
             return;
         }
 
         const timer = setTimeout(() => {
-            sessionStorage.setItem('hasSeenWelcome', 'true');
-            window.location.assign('/auth/hotel');
+            localStorage.setItem('hasSeenWelcome', 'true');
+            router.visit('/auth/hotel');
         }, 5600);
 
         return () => clearTimeout(timer);

@@ -1,4 +1,4 @@
-import { Head, useForm } from '@inertiajs/react';
+import { Head, Link, useForm } from '@inertiajs/react';
 import { motion } from 'motion/react';
 import { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
@@ -43,7 +43,7 @@ export default function AdminLogin() {
                     </button>
                 </div>
                 {Object.keys(errors).length > 0 && <p className="text-sm text-destructive">{Object.values(errors)[0]}</p>}
-                <a href={`/auth/forgot-password?role=admin&username=${encodeURIComponent(data.username || '')}${data.hotel_id ? `&hotel=${encodeURIComponent(data.hotel_id)}` : ''}`} className="text-xs text-primary hover:underline">Forgot password?</a>
+                <Link href={`/auth/forgot-password?role=admin&username=${encodeURIComponent(data.username || '')}${data.hotel_id ? `&hotel=${encodeURIComponent(data.hotel_id)}` : ''}`} className="text-xs text-primary hover:underline">Forgot password?</Link>
                 <button type="submit" disabled={processing} className="w-full bg-primary text-primary-foreground rounded-full py-2.5">
                     {processing ? 'Signing in...' : 'Sign in'}
                 </button>

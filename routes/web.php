@@ -216,6 +216,12 @@ Route::get('/auth/select', function (Request $request) {
         'activeHotelId' => $activeHotelId,
     ]);
 })->name('auth.category');
+Route::get('/auth/category', function (Request $request) {
+    $query = $request->getQueryString();
+    $suffix = $query !== null && $query !== '' ? '?'.$query : '';
+
+    return redirect('/auth/select'.$suffix, 301);
+});
 Route::get('/auth/admin', function (Request $request) {
     $currentUser = $request->user();
     $currentRole = (string) ($currentUser?->role?->value ?? $currentUser?->role ?? '');

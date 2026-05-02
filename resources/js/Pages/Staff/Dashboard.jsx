@@ -31,7 +31,7 @@ export default function Dashboard({ auth, tasks = [], guestMessages = [], rooms 
         <StaffLayout user={auth?.user}>
             <Head title="Staff Dashboard" />
             <div className="space-y-5">
-                <BackButton fallback="/auth/category" />
+                <BackButton fallback="/auth/select" />
                 <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="rounded-2xl border border-border bg-card p-5">
                     <h2 className="font-serif text-2xl">Staff Dashboard</h2>
                     <p className="text-sm text-muted-foreground mt-1">Manage assigned tasks and update progress in real time.</p>
