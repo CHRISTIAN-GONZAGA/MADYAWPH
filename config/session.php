@@ -10,15 +10,15 @@ return [
     |--------------------------------------------------------------------------
     |
     | This option determines the default session driver that is utilized for
-    | incoming requests. Laravel supports a variety of storage options to
-    | persist session data. Database storage is a great default choice.
+    | incoming requests. With MongoDB-only deployments use `file` or `redis`;
+    | the `database` driver requires a SQL `sessions` table.
     |
     | Supported: "file", "cookie", "database", "memcached",
     |            "redis", "dynamodb", "array"
     |
     */
 
-    'driver' => env('SESSION_DRIVER', 'database'),
+    'driver' => env('SESSION_DRIVER', 'file'),
 
     /*
     |--------------------------------------------------------------------------

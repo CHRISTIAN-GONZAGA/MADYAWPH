@@ -31,7 +31,9 @@ use App\Services\FinancialComputationService;
 use App\Services\PaymentGatewayService;
 use App\Services\SmsService;
 use Carbon\Carbon;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -73,6 +75,24 @@ if (! function_exists('queueActiveHotelCookie')) {
     }
 }
 
+if (! function_exists('redirect_hotel_gate_success')) {
+    /**
+     * Inertia submits via XHR; a plain 302 often applies session cookies after the follow-up GET,
+     * so /auth/select sees no hotel and sends users back to Hotel Access. A 409 with
+     * X-Inertia-Location forces a full browser navigation so the session + cookies stick.
+     */
+    function redirect_hotel_gate_success(Request $request, string $hotelId): RedirectResponse|Response
+    {
+        $target = url('/auth/select?hotel='.rawurlencode($hotelId));
+
+        if ($request->headers->get('X-Inertia')) {
+            return response('', 409)->header('X-Inertia-Location', $target);
+        }
+
+        return redirect()->to($target);
+    }
+}
+
 Route::post('/webhooks/paymongo', [PayMongoWebhookController::class, 'handle'])->name('webhooks.paymongo');
 
 Route::get('/', function () {
@@ -110,12 +130,13 @@ Route::post('/auth/hotel/login', function (Request $request) {
 
     if ($hotel && filled($hotel->access_password ?? null)) {
         if (Hash::check($validated['password'], (string) $hotel->access_password)) {
+            $hid = (string) $hotel->id;
+            $request->session()->put('active_hotel_id', $hid);
             $request->session()->regenerate();
-            $request->session()->put('active_hotel_id', (string) $hotel->id);
             $request->session()->regenerateToken();
-            queueActiveHotelCookie((string) $hotel->id);
+            queueActiveHotelCookie($hid);
 
-            return redirect()->route('auth.category', ['hotel' => (string) $hotel->id]);
+            return redirect_hotel_gate_success($request, $hid);
         }
     }
 
@@ -128,16 +149,17 @@ Route::post('/auth/hotel/login', function (Request $request) {
     if ($legacyAdmin
         && $legacyRole === UserRole::ADMIN->value
         && Hash::check($validated['password'], $legacyAdmin->getAuthPassword())) {
+        $hid = (string) $legacyAdmin->hotel_id;
+        $request->session()->put('active_hotel_id', $hid);
         $request->session()->regenerate();
-        $request->session()->put('active_hotel_id', (string) $legacyAdmin->hotel_id);
         $request->session()->regenerateToken();
-        queueActiveHotelCookie((string) $legacyAdmin->hotel_id);
+        queueActiveHotelCookie($hid);
 
-        return redirect()->route('auth.category', ['hotel' => (string) $legacyAdmin->hotel_id]);
+        return redirect_hotel_gate_success($request, $hid);
     }
 
     return back()->withErrors(['username' => 'Invalid hotel credentials.'])->withInput();
-})->middleware(['same.origin', 'throttle:8,1'])->name('auth.hotel.login');
+})->middleware(['throttle:8,1'])->name('auth.hotel.login');
 Route::post('/auth/hotel/register', function (Request $request) {
     $validated = $request->validate([
         'username' => ['required', 'string', 'max:255', 'unique:users,name'],
@@ -161,7 +183,7 @@ Route::post('/auth/hotel/register', function (Request $request) {
         'name' => $validated['username'],
         'email' => $validated['admin_email'],
         'password' => Hash::make($validated['password']),
-        'role' => 'admin',
+        'role' => UserRole::ADMIN,
     ]);
 
     Auth::login($admin);
@@ -178,9 +200,11 @@ Route::post('/auth/hotel/register', function (Request $request) {
     );
     Auth::logout();
     $request->session()->regenerateToken();
+    $request->session()->put('active_hotel_id', (string) $hotel->id);
+    queueActiveHotelCookie((string) $hotel->id);
 
-    return redirect()->route('auth.category', ['hotel' => (string) $hotel->id]);
-})->middleware(['same.origin', 'throttle:3,1'])->name('auth.hotel.register');
+    return redirect_hotel_gate_success($request, (string) $hotel->id);
+})->middleware(['throttle:3,1'])->name('auth.hotel.register');
 Route::get('/auth/select', function (Request $request) {
     $currentUser = $request->user();
     $currentRole = (string) ($currentUser?->role?->value ?? $currentUser?->role ?? '');
@@ -356,7 +380,7 @@ Route::get('/login', function (Request $request) {
     return redirect()->route('auth.hotel');
 })->name('login');
 Route::post('/login', [AuthController::class, 'login'])
-    ->middleware(['same.origin', 'throttle:10,1'])
+    ->middleware(['throttle:10,1'])
     ->name('login.attempt');
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 

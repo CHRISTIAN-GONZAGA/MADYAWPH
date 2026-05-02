@@ -8,24 +8,25 @@ use App\Models\User;
 use App\Services\SmsService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as LaravelResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
-use Inertia\Response;
+use Inertia\Response as InertiaResponse;
 
 class AuthController extends Controller
 {
     public function __construct(private readonly SmsService $smsService) {}
 
-    public function showLogin(): Response
+    public function showLogin(): InertiaResponse
     {
         return Inertia::render('Login', [
             'hotels' => Hotel::query()->select('id', 'name', 'location')->get(),
         ]);
     }
 
-    public function login(Request $request): RedirectResponse
+    public function login(Request $request): LaravelResponse|RedirectResponse
     {
         $validated = $request->validate([
             'role' => ['required', 'in:admin,staff'],
@@ -149,7 +150,10 @@ class AuthController extends Controller
 
         $target = $role === UserRole::ADMIN->value ? '/admin/dashboard' : '/staff/dashboard';
 
-        // Avoid sending users to a stale session "intended" URL (often points back at auth flows).
+        if ($request->headers->get('X-Inertia')) {
+            return response('', 409)->header('X-Inertia-Location', url($target));
+        }
+
         return redirect()->to($target);
     }
 
@@ -176,7 +180,7 @@ class AuthController extends Controller
         return redirect()->route('auth.hotel');
     }
 
-    public function showForgotPassword(): Response
+    public function showForgotPassword(): InertiaResponse
     {
         return Inertia::render('Auth/ForgotPassword', [
             'prefill' => [

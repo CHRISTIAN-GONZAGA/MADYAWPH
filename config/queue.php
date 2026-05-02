@@ -13,7 +13,7 @@ return [
     |
     */
 
-    'default' => env('QUEUE_CONNECTION', 'database'),
+    'default' => env('QUEUE_CONNECTION', 'sync'),
 
     /*
     |--------------------------------------------------------------------------
@@ -103,7 +103,7 @@ return [
     */
 
     'batching' => [
-        'database' => env('DB_CONNECTION', 'sqlite'),
+        'database' => env('DB_BATCH_CONNECTION', env('DB_CONNECTION', 'mongodb')),
         'table' => 'job_batches',
     ],
 
@@ -121,8 +121,9 @@ return [
     */
 
     'failed' => [
-        'driver' => env('QUEUE_FAILED_DRIVER', 'database-uuids'),
-        'database' => env('DB_CONNECTION', 'sqlite'),
+        // MongoDB-only: no SQL `failed_jobs` table unless you add a second SQL connection.
+        'driver' => env('QUEUE_FAILED_DRIVER', 'null'),
+        'database' => env('DB_CONNECTION', 'mongodb'),
         'table' => 'failed_jobs',
     ],
 

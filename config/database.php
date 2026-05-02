@@ -17,7 +17,7 @@ return [
     |
     */
 
-    'default' => env('DB_CONNECTION', 'sqlite'),
+    'default' => env('DB_CONNECTION', 'mongodb'),
 
     /*
     |--------------------------------------------------------------------------
@@ -116,6 +116,7 @@ return [
 
         'mongodb' => [
             'driver' => 'mongodb',
+            // Required when DB_CONNECTION=mongodb (Atlas or self-hosted).
             'dsn' => env('MONGODB_URI'),
             'database' => env('MONGODB_DATABASE', env('DB_DATABASE', 'hotel_hms')),
         ],
