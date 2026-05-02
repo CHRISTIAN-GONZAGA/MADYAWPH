@@ -3,10 +3,10 @@
 namespace App\Scopes;
 
 use App\Models\User;
+use App\Support\AuthenticatedUser;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Scope;
-use Illuminate\Support\Facades\Auth;
 
 class HotelScope implements Scope
 {
@@ -18,11 +18,11 @@ class HotelScope implements Scope
         }
 
         // Do not trigger auth provider lookups from within model global scopes.
-        if (! Auth::hasUser()) {
+        if (! AuthenticatedUser::check()) {
             return;
         }
 
-        $user = Auth::user();
+        $user = AuthenticatedUser::user();
         if (! $user || ! isset($user->hotel_id) || ! $user->hotel_id) {
             return;
         }

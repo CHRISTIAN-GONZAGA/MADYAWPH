@@ -14,4 +14,27 @@ createInertiaApp({
     setup({ el, App, props }) {
         createRoot(el).render(<App {...props} />);
     },
+    // Avoid Inertia's built-in error modal (iframe dialog); use a normal full-page navigation instead.
+    defaults: {
+        visitOptions: (href, options) => ({
+            ...options,
+            onHttpException: (response) => {
+                const prev = options.onHttpException?.(response);
+                if (prev === false) {
+                    return false;
+                }
+                const headers = response.headers ?? {};
+                const location =
+                    headers.location ??
+                    headers.Location ??
+                    headers['location'];
+                if (typeof location === 'string' && location !== '') {
+                    window.location.assign(location);
+                    return false;
+                }
+                window.location.reload();
+                return false;
+            },
+        }),
+    },
 });

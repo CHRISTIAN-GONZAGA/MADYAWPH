@@ -4,8 +4,8 @@ namespace App\Models\Concerns;
 
 use App\Models\Hotel;
 use App\Scopes\HotelScope;
+use App\Support\AuthenticatedUser;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Facades\Auth;
 
 trait BelongsToHotel
 {
@@ -14,8 +14,9 @@ trait BelongsToHotel
         static::addGlobalScope(new HotelScope());
 
         static::creating(function ($model): void {
-            if (! $model->hotel_id && Auth::check() && Auth::user()->hotel_id) {
-                $model->hotel_id = Auth::user()->hotel_id;
+            $user = AuthenticatedUser::user();
+            if (! $model->hotel_id && $user && $user->hotel_id) {
+                $model->hotel_id = $user->hotel_id;
             }
         });
     }
