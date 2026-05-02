@@ -6,6 +6,7 @@ use App\Enums\UserRole;
 use App\Models\Hotel;
 use App\Models\User;
 use App\Services\SmsService;
+use App\Support\PortalContext;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as LaravelResponse;
@@ -57,11 +58,7 @@ class AuthController extends Controller
             ])->onlyInput('username', 'email');
         }
 
-        $activeHotelId = (string) ($request->session()->get('active_hotel_id')
-            ?? $request->cookie('active_hotel_id')
-            ?? $request->input('hotel_id')
-            ?? $request->query('hotel')
-            ?? '');
+        $activeHotelId = PortalContext::resolveHotelId($request);
 
         $userHotelId = (string) ($user->hotel_id ?? '');
 
@@ -89,9 +86,9 @@ class AuthController extends Controller
 
         Auth::login($user, true);
 
-        $request->session()->put('active_hotel_id', $userHotelId);
-
         $request->session()->regenerate();
+
+        $request->session()->put('active_hotel_id', $userHotelId);
 
         $user = $request->user();
         if (! $user) {
@@ -196,10 +193,7 @@ class AuthController extends Controller
             'role' => ['nullable', 'in:admin,staff'],
             'username' => ['required', 'string', 'max:255'],
         ]);
-        $activeHotelId = (string) ($request->session()->get('active_hotel_id')
-            ?? $request->cookie('active_hotel_id')
-            ?? $request->query('hotel')
-            ?? '');
+        $activeHotelId = PortalContext::resolveHotelId($request);
         $userQuery = User::withoutGlobalScopes()
             ->where('name', $validated['username']);
         if ($activeHotelId !== '') {

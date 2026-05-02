@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Support\AuthenticatedUser;
+use App\Support\PortalContext;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -40,8 +41,12 @@ class HandleInertiaRequests extends Middleware
     {
         $user = AuthenticatedUser::user();
 
+        $activeHotelId = PortalContext::resolveHotelId($request);
+
         return [
             ...parent::share($request),
+            // Always expose hotel scope for portal links (session/cookie/query/auth fallback).
+            'activeHotelId' => $activeHotelId,
             'auth' => [
                 'user' => $user
                     ? [

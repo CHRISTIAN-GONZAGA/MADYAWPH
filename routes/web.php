@@ -30,6 +30,7 @@ use App\Services\ActivityLogService;
 use App\Services\FinancialComputationService;
 use App\Services\PaymentGatewayService;
 use App\Services\SmsService;
+use App\Support\PortalContext;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -215,11 +216,7 @@ Route::get('/auth/select', function (Request $request) {
         return redirect()->route('staff.dashboard.v2');
     }
 
-    $activeHotelId = (string) ($request->session()->get('active_hotel_id')
-        ?? $request->cookie('active_hotel_id')
-        ?? $request->query('hotel')
-        ?? $request->user()?->hotel_id
-        ?? '');
+    $activeHotelId = PortalContext::resolveHotelId($request);
     if ($activeHotelId === '') {
         return redirect()->route('auth.hotel');
     }
@@ -251,11 +248,7 @@ Route::get('/auth/admin', function (Request $request) {
         return redirect()->route('staff.dashboard.v2');
     }
 
-    // Try to get hotel ID from session first (most reliable), then cookie, then query
-    $activeHotelId = (string) ($request->session()->get('active_hotel_id')
-        ?? $request->cookie('active_hotel_id')
-        ?? $request->query('hotel')
-        ?? '');
+    $activeHotelId = PortalContext::resolveHotelId($request);
 
     if ($activeHotelId === '') {
         return redirect()->route('auth.hotel');
@@ -283,11 +276,7 @@ Route::get('/auth/staff', function (Request $request) {
         return redirect()->route('staff.dashboard.v2');
     }
 
-    // Try to get hotel ID from session first (most reliable), then cookie, then query
-    $activeHotelId = (string) ($request->session()->get('active_hotel_id')
-        ?? $request->cookie('active_hotel_id')
-        ?? $request->query('hotel')
-        ?? '');
+    $activeHotelId = PortalContext::resolveHotelId($request);
     if ($activeHotelId === '') {
         return redirect()->route('auth.hotel');
     }
@@ -305,10 +294,7 @@ Route::get('/auth/staff', function (Request $request) {
     ]);
 })->name('auth.staff');
 Route::get('/auth/guest', function (Request $request) {
-    $activeHotelId = (string) ($request->session()->get('active_hotel_id')
-        ?? $request->cookie('active_hotel_id')
-        ?? $request->query('hotel')
-        ?? '');
+    $activeHotelId = PortalContext::resolveHotelId($request);
     if ($activeHotelId === '') {
         return redirect()->route('auth.hotel');
     }
@@ -316,6 +302,8 @@ Route::get('/auth/guest', function (Request $request) {
     if (! $request->session()->has('active_hotel_id')) {
         $request->session()->put('active_hotel_id', $activeHotelId);
     }
+
+    queueActiveHotelCookie($activeHotelId);
 
     return Inertia::render('Auth/GuestRoomLogin', [
         'activeHotelId' => $activeHotelId,
@@ -326,12 +314,7 @@ Route::post('/auth/guest/login', function (Request $request) {
         'room' => ['required', 'string'],
         'password' => ['required', 'string', 'min:6', 'max:32'],
     ]);
-    $activeHotelId = (string) ($request->session()->get('active_hotel_id')
-        ?? $request->cookie('active_hotel_id')
-        ?? $request->input('hotel_id')
-        ?? $request->query('hotel')
-        ?? $request->user()?->hotel_id
-        ?? '');
+    $activeHotelId = PortalContext::resolveHotelId($request);
     if ($activeHotelId === '') {
         return redirect()->route('auth.hotel')->withErrors(['room' => 'Sign in to your hotel first.']);
     }
