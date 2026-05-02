@@ -38,6 +38,39 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 
+if (! function_exists('getCookieDomain')) {
+    function getCookieDomain(): ?string
+    {
+        $domain = config('session.domain');
+        if ($domain === 'null' || $domain === '') {
+            return null;
+        }
+
+        return $domain;
+    }
+}
+
+if (! function_exists('queueActiveHotelCookie')) {
+    function queueActiveHotelCookie(string $hotelId): void
+    {
+        $cookieDomain = getCookieDomain();
+        $cookieSecure = config('session.secure');
+        $cookieSameSite = config('session.same_site') ?: 'lax';
+
+        cookie()->queue(cookie(
+            'active_hotel_id',
+            $hotelId,
+            60 * 24 * 30,
+            '/',
+            $cookieDomain,
+            $cookieSecure,
+            false,
+            false,
+            $cookieSameSite
+        ));
+    }
+}
+
 Route::post('/webhooks/paymongo', [PayMongoWebhookController::class, 'handle'])->name('webhooks.paymongo');
 
 Route::get('/', function () {
@@ -84,17 +117,7 @@ Route::post('/auth/hotel/login', function (Request $request) {
         $request->session()->regenerate();
         $request->session()->put('active_hotel_id', (string) $hotel->id);
         $request->session()->regenerateToken();
-        cookie()->queue(cookie(
-            'active_hotel_id',
-            (string) $hotel->id,
-            60 * 24 * 30,
-            '/',
-            config('session.domain'),
-            true,
-            false,
-            false,
-            'lax'
-        ));
+        queueActiveHotelCookie((string) $hotel->id);
 
         return redirect()->route('auth.category', ['hotel' => (string) $hotel->id]);
     }
@@ -108,17 +131,7 @@ Route::post('/auth/hotel/login', function (Request $request) {
     $request->session()->regenerate();
     $request->session()->put('active_hotel_id', (string) $legacyAdmin->hotel_id);
     $request->session()->regenerateToken();
-    cookie()->queue(cookie(
-        'active_hotel_id',
-        (string) $legacyAdmin->hotel_id,
-        60 * 24 * 30,
-        '/',
-        config('session.domain'),
-        true,
-        false,
-        false,
-        'lax'
-    ));
+    queueActiveHotelCookie((string) $legacyAdmin->hotel_id);
 
     return redirect()->route('auth.category', ['hotel' => (string) $legacyAdmin->hotel_id]);
 })->middleware(['same.origin', 'throttle:8,1'])->name('auth.hotel.login');
@@ -159,17 +172,7 @@ Route::post('/auth/hotel/register', function (Request $request) {
     Auth::login($admin);
     $request->session()->regenerate();
     $request->session()->put('active_hotel_id', (string) $hotel->id);
-    cookie()->queue(cookie(
-        'active_hotel_id',
-        (string) $hotel->id,
-        60 * 24 * 30,
-        '/',
-        config('session.domain'),
-        true,
-        false,
-        false,
-        'lax'
-    ));
+    queueActiveHotelCookie((string) $hotel->id);
     $verificationCode = (string) random_int(100000, 999999);
     $request->session()->put('hotel_verification_code', $verificationCode);
     app(SmsService::class)->send(
@@ -207,17 +210,7 @@ Route::get('/auth/select', function (Request $request) {
     }
     
     // Ensure hotel ID is in cookie (for Render stateless deployment)
-    cookie()->queue(cookie(
-        'active_hotel_id',
-        $activeHotelId,
-        60 * 24 * 30,
-        '/',
-        config('session.domain'),
-        true,
-        false,
-        false,
-        'lax'
-    ));
+    queueActiveHotelCookie($activeHotelId);
 
     return Inertia::render('Auth/CategorySelection', [
         'activeHotelId' => $activeHotelId,
@@ -249,17 +242,7 @@ Route::get('/auth/admin', function (Request $request) {
     }
     
     // Ensure hotel ID is in cookie (for Render stateless deployment)
-    cookie()->queue(cookie(
-        'active_hotel_id',
-        $activeHotelId,
-        60 * 24 * 30,
-        '/',
-        config('session.domain'),
-        true,
-        false,
-        false,
-        'lax'
-    ));
+    queueActiveHotelCookie($activeHotelId);
 
     return Inertia::render('Auth/AdminLogin');
 })->name('auth.admin');
@@ -288,17 +271,7 @@ Route::get('/auth/staff', function (Request $request) {
     }
     
     // Ensure hotel ID is in cookie (for Render stateless deployment)
-    cookie()->queue(cookie(
-        'active_hotel_id',
-        $activeHotelId,
-        60 * 24 * 30,
-        '/',
-        config('session.domain'),
-        true,
-        false,
-        false,
-        'lax'
-    ));
+    queueActiveHotelCookie($activeHotelId);
 
     return Inertia::render('Auth/StaffLogin');
 })->name('auth.staff');
@@ -404,11 +377,11 @@ Route::get('/guest-room', function (Request $request) {
     ]);
 })->name('guest.room');
 
-Route::middleware(['auth', 'role:admin,staff'])->group(function (): void {
+Route::middleware(['auth:admin', 'role:admin'])->group(function (): void {
     Route::get('/rooms', fn () => inertia('RoomManagement'))->name('rooms.index');
 });
 
-Route::middleware(['auth', 'role:admin'])->group(function (): void {
+Route::middleware(['auth:admin', 'role:admin'])->group(function (): void {
     Route::get('/admin', function () {
         return redirect()->route('admin.dashboard.v2');
     })->name('admin.dashboard');
@@ -735,7 +708,7 @@ Route::middleware(['auth', 'role:admin'])->group(function (): void {
     })->name('admin.chat.reply');
 });
 
-Route::middleware(['auth', 'role:staff'])->group(function (): void {
+Route::middleware(['auth:staff', 'role:staff'])->group(function (): void {
     Route::get('/staff', [DashboardController::class, 'staff'])->name('staff.dashboard');
     Route::get('/staff/dashboard', function (Request $request) {
         $staffMember = StaffMember::query()->where('user_id', (string) $request->user()->id)->first();
