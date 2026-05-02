@@ -1,7 +1,8 @@
 <?php
 
 return [
-    'paths' => ['api/*', 'sanctum/csrf-cookie'],
+    // Include web routes so Capacitor / split-origin frontends receive CORS exposure for Inertia headers.
+    'paths' => ['api/*', 'sanctum/csrf-cookie', '*'],
 
     'allowed_methods' => ['*'],
 
@@ -11,7 +12,15 @@ return [
 
     'allowed_headers' => ['*'],
 
-    'exposed_headers' => [],
+    'exposed_headers' => [
+        'X-Inertia',
+        'X-Inertia-Location',
+        'X-Inertia-Version',
+        'X-Inertia-Partial-Data',
+        'X-Inertia-Error-Bag',
+        'X-Inertia-Redirect',
+        'Vary',
+    ],
 
     'max_age' => 0,
 

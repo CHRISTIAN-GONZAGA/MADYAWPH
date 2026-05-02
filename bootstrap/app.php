@@ -40,6 +40,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             \App\Http\Middleware\RestoreAuthFromCookie::class,
             \App\Http\Middleware\DisableHtmlCache::class,
+            \App\Http\Middleware\EnsureInertiaResponseHeaders::class,
             \App\Http\Middleware\HandleInertiaRequests::class,
         ]);
 
