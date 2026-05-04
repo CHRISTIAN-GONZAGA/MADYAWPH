@@ -91,18 +91,15 @@ class AuthController extends Controller
             ])->onlyInput('username', 'email');
         }
 
-        foreach (['web', 'admin', 'staff'] as $g) {
-            Auth::guard($g)->logout();
-        }
+        Auth::logout();
 
-        $guard = $role === UserRole::ADMIN->value ? 'admin' : 'staff';
-        // SessionGuard::login() already regenerates the session inside updateSession(); a second
-        // regenerate() here can drop the guard session on some setups (MongoDB / multi-instance).
-        Auth::guard($guard)->login($user, true);
+        // Use the default session guard (`web`) only. Separate admin/staff guards duplicate the
+        // same User provider and break MongoDB session resolution on many hosts (redirect loop).
+        Auth::login($user, true);
 
         $request->session()->put('active_hotel_id', $userHotelId);
 
-        $user = Auth::guard($guard)->user();
+        $user = Auth::user();
         if (! $user) {
             return redirect()->route('auth.hotel')->withErrors([
                 'username' => 'Session could not be started. Please try again.',
@@ -150,8 +147,8 @@ class AuthController extends Controller
         ));
 
         Log::info('Auth login success', [
-            'guard' => $guard,
-            'auth_check' => Auth::guard($guard)->check(),
+            'guard' => 'web',
+            'auth_check' => Auth::check(),
             'user_id' => (string) ($user?->id ?? ''),
             'role' => $role,
             'hotel_id' => (string) ($user?->hotel_id ?? ''),
@@ -180,9 +177,7 @@ class AuthController extends Controller
 
     public function logout(Request $request): RedirectResponse
     {
-        foreach (['web', 'admin', 'staff'] as $g) {
-            Auth::guard($g)->logout();
-        }
+        Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
         cookie()->queue(cookie()->forget('active_hotel_id'));

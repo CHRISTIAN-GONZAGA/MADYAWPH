@@ -24,7 +24,7 @@ class RestoreAuthFromCookie
         }
 
         // Restore auth from cookies when session is lost (Render ephemeral storage)
-        if (! self::anyPortalGuardChecked()) {
+        if (! Auth::check()) {
             $userId = (string) ($request->cookie('auth_uid') ?? '');
             $role = (string) ($request->cookie('auth_role') ?? '');
 
@@ -33,8 +33,7 @@ class RestoreAuthFromCookie
                 $userRole = (string) ($user?->role?->value ?? $user?->role ?? '');
 
                 if ($user && $userRole === $role) {
-                    $guard = $role === 'admin' ? 'admin' : 'staff';
-                    Auth::guard($guard)->login($user);
+                    Auth::login($user);
                     if (! $request->session()->has('active_hotel_id')) {
                         $request->session()->put('active_hotel_id', (string) $user->hotel_id);
                     }
@@ -43,12 +42,5 @@ class RestoreAuthFromCookie
         }
 
         return $next($request);
-    }
-
-    private static function anyPortalGuardChecked(): bool
-    {
-        return Auth::guard('admin')->check()
-            || Auth::guard('staff')->check()
-            || Auth::guard('web')->check();
     }
 }

@@ -188,7 +188,7 @@ Route::post('/auth/hotel/register', function (Request $request) {
         'role' => UserRole::ADMIN,
     ]);
 
-    Auth::guard('admin')->login($admin);
+    Auth::login($admin);
     $request->session()->regenerate();
     $request->session()->put('active_hotel_id', (string) $hotel->id);
     queueActiveHotelCookie((string) $hotel->id);
@@ -200,9 +200,7 @@ Route::post('/auth/hotel/register', function (Request $request) {
         (string) $hotel->id,
         $admin
     );
-    foreach (['web', 'admin', 'staff'] as $g) {
-        Auth::guard($g)->logout();
-    }
+    Auth::logout();
     $request->session()->regenerateToken();
     $request->session()->put('active_hotel_id', (string) $hotel->id);
     queueActiveHotelCookie((string) $hotel->id);
@@ -388,11 +386,11 @@ Route::get('/guest-room', function (Request $request) {
     ]);
 })->name('guest.room');
 
-Route::middleware(['auth:admin', 'role:admin'])->group(function (): void {
+Route::middleware(['auth', 'role:admin'])->group(function (): void {
     Route::get('/rooms', fn () => inertia('RoomManagement'))->name('rooms.index');
 });
 
-Route::middleware(['auth:admin', 'role:admin'])->group(function (): void {
+Route::middleware(['auth', 'role:admin'])->group(function (): void {
     Route::get('/admin', function () {
         return redirect()->route('admin.dashboard.v2');
     })->name('admin.dashboard');
@@ -744,7 +742,7 @@ Route::middleware(['auth:admin', 'role:admin'])->group(function (): void {
     })->name('admin.chat.reply');
 });
 
-Route::middleware(['auth:staff', 'role:staff'])->group(function (): void {
+Route::middleware(['auth', 'role:staff'])->group(function (): void {
     Route::get('/staff', [DashboardController::class, 'staff'])->name('staff.dashboard');
     Route::get('/staff/dashboard', function (Request $request) {
         $staffMember = StaffMember::query()->where('user_id', (string) $request->user()->id)->first();
