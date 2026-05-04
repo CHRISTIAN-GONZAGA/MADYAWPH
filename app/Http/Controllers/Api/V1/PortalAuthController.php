@@ -50,7 +50,7 @@ class PortalAuthController extends Controller
             ->where('name', $validated['username'])
             ->first();
 
-        $legacyRole = (string) ($legacyAdmin?->role?->value ?? $legacyAdmin?->role ?? '');
+        $legacyRole = $legacyAdmin ? $this->resolveUserRole($legacyAdmin) : '';
         if ($legacyAdmin
             && $legacyRole === UserRole::ADMIN->value
             && Hash::check($validated['password'], $legacyAdmin->getAuthPassword())) {
@@ -136,7 +136,7 @@ class PortalAuthController extends Controller
             return response()->json(['message' => 'These credentials do not match our records.'], 422);
         }
 
-        $userRole = (string) ($user->role?->value ?? $user->role ?? '');
+        $userRole = $this->resolveUserRole($user);
         if ($userRole !== $role) {
             return response()->json(['message' => 'Use the role that matches this account (admin or staff).'], 422);
         }
@@ -241,5 +241,20 @@ class PortalAuthController extends Controller
         Cache::forget('password_reset:'.(string) $user->id);
 
         return response()->json(['ok' => true, 'message' => 'Password updated. You may now sign in.']);
+    }
+
+    private function resolveUserRole(User $user): string
+    {
+        $rawRole = $user->getRawOriginal('role');
+
+        if ($rawRole instanceof UserRole) {
+            return $rawRole->value;
+        }
+
+        if (! is_string($rawRole)) {
+            return '';
+        }
+
+        return strtolower(trim($rawRole));
     }
 }

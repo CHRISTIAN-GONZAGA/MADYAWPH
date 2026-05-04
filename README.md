@@ -165,12 +165,12 @@ Smoke test:
 
 ### 6.0 Flutter (recommended for new APK/AAB)
 
-Build the native app against this Laravel host’s **`/api`** routes (Sanctum bearer token). Full steps: **`flutter_app/README.md`**.
+Build the native app against this Laravel host’s **`/api/v1`** routes (Sanctum bearer token). Full steps: **`flutter_app/README.md`**.
 
 ```powershell
 cd "c:\Users\Christian\Documents\GLORETTO_APP\flutter_app"
 flutter create . --org com.gloretto --project-name gloretto_mobile
-flutter build appbundle --dart-define=API_BASE_URL=https://your-railway-domain.up.railway.app/api
+flutter build appbundle --dart-define=API_BASE_URL=https://your-railway-domain.up.railway.app/api/v1
 ```
 
 ### 6.1 Legacy: Capacitor WebView (same machine)
@@ -280,7 +280,7 @@ composer test
 # 3a) Flutter release bundle (after flutter create in flutter_app/)
 cd "c:\Users\Christian\Documents\GLORETTO_APP\flutter_app"
 flutter pub get
-flutter build appbundle --dart-define=API_BASE_URL=https://your-host.example/api
+flutter build appbundle --dart-define=API_BASE_URL=https://your-host.example/api/v1
 
 # 3b) legacy Capacitor debug apk
 cd "c:\Users\Christian\Documents\GLORETTO_APP\mobile"
