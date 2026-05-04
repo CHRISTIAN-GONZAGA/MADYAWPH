@@ -30,6 +30,7 @@ use App\Services\ActivityLogService;
 use App\Services\FinancialComputationService;
 use App\Services\PaymentGatewayService;
 use App\Services\SmsService;
+use App\Support\AuthenticatedUser;
 use App\Support\PortalContext;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
@@ -101,7 +102,7 @@ Route::get('/', function () {
 })->name('welcome');
 
 Route::get('/auth/hotel', function (Request $request) {
-    $currentUser = $request->user();
+    $currentUser = AuthenticatedUser::user();
     $currentRole = (string) ($currentUser?->role?->value ?? $currentUser?->role ?? '');
     if ($currentRole === 'admin') {
         return redirect()->route('admin.dashboard.v2');
@@ -187,7 +188,7 @@ Route::post('/auth/hotel/register', function (Request $request) {
         'role' => UserRole::ADMIN,
     ]);
 
-    Auth::login($admin);
+    Auth::guard('admin')->login($admin);
     $request->session()->regenerate();
     $request->session()->put('active_hotel_id', (string) $hotel->id);
     queueActiveHotelCookie((string) $hotel->id);
@@ -199,7 +200,9 @@ Route::post('/auth/hotel/register', function (Request $request) {
         (string) $hotel->id,
         $admin
     );
-    Auth::logout();
+    foreach (['web', 'admin', 'staff'] as $g) {
+        Auth::guard($g)->logout();
+    }
     $request->session()->regenerateToken();
     $request->session()->put('active_hotel_id', (string) $hotel->id);
     queueActiveHotelCookie((string) $hotel->id);
@@ -207,7 +210,7 @@ Route::post('/auth/hotel/register', function (Request $request) {
     return redirect_hotel_gate_success($request, (string) $hotel->id);
 })->middleware(['throttle:3,1'])->name('auth.hotel.register');
 Route::get('/auth/select', function (Request $request) {
-    $currentUser = $request->user();
+    $currentUser = AuthenticatedUser::user();
     $currentRole = (string) ($currentUser?->role?->value ?? $currentUser?->role ?? '');
     if ($currentRole === 'admin') {
         return redirect()->route('admin.dashboard.v2');
@@ -239,7 +242,7 @@ Route::get('/auth/category', function (Request $request) {
     return redirect('/auth/select'.$suffix, 301);
 });
 Route::get('/auth/admin', function (Request $request) {
-    $currentUser = $request->user();
+    $currentUser = AuthenticatedUser::user();
     $currentRole = (string) ($currentUser?->role?->value ?? $currentUser?->role ?? '');
     if ($currentRole === 'admin') {
         return redirect()->route('admin.dashboard.v2');
@@ -267,7 +270,7 @@ Route::get('/auth/admin', function (Request $request) {
     ]);
 })->name('auth.admin');
 Route::get('/auth/staff', function (Request $request) {
-    $currentUser = $request->user();
+    $currentUser = AuthenticatedUser::user();
     $currentRole = (string) ($currentUser?->role?->value ?? $currentUser?->role ?? '');
     if ($currentRole === 'admin') {
         return redirect()->route('admin.dashboard.v2');
@@ -353,7 +356,7 @@ Route::post('/auth/guest/login', function (Request $request) {
 // Legacy route retained for backward compatibility.
 Route::redirect('/legacy-login', '/login');
 Route::get('/login', function (Request $request) {
-    $currentUser = $request->user();
+    $currentUser = AuthenticatedUser::user();
     $currentRole = (string) ($currentUser?->role?->value ?? $currentUser?->role ?? '');
     if ($currentRole === 'admin') {
         return redirect()->route('admin.dashboard.v2');
@@ -391,11 +394,11 @@ Route::get('/guest-room', function (Request $request) {
     ]);
 })->name('guest.room');
 
-Route::middleware(['auth', 'role:admin'])->group(function (): void {
+Route::middleware(['auth:admin', 'role:admin'])->group(function (): void {
     Route::get('/rooms', fn () => inertia('RoomManagement'))->name('rooms.index');
 });
 
-Route::middleware(['auth', 'role:admin'])->group(function (): void {
+Route::middleware(['auth:admin', 'role:admin'])->group(function (): void {
     Route::get('/admin', function () {
         return redirect()->route('admin.dashboard.v2');
     })->name('admin.dashboard');
@@ -747,7 +750,7 @@ Route::middleware(['auth', 'role:admin'])->group(function (): void {
     })->name('admin.chat.reply');
 });
 
-Route::middleware(['auth', 'role:staff'])->group(function (): void {
+Route::middleware(['auth:staff', 'role:staff'])->group(function (): void {
     Route::get('/staff', [DashboardController::class, 'staff'])->name('staff.dashboard');
     Route::get('/staff/dashboard', function (Request $request) {
         $staffMember = StaffMember::query()->where('user_id', (string) $request->user()->id)->first();
@@ -808,7 +811,7 @@ Route::prefix('customer')->group(function (): void {
         $hotelId = (string) ($request->session()->get('active_hotel_id')
             ?? $request->cookie('active_hotel_id')
             ?? $request->query('hotel')
-            ?? $request->user()?->hotel_id
+            ?? AuthenticatedUser::user()?->hotel_id
             ?? '');
         if ($hotelId === '') {
             return redirect()->route('auth.hotel');
@@ -846,7 +849,7 @@ Route::prefix('customer')->group(function (): void {
         $hotelId = (string) ($request->session()->get('active_hotel_id')
             ?? $request->cookie('active_hotel_id')
             ?? $request->query('hotel')
-            ?? $request->user()?->hotel_id
+            ?? AuthenticatedUser::user()?->hotel_id
             ?? '');
         if ($hotelId === '') {
             return redirect()->route('auth.hotel');
@@ -908,7 +911,7 @@ Route::prefix('customer')->group(function (): void {
         $hotelId = (string) ($request->session()->get('active_hotel_id')
             ?? $request->cookie('active_hotel_id')
             ?? $request->input('hotel_id')
-            ?? $request->user()?->hotel_id
+            ?? AuthenticatedUser::user()?->hotel_id
             ?? '');
         if ($hotelId === '') {
             return redirect()->route('auth.hotel');
@@ -945,7 +948,7 @@ Route::prefix('customer')->group(function (): void {
         $room->update(['status' => RoomStatus::RESERVED->value]);
         app(ActivityLogService::class)->log(
             $hotelId,
-            $request->user(),
+            AuthenticatedUser::user(),
             "Created reservation {$reservation->external_reference} for room {$room->room_number}",
             ['reservation_id' => (string) $reservation->id, 'room_id' => (string) $room->id]
         );
@@ -966,7 +969,7 @@ Route::prefix('customer')->group(function (): void {
         $hotelId = (string) ($request->session()->get('active_hotel_id')
             ?? $request->cookie('active_hotel_id')
             ?? $request->input('hotel_id')
-            ?? $request->user()?->hotel_id
+            ?? AuthenticatedUser::user()?->hotel_id
             ?? '');
         if ($hotelId === '') {
             return redirect()->route('auth.hotel');
@@ -1017,7 +1020,7 @@ Route::prefix('customer')->group(function (): void {
         );
         app(ActivityLogService::class)->log(
             (string) $room->hotel_id,
-            $request->user(),
+            AuthenticatedUser::user(),
             "Created booking {$booking->booking_reference} for room {$room->room_number}",
             ['booking_id' => (string) $booking->id, 'room_id' => (string) $room->id]
         );
@@ -1100,7 +1103,7 @@ Route::prefix('guest')->group(function (): void {
         ]);
         app(ActivityLogService::class)->log(
             $portal['hotel_id'],
-            $request->user(),
+            AuthenticatedUser::user(),
             "Guest claimed amenity {$validated['amenityName']}",
             ['claim_id' => (string) $claim->id, 'room_id' => $portal['room_id']]
         );
@@ -1140,7 +1143,7 @@ Route::prefix('guest')->group(function (): void {
         ]);
         app(ActivityLogService::class)->log(
             $portal['hotel_id'],
-            $request->user(),
+            AuthenticatedUser::user(),
             "Guest sent chat message from room {$portal['room_number']}",
             ['message_id' => (string) $msg->id]
         );
@@ -1191,7 +1194,7 @@ Route::prefix('guest')->group(function (): void {
         ]);
         app(ActivityLogService::class)->log(
             $portal['hotel_id'],
-            $request->user(),
+            AuthenticatedUser::user(),
             "Guest requested stay extension for room {$portal['room_number']}",
             ['booking_id' => (string) $booking->id, 'nights' => (int) $validated['nights']]
         );
@@ -1229,7 +1232,7 @@ Route::prefix('guest')->group(function (): void {
         ]);
         app(ActivityLogService::class)->log(
             $portal['hotel_id'],
-            $request->user(),
+            AuthenticatedUser::user(),
             "Guest submitted review for booking {$booking->booking_reference}",
             ['review_id' => (string) $review->id]
         );

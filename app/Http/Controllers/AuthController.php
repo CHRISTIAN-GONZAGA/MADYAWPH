@@ -84,13 +84,18 @@ class AuthController extends Controller
             ])->onlyInput('username', 'email');
         }
 
-        Auth::login($user, true);
+        foreach (['web', 'admin', 'staff'] as $g) {
+            Auth::guard($g)->logout();
+        }
+
+        $guard = $role === UserRole::ADMIN->value ? 'admin' : 'staff';
+        Auth::guard($guard)->login($user, true);
 
         $request->session()->regenerate();
 
         $request->session()->put('active_hotel_id', $userHotelId);
 
-        $user = $request->user();
+        $user = Auth::guard($guard)->user();
         if (! $user) {
             return redirect()->route('auth.hotel')->withErrors([
                 'username' => 'Session could not be started. Please try again.',
@@ -138,7 +143,8 @@ class AuthController extends Controller
         ));
 
         Log::info('Auth login success', [
-            'auth_check' => Auth::check(),
+            'guard' => $guard,
+            'auth_check' => Auth::guard($guard)->check(),
             'user_id' => (string) ($user?->id ?? ''),
             'role' => $role,
             'hotel_id' => (string) ($user?->hotel_id ?? ''),
@@ -167,7 +173,9 @@ class AuthController extends Controller
 
     public function logout(Request $request): RedirectResponse
     {
-        Auth::logout();
+        foreach (['web', 'admin', 'staff'] as $g) {
+            Auth::guard($g)->logout();
+        }
         $request->session()->invalidate();
         $request->session()->regenerateToken();
         cookie()->queue(cookie()->forget('active_hotel_id'));

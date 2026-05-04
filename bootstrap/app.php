@@ -15,7 +15,19 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->redirectGuestsTo(fn (Request $request) => route('auth.hotel'));
+        $middleware->redirectGuestsTo(function (Request $request) {
+            $path = ltrim($request->path(), '/');
+
+            if ($path === 'rooms' || $path === 'admin' || str_starts_with($path, 'admin/')) {
+                return route('auth.admin');
+            }
+
+            if ($path === 'staff' || str_starts_with($path, 'staff/')) {
+                return route('auth.staff');
+            }
+
+            return route('auth.hotel');
+        });
 
         // Trust Render proxy headers so HTTPS + Inertia redirects are handled correctly.
         $middleware->trustProxies(
