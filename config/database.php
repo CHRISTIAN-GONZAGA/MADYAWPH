@@ -161,7 +161,8 @@ return [
         ],
 
         'default' => [
-            'url' => env('REDIS_URL'),
+            // Empty REDIS_URL must be null so Laravel uses host/port/password (not "" → broken URL parse).
+            'url' => filled(env('REDIS_URL')) ? env('REDIS_URL') : null,
             'host' => env('REDIS_HOST', '127.0.0.1'),
             'username' => env('REDIS_USERNAME'),
             'password' => env('REDIS_PASSWORD'),
@@ -174,7 +175,7 @@ return [
         ],
 
         'cache' => [
-            'url' => env('REDIS_URL'),
+            'url' => filled(env('REDIS_URL')) ? env('REDIS_URL') : null,
             'host' => env('REDIS_HOST', '127.0.0.1'),
             'username' => env('REDIS_USERNAME'),
             'password' => env('REDIS_PASSWORD'),
