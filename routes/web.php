@@ -182,7 +182,7 @@ Route::post('/auth/hotel/register', function (Request $request) {
 
     $admin = User::withoutGlobalScopes()->create([
         'hotel_id' => (string) $hotel->id,
-        'name' => $validated['username'],
+        'name' => $validated['admin_email'],
         'email' => $validated['admin_email'],
         'password' => Hash::make($validated['password']),
         'role' => UserRole::ADMIN,
@@ -253,17 +253,15 @@ Route::get('/auth/admin', function (Request $request) {
 
     $activeHotelId = PortalContext::resolveHotelId($request);
 
-    if ($activeHotelId === '') {
-        return redirect()->route('auth.hotel');
-    }
+    // Do not require hotel gate before this screen: POST /login resolves hotel from the user record
+    // when session/cookie/query have no hotel yet (avoids redirect loops to Hotel Access).
 
-    // Ensure hotel ID is in session (for this request and forward)
-    if (! $request->session()->has('active_hotel_id')) {
-        $request->session()->put('active_hotel_id', $activeHotelId);
+    if ($activeHotelId !== '') {
+        if (! $request->session()->has('active_hotel_id')) {
+            $request->session()->put('active_hotel_id', $activeHotelId);
+        }
+        queueActiveHotelCookie($activeHotelId);
     }
-
-    // Ensure hotel ID is in cookie (for Render stateless deployment)
-    queueActiveHotelCookie($activeHotelId);
 
     return Inertia::render('Auth/AdminLogin', [
         'activeHotelId' => $activeHotelId,
@@ -280,17 +278,13 @@ Route::get('/auth/staff', function (Request $request) {
     }
 
     $activeHotelId = PortalContext::resolveHotelId($request);
-    if ($activeHotelId === '') {
-        return redirect()->route('auth.hotel');
-    }
 
-    // Ensure hotel ID is in session (for this request and forward)
-    if (! $request->session()->has('active_hotel_id')) {
-        $request->session()->put('active_hotel_id', $activeHotelId);
+    if ($activeHotelId !== '') {
+        if (! $request->session()->has('active_hotel_id')) {
+            $request->session()->put('active_hotel_id', $activeHotelId);
+        }
+        queueActiveHotelCookie($activeHotelId);
     }
-
-    // Ensure hotel ID is in cookie (for Render stateless deployment)
-    queueActiveHotelCookie($activeHotelId);
 
     return Inertia::render('Auth/StaffLogin', [
         'activeHotelId' => $activeHotelId,

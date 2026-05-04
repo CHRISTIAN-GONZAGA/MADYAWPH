@@ -17,6 +17,7 @@ final class PortalContext
             $request->cookie('active_hotel_id'),
             $request->input('hotel_id'),
             $request->query('hotel'),
+            AuthenticatedUser::user()?->hotel_id,
             $request->user()?->hotel_id,
         ] as $candidate) {
             if ($candidate !== null && (string) $candidate !== '') {
