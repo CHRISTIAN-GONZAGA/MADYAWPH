@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
+use Throwable;
 
 class PortalAuthController extends Controller
 {
@@ -53,7 +54,7 @@ class PortalAuthController extends Controller
         $legacyRole = $legacyAdmin ? $this->resolveUserRole($legacyAdmin) : '';
         if ($legacyAdmin
             && $legacyRole === UserRole::ADMIN->value
-            && Hash::check($validated['password'], $legacyAdmin->getAuthPassword())) {
+            && $this->passwordMatchesUser($validated['password'], $legacyAdmin)) {
             $hid = (string) $legacyAdmin->hotel_id;
             $hotelModel = Hotel::withoutGlobalScopes()->find($hid);
 
@@ -152,7 +153,7 @@ class PortalAuthController extends Controller
             return response()->json(['message' => 'This account belongs to another hotel.'], 422);
         }
 
-        if (! Hash::check($validated['password'], $user->getAuthPassword())) {
+        if (! $this->passwordMatchesUser($validated['password'], $user)) {
             return response()->json(['message' => 'These credentials do not match our records.'], 422);
         }
 
@@ -256,5 +257,19 @@ class PortalAuthController extends Controller
         }
 
         return strtolower(trim($rawRole));
+    }
+
+    private function passwordMatchesUser(string $plainPassword, User $user): bool
+    {
+        $hash = $user->getAuthPassword();
+        if (! is_string($hash) || trim($hash) === '') {
+            return false;
+        }
+
+        try {
+            return Hash::check($plainPassword, $hash);
+        } catch (Throwable) {
+            return false;
+        }
     }
 }
