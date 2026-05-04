@@ -5,16 +5,25 @@ FROM php:8.4-cli
 # =========================
 RUN apt-get update && apt-get install -y \
     git unzip curl libssl-dev pkg-config libzip-dev \
-    build-essential python3
+    build-essential python3 autoconf \
+    && apt-get clean
 
+# =========================
 # PHP extensions
+# =========================
 RUN docker-php-ext-install zip
 
-# MongoDB extension
+# MongoDB extension (stable install)
 RUN pecl install mongodb \
-    && docker-php-ext-enable mongodb
+    && docker-php-ext-enable mongodb \
+    && echo "extension=mongodb.so" > /usr/local/etc/php/conf.d/mongodb.ini
 
-# Laravel Redis: use Predis (pure PHP). Image does not ship phpredis ext.
+# Verify MongoDB is installed (fails build if not)
+RUN php -m | grep mongodb
+
+# =========================
+# Redis (Predis - no ext needed)
+# =========================
 ENV REDIS_CLIENT=predis
 
 # =========================
@@ -25,15 +34,22 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 WORKDIR /app
 
 # =========================
-# Install PHP dependencies FIRST
+# Install PHP dependencies
 # =========================
 COPY composer.json composer.lock ./
 RUN composer install --no-dev --optimize-autoloader --no-scripts
 
 # =========================
-# Copy full project
+# Copy project files
 # =========================
 COPY . .
+
+# =========================
+# Laravel optimizations
+# =========================
+RUN php artisan config:clear \
+    && php artisan cache:clear \
+    && php artisan route:clear
 
 # =========================
 # Run server
