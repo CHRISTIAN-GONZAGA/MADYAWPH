@@ -30,6 +30,9 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 WORKDIR /app
 
+# Laravel Redis: use Predis (pure PHP). Image does not ship phpredis ext.
+ENV REDIS_CLIENT=predis
+
 # =========================
 # Install PHP dependencies FIRST
 # =========================

@@ -71,6 +71,9 @@ return [
     | connection that should be used to manage these sessions. This should
     | correspond to a connection in your database configuration options.
     |
+    | For redis: use the name of a connection under config/database.php `redis`
+    | (e.g. default). Leave unset/null for Laravel's default Redis connection.
+    |
     */
 
     'connection' => env('SESSION_CONNECTION'),
