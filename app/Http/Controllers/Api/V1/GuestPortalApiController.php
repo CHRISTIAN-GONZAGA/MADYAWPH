@@ -73,13 +73,12 @@ class GuestPortalApiController extends Controller
     {
         $portal = $request->attributes->get('guest_portal');
         $hotel = Hotel::withoutGlobalScopes()->find($portal['hotel_id']);
-        $activeBooking = Booking::withoutGlobalScopes()
-            ->where('hotel_id', $portal['hotel_id'])
+        $activeBooking = Booking::query()
             ->where('room_id', $portal['room_id'])
             ->latest('created_at')
             ->first();
         $hasReview = $activeBooking
-            ? StayReview::withoutGlobalScopes()->where('booking_id', (string) $activeBooking->id)->exists()
+            ? StayReview::query()->where('booking_id', (string) $activeBooking->id)->exists()
             : false;
 
         return response()->json([
@@ -91,14 +90,13 @@ class GuestPortalApiController extends Controller
             'roomInfo' => [
                 'roomId' => $portal['room_id'],
                 'roomNumber' => $portal['room_number'],
-                'checkOutAt' => optional(Room::withoutGlobalScopes()->find($portal['room_id'])?->current_check_out)->toDateString(),
+                'checkOutAt' => optional(Room::query()->find($portal['room_id'])?->current_check_out)->toDateString(),
                 'activeBookingId' => $activeBooking ? (string) $activeBooking->id : null,
                 'guestName' => $activeBooking?->guest_name ?? 'In-House Guest',
                 'showReviewPrompt' => (bool) ($activeBooking && ($activeBooking->status?->value ?? (string) $activeBooking->status) === 'completed' && ! $hasReview),
             ],
             'services' => [],
-            'amenityClaims' => AmenityClaim::withoutGlobalScopes()
-                ->where('hotel_id', $portal['hotel_id'])
+            'amenityClaims' => AmenityClaim::query()
                 ->where('room_id', $portal['room_id'])
                 ->latest('claimed_at')
                 ->limit(25)
@@ -123,8 +121,7 @@ class GuestPortalApiController extends Controller
             'quantity' => ['required', 'integer', 'min:1', 'max:20'],
         ]);
 
-        $claim = AmenityClaim::withoutGlobalScopes()->create([
-            'hotel_id' => $portal['hotel_id'],
+        $claim = AmenityClaim::query()->create([
             'room_id' => $portal['room_id'],
             'room_number' => $portal['room_number'],
             'guest_name' => 'In-House Guest',
@@ -159,8 +156,7 @@ class GuestPortalApiController extends Controller
             );
         }
 
-        $msg = GuestMessage::withoutGlobalScopes()->create([
-            'hotel_id' => $portal['hotel_id'],
+        $msg = GuestMessage::query()->create([
             'room_id' => $portal['room_id'],
             'room_number' => $portal['room_number'],
             'guest_name' => 'In-House Guest',
@@ -188,11 +184,8 @@ class GuestPortalApiController extends Controller
             'nights' => ['required', 'integer', 'min:1', 'max:30'],
         ]);
 
-        $room = Room::withoutGlobalScopes()
-            ->where('hotel_id', $portal['hotel_id'])
-            ->findOrFail($portal['room_id']);
-        $booking = Booking::withoutGlobalScopes()
-            ->where('hotel_id', $portal['hotel_id'])
+        $room = Room::query()->findOrFail($portal['room_id']);
+        $booking = Booking::query()
             ->where('room_id', $portal['room_id'])
             ->latest('created_at')
             ->firstOrFail();
@@ -209,8 +202,7 @@ class GuestPortalApiController extends Controller
         ]);
         $room->update(['current_check_out' => $newCheckout->toDateString()]);
 
-        BillingCharge::withoutGlobalScopes()->create([
-            'hotel_id' => $portal['hotel_id'],
+        BillingCharge::query()->create([
             'booking_id' => (string) $booking->id,
             'room_id' => $portal['room_id'],
             'type' => 'extend-stay',
@@ -243,12 +235,10 @@ class GuestPortalApiController extends Controller
             'rating' => ['required', 'integer', 'between:1,5'],
             'comment' => ['nullable', 'string', 'max:1000'],
         ]);
-        $booking = Booking::withoutGlobalScopes()
-            ->where('hotel_id', $portal['hotel_id'])
+        $booking = Booking::query()
             ->where('room_id', $portal['room_id'])
             ->findOrFail($validated['booking_id']);
-        $review = StayReview::withoutGlobalScopes()->create([
-            'hotel_id' => $portal['hotel_id'],
+        $review = StayReview::query()->create([
             'booking_id' => (string) $booking->id,
             'room_id' => $portal['room_id'],
             'guest_name' => $booking->guest_name ?? 'In-House Guest',

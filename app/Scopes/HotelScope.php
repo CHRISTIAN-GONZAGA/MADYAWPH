@@ -3,11 +3,15 @@
 namespace App\Scopes;
 
 use App\Models\User;
-use App\Support\AuthenticatedUser;
+use App\Support\TenantContext;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Scope;
 
+/**
+ * Restricts queries to the request's active hotel when {@see TenantContext} is bound
+ * (Sanctum admin/staff, guest portal, web session, or public customer hotel_id).
+ */
 class HotelScope implements Scope
 {
     public function apply(Builder $builder, Model $model): void
@@ -17,17 +21,16 @@ class HotelScope implements Scope
             return;
         }
 
-        // Do not trigger auth provider lookups from within model global scopes.
-        if (! AuthenticatedUser::check()) {
-            return;
-        }
+        $hotelId = TenantContext::id();
+        if ($hotelId === null || $hotelId === '') {
+            if (config('hotel.strict_tenant_scoping')) {
+                $builder->where('hotel_id', '__STRICT_NO_ACTIVE_TENANT__');
+            }
 
-        $user = AuthenticatedUser::user();
-        if (! $user || ! isset($user->hotel_id) || ! $user->hotel_id) {
             return;
         }
 
         // For MongoDB document queries, avoid table-qualified fields.
-        $builder->where('hotel_id', (string) $user->hotel_id);
+        $builder->where('hotel_id', $hotelId);
     }
 }

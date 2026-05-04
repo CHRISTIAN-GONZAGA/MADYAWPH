@@ -30,13 +30,11 @@ class CustomerPortalApiController extends Controller
         }
 
         $hotel = Hotel::withoutGlobalScopes()->select('id', 'name', 'location')->find($hotelId);
-        $categories = RoomCategory::withoutGlobalScopes()
-            ->where('hotel_id', $hotelId)
+        $categories = RoomCategory::query()
             ->orderBy('name')
             ->get(['id', 'name', 'description']);
         if ($categories->isEmpty()) {
-            $categories = Room::withoutGlobalScopes()
-                ->where('hotel_id', $hotelId)
+            $categories = Room::query()
                 ->get()
                 ->groupBy(fn ($room) => strtolower((string) ($room->room_type?->value ?? $room->room_type)))
                 ->map(function ($roomsByType, $type) {
@@ -60,11 +58,8 @@ class CustomerPortalApiController extends Controller
         }
 
         $hotel = Hotel::withoutGlobalScopes()->select('id', 'name', 'location')->find($hotelId);
-        $category = RoomCategory::withoutGlobalScopes()
-            ->where('hotel_id', $hotelId)
-            ->find($categoryId);
-        $rooms = Room::withoutGlobalScopes()
-            ->where('hotel_id', $hotelId)
+        $category = RoomCategory::query()->find($categoryId);
+        $rooms = Room::query()
             ->when(
                 $category,
                 fn ($query) => $query->where('category_id', $categoryId),
@@ -114,12 +109,11 @@ class CustomerPortalApiController extends Controller
         ]);
 
         $hotelId = $validated['hotel_id'];
-        $room = Room::withoutGlobalScopes()->where('hotel_id', $hotelId)->findOrFail($validated['room_id']);
+        $room = Room::query()->findOrFail($validated['room_id']);
         $checkIn = Carbon::parse($validated['check_in']);
         $checkOut = Carbon::parse($validated['check_out']);
 
-        $hasConflict = ExternalReservation::withoutGlobalScopes()
-            ->where('hotel_id', $hotelId)
+        $hasConflict = ExternalReservation::query()
             ->where('assigned_room_id', (string) $room->id)
             ->whereIn('status', ['reserved', 'booked'])
             ->where(function ($query) use ($checkIn, $checkOut) {
@@ -131,8 +125,7 @@ class CustomerPortalApiController extends Controller
             return response()->json(['message' => 'Room already reserved on selected dates.'], 422);
         }
 
-        $reservation = ExternalReservation::withoutGlobalScopes()->create([
-            'hotel_id' => $hotelId,
+        $reservation = ExternalReservation::query()->create([
             'source' => 'app-customer',
             'external_reference' => 'RES'.now()->format('YmdHis').strtoupper(Str::random(4)),
             'guest_name' => $validated['guest_name'],
@@ -167,17 +160,14 @@ class CustomerPortalApiController extends Controller
         ]);
 
         $hotelId = $validated['hotel_id'];
-        $room = Room::withoutGlobalScopes()
-            ->where('hotel_id', $hotelId)
-            ->findOrFail($validated['room_id']);
+        $room = Room::query()->findOrFail($validated['room_id']);
         $checkIn = Carbon::parse($validated['check_in']);
         $checkOut = Carbon::parse($validated['check_out']);
         $nights = max(1, $checkIn->diffInDays($checkOut));
         $total = (float) $room->price_per_night * $nights;
 
-        $booking = Booking::withoutGlobalScopes()->create([
+        $booking = Booking::query()->create([
             'booking_reference' => 'BK'.now()->format('YmdHis').strtoupper(Str::random(4)),
-            'hotel_id' => (string) $room->hotel_id,
             'room_id' => (string) $room->id,
             'guest_name' => $validated['guest_name'],
             'guest_email' => $validated['guest_email'],

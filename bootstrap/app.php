@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Middleware\AuthenticateGuestPortalToken;
+use App\Http\Middleware\BindHotelTenantFromSanctumUser;
+use App\Http\Middleware\BindHotelTenantFromWebSession;
 use App\Http\Middleware\DisableHtmlCache;
 use App\Http\Middleware\EnsureSameOrigin;
 use App\Http\Middleware\PreventDoubleBooking;
@@ -45,6 +47,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->web(append: [
             RestoreAuthFromCookie::class,
+            BindHotelTenantFromWebSession::class,
             DisableHtmlCache::class,
         ]);
 
@@ -57,6 +60,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'prevent.double.booking' => PreventDoubleBooking::class,
             'same.origin' => EnsureSameOrigin::class,
             'guest.portal' => AuthenticateGuestPortalToken::class,
+            'hotel.tenant' => BindHotelTenantFromSanctumUser::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

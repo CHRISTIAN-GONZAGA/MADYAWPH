@@ -29,6 +29,6 @@
         <li>Auth (example): <code>POST {{ rtrim($apiBaseUrl, '/') }}/login</code></li>
     </ul>
 
-    <p><small>Mobile app: use <code>/api/v1</code> (see repository <code>flutter_app/README.md</code>).</small></p>
+    <p><small>Mobile app: base URL <code>{{ rtrim($apiBaseUrl, '/') }}/v1</code> (see <code>flutter_app/README.md</code>). In a browser, <code>…/api/v1</code> is JSON only; try <code>…/api/v1/hotels</code> to test.</small></p>
 </body>
 </html>

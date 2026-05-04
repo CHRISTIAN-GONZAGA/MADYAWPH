@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Support\GuestPortalStore;
+use App\Support\TenantContext;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -23,6 +24,12 @@ class AuthenticateGuestPortalToken
         $request->attributes->set('guest_portal', $portal);
         $request->attributes->set('guest_token', $token);
 
-        return $next($request);
+        TenantContext::set((string) $portal['hotel_id']);
+
+        try {
+            return $next($request);
+        } finally {
+            TenantContext::clear();
+        }
     }
 }
