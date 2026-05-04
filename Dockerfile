@@ -13,12 +13,11 @@ RUN apt-get update && apt-get install -y \
 # =========================
 RUN docker-php-ext-install zip
 
-# MongoDB extension (stable install)
+# MongoDB extension
 RUN pecl install mongodb \
-    && docker-php-ext-enable mongodb \
-    && echo "extension=mongodb.so" > /usr/local/etc/php/conf.d/mongodb.ini
+    && docker-php-ext-enable mongodb
 
-# Verify MongoDB is installed (fails build if not)
+# Verify MongoDB is installed
 RUN php -m | grep mongodb
 
 # =========================
@@ -45,11 +44,9 @@ RUN composer install --no-dev --optimize-autoloader --no-scripts
 COPY . .
 
 # =========================
-# Laravel optimizations
+# Fix permissions (important for Laravel)
 # =========================
-RUN php artisan config:clear \
-    && php artisan cache:clear \
-    && php artisan route:clear
+RUN chmod -R 775 storage bootstrap/cache
 
 # =========================
 # Run server
