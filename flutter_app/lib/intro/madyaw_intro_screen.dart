@@ -3,7 +3,7 @@ import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
 
-/// Cinematic splash: wave stroke, logo rise + scale, shimmer sweep, gentle bob, tap to skip.
+/// Vector “Madyaw” mark: animated wave, sailboat build, shimmer, typography, tap to skip.
 class MadyawIntroScreen extends StatefulWidget {
   const MadyawIntroScreen({super.key, required this.onFinished});
 
@@ -17,10 +17,13 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
     with TickerProviderStateMixin {
   late final AnimationController _sequence;
   late final AnimationController _bob;
+  late final AnimationController _ripple;
   bool _ended = false;
 
   static const _navy = Color(0xFF1B2B4A);
+  static const _navyDeep = Color(0xFF152238);
   static const _sky = Color(0xFF4A90D9);
+  static const _skyLight = Color(0xFF7AB8F0);
   static const _mist = Color(0xFFF0F4FA);
 
   @override
@@ -28,13 +31,18 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
     super.initState();
     _sequence = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3200),
+      duration: const Duration(milliseconds: 3400),
     )..addStatusListener(_onSequenceStatus);
 
     _bob = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2200),
+      duration: const Duration(milliseconds: 2600),
     )..repeat(reverse: true);
+
+    _ripple = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 4200),
+    )..repeat();
 
     _sequence.forward();
   }
@@ -52,6 +60,7 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
       _sequence.stop();
     }
     _bob.stop();
+    _ripple.stop();
     widget.onFinished();
   }
 
@@ -60,6 +69,7 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
     _sequence.removeStatusListener(_onSequenceStatus);
     _sequence.dispose();
     _bob.dispose();
+    _ripple.dispose();
     super.dispose();
   }
 
@@ -75,15 +85,17 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
       behavior: HitTestBehavior.opaque,
       onTap: _finish,
       child: AnimatedBuilder(
-        animation: Listenable.merge([_sequence, _bob]),
+        animation: Listenable.merge([_sequence, _bob, _ripple]),
         builder: (context, _) {
           final v = _sequence.value;
-          final wave = Curves.easeOutCubic.transform(_t(0.0, 0.38, v));
-          final logoEnter = Curves.elasticOut.transform(_t(0.22, 0.72, v));
-          final logoFade = Curves.easeOut.transform(_t(0.18, 0.45, v));
-          final shimmer = _t(0.5, 0.92, v);
-          final tagline = Curves.easeOut.transform(_t(0.58, 0.88, v));
-          final bobY = math.sin(_bob.value * math.pi * 2) * 5.0 * logoEnter;
+          final wave = Curves.easeOutCubic.transform(_t(0.0, 0.32, v));
+          final boat = Curves.elasticOut.transform(_t(0.14, 0.62, v));
+          final boatFade = Curves.easeOut.transform(_t(0.1, 0.35, v));
+          final shimmer = _t(0.42, 0.95, v);
+          final wordmark = Curves.easeOutCubic.transform(_t(0.48, 0.82, v));
+          final subline = Curves.easeOut.transform(_t(0.62, 0.9, v));
+          final bobY = math.sin(_bob.value * math.pi * 2) * 4.5 * boat;
+          final ripplePhase = _ripple.value;
 
           return DecoratedBox(
             decoration: BoxDecoration(
@@ -91,16 +103,17 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  Color.lerp(_mist, Colors.white, 0.35 + 0.08 * math.sin(v * math.pi * 2))!,
+                  Color.lerp(_mist, Colors.white, 0.32 + 0.06 * math.sin(v * math.pi * 2 + ripplePhase))!,
                   const Color(0xFFE8EEF7),
-                  Color.lerp(const Color(0xFFD4E4FA), _mist, 0.4 + 0.15 * v)!,
+                  Color.lerp(const Color(0xFFD4E4FA), _mist, 0.38 + 0.12 * v)!,
                 ],
-                stops: const [0.0, 0.55, 1.0],
+                stops: const [0.0, 0.52, 1.0],
               ),
             ),
             child: Stack(
               fit: StackFit.expand,
               children: [
+                _AuroraRings(progress: v, phase: ripplePhase),
                 _DriftParticles(progress: v),
                 CustomPaint(
                   painter: _WavePainter(progress: wave, color: _navy),
@@ -111,55 +124,103 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Transform.translate(
-                        offset: Offset(0, 48 * (1 - logoEnter) + bobY),
+                        offset: Offset(0, 36 * (1 - boat) + bobY),
                         child: Opacity(
-                          opacity: logoFade,
+                          opacity: boatFade,
                           child: Transform.scale(
-                            scale: lerpDouble(0.45, 1.0, logoEnter)!,
+                            scale: lerpDouble(0.55, 1.0, boat)!,
                             child: Transform(
-                              alignment: Alignment.center,
+                              alignment: Alignment.bottomCenter,
                               transform: Matrix4.identity()
-                                ..setEntry(3, 2, 0.0012)
-                                ..rotateX((1 - logoEnter) * 0.35)
-                                ..rotateY((1 - logoEnter) * -0.08),
-                              child: _ShimmerLogoMask(
-                                shimmerAmount: shimmer,
-                                child: Image.asset(
-                                  'assets/images/madyaw_logo.png',
-                                  width: 260,
-                                  fit: BoxFit.contain,
-                                  filterQuality: FilterQuality.high,
+                                ..setEntry(3, 2, 0.001)
+                                ..rotateX((1 - boat) * 0.42)
+                                ..rotateZ((1 - boat) * -0.04),
+                              child: ShaderMask(
+                                blendMode: BlendMode.srcATop,
+                                shaderCallback: (bounds) {
+                                  final sweep = bounds.width * 2.4;
+                                  final dx = (shimmer * (bounds.width + sweep)) - sweep * 0.6;
+                                  return LinearGradient(
+                                    colors: [
+                                      Colors.transparent,
+                                      _skyLight.withOpacity(0.35),
+                                      Colors.transparent,
+                                    ],
+                                    stops: const [0.38, 0.5, 0.62],
+                                    transform: _GradientPan(dx),
+                                  ).createShader(bounds);
+                                },
+                                child: CustomPaint(
+                                  size: const Size(260, 150),
+                                  painter: _BoatMarkPainter(
+                                    progress: boat,
+                                    shimmer: shimmer,
+                                    navy: _navy,
+                                    navyDeep: _navyDeep,
+                                    accent: _sky,
+                                    accentLight: _skyLight,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
                       ),
-                      const SizedBox(height: 28),
+                      const SizedBox(height: 8),
                       Opacity(
-                        opacity: tagline,
+                        opacity: wordmark,
                         child: Transform.translate(
-                          offset: Offset(0, 14 * (1 - tagline)),
-                          child: Column(
-                            children: [
-                              Text(
-                                'MADYAW',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  letterSpacing: 6,
-                                  fontWeight: FontWeight.w600,
-                                  color: _navy.withOpacity(0.55),
+                          offset: Offset(0, 12 * (1 - wordmark)),
+                          child: Text(
+                            'madyaw',
+                            style: TextStyle(
+                              fontSize: 38,
+                              height: 1.05,
+                              fontWeight: FontWeight.w500,
+                              letterSpacing: -0.8,
+                              fontFamily: 'Georgia',
+                              fontFamilyFallback: const ['serif'],
+                              color: _sky,
+                              shadows: [
+                                Shadow(
+                                  color: _skyLight.withOpacity(0.55),
+                                  blurRadius: 18,
+                                  offset: const Offset(0, 2),
                                 ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                'Tap anywhere to continue',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: _sky.withOpacity(0.75),
+                                Shadow(
+                                  color: _navy.withOpacity(0.2),
+                                  blurRadius: 0.5,
+                                  offset: const Offset(0, 1.5),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Opacity(
+                        opacity: subline,
+                        child: Transform.translate(
+                          offset: Offset(0, 8 * (1 - subline)),
+                          child: Text(
+                            'BOOKING APP',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              letterSpacing: 5.2,
+                              fontWeight: FontWeight.w700,
+                              color: _navy.withOpacity(0.88),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      Opacity(
+                        opacity: subline,
+                        child: Text(
+                          'Tap anywhere to continue',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: _sky.withOpacity(0.78),
                           ),
                         ),
                       ),
@@ -175,6 +236,190 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
   }
 }
 
+class _GradientPan extends GradientTransform {
+  const _GradientPan(this.dx);
+
+  final double dx;
+
+  @override
+  Matrix4 transform(Rect bounds, {TextDirection? textDirection}) {
+    return Matrix4.translationValues(dx, 0, 0);
+  }
+}
+
+/// Stylized sailboat: hull → mast → sails (trimmed paths) + water sheen.
+class _BoatMarkPainter extends CustomPainter {
+  _BoatMarkPainter({
+    required this.progress,
+    required this.shimmer,
+    required this.navy,
+    required this.navyDeep,
+    required this.accent,
+    required this.accentLight,
+  });
+
+  final double progress;
+  final double shimmer;
+  final Color navy;
+  final Color navyDeep;
+  final Color accent;
+  final Color accentLight;
+
+  Path _hullPath() {
+    final p = Path();
+    p.moveTo(-52, 18);
+    p.quadraticBezierTo(-8, 26, 56, 14);
+    p.lineTo(62, 4);
+    p.quadraticBezierTo(28, -6, -48, 6);
+    p.close();
+    return p;
+  }
+
+  Path _mastPath() {
+    final p = Path();
+    p.moveTo(-6, 8);
+    p.lineTo(-6, -72);
+    p.lineTo(2, -72);
+    p.lineTo(2, 8);
+    p.close();
+    return p;
+  }
+
+  Path _sailFrontPath() {
+    final p = Path();
+    p.moveTo(-2, -70);
+    p.quadraticBezierTo(48, -58, 58, -88);
+    p.quadraticBezierTo(32, -102, -2, -78);
+    p.close();
+    return p;
+  }
+
+  Path _sailRearPath() {
+    final p = Path();
+    p.moveTo(-10, -68);
+    p.quadraticBezierTo(-46, -62, -52, -90);
+    p.quadraticBezierTo(-36, -100, -10, -76);
+    p.close();
+    return p;
+  }
+
+  Path _reflectionPath() {
+    final p = Path();
+    p.addOval(Rect.fromCenter(center: const Offset(8, 34), width: 88, height: 10));
+    return p;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.save();
+    canvas.translate(size.width / 2, size.height * 0.72);
+
+    final hullT = Curves.easeOutCubic.transform((progress / 0.45).clamp(0.0, 1.0));
+    final mastT = Curves.easeOut.transform(((progress - 0.12) / 0.4).clamp(0.0, 1.0));
+    final sailT = Curves.easeOut.transform(((progress - 0.22) / 0.55).clamp(0.0, 1.0));
+
+    void drawTrimmed(Path path, Paint paint, double t) {
+      if (t <= 0) return;
+      for (final m in path.computeMetrics()) {
+        canvas.drawPath(m.extractPath(0, m.length * t), paint);
+      }
+    }
+
+    // Soft shadow under boat
+    if (hullT > 0.05) {
+      canvas.save();
+      canvas.translate(4, 6);
+      canvas.scale(1.0, 0.35);
+      final shadowPaint = Paint()
+        ..color = Colors.black.withOpacity(0.14 * hullT)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+      canvas.drawPath(_hullPath(), shadowPaint);
+      canvas.restore();
+    }
+
+    // Hull
+    final hullPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [navy, navyDeep],
+      ).createShader(Rect.fromLTWH(-70, -90, 140, 120));
+
+    canvas.save();
+    canvas.scale(lerpDouble(0.86, 1.0, hullT)!, lerpDouble(0.75, 1.0, hullT)!);
+    canvas.translate(0, 18 * (1 - hullT));
+    drawTrimmed(_hullPath(), hullPaint, hullT);
+    canvas.restore();
+
+    // Mast
+    final mastPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = navyDeep;
+    canvas.save();
+    canvas.translate(0, 10 * (1 - mastT));
+    drawTrimmed(_mastPath(), mastPaint, mastT);
+    canvas.restore();
+
+    // Sails (gradient + trim)
+    final sailShader = LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        navy,
+        Color.lerp(navy, accentLight, 0.35 + 0.15 * math.sin(shimmer * math.pi * 2))!,
+        navyDeep,
+      ],
+      stops: const [0.0, 0.45, 1.0],
+    ).createShader(Rect.fromLTWH(-70, -110, 140, 100));
+
+    final rearPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..shader = sailShader;
+    final frontPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..shader = sailShader;
+
+    canvas.save();
+    canvas.translate(-2 * (1 - sailT), -4 * (1 - sailT));
+    drawTrimmed(_sailRearPath(), rearPaint, sailT);
+    canvas.restore();
+
+    canvas.save();
+    canvas.translate(3 * (1 - sailT), -2 * (1 - sailT));
+    drawTrimmed(_sailFrontPath(), frontPaint, sailT);
+    canvas.restore();
+
+    // Highlight stroke on sails
+    if (sailT > 0.4) {
+      final stroke = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.1
+        ..color = Colors.white.withOpacity(0.22 * sailT);
+      drawTrimmed(_sailFrontPath(), stroke, 1);
+      drawTrimmed(_sailRearPath(), stroke, 1);
+    }
+
+    // Water sheen under hull
+    if (hullT > 0.5) {
+      final sheen = Paint()
+        ..style = PaintingStyle.fill
+        ..color = accent.withOpacity(0.12 * hullT * (0.5 + 0.5 * math.sin(shimmer * math.pi * 2)));
+      drawTrimmed(_reflectionPath(), sheen, Curves.easeOut.transform(((hullT - 0.5) / 0.5).clamp(0.0, 1.0)));
+    }
+
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _BoatMarkPainter oldDelegate) {
+    return oldDelegate.progress != progress ||
+        oldDelegate.shimmer != shimmer ||
+        oldDelegate.navy != navy ||
+        oldDelegate.accentLight != accentLight;
+  }
+}
+
 class _WavePainter extends CustomPainter {
   _WavePainter({required this.progress, required this.color});
 
@@ -186,16 +431,16 @@ class _WavePainter extends CustomPainter {
     if (progress <= 0) return;
 
     final paint = Paint()
-      ..color = color.withOpacity(0.35 + 0.25 * progress)
+      ..color = color.withOpacity(0.28 + 0.22 * progress)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.8
+      ..strokeWidth = 2.6
       ..strokeCap = StrokeCap.round;
 
     final baseY = size.height * 0.58;
     final path = Path();
-    const step = 6.0;
+    const step = 5.0;
     for (double x = 0; x <= size.width; x += step) {
-      final w = math.sin((x / size.width) * math.pi * 2 + progress * 1.2) * 7 * progress;
+      final w = math.sin((x / size.width) * math.pi * 2 + progress * 1.15) * 8 * progress;
       if (x == 0) {
         path.moveTo(x, baseY + w);
       } else {
@@ -203,16 +448,16 @@ class _WavePainter extends CustomPainter {
       }
     }
 
-    final metrics = path.computeMetrics();
-    for (final metric in metrics) {
-      final extract = metric.extractPath(0, metric.length * progress);
-      canvas.drawPath(extract, paint);
+    for (final metric in path.computeMetrics()) {
+      canvas.drawPath(metric.extractPath(0, metric.length * progress), paint);
     }
 
     final glow = Paint()
-      ..color = color.withOpacity(0.08 * progress)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
-    canvas.drawPath(path, glow..style = PaintingStyle.stroke..strokeWidth = 10);
+      ..color = color.withOpacity(0.07 * progress)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 12;
+    canvas.drawPath(path, glow);
   }
 
   @override
@@ -221,44 +466,44 @@ class _WavePainter extends CustomPainter {
   }
 }
 
-class _ShimmerLogoMask extends StatelessWidget {
-  const _ShimmerLogoMask({required this.shimmerAmount, required this.child});
+class _AuroraRings extends StatelessWidget {
+  const _AuroraRings({required this.progress, required this.phase});
 
-  final double shimmerAmount;
-  final Widget child;
+  final double progress;
+  final double phase;
 
   @override
   Widget build(BuildContext context) {
-    return ShaderMask(
-      blendMode: BlendMode.srcATop,
-      shaderCallback: (bounds) {
-        final sweep = bounds.width * 2.2;
-        final dx = (shimmerAmount * (bounds.width + sweep)) - sweep;
-        return LinearGradient(
-          colors: [
-            Colors.white.withOpacity(0),
-            Colors.white.withOpacity(0.55),
-            Colors.white.withOpacity(0),
-          ],
-          stops: const [0.35, 0.5, 0.65],
-          transform: GradientTranslation(dx, 0),
-        ).createShader(bounds);
-      },
-      child: child,
+    return CustomPaint(
+      painter: _AuroraPainter(progress: progress, phase: phase),
+      child: const SizedBox.expand(),
     );
   }
 }
 
-class GradientTranslation extends GradientTransform {
-  const GradientTranslation(this.dx, this.dy);
+class _AuroraPainter extends CustomPainter {
+  _AuroraPainter({required this.progress, required this.phase});
 
-  final double dx;
-  final double dy;
+  final double progress;
+  final double phase;
 
   @override
-  Matrix4 transform(Rect bounds, {TextDirection? textDirection}) {
-    return Matrix4.translationValues(dx, dy, 0);
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width * 0.5;
+    final cy = size.height * 0.38;
+    for (var i = 0; i < 3; i++) {
+      final r = 80.0 + i * 55 + 20 * math.sin(phase * math.pi * 2 + i);
+      final paint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2
+        ..color = const Color(0xFF4A90D9).withOpacity(0.04 * progress * (1 - i * 0.25));
+      canvas.drawCircle(Offset(cx, cy), r, paint);
+    }
   }
+
+  @override
+  bool shouldRepaint(covariant _AuroraPainter oldDelegate) =>
+      oldDelegate.progress != progress || oldDelegate.phase != phase;
 }
 
 class _DriftParticles extends StatelessWidget {
@@ -282,18 +527,18 @@ class _ParticlesPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final rnd = math.Random(4);
-    for (var i = 0; i < 28; i++) {
-      final x = (rnd.nextDouble()) * size.width;
+    final rnd = math.Random(7);
+    for (var i = 0; i < 32; i++) {
+      final x = rnd.nextDouble() * size.width;
       final baseY = rnd.nextDouble() * size.height;
-      final speed = 0.4 + rnd.nextDouble() * 0.9;
-      final y = (baseY - progress * size.height * speed * 1.4) % (size.height + 40) - 20;
-      final r = 1.2 + rnd.nextDouble() * 2.2;
-      final o = 0.04 + rnd.nextDouble() * 0.12;
+      final speed = 0.35 + rnd.nextDouble() * 0.95;
+      final y = (baseY - progress * size.height * speed * 1.35) % (size.height + 36) - 18;
+      final r = 1.0 + rnd.nextDouble() * 2.0;
+      final o = 0.035 + rnd.nextDouble() * 0.1;
       canvas.drawCircle(
         Offset(x, y),
         r,
-        Paint()..color = const Color(0xFF4A90D9).withOpacity(o * (0.5 + 0.5 * progress)),
+        Paint()..color = const Color(0xFF4A90D9).withOpacity(o * (0.45 + 0.55 * progress)),
       );
     }
   }

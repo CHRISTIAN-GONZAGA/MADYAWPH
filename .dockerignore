@@ -1,6 +1,7 @@
 .git
 .github
 .cursor
+flutter_app
 node_modules
 vendor
 npm-debug.log
