@@ -14,14 +14,8 @@ RUN docker-php-ext-install zip
 RUN pecl install mongodb \
     && docker-php-ext-enable mongodb
 
-# =========================
-# Node.js (LTS)
-# =========================
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs
-
-# IMPORTANT: prevent Vite memory crash
-ENV NODE_OPTIONS=--max_old_space_size=4096
+# Laravel Redis: use Predis (pure PHP). Image does not ship phpredis ext.
+ENV REDIS_CLIENT=predis
 
 # =========================
 # Composer
@@ -29,9 +23,6 @@ ENV NODE_OPTIONS=--max_old_space_size=4096
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 WORKDIR /app
-
-# Laravel Redis: use Predis (pure PHP). Image does not ship phpredis ext.
-ENV REDIS_CLIENT=predis
 
 # =========================
 # Install PHP dependencies FIRST
@@ -43,13 +34,6 @@ RUN composer install --no-dev --optimize-autoloader --no-scripts
 # Copy full project
 # =========================
 COPY . .
-
-# =========================
-# Install JS + Build Vite
-# =========================
-RUN npm cache clean --force
-RUN npm install
-RUN npm run build
 
 # =========================
 # Run server

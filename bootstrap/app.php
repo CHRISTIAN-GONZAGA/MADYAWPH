@@ -1,5 +1,11 @@
 <?php
 
+use App\Http\Middleware\AuthenticateGuestPortalToken;
+use App\Http\Middleware\DisableHtmlCache;
+use App\Http\Middleware\EnsureSameOrigin;
+use App\Http\Middleware\PreventDoubleBooking;
+use App\Http\Middleware\RestoreAuthFromCookie;
+use App\Http\Middleware\RoleCheck;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -15,21 +21,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->redirectGuestsTo(function (Request $request) {
-            $path = ltrim($request->path(), '/');
+        $middleware->redirectGuestsTo(fn () => route('welcome'));
 
-            if ($path === 'rooms' || $path === 'admin' || str_starts_with($path, 'admin/')) {
-                return route('auth.admin');
-            }
-
-            if ($path === 'staff' || str_starts_with($path, 'staff/')) {
-                return route('auth.staff');
-            }
-
-            return route('auth.hotel');
-        });
-
-        // Trust Render proxy headers so HTTPS + Inertia redirects are handled correctly.
+        // Trust Render (and similar) reverse-proxy headers for correct HTTPS URL generation.
         $middleware->trustProxies(
             at: '*',
             headers: Request::HEADER_X_FORWARDED_FOR
@@ -50,10 +44,8 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->web(append: [
-            \App\Http\Middleware\RestoreAuthFromCookie::class,
-            \App\Http\Middleware\DisableHtmlCache::class,
-            \App\Http\Middleware\EnsureInertiaResponseHeaders::class,
-            \App\Http\Middleware\HandleInertiaRequests::class,
+            RestoreAuthFromCookie::class,
+            DisableHtmlCache::class,
         ]);
 
         $middleware->api(prepend: [
@@ -61,9 +53,10 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->alias([
-            'role' => \App\Http\Middleware\RoleCheck::class,
-            'prevent.double.booking' => \App\Http\Middleware\PreventDoubleBooking::class,
-            'same.origin' => \App\Http\Middleware\EnsureSameOrigin::class,
+            'role' => RoleCheck::class,
+            'prevent.double.booking' => PreventDoubleBooking::class,
+            'same.origin' => EnsureSameOrigin::class,
+            'guest.portal' => AuthenticateGuestPortalToken::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

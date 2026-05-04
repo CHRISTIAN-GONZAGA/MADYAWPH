@@ -1,4 +1,6 @@
-# Mobile apps (Capacitor — Android & iOS)
+# Mobile apps — Capacitor (legacy WebView)
+
+> **Preferred path:** build the **native Flutter** app in **`flutter_app/`** (APK/AAB) against the Laravel **JSON API** (`/api/...`, Sanctum bearer tokens). This Capacitor setup wrapped the **Inertia** web UI in a WebView; it is kept for reference or gradual retirement.
 
 This folder wraps your **deployed** Laravel + Inertia app in native shells. Both platforms load the same **`server.url`** from `capacitor.config.ts` in a WebView; your Laravel backend and `.env` stay on the server.
 

@@ -1,7 +1,7 @@
 <?php
 
 return [
-    // Include web routes so Capacitor / split-origin frontends receive CORS exposure for Inertia headers.
+    // Expose custom headers for split-origin / tooling; Flutter APK calls the API directly (no browser CORS).
     'paths' => ['api/*', 'sanctum/csrf-cookie', '*'],
 
     'allowed_methods' => ['*'],

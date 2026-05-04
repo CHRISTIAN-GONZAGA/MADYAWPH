@@ -1,12 +1,13 @@
 # Gloretto Hotel HMS
 
-Laravel + Inertia React hotel management system with a Capacitor Android wrapper.
+Laravel **JSON API + MongoDB** backend (Render-ready) for a **Flutter** Android/iOS client. The public `/` route is a small **API landing** page; all hotel, admin, staff, guest, and customer flows are exposed under **`/api/v1/*`** (Sanctum bearer tokens + Redis/cache-backed guest tokens).
 
 This guide is the single source of truth for:
 - local setup
-- Railway deployment
+- Railway / Render deployment
 - MongoDB Atlas setup
-- Android Studio APK/AAB build and release
+- Flutter APK/AAB (see `flutter_app/README.md`)
+- Legacy Capacitor WebView wrapper (deprecated): `mobile/README.md`
 
 ---
 
@@ -14,9 +15,10 @@ This guide is the single source of truth for:
 
 - Laravel 12
 - PHP 8.2+
-- Inertia.js + React + Vite + Tailwind
+- **Flutter** app (build in `flutter_app/`) → `https://your-host/api/v1/...` + Sanctum bearer tokens (and guest tokens for in-house portal)
 - MongoDB Atlas via `mongodb/laravel-mongodb`
-- Capacitor Android wrapper in `mobile/`
+- Optional Redis for `CACHE_STORE` / `SESSION_DRIVER` / queues (recommended on Render for guest tokens + multi-instance)
+- Optional: Capacitor WebView in `mobile/` (deprecated; prefer Flutter)
 
 ---
 
@@ -26,7 +28,7 @@ Install on your machine:
 
 - PHP 8.2+ (`php -v`)
 - Composer (`composer -V`)
-- Node.js LTS + npm (`node -v`, `npm -v`)
+- Node.js LTS + npm only if you use the deprecated `mobile/` Capacitor wrapper (`node -v`, `npm -v`)
 - Git
 - Android Studio
 - Java/JDK 17 (`java -version`)
@@ -43,7 +45,6 @@ From project root:
 ```powershell
 cd "c:\Users\Christian\Documents\GLORETTO_APP"
 composer install
-npm install
 ```
 
 If `.env` does not exist:
@@ -58,18 +59,16 @@ Generate app key:
 php artisan key:generate
 ```
 
-Run tests and web build:
+Run tests:
 
 ```powershell
 composer test
-npm run build
 ```
 
-Run development servers:
+Run the API locally:
 
 ```powershell
 php artisan serve
-npm run dev
 ```
 
 ---
@@ -94,7 +93,7 @@ Important:
 
 ---
 
-## 5) Railway Deployment (Laravel + Inertia)
+## 5) Railway Deployment (Laravel API + optional legacy web)
 
 ## 5.1 Create and connect project
 
@@ -113,7 +112,6 @@ APP_DEBUG=false
 APP_KEY=base64:REPLACE_WITH_GENERATED_KEY
 APP_URL=https://your-railway-domain.up.railway.app
 FRONTEND_URL=https://your-railway-domain.up.railway.app
-
 DB_CONNECTION=mongodb
 MONGODB_URI=mongodb+srv://USER:PASSWORD@CLUSTER.mongodb.net/hotel_hms?retryWrites=true&w=majority
 MONGODB_DATABASE=hotel_hms
@@ -137,12 +135,10 @@ php artisan key:generate --show
 
 ## 5.3 Build/start behavior
 
-Railway should run install/build steps equivalent to:
+Railway should run install steps equivalent to:
 
 ```bash
 composer install --no-dev --optimize-autoloader
-npm ci
-npm run build
 ```
 
 And then run the app. If using a custom start command, ensure it binds to `$PORT`.
@@ -165,9 +161,23 @@ Smoke test:
 
 ---
 
-## 6) Android Studio + Capacitor (APK / AAB)
+## 6) Android / Play Store (Flutter + legacy Capacitor)
 
-## 6.1 First-time Android Studio open
+### 6.0 Flutter (recommended for new APK/AAB)
+
+Build the native app against this Laravel host’s **`/api`** routes (Sanctum bearer token). Full steps: **`flutter_app/README.md`**.
+
+```powershell
+cd "c:\Users\Christian\Documents\GLORETTO_APP\flutter_app"
+flutter create . --org com.gloretto --project-name gloretto_mobile
+flutter build appbundle --dart-define=API_BASE_URL=https://your-railway-domain.up.railway.app/api
+```
+
+### 6.1 Legacy: Capacitor WebView (same machine)
+
+These steps load the **Inertia** site inside a WebView. Prefer Flutter above for store releases.
+
+#### First-time Android Studio open
 
 When Android Studio starts:
 - choose **Open** (not **New Project**)
@@ -182,7 +192,7 @@ Check:
 - `Build, Execution, Deployment > Build Tools > Gradle` (Gradle JDK)
 - `Appearance & Behavior > System Settings > Android SDK` (SDK installed)
 
-## 6.2 Ensure Java 17
+#### Ensure Java 17
 
 This project is configured for Java 17 in Gradle.
 
@@ -203,7 +213,7 @@ java -version
 echo $env:JAVA_HOME
 ```
 
-## 6.3 Point mobile app to production URL
+#### Point Capacitor app to production URL
 
 Edit:
 - `mobile/capacitor.config.ts`
@@ -226,7 +236,7 @@ npm install
 npm run cap:sync
 ```
 
-## 6.4 Build debug APK
+#### Build debug APK (Capacitor)
 
 ```powershell
 cd "c:\Users\Christian\Documents\GLORETTO_APP\mobile"
@@ -236,7 +246,7 @@ npm run android:assemble:debug
 Expected output:
 - `mobile/android/app/build/outputs/apk/debug/app-debug.apk`
 
-## 6.5 Build release (Play Store)
+#### Build release (Play Store, Capacitor)
 
 CLI:
 
@@ -264,11 +274,15 @@ node -v
 npm -v
 java -version
 
-# 2) backend + frontend validation
+# 2) backend validation
 composer test
-npm run build
 
-# 3) mobile sync + debug apk
+# 3a) Flutter release bundle (after flutter create in flutter_app/)
+cd "c:\Users\Christian\Documents\GLORETTO_APP\flutter_app"
+flutter pub get
+flutter build appbundle --dart-define=API_BASE_URL=https://your-host.example/api
+
+# 3b) legacy Capacitor debug apk
 cd "c:\Users\Christian\Documents\GLORETTO_APP\mobile"
 npm install
 npm run cap:sync
@@ -288,11 +302,15 @@ npm run android:assemble:debug
 - project must target Java 17
 - re-sync Gradle and rebuild after confirming JDK 17
 
-### White screen on mobile app
+### White screen on legacy Capacitor app
 - check `mobile/capacitor.config.ts` `server.url`
 - verify Railway URL is reachable over HTTPS
 
-### Login/session issues in app
+### Flutter: 401 on API calls
+- confirm `POST /api/login` returns `token` and you send `Authorization: Bearer …`
+- `APP_URL` on Render must match the host your app calls
+
+### Login/session issues in legacy WebView app
 - verify `SANCTUM_STATEFUL_DOMAINS` (host only, no `https://`)
 - verify `SESSION_SECURE_COOKIE=true` in production HTTPS
 - verify `CORS_ALLOWED_ORIGINS` includes exact app URL
@@ -311,6 +329,7 @@ npm run android:assemble:debug
 ## 10) Useful Paths
 
 - App root: `c:\Users\Christian\Documents\GLORETTO_APP`
-- Mobile wrapper: `c:\Users\Christian\Documents\GLORETTO_APP\mobile`
-- Android project: `c:\Users\Christian\Documents\GLORETTO_APP\mobile\android`
+- Flutter client: `c:\Users\Christian\Documents\GLORETTO_APP\flutter_app`
+- Legacy Capacitor: `c:\Users\Christian\Documents\GLORETTO_APP\mobile`
+- Legacy Android project: `c:\Users\Christian\Documents\GLORETTO_APP\mobile\android`
 - Capacitor config: `c:\Users\Christian\Documents\GLORETTO_APP\mobile\capacitor.config.ts`
