@@ -58,11 +58,18 @@ class AuthController extends Controller
             ])->onlyInput('username', 'email');
         }
 
-        $activeHotelId = PortalContext::resolveHotelId($request);
-
         $userHotelId = (string) ($user->hotel_id ?? '');
 
-        if ($activeHotelId === '') {
+        // Scope hotel for this login attempt. Do not use PortalContext/cookies here: a stale
+        // active_hotel_id cookie from another hotel blocks login or causes redirect loops.
+        $fromInput = trim((string) ($request->input('hotel_id') ?? ''));
+        $fromQuery = trim((string) ($request->query('hotel') ?? ''));
+
+        if ($fromInput !== '') {
+            $activeHotelId = $fromInput;
+        } elseif ($fromQuery !== '') {
+            $activeHotelId = $fromQuery;
+        } else {
             $activeHotelId = $userHotelId;
         }
 
@@ -89,9 +96,9 @@ class AuthController extends Controller
         }
 
         $guard = $role === UserRole::ADMIN->value ? 'admin' : 'staff';
+        // SessionGuard::login() already regenerates the session inside updateSession(); a second
+        // regenerate() here can drop the guard session on some setups (MongoDB / multi-instance).
         Auth::guard($guard)->login($user, true);
-
-        $request->session()->regenerate();
 
         $request->session()->put('active_hotel_id', $userHotelId);
 
