@@ -20,7 +20,7 @@ class RoleCheck
             abort(401, 'Unauthenticated.');
         }
 
-        if (! in_array($user->role?->value, $roles, true)) {
+        if (! in_array($user->roleValue(), $roles, true)) {
             abort(403, 'Insufficient role.');
         }
 

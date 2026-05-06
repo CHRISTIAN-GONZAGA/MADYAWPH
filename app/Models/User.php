@@ -6,12 +6,12 @@ use App\Enums\UserRole;
 use App\Models\Concerns\BelongsToHotel;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use MongoDB\Laravel\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
+use MongoDB\Laravel\Auth\User as Authenticatable;
 
 class User extends Authenticatable
 {
@@ -53,6 +53,21 @@ class User extends Authenticatable
             'password' => 'hashed',
             'role' => UserRole::class,
         ];
+    }
+
+    public function roleValue(): string
+    {
+        $rawRole = $this->getRawOriginal('role');
+
+        if ($rawRole instanceof UserRole) {
+            return $rawRole->value;
+        }
+
+        if (! is_string($rawRole)) {
+            return '';
+        }
+
+        return strtolower(trim($rawRole));
     }
 
     public function staffMember(): HasOne

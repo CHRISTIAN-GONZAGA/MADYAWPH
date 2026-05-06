@@ -163,7 +163,13 @@ class PortalAuthController extends Controller
         return response()->json([
             'token' => $token,
             'token_type' => 'Bearer',
-            'user' => $user,
+            'user' => [
+                'id' => (string) $user->id,
+                'hotel_id' => (string) ($user->hotel_id ?? ''),
+                'name' => (string) ($user->name ?? ''),
+                'email' => (string) ($user->email ?? ''),
+                'role' => $userRole,
+            ],
             'role' => $userRole,
             'hotel_id' => $userHotelId,
         ]);
