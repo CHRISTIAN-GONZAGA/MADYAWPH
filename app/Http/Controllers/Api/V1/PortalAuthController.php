@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\Hotel;
+use App\Models\PersonalAccessToken;
 use App\Models\User;
 use App\Services\SmsService;
 use Illuminate\Http\JsonResponse;
@@ -142,8 +143,8 @@ class PortalAuthController extends Controller
             return response()->json(['message' => 'Use the role that matches this account (admin or staff).'], 422);
         }
 
-        $userHotelId = (string) ($user->hotel_id ?? '');
-        $activeHotelId = trim((string) ($validated['hotel_id'] ?? '')) ?: $userHotelId;
+        $userHotelId = $this->normalizeHotelId($user->hotel_id);
+        $activeHotelId = $this->normalizeHotelId($validated['hotel_id'] ?? '') ?: $userHotelId;
 
         if ($activeHotelId === '') {
             return response()->json(['message' => 'Sign in to your hotel first (send hotel_id from hotel access).'], 422);
@@ -157,8 +158,22 @@ class PortalAuthController extends Controller
             return response()->json(['message' => 'These credentials do not match our records.'], 422);
         }
 
-        $user->tokens()->delete();
-        $token = $user->createToken('flutter-'.$role)->plainTextToken;
+        try {
+            PersonalAccessToken::query()
+                ->where('tokenable_id', (string) $user->getAuthIdentifier())
+                ->where('tokenable_type', $user->getMorphClass())
+                ->delete();
+
+            $token = $user->createToken('flutter-'.$role)->plainTextToken;
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not issue an access token. Check server logs and database configuration.',
+            ], 500);
+        }
 
         return response()->json([
             'token' => $token,
@@ -277,5 +292,14 @@ class PortalAuthController extends Controller
         } catch (Throwable) {
             return false;
         }
+    }
+
+    private function normalizeHotelId(mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return '';
+        }
+
+        return trim((string) $value);
     }
 }

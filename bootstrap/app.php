@@ -13,7 +13,6 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Session\TokenMismatchException;
-use Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -51,9 +50,9 @@ return Application::configure(basePath: dirname(__DIR__))
             DisableHtmlCache::class,
         ]);
 
-        $middleware->api(prepend: [
-            EnsureFrontendRequestsAreStateful::class,
-        ]);
+        // Bearer-token API (Flutter): do not prepend Sanctum's EnsureFrontendRequestsAreStateful here.
+        // It boots session + CSRF for matching Origin/Referer hosts and often causes 419/500 when
+        // SESSION_DRIVER=database has no SQL table, or when mobile/web clients hit the API without CSRF.
 
         $middleware->alias([
             'role' => RoleCheck::class,

@@ -4,9 +4,32 @@ import 'auth_storage.dart';
 import 'config.dart';
 
 String dioErrorMessage(DioException e) {
-  final data = e.response?.data;
-  if (data is Map && data['message'] is String) {
-    return data['message'] as String;
+  final response = e.response;
+  final data = response?.data;
+  if (data is Map) {
+    final msg = data['message'];
+    if (msg is String && msg.isNotEmpty) {
+      return msg;
+    }
+    final errors = data['errors'];
+    if (errors is Map) {
+      final parts = <String>[];
+      for (final entry in errors.entries) {
+        final v = entry.value;
+        if (v is List) {
+          parts.addAll(v.map((x) => x.toString()));
+        } else {
+          parts.add(v.toString());
+        }
+      }
+      if (parts.isNotEmpty) {
+        return parts.join(' ');
+      }
+    }
+  }
+  final code = response?.statusCode;
+  if (code != null) {
+    return 'HTTP $code ${e.message ?? e.type.name}';
   }
   return e.message ?? e.type.name;
 }
