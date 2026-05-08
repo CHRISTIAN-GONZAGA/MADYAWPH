@@ -78,11 +78,10 @@ class BookingService
                 $this->smsService->send(
                     (string) $booking->guest_phone,
                     sprintf(
-                        'MADYAW Booking Confirmed. Ref: %s, Room %s, Check-in: %s, Access Code: %s',
+                        'MADYAW Booking Confirmed. Ref: %s, Room %s, Check-in: %s. Please get your room access password from hotel admin at check-in.',
                         $booking->booking_reference,
                         (string) $room->room_number,
-                        optional($booking->check_in_date)->toDateString() ?? (string) $booking->check_in_date,
-                        $generatedPassword
+                        optional($booking->check_in_date)->toDateString() ?? (string) $booking->check_in_date
                     ),
                     (string) $room->hotel_id,
                     $actor

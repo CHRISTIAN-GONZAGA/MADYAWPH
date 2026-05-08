@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\AdminDashboardApiController;
 use App\Http\Controllers\Api\V1\StaffDashboardApiController;
 use App\Models\AmenityClaim;
+use App\Models\Booking;
 use App\Models\GuestMessage;
 use App\Models\Hotel;
 use App\Models\HotelCredit;
@@ -23,6 +24,23 @@ use Illuminate\Support\Str;
 
 Route::middleware('role:admin')->group(function (): void {
     Route::get('/admin/dashboard', AdminDashboardApiController::class)->name('api.v1.admin.dashboard');
+
+    Route::get('/admin/bookings/{id}/room-password', function (Request $request, string $id) {
+        $booking = Booking::query()->findOrFail($id);
+        $room = Room::query()->find((string) $booking->room_id);
+        $password = (string) ($room?->current_access_code ?? '');
+        if ($password === '') {
+            return response()->json(['message' => 'No active room password for this booking.'], 404);
+        }
+
+        return response()->json([
+            'booking_id' => (string) $booking->id,
+            'booking_reference' => (string) $booking->booking_reference,
+            'room_id' => (string) ($room?->id ?? ''),
+            'room_number' => (string) ($room?->room_number ?? ''),
+            'room_access_password' => $password,
+        ]);
+    })->name('api.v1.admin.booking.room-password');
 
     Route::post('/admin/credits/recharge', function (Request $request) {
         $paymongoMin = (string) config('services.paymongo.secret') !== '';

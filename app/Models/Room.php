@@ -29,6 +29,10 @@ class Room extends Model
         'current_access_code',
     ];
 
+    protected $hidden = [
+        'current_access_code',
+    ];
+
     protected function casts(): array
     {
         return [

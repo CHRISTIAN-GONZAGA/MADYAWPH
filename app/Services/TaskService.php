@@ -17,7 +17,7 @@ class TaskService
     public function create(array $data, User $creator): Task
     {
         $assignee = StaffMember::withoutGlobalScopes()->findOrFail($data['assigned_to']);
-        if ((int) $assignee->hotel_id !== (int) $creator->hotel_id) {
+        if ((string) $assignee->hotel_id !== (string) $creator->hotel_id) {
             throw ValidationException::withMessages(['assigned_to' => 'Assignee must belong to your hotel.']);
         }
 

@@ -18,10 +18,12 @@ class TaskController extends Controller
     public function index(Request $request)
     {
         $query = Task::query();
-        if ($request->user()?->role?->value === 'staff') {
-            $query->whereHas('assignee', function ($q) use ($request): void {
-                $q->where('user_id', $request->user()->id);
-            });
+        if ($request->user()?->roleValue() === 'staff') {
+            $staffId = (string) (optional($request->user()->staffMember)->id ?? '');
+            if ($staffId === '') {
+                return response()->json(Task::query()->where('assigned_to', '__NO_STAFF_MEMBER__')->paginate(20));
+            }
+            $query->where('assigned_to', $staffId);
         }
 
         return response()->json($query->latest()->paginate(20));
@@ -41,9 +43,14 @@ class TaskController extends Controller
 
     public function assignedToMe(Request $request)
     {
+        $staffId = (string) (optional($request->user()->staffMember)->id ?? '');
+        if ($staffId === '') {
+            return response()->json([]);
+        }
+
         return response()->json(
             Task::query()
-                ->whereHas('assignee', fn ($q) => $q->where('user_id', $request->user()->id))
+                ->where('assigned_to', $staffId)
                 ->latest()
                 ->get()
         );
