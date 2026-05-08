@@ -680,10 +680,14 @@ Route::get('/tasks/assigned-to-me', [TaskController::class, 'assignedToMe'])->mi
 
 // Reports
 Route::get('/reports/sales', [ReportController::class, 'sales'])->middleware('role:admin');
+Route::get('/reports/sales/timeseries', [ReportController::class, 'salesTimeseries'])->middleware('role:admin');
 Route::get('/reports/sales-csv', [ReportController::class, 'salesCsv'])->middleware('role:admin');
 Route::get('/reports/sales-pdf', [ReportController::class, 'salesPdf'])->middleware('role:admin');
 Route::get('/reports/staff-performance', [ReportController::class, 'staffPerformance'])->middleware('role:admin');
 Route::get('/reports/room-occupancy', [ReportController::class, 'roomOccupancy'])->middleware('role:admin,staff');
+Route::get('/reports/activity/timeline', [ReportController::class, 'activityTimeline'])->middleware('role:admin,staff');
+Route::get('/reports/transfers', [ReportController::class, 'transferSummary'])->middleware('role:admin,staff');
+Route::get('/reports/tasks/performance', [ReportController::class, 'taskPerformance'])->middleware('role:admin,staff');
 
 // Activity logs
 Route::get('/activity-logs', [ActivityLogController::class, 'index'])->middleware('role:admin');

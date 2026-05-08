@@ -2,6 +2,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../dio_client.dart';
+import '../widgets/app_button.dart';
+import '../widgets/app_input.dart';
 import '../widgets/theme_fab.dart';
 
 class CustomerToolsScreen extends StatelessWidget {
@@ -144,26 +146,22 @@ class _TrackBookingScreenState extends State<TrackBookingScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          TextField(
+          AppInput(
             controller: _ref,
-            decoration: const InputDecoration(
-              labelText: 'Booking reference (e.g. BK2026...)',
-              border: OutlineInputBorder(),
-            ),
+            label: 'Booking reference',
+            hint: 'e.g. BK2026...',
           ),
           const SizedBox(height: 12),
-          TextField(
+          AppInput(
             controller: _email,
-            decoration: const InputDecoration(
-                labelText: 'Guest email (optional)',
-                border: OutlineInputBorder()),
+            label: 'Guest email (optional)',
+            keyboardType: TextInputType.emailAddress,
           ),
           const SizedBox(height: 12),
-          TextField(
+          AppInput(
             controller: _phone,
-            decoration: const InputDecoration(
-                labelText: 'Guest phone (optional)',
-                border: OutlineInputBorder()),
+            label: 'Guest phone (optional)',
+            keyboardType: TextInputType.phone,
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
@@ -174,20 +172,16 @@ class _TrackBookingScreenState extends State<TrackBookingScreen> {
           Row(
             children: [
               Expanded(
-                child: FilledButton(
+                child: AppPrimaryButton(
+                  label: 'Lookup',
                   onPressed: _busy ? null : _lookup,
-                  child: _busy
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Lookup'),
+                  isLoading: _busy,
                 ),
               ),
               const SizedBox(width: 10),
-              OutlinedButton(
+              AppSecondaryButton(
+                label: 'PDF',
                 onPressed: _downloadPdf,
-                child: const Text('PDF'),
               ),
             ],
           ),
@@ -297,18 +291,16 @@ class _OtpScreenState extends State<OtpScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          TextField(
+          AppInput(
             controller: _phone,
-            decoration: const InputDecoration(
-              labelText: 'Phone (E.164 e.g. +63917xxxxxxx)',
-              border: OutlineInputBorder(),
-            ),
+            label: 'Phone',
+            hint: 'E.164 e.g. +63917xxxxxxx',
+            keyboardType: TextInputType.phone,
           ),
           const SizedBox(height: 12),
-          TextField(
+          AppInput(
             controller: _otp,
-            decoration: const InputDecoration(
-                labelText: 'OTP (6 digits)', border: OutlineInputBorder()),
+            label: 'OTP (6 digits)',
             keyboardType: TextInputType.number,
           ),
           if (_error != null) ...[
@@ -320,16 +312,16 @@ class _OtpScreenState extends State<OtpScreen> {
           Row(
             children: [
               Expanded(
-                child: FilledButton(
+                child: AppPrimaryButton(
+                  label: 'Send OTP',
                   onPressed: _busy ? null : _send,
-                  child: const Text('Send OTP'),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: OutlinedButton(
+                child: AppSecondaryButton(
+                  label: 'Verify',
                   onPressed: _busy ? null : _verify,
-                  child: const Text('Verify'),
                 ),
               ),
             ],

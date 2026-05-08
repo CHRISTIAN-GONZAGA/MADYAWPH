@@ -2,6 +2,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../dio_client.dart';
+import '../widgets/app_button.dart';
+import '../widgets/app_input.dart';
+import '../widgets/app_state_views.dart';
 import '../widgets/theme_fab.dart';
 
 class AdminChatInboxScreen extends StatefulWidget {
@@ -62,21 +65,9 @@ class _AdminChatInboxScreenState extends State<AdminChatInboxScreen> {
   }
 
   Widget _buildBody() {
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading) return const AppLoadingView();
     if (_error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(_error!, textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              FilledButton(onPressed: _load, child: const Text('Retry')),
-            ],
-          ),
-        ),
-      );
+      return AppErrorView(message: _error!, onRetry: _load);
     }
     if (_threads.isEmpty) {
       return const Center(child: Text('No messages yet.'));
@@ -228,23 +219,17 @@ class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
             child: Row(
               children: [
                 Expanded(
-                  child: TextField(
+                  child: AppInput(
                     controller: _ctrl,
-                    decoration: const InputDecoration(
-                      hintText: 'Type a reply…',
-                      border: OutlineInputBorder(),
-                    ),
+                    label: 'Reply message',
+                    hint: 'Type a reply',
                   ),
                 ),
                 const SizedBox(width: 10),
-                FilledButton(
+                AppPrimaryButton(
+                  label: 'Send',
                   onPressed: _sending ? null : _send,
-                  child: _sending
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Send'),
+                  isLoading: _sending,
                 ),
               ],
             ),

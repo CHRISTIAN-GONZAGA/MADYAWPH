@@ -2,6 +2,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../dio_client.dart';
+import '../widgets/app_card.dart';
+import '../widgets/app_state_views.dart';
 import '../widgets/theme_fab.dart';
 
 class AdminBookingsScreen extends StatefulWidget {
@@ -83,8 +85,8 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
   }
 
   Widget _buildBody() {
-    if (_loading) return const Center(child: CircularProgressIndicator());
-    if (_error != null) return Center(child: Text(_error!));
+    if (_loading) return const AppLoadingView();
+    if (_error != null) return AppErrorView(message: _error!, onRetry: _load);
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
@@ -97,7 +99,7 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
           else
             ..._reservations.take(30).map((r) {
               final m = r as Map<String, dynamic>;
-              return Card(
+              return AppSectionCard(
                 child: ListTile(
                   leading: const Icon(Icons.event_available_outlined),
                   title: Text((m['guest_name'] ?? 'Guest').toString()),
@@ -117,7 +119,7 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
             ..._bookings.map((b) {
               final m = b as Map<String, dynamic>;
               final id = (m['id'] ?? m['_id'] ?? '').toString();
-              return Card(
+              return AppSectionCard(
                 child: ListTile(
                   leading: const Icon(Icons.bed_outlined),
                   title: Text((m['guest_name'] ?? 'Guest').toString()),

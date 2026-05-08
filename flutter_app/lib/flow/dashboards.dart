@@ -4,10 +4,14 @@ import 'package:flutter/services.dart';
 
 import '../auth_storage.dart';
 import '../dio_client.dart';
+import '../widgets/app_button.dart';
+import '../widgets/app_input.dart';
+import '../widgets/app_state_views.dart';
 import 'admin_rooms.dart';
 import 'admin_categories.dart';
 import 'admin_chat.dart';
 import 'admin_bookings.dart';
+import 'admin_reports.dart';
 import 'customer_tools.dart';
 import '../widgets/theme_fab.dart';
 
@@ -87,58 +91,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     } finally {
       if (mounted) setState(() => _busyAction = false);
     }
-  }
-
-  Future<void> _showRoomPasswordLookup() async {
-    final ctrl = TextEditingController();
-    final bookingId = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Get Room Password'),
-        content: TextField(
-          controller: ctrl,
-          decoration: const InputDecoration(
-            labelText: 'Booking ID',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(ctrl.text.trim()),
-            child: const Text('Fetch'),
-          ),
-        ],
-      ),
-    );
-    if (bookingId == null || bookingId.isEmpty) return;
-
-    await _runAction('Fetch room password', () async {
-      final res = await portalDio().get<Map<String, dynamic>>(
-          '/admin/bookings/$bookingId/room-password');
-      final d = res.data ?? {};
-      final password = d['room_access_password']?.toString() ?? '';
-      if (!mounted) return d;
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Room Access Password'),
-          content: SelectableText(
-            password.isEmpty
-                ? 'No active password found.'
-                : 'Booking ${d['booking_reference'] ?? ''}\nRoom ${d['room_number'] ?? ''}\nPassword: $password',
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Close'))
-          ],
-        ),
-      );
-      return d;
-    });
   }
 
   Future<void> _showSurgePricingDialog() async {
@@ -376,7 +328,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildBody(BuildContext context) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading) return const AppLoadingView();
     if (_error != null) {
       return Center(
         child: Padding(
@@ -495,21 +447,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
           _AdminActionTile(
             title: 'Reports and activity logs',
-            subtitle: 'Access sales, occupancy, and logs',
+            subtitle: 'Open professional reports center',
             icon: Icons.assessment_outlined,
-            onTap: () => _runAction('Load reports', () async {
-              final sales = await portalDio().get('/reports/sales');
-              final occ = await portalDio().get('/reports/room-occupancy');
-              final logs = await portalDio().get('/activity-logs');
-              final salesCount = (sales.data is List)
-                  ? (sales.data as List).length
-                  : ((sales.data as Map?)?['data'] as List?)?.length ?? 0;
-              final occRate = (occ.data as Map?)?['occupancy_rate'] ?? 'ok';
-              return {
-                'message':
-                    'Reports loaded (sales rows: $salesCount, occupancy: $occRate%, logs: ${(logs.data as Map?)?['total'] ?? 'ok'}).',
-              };
-            }),
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) => const AdminReportsScreen(),
+              ),
+            ),
+          ),
+          _AdminActionTile(
+            title: 'Activity logs',
+            subtitle: 'View transferred rooms, task updates, and events',
+            icon: Icons.timeline_outlined,
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) => const AdminActivityLogsScreen(),
+              ),
+            ),
           ),
           _AdminActionTile(
             title: 'Theme and personalization',
@@ -797,7 +751,7 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
   }
 
   Widget _buildBody() {
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading) return const AppLoadingView();
     if (_error != null) {
       return Center(
         child: Padding(
@@ -881,18 +835,13 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
           ),
           _AdminActionTile(
             title: 'Bookings and activity',
-            subtitle: 'Load bookings and activity logs',
+            subtitle: 'Open professional logs and operations view',
             icon: Icons.history_outlined,
-            onTap: () => _runAction('Load operations data', () async {
-              final bookings =
-                  await portalDio().get<Map<String, dynamic>>('/bookings');
-              final logs =
-                  await portalDio().get<Map<String, dynamic>>('/activity-logs');
-              return {
-                'message':
-                    'Bookings: ${(bookings.data?['total'] ?? 0)} | Logs: ${(logs.data?['total'] ?? 0)}',
-              };
-            }),
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) => const AdminActivityLogsScreen(),
+              ),
+            ),
           ),
           const SizedBox(height: 16),
           Text('Recent Tasks', style: Theme.of(context).textTheme.titleMedium),
@@ -1216,7 +1165,7 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
   }
 
   Widget _buildBody(BuildContext context) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading) return const AppLoadingView();
     if (_error != null) {
       return Center(
         child: Padding(
@@ -1390,7 +1339,7 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
   }
 
   Widget _buildBody(BuildContext context) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading) return const AppLoadingView();
     if (_error != null) {
       return Center(
         child: Padding(
@@ -1558,47 +1507,96 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     final checkInCtrl = TextEditingController();
     final checkOutCtrl = TextEditingController();
     final pricePerNight = (room['price_per_night'] as num?)?.toDouble() ?? 0;
+    DateTime? checkInDate;
+    DateTime? checkOutDate;
 
     final payload = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setLocal) {
-          final checkIn = DateTime.tryParse(checkInCtrl.text.trim());
-          final checkOut = DateTime.tryParse(checkOutCtrl.text.trim());
-          final nights = (checkIn != null && checkOut != null)
-              ? checkOut.difference(checkIn).inDays
+          final nights = (checkInDate != null && checkOutDate != null)
+              ? checkOutDate!.difference(checkInDate!).inDays
               : 0;
           final safeNights = nights > 0 ? nights : 0;
           final estTotal = safeNights * pricePerNight;
+
+          Future<void> pickCheckIn() async {
+            final now = DateTime.now();
+            final picked = await showDatePicker(
+              context: context,
+              firstDate: DateTime(now.year, now.month, now.day),
+              lastDate: now.add(const Duration(days: 365)),
+              initialDate: checkInDate ?? now,
+            );
+            if (picked == null) return;
+            checkInDate = picked;
+            if (checkOutDate != null && !checkOutDate!.isAfter(picked)) {
+              checkOutDate = null;
+              checkOutCtrl.clear();
+            }
+            checkInCtrl.text = picked.toIso8601String().split('T').first;
+            setLocal(() {});
+          }
+
+          Future<void> pickCheckOut() async {
+            if (checkInDate == null) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Select check-in first.')),
+              );
+              return;
+            }
+            final picked = await showDatePicker(
+              context: context,
+              firstDate: checkInDate!.add(const Duration(days: 1)),
+              lastDate: checkInDate!.add(const Duration(days: 365)),
+              initialDate: checkOutDate ??
+                  checkInDate!.add(const Duration(days: 1)),
+            );
+            if (picked == null) return;
+            checkOutDate = picked;
+            checkOutCtrl.text = picked.toIso8601String().split('T').first;
+            setLocal(() {});
+          }
+
           return AlertDialog(
             title: const Text('Book room'),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  TextField(
+                  AppInput(
                     controller: nameCtrl,
-                    decoration: const InputDecoration(labelText: 'Full name'),
+                    label: 'Full name',
                   ),
-                  TextField(
+                  const SizedBox(height: 8),
+                  AppInput(
                     controller: emailCtrl,
-                    decoration: const InputDecoration(labelText: 'Email'),
+                    label: 'Email',
+                    keyboardType: TextInputType.emailAddress,
                   ),
-                  TextField(
+                  const SizedBox(height: 8),
+                  AppInput(
                     controller: phoneCtrl,
-                    decoration: const InputDecoration(labelText: 'Phone'),
+                    label: 'Phone',
+                    keyboardType: TextInputType.phone,
                   ),
-                  TextField(
+                  const SizedBox(height: 8),
+                  AppInput(
                     controller: checkInCtrl,
-                    decoration: const InputDecoration(
-                        labelText: 'Check-in (YYYY-MM-DD)'),
-                    onChanged: (_) => setLocal(() {}),
+                    label: 'Check-in date',
+                    hint: 'Tap to open calendar',
+                    readOnly: true,
+                    onTap: pickCheckIn,
+                    suffixIcon: const Icon(Icons.calendar_month_outlined),
                   ),
-                  TextField(
+                  const SizedBox(height: 8),
+                  AppInput(
                     controller: checkOutCtrl,
-                    decoration: const InputDecoration(
-                        labelText: 'Check-out (YYYY-MM-DD)'),
-                    onChanged: (_) => setLocal(() {}),
+                    label: 'Check-out date',
+                    hint: 'Tap to open calendar',
+                    readOnly: true,
+                    onTap: pickCheckOut,
+                    suffixIcon: const Icon(Icons.calendar_month_outlined),
                   ),
                   const SizedBox(height: 10),
                   Align(
@@ -1615,7 +1613,8 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                 onPressed: () => Navigator.of(context).pop(),
                 child: const Text('Cancel'),
               ),
-              FilledButton(
+              AppPrimaryButton(
+                label: 'Book now',
                 onPressed: () => Navigator.of(context).pop({
                   'room_id': (room['id'] ?? '').toString(),
                   'guest_name': nameCtrl.text.trim(),
@@ -1624,7 +1623,6 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                   'check_in': checkInCtrl.text.trim(),
                   'check_out': checkOutCtrl.text.trim(),
                 }),
-                child: const Text('Book now'),
               ),
             ],
           );
@@ -1673,7 +1671,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
   }
 
   Widget _buildBody() {
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading) return const AppLoadingView();
     if (_error != null) {
       return Center(
         child: Padding(
