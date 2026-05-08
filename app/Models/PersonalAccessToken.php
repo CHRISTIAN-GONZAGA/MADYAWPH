@@ -22,7 +22,7 @@ class PersonalAccessToken extends BasePersonalAccessToken
     protected function casts(): array
     {
         return [
-            'abilities' => 'array',
+            'abilities' => 'json',
             'last_used_at' => 'datetime',
             'expires_at' => 'datetime',
         ];
