@@ -13,8 +13,9 @@ class _ThemeFabState extends State<ThemeFab>
     with SingleTickerProviderStateMixin {
   late final AnimationController _c = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 450),
-  )..repeat(reverse: true);
+    duration: const Duration(milliseconds: 180),
+    upperBound: 0.02,
+  );
 
   @override
   void dispose() {
@@ -45,13 +46,10 @@ class _ThemeFabState extends State<ThemeFab>
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: color,
-                    boxShadow: [
-                      BoxShadow(
-                        blurRadius: 18,
-                        spreadRadius: 1,
-                        color: color.withValues(alpha: 0.35),
-                      ),
-                    ],
+                    border: Border.all(
+                      color: Theme.of(context).dividerColor,
+                      width: 0.8,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -101,12 +99,19 @@ class _ThemeFabState extends State<ThemeFab>
         return FloatingActionButton(
           onPressed: _openPicker,
           backgroundColor: c,
-          foregroundColor: Theme.of(context).colorScheme.onPrimary,
-          child: AnimatedBuilder(
-            animation: _c,
-            builder: (context, _) => Transform.scale(
-              scale: 1 + (_c.value * 0.04),
-              child: const Icon(Icons.palette_outlined),
+          foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: GestureDetector(
+            onTapDown: (_) => _c.forward(),
+            onTapUp: (_) => _c.reverse(),
+            onTapCancel: () => _c.reverse(),
+            child: AnimatedBuilder(
+              animation: _c,
+              builder: (context, _) => Transform.scale(
+                scale: 1 - _c.value,
+                child: const Icon(Icons.palette_outlined),
+              ),
             ),
           ),
         );

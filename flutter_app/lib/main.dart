@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'intro/app_bootstrap.dart';
 import 'theme_controller.dart';
+import 'ui/app_theme.dart';
+import 'ui/design_tokens.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,10 +21,12 @@ class GlorettoApp extends StatelessWidget {
       builder: (context, seed, _) {
         return MaterialApp(
           title: 'Gloretto',
-          theme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(seedColor: seed),
-            useMaterial3: true,
-          ),
+          debugShowCheckedModeBanner: false,
+          themeAnimationDuration: UiTokens.dStd,
+          themeAnimationCurve: UiTokens.easeOperational,
+          themeMode: ThemeMode.system,
+          theme: AppTheme.light(seed),
+          darkTheme: AppTheme.dark(seed),
           home: const AppBootstrap(),
         );
       },

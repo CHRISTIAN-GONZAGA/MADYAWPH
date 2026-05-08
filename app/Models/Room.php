@@ -23,6 +23,7 @@ class Room extends Model
         'price_per_night',
         'status',
         'amenities',
+        'image_url',
         'current_guest_name',
         'current_check_in',
         'current_check_out',

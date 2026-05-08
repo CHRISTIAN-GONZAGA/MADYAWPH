@@ -670,6 +670,47 @@ Route::get('/admin/rooms/{room}', function (Request $request, Room $room) {
     ]);
 })->middleware('role:admin');
 
+Route::get('/admin/pricing/surge', function (Request $request) {
+    $hotelId = (string) $request->user()->hotel_id;
+    $settings = SystemSetting::withoutGlobalScopes()->firstOrCreate(
+        ['hotel_id' => $hotelId],
+        [
+            'theme_color' => '#2563eb',
+            'theme_mode' => 'light',
+            'sound_notifications_enabled' => false,
+            'surge_pricing_enabled' => true,
+            'surge_threshold_percent' => 50,
+            'surge_markup_percent' => 20,
+        ]
+    );
+
+    return response()->json([
+        'enabled' => (bool) ($settings->surge_pricing_enabled ?? true),
+        'threshold_percent' => (float) ($settings->surge_threshold_percent ?? 50),
+        'markup_percent' => (float) ($settings->surge_markup_percent ?? 20),
+    ]);
+})->middleware('role:admin');
+
+Route::patch('/admin/pricing/surge', function (Request $request) {
+    $validated = $request->validate([
+        'enabled' => ['required', 'boolean'],
+        'threshold_percent' => ['required', 'numeric', 'min:0', 'max:100'],
+        'markup_percent' => ['required', 'numeric', 'min:0', 'max:200'],
+    ]);
+    $hotelId = (string) $request->user()->hotel_id;
+    $settings = SystemSetting::withoutGlobalScopes()->firstOrCreate(
+        ['hotel_id' => $hotelId],
+        ['theme_color' => '#2563eb', 'theme_mode' => 'light', 'sound_notifications_enabled' => false]
+    );
+    $settings->update([
+        'surge_pricing_enabled' => (bool) $validated['enabled'],
+        'surge_threshold_percent' => (float) $validated['threshold_percent'],
+        'surge_markup_percent' => (float) $validated['markup_percent'],
+    ]);
+
+    return response()->json(['ok' => true]);
+})->middleware('role:admin');
+
 // Admin chat inbox (guest messages scoped to hotel)
 Route::get('/admin/chat/inbox', function (Request $request) {
     $hotelId = (string) $request->user()->hotel_id;

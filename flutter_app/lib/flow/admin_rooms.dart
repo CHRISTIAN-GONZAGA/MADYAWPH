@@ -14,8 +14,10 @@ class AdminRoomsScreen extends StatefulWidget {
 
 class _AdminRoomsScreenState extends State<AdminRoomsScreen> {
   List<dynamic> _rooms = const [];
+  List<dynamic> _categories = const [];
   String? _error;
   bool _loading = true;
+  bool _creating = false;
 
   @override
   void initState() {
@@ -30,8 +32,11 @@ class _AdminRoomsScreenState extends State<AdminRoomsScreen> {
     });
     try {
       final res = await portalDio().get<Map<String, dynamic>>('/admin/rooms');
+      final cat =
+          await portalDio().get<Map<String, dynamic>>('/room-categories');
       setState(() {
         _rooms = (res.data?['data'] as List<dynamic>?) ?? const [];
+        _categories = (cat.data?['data'] as List<dynamic>?) ?? const [];
         _loading = false;
       });
     } on DioException catch (e) {
@@ -55,6 +60,11 @@ class _AdminRoomsScreenState extends State<AdminRoomsScreen> {
         actions: [
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
           IconButton(
+            onPressed: _creating ? null : _createRoom,
+            icon: const Icon(Icons.add_business_outlined),
+            tooltip: 'Create room',
+          ),
+          IconButton(
             onPressed: () => Navigator.of(context).push<void>(
               MaterialPageRoute<void>(
                   builder: (_) => const AdminCategoriesScreen()),
@@ -67,6 +77,158 @@ class _AdminRoomsScreenState extends State<AdminRoomsScreen> {
       floatingActionButton: const ThemeFab(),
       body: _buildBody(),
     );
+  }
+
+  Future<void> _createRoom() async {
+    if (_categories.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Create a category first.')),
+      );
+      return;
+    }
+    final nameCtrl = TextEditingController();
+    final roomNoCtrl = TextEditingController();
+    final priceCtrl = TextEditingController();
+    final imgCtrl = TextEditingController();
+    final amenitiesCtrl = TextEditingController();
+    String categoryId =
+        ((_categories.first as Map<String, dynamic>)['id'] ?? '').toString();
+    String roomType = 'Single';
+    String status = 'available';
+    final payload = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocal) => AlertDialog(
+          title: const Text('Create room'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: categoryId,
+                  items: _categories.map((c) {
+                    final m = c as Map<String, dynamic>;
+                    final id = (m['id'] ?? '').toString();
+                    final name = (m['name'] ?? 'Unknown').toString();
+                    return DropdownMenuItem(value: id, child: Text(name));
+                  }).toList(),
+                  onChanged: (v) =>
+                      setLocal(() => categoryId = v ?? categoryId),
+                  decoration: const InputDecoration(
+                      labelText: 'Category', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(
+                        labelText: 'Display name',
+                        border: OutlineInputBorder())),
+                const SizedBox(height: 10),
+                TextField(
+                    controller: roomNoCtrl,
+                    decoration: const InputDecoration(
+                        labelText: 'Room number',
+                        border: OutlineInputBorder())),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  initialValue: roomType,
+                  items: const [
+                    DropdownMenuItem(value: 'Single', child: Text('Single')),
+                    DropdownMenuItem(value: 'Double', child: Text('Double')),
+                    DropdownMenuItem(value: 'Suite', child: Text('Suite')),
+                    DropdownMenuItem(value: 'Deluxe', child: Text('Deluxe')),
+                  ],
+                  onChanged: (v) => setLocal(() => roomType = v ?? roomType),
+                  decoration: const InputDecoration(
+                      labelText: 'Room type', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                    controller: priceCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                        labelText: 'Price per night',
+                        border: OutlineInputBorder())),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  initialValue: status,
+                  items: const [
+                    DropdownMenuItem(
+                        value: 'available', child: Text('available')),
+                    DropdownMenuItem(value: 'booked', child: Text('booked')),
+                    DropdownMenuItem(
+                        value: 'maintenance', child: Text('maintenance')),
+                    DropdownMenuItem(
+                        value: 'reserved', child: Text('reserved')),
+                  ],
+                  onChanged: (v) => setLocal(() => status = v ?? status),
+                  decoration: const InputDecoration(
+                      labelText: 'Status', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: amenitiesCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Amenities (comma separated)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: imgCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Room image URL (or upload later)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop({
+                'category_id': categoryId,
+                'display_name': nameCtrl.text.trim(),
+                'room_number': roomNoCtrl.text.trim(),
+                'room_type': roomType,
+                'price_per_night': double.tryParse(priceCtrl.text.trim()) ?? 0,
+                'status': status,
+                'amenities': amenitiesCtrl.text
+                    .split(',')
+                    .map((e) => e.trim())
+                    .where((e) => e.isNotEmpty)
+                    .toList(),
+                'image_url': imgCtrl.text.trim(),
+              }),
+              child: const Text('Create'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (payload == null) return;
+
+    if (_creating) return;
+    setState(() => _creating = true);
+    try {
+      final imageUrl = (payload['image_url'] ?? '').toString();
+      if (imageUrl.isEmpty) payload.remove('image_url');
+      await portalDio().post('/rooms', data: payload);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Room created.')));
+      await _load();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+    } finally {
+      if (mounted) setState(() => _creating = false);
+    }
   }
 
   Widget _buildBody() {
@@ -141,6 +303,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   String? _error;
   bool _loading = true;
   bool _busy = false;
+  bool _changingStatus = false;
 
   @override
   void initState() {
@@ -261,6 +424,127 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     }
   }
 
+  Future<void> _changeStatus() async {
+    final room = _data?['room'] as Map<String, dynamic>?;
+    final roomId = (room?['id'] ?? widget.roomId).toString();
+    final current = (room?['status'] ?? 'available').toString();
+    String status = current;
+    final chosen = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Change room status'),
+        content: DropdownButtonFormField<String>(
+          initialValue: current,
+          items: const [
+            DropdownMenuItem(value: 'available', child: Text('available')),
+            DropdownMenuItem(value: 'booked', child: Text('booked')),
+            DropdownMenuItem(value: 'maintenance', child: Text('maintenance')),
+            DropdownMenuItem(value: 'reserved', child: Text('reserved')),
+          ],
+          onChanged: (v) => status = v ?? current,
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.of(context).pop(status),
+              child: const Text('Update')),
+        ],
+      ),
+    );
+    if (chosen == null) return;
+    if (_changingStatus) return;
+    setState(() => _changingStatus = true);
+    try {
+      await portalDio().put('/rooms/$roomId/status', data: {'status': chosen});
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Status updated.')));
+      await _load();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+    } finally {
+      if (mounted) setState(() => _changingStatus = false);
+    }
+  }
+
+  Future<void> _transferRoom() async {
+    final booking = _data?['active_booking'] as Map<String, dynamic>?;
+    final room = _data?['room'] as Map<String, dynamic>?;
+    final bookingId = (booking?['id'] ?? '').toString();
+    final fromRoomId = (room?['id'] ?? widget.roomId).toString();
+    if (bookingId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No active booking to transfer.')));
+      return;
+    }
+    try {
+      final res = await portalDio().get<List<dynamic>>('/rooms/available');
+      final available = res.data ?? const [];
+      if (available.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('No available rooms.')));
+        return;
+      }
+      String toRoomId =
+          ((available.first as Map<String, dynamic>)['id'] ?? '').toString();
+      final payload = await showDialog<Map<String, String>>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setLocal) => AlertDialog(
+            title: const Text('Transfer room'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: toRoomId,
+                  items: available.map((r) {
+                    final m = r as Map<String, dynamic>;
+                    final id = (m['id'] ?? m['_id'] ?? '').toString();
+                    final no = (m['room_number'] ?? '').toString();
+                    return DropdownMenuItem(value: id, child: Text('Room $no'));
+                  }).toList(),
+                  onChanged: (v) => setLocal(() => toRoomId = v ?? toRoomId),
+                  decoration: const InputDecoration(labelText: 'Transfer to'),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel')),
+              FilledButton(
+                onPressed: () =>
+                    Navigator.of(context).pop({'to_room_id': toRoomId}),
+                child: const Text('Transfer'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (payload == null) return;
+      await portalDio().post('/room-transfers', data: {
+        'booking_id': bookingId,
+        'from_room_id': fromRoomId,
+        'to_room_id': payload['to_room_id'],
+        'reason': 'Guest requested transfer',
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Room transferred successfully.')));
+      await _load();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -351,6 +635,26 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                 onPressed: _busy ? null : _addFee,
                 icon: const Icon(Icons.add),
                 label: const Text('Add fee'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _changingStatus ? null : _changeStatus,
+                icon: const Icon(Icons.toggle_on_outlined),
+                label: const Text('Change status'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _transferRoom,
+                icon: const Icon(Icons.swap_horiz_outlined),
+                label: const Text('Transfer room'),
               ),
             ),
           ],

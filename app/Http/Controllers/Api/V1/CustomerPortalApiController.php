@@ -13,6 +13,7 @@ use App\Models\Hotel;
 use App\Models\Room;
 use App\Models\RoomCategory;
 use App\Services\ActivityLogService;
+use App\Services\RoomPricingService;
 use App\Services\SmsService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -22,6 +23,8 @@ use Illuminate\Support\Str;
 
 class CustomerPortalApiController extends Controller
 {
+    public function __construct(private readonly RoomPricingService $roomPricingService) {}
+
     public function categories(Request $request): JsonResponse
     {
         $hotelId = $this->resolveHotelId($request);
@@ -32,7 +35,7 @@ class CustomerPortalApiController extends Controller
         $hotel = Hotel::withoutGlobalScopes()->select('id', 'name', 'location')->find($hotelId);
         $categories = RoomCategory::query()
             ->orderBy('name')
-            ->get(['id', 'name', 'description']);
+            ->get(['id', 'name', 'description', 'image_url']);
         if ($categories->isEmpty()) {
             $categories = Room::query()
                 ->get()
@@ -42,6 +45,7 @@ class CustomerPortalApiController extends Controller
                         'id' => $type,
                         'name' => ucfirst((string) $type).' Rooms',
                         'description' => 'Available rooms in this category.',
+                        'image_url' => 'https://picsum.photos/seed/category-'.urlencode((string) $type).'/800/500',
                     ];
                 })
                 ->values();
@@ -67,25 +71,28 @@ class CustomerPortalApiController extends Controller
             )
             ->limit(30)
             ->get()
-            ->map(function ($room) {
+            ->map(function ($room) use ($hotelId) {
                 $imageCatalog = [
-                    'single' => 'https://images.unsplash.com/photo-1631049307264-da0ec9d70304?auto=format&fit=crop&w=1200&q=80',
-                    'double' => 'https://images.unsplash.com/photo-1566665797739-1674de7a421a?auto=format&fit=crop&w=1200&q=80',
-                    'suite' => 'https://images.unsplash.com/photo-1578683010236-d716f9a3f461?auto=format&fit=crop&w=1200&q=80',
-                    'deluxe' => 'https://images.unsplash.com/photo-1584132967334-10e028bd69f7?auto=format&fit=crop&w=1200&q=80',
+                    'single' => 'https://picsum.photos/seed/room-single/1200/700',
+                    'double' => 'https://picsum.photos/seed/room-double/1200/700',
+                    'suite' => 'https://picsum.photos/seed/room-suite/1200/700',
+                    'deluxe' => 'https://picsum.photos/seed/room-deluxe/1200/700',
                 ];
                 $roomType = strtolower((string) ($room->room_type?->value ?? $room->room_type));
+                $basePrice = (float) $room->price_per_night;
+                $displayPrice = $this->roomPricingService->applySurge((string) $hotelId, $basePrice);
 
                 return [
                     'id' => (string) $room->id,
                     'display_name' => (string) ($room->display_name ?? ''),
                     'room_number' => $room->room_number,
                     'status' => $room->status?->value ?? (string) $room->status,
-                    'price_per_night' => (float) $room->price_per_night,
+                    'price_per_night' => $displayPrice,
+                    'base_price_per_night' => $basePrice,
                     'room_type' => $room->room_type?->value ?? (string) $room->room_type,
                     'category_id' => (string) ($room->category_id ?? ''),
                     'category_name' => (string) ($room->category_name ?? ''),
-                    'image_url' => $imageCatalog[$roomType] ?? $imageCatalog['suite'],
+                    'image_url' => (string) ($room->image_url ?? ($imageCatalog[$roomType] ?? $imageCatalog['suite'])),
                 ];
             });
 
@@ -164,7 +171,8 @@ class CustomerPortalApiController extends Controller
         $checkIn = Carbon::parse($validated['check_in']);
         $checkOut = Carbon::parse($validated['check_out']);
         $nights = max(1, $checkIn->diffInDays($checkOut));
-        $total = (float) $room->price_per_night * $nights;
+        $nightly = $this->roomPricingService->applySurge((string) $hotelId, (float) $room->price_per_night);
+        $total = $nightly * $nights;
 
         $booking = Booking::query()->create([
             'booking_reference' => 'BK'.now()->format('YmdHis').strtoupper(Str::random(4)),

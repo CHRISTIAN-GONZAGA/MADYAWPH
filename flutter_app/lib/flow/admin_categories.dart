@@ -54,6 +54,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
   Future<void> _create() async {
     final nameCtrl = TextEditingController();
     final descCtrl = TextEditingController();
+    final imgCtrl = TextEditingController();
     final payload = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => AlertDialog(
@@ -73,6 +74,13 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
               decoration: const InputDecoration(
                   labelText: 'Description', border: OutlineInputBorder()),
             ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: imgCtrl,
+              decoration: const InputDecoration(
+                  labelText: 'Category image URL',
+                  border: OutlineInputBorder()),
+            ),
           ],
         ),
         actions: [
@@ -83,6 +91,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
             onPressed: () => Navigator.of(context).pop({
               'name': nameCtrl.text.trim(),
               'description': descCtrl.text.trim(),
+              'image_url': imgCtrl.text.trim(),
             }),
             child: const Text('Create'),
           ),
@@ -153,9 +162,22 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
           final name =
               (c['name'] ?? c['category_name'] ?? 'Category').toString();
           final desc = (c['description'] ?? '').toString();
+          final imageUrl = (c['image_url'] ?? '').toString();
           return Card(
             child: ListTile(
-              leading: const Icon(Icons.category_outlined),
+              leading: imageUrl.isEmpty
+                  ? const Icon(Icons.category_outlined)
+                  : ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        imageUrl,
+                        width: 42,
+                        height: 42,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) =>
+                            const Icon(Icons.broken_image_outlined),
+                      ),
+                    ),
               title: Text(name),
               subtitle: desc.isEmpty ? null : Text(desc),
             ),

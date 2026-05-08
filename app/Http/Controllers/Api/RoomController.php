@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\RoomCategory;
 use App\Models\Room;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class RoomController extends Controller
 {
@@ -39,11 +40,18 @@ class RoomController extends Controller
             'price_per_night' => ['required', 'numeric', 'min:0'],
             'status' => ['nullable', 'in:available,booked,maintenance,reserved'],
             'amenities' => ['nullable', 'array'],
+            'image_url' => ['nullable', 'url'],
+            'image_file' => ['nullable', 'image', 'max:4096'],
         ]);
 
         $category = RoomCategory::query()->findOrFail($validated['category_id']);
         $validated['category_id'] = (string) $category->id;
         $validated['category_name'] = (string) $category->name;
+        if ($request->hasFile('image_file')) {
+            $validated['image_url'] = Storage::disk('public')->url(
+                $request->file('image_file')->store('rooms', 'public')
+            );
+        }
         $room = Room::create($validated);
         return response()->json($room, 201);
     }

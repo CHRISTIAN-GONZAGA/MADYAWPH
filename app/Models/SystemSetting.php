@@ -15,5 +15,8 @@ class SystemSetting extends Model
         'theme_color',
         'theme_mode',
         'sound_notifications_enabled',
+        'surge_pricing_enabled',
+        'surge_threshold_percent',
+        'surge_markup_percent',
     ];
 }

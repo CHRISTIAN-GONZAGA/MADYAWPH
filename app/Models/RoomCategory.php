@@ -15,6 +15,7 @@ class RoomCategory extends Model
         'name',
         'description',
         'default_price',
+        'image_url',
     ];
 
     protected function casts(): array

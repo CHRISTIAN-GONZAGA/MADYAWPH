@@ -18,7 +18,8 @@ class BookingService
         private readonly ActivityLogService $activityLogService,
         private readonly FinancialComputationService $financialComputationService,
         private readonly DomainGuardService $domainGuardService,
-        private readonly SmsService $smsService
+        private readonly SmsService $smsService,
+        private readonly RoomPricingService $roomPricingService
     )
     {
     }
@@ -37,7 +38,8 @@ class BookingService
             $checkIn = Carbon::parse($data['check_in_date']);
             $checkOut = Carbon::parse($data['check_out_date']);
             $nights = $this->financialComputationService->computeNights($checkIn, $checkOut);
-            $baseRoomCharge = $this->financialComputationService->computeRoomCharge((float) $room->price_per_night, $nights);
+            $adjustedNightly = $this->roomPricingService->applySurge((string) $room->hotel_id, (float) $room->price_per_night);
+            $baseRoomCharge = $this->financialComputationService->computeRoomCharge($adjustedNightly, $nights);
             $extraCharges = isset($data['extra_charges']) ? (float) $data['extra_charges'] : 0.0;
             $totalAmount = $this->financialComputationService->computeTotal($baseRoomCharge, $extraCharges);
 

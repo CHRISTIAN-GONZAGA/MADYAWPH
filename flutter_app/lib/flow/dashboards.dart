@@ -6,6 +6,7 @@ import '../dio_client.dart';
 import 'admin_rooms.dart';
 import 'admin_categories.dart';
 import 'admin_chat.dart';
+import 'admin_bookings.dart';
 import 'customer_tools.dart';
 import '../widgets/theme_fab.dart';
 
@@ -139,6 +140,80 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     });
   }
 
+  Future<void> _showSurgePricingDialog() async {
+    try {
+      final current =
+          await portalDio().get<Map<String, dynamic>>('/admin/pricing/surge');
+      bool enabled = current.data?['enabled'] == true;
+      final thresholdCtrl = TextEditingController(
+          text: '${current.data?['threshold_percent'] ?? 50}');
+      final markupCtrl = TextEditingController(
+          text: '${current.data?['markup_percent'] ?? 20}');
+
+      final payload = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setLocal) => AlertDialog(
+            title: const Text('Surge pricing'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SwitchListTile(
+                  value: enabled,
+                  onChanged: (v) => setLocal(() => enabled = v),
+                  title: const Text('Enable surge pricing'),
+                ),
+                TextField(
+                  controller: thresholdCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Threshold % (more than)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: markupCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Markup %',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel')),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop({
+                  'enabled': enabled,
+                  'threshold_percent':
+                      double.tryParse(thresholdCtrl.text.trim()) ?? 50,
+                  'markup_percent':
+                      double.tryParse(markupCtrl.text.trim()) ?? 20,
+                }),
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (payload == null) return;
+      await portalDio().patch('/admin/pricing/surge', data: payload);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Surge pricing updated.')),
+      );
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dioErrorMessage(e))),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -251,16 +326,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
           _AdminActionTile(
             title: 'Bookings operations',
-            subtitle: 'View/cancel/complete bookings',
+            subtitle: 'Handle booking and reservation requests',
             icon: Icons.book_online_outlined,
-            onTap: () => _runAction('Load bookings', () async {
-              final res =
-                  await portalDio().get<Map<String, dynamic>>('/bookings');
-              final total = res.data?['total'] ??
-                  (res.data?['data'] as List?)?.length ??
-                  0;
-              return {'message': 'Loaded $total bookings.'};
-            }),
+            onTap: () async {
+              await Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                    builder: (_) => const AdminBookingsScreen()),
+              );
+              await _load();
+            },
           ),
           _AdminActionTile(
             title: 'Billing and checkout reminders',
@@ -290,12 +364,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
           _AdminActionTile(
             title: 'Theme and personalization',
-            subtitle: 'View/reset personal theme',
+            subtitle: 'View/reset theme and tune pricing',
             icon: Icons.palette_outlined,
             onTap: () => _runAction('Reset personal theme', () async {
               await portalDio().delete('/admin/theme/reset');
               return {'message': 'Personal theme reset.'};
             }),
+          ),
+          _AdminActionTile(
+            title: 'Surge pricing settings',
+            subtitle: 'Auto-markup when occupancy exceeds threshold',
+            icon: Icons.trending_up_outlined,
+            onTap: _showSurgePricingDialog,
           ),
           _AdminActionTile(
             title: 'Room categories',
@@ -1162,12 +1242,43 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
     final hotel = _categoriesRes?['hotel'] as Map<String, dynamic>?;
     final hotelName = hotel?['name'] ?? 'Hotel';
     final categories = (_categoriesRes?['categories'] as List<dynamic>?) ?? [];
+    final placeholders = [
+      'https://picsum.photos/seed/hero-1/1200/600',
+      'https://picsum.photos/seed/hero-2/1200/600',
+      'https://picsum.photos/seed/hero-3/1200/600',
+    ];
 
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          SizedBox(
+            height: 180,
+            child: PageView.builder(
+              itemCount: placeholders.length,
+              itemBuilder: (context, i) {
+                final url = placeholders[i];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image.network(
+                      url,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest,
+                        alignment: Alignment.center,
+                        child: const Icon(Icons.image_outlined),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
           Text(hotelName, style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 4),
           Text(
@@ -1179,8 +1290,22 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
             final m = c as Map<String, dynamic>;
             final id = '${m['id']}';
             final name = '${m['name']}';
+            final imageUrl = '${m['image_url'] ?? ''}';
             return Card(
               child: ListTile(
+                leading: imageUrl.isEmpty
+                    ? const Icon(Icons.category_outlined)
+                    : ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          imageUrl,
+                          width: 44,
+                          height: 44,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              const Icon(Icons.broken_image_outlined),
+                        ),
+                      ),
                 title: Text(name),
                 subtitle: Text('${m['description'] ?? ''}'),
                 trailing: const Icon(Icons.chevron_right),
@@ -1298,9 +1423,34 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
           final r = rooms[i] as Map<String, dynamic>;
           return Card(
             child: ListTile(
-              title: Text('${r['display_name'] ?? r['room_number']}'),
+              contentPadding: const EdgeInsets.all(10),
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.network(
+                      (r['image_url'] ?? '').toString(),
+                      height: 130,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        height: 130,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest,
+                        alignment: Alignment.center,
+                        child: const Icon(Icons.bed_outlined),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text('${r['display_name'] ?? r['room_number']}'),
+                ],
+              ),
               subtitle: Text(
-                'Room ${r['room_number']} · ${r['status']} · ₱${r['price_per_night']}',
+                'Room ${r['room_number']} · ${r['status']} · ₱${r['price_per_night']}'
+                '${r['base_price_per_night'] != null && r['base_price_per_night'] != r['price_per_night'] ? ' (surge applied)' : ''}',
               ),
             ),
           );
