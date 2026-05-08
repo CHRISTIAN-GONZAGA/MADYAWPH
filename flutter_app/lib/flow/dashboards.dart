@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../auth_storage.dart';
 import '../dio_client.dart';
@@ -214,6 +215,144 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
   }
 
+  Future<void> _showRechargeDialog() async {
+    final amountCtrl = TextEditingController(text: '100');
+    String method = 'gcash';
+    final payload = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocal) => AlertDialog(
+          title: const Text('Recharge Credits'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: amountCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Amount (PHP)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                initialValue: method,
+                items: const [
+                  DropdownMenuItem(value: 'gcash', child: Text('GCash')),
+                  DropdownMenuItem(value: 'paymaya', child: Text('PayMaya')),
+                ],
+                onChanged: (v) => setLocal(() => method = v ?? method),
+                decoration: const InputDecoration(
+                  labelText: 'Wallet',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop({
+                'amount': double.tryParse(amountCtrl.text.trim()) ?? 0,
+                'method': method,
+              }),
+              child: const Text('Recharge'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (payload == null) return;
+
+    await _runAction('Recharge credits', () async {
+      final res = await portalDio().post<Map<String, dynamic>>(
+        '/admin/credits/recharge',
+        data: payload,
+      );
+      final data = res.data ?? {};
+      final redirectUrl = (data['redirect_url'] ?? '').toString();
+      if (redirectUrl.isNotEmpty && mounted) {
+        await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Complete PayMongo Payment'),
+            content: SelectableText(
+              'Open this URL in your browser to complete payment:\n\n$redirectUrl',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: redirectUrl));
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Checkout URL copied.')),
+                  );
+                },
+                child: const Text('Copy URL'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        );
+      }
+
+      return {
+        'message': (data['message'] ?? 'Recharge request sent.').toString(),
+      };
+    });
+  }
+
+  Future<void> _manageAmenityMenu() async {
+    final typeCtrl = TextEditingController(text: 'Breakfast');
+    final nameCtrl = TextEditingController(text: 'Tapsilog');
+    final priceCtrl = TextEditingController(text: '120');
+    final payload = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add amenity menu item'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+                controller: typeCtrl,
+                decoration: const InputDecoration(labelText: 'Type')),
+            TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(labelText: 'Name')),
+            TextField(
+                controller: priceCtrl,
+                decoration: const InputDecoration(labelText: 'Price')),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop({
+              'amenity_type': typeCtrl.text.trim(),
+              'name': nameCtrl.text.trim(),
+              'price': double.tryParse(priceCtrl.text.trim()) ?? 0,
+              'is_active': true,
+            }),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+    if (payload == null) return;
+
+    await _runAction('Amenity menu', () async {
+      await portalDio().post('/admin/amenity-menu', data: payload);
+      return {'message': 'Amenity menu item created.'};
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -349,6 +488,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             }),
           ),
           _AdminActionTile(
+            title: 'Recharge credits',
+            subtitle: 'Top up hotel credits via PayMongo wallet',
+            icon: Icons.account_balance_wallet_outlined,
+            onTap: _showRechargeDialog,
+          ),
+          _AdminActionTile(
             title: 'Reports and activity logs',
             subtitle: 'Access sales, occupancy, and logs',
             icon: Icons.assessment_outlined,
@@ -356,9 +501,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               final sales = await portalDio().get('/reports/sales');
               final occ = await portalDio().get('/reports/room-occupancy');
               final logs = await portalDio().get('/activity-logs');
+              final salesCount = (sales.data is List)
+                  ? (sales.data as List).length
+                  : ((sales.data as Map?)?['data'] as List?)?.length ?? 0;
+              final occRate = (occ.data as Map?)?['occupancy_rate'] ?? 'ok';
               return {
                 'message':
-                    'Reports loaded (sales: ${(sales.data as List?)?.length ?? 0}, occupancy: ${(occ.data as List?)?.length ?? 0}, logs: ${(logs.data as Map?)?['total'] ?? 'ok'}).',
+                    'Reports loaded (sales rows: $salesCount, occupancy: $occRate%, logs: ${(logs.data as Map?)?['total'] ?? 'ok'}).',
               };
             }),
           ),
@@ -402,10 +551,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             },
           ),
           _AdminActionTile(
-            title: 'Room password control',
-            subtitle: 'Admin-only booking room password lookup',
-            icon: Icons.password_outlined,
-            onTap: _showRoomPasswordLookup,
+            title: 'Amenity menu',
+            subtitle: 'Add paid amenity and breakfast options',
+            icon: Icons.restaurant_menu_outlined,
+            onTap: _manageAmenityMenu,
           ),
           const SizedBox(height: 12),
           Text(
@@ -855,47 +1004,65 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
   }
 
   Future<void> _claimAmenity() async {
-    final typeCtrl = TextEditingController(text: 'Housekeeping');
-    final nameCtrl = TextEditingController(text: 'Bottled Water');
     final qtyCtrl = TextEditingController(text: '1');
+    final items = (_data?['amenityMenu'] as List<dynamic>? ?? [])
+        .cast<Map<String, dynamic>>();
+    if (items.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No amenity menu available yet.')),
+      );
+      return;
+    }
+    String selectedId = (items.first['id'] ?? '').toString();
     final payload = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Request Amenity'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-                controller: typeCtrl,
-                decoration: const InputDecoration(labelText: 'Type')),
-            TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(labelText: 'Name')),
-            TextField(
-                controller: qtyCtrl,
-                decoration: const InputDecoration(labelText: 'Quantity')),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocal) => AlertDialog(
+          title: const Text('Request Amenity'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: selectedId,
+                items: items.map((item) {
+                  final id = (item['id'] ?? '').toString();
+                  final name = (item['amenityName'] ?? '').toString();
+                  final type = (item['amenityType'] ?? '').toString();
+                  final price = (item['price'] ?? 0).toString();
+                  return DropdownMenuItem(
+                    value: id,
+                    child: Text('$name ($type) - ₱$price'),
+                  );
+                }).toList(),
+                onChanged: (v) => setLocal(() => selectedId = v ?? selectedId),
+                decoration: const InputDecoration(labelText: 'Menu item'),
+              ),
+              TextField(
+                  controller: qtyCtrl,
+                  decoration: const InputDecoration(labelText: 'Quantity')),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop({
+                'amenityItemId': selectedId,
+                'quantity': int.tryParse(qtyCtrl.text.trim()) ?? 1,
+              }),
+              child: const Text('Send'),
+            ),
           ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop({
-              'amenityType': typeCtrl.text.trim(),
-              'amenityName': nameCtrl.text.trim(),
-              'quantity': int.tryParse(qtyCtrl.text.trim()) ?? 1,
-            }),
-            child: const Text('Send'),
-          ),
-        ],
       ),
     );
     if (payload == null) return;
 
     await _runGuestAction('Amenity request', () async {
       await guestDio().post('/guest/amenities/claim', data: payload);
-      return {'message': 'Amenity request submitted.'};
+      return {'message': 'Amenity request submitted and added to charges.'};
     });
   }
 
@@ -1349,6 +1516,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
   Map<String, dynamic>? _data;
   String? _error;
   bool _loading = true;
+  bool _booking = false;
 
   @override
   void initState() {
@@ -1380,6 +1548,114 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
         _error = '$e';
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _bookRoom(Map<String, dynamic> room) async {
+    final nameCtrl = TextEditingController();
+    final emailCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    final checkInCtrl = TextEditingController();
+    final checkOutCtrl = TextEditingController();
+    final pricePerNight = (room['price_per_night'] as num?)?.toDouble() ?? 0;
+
+    final payload = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocal) {
+          final checkIn = DateTime.tryParse(checkInCtrl.text.trim());
+          final checkOut = DateTime.tryParse(checkOutCtrl.text.trim());
+          final nights = (checkIn != null && checkOut != null)
+              ? checkOut.difference(checkIn).inDays
+              : 0;
+          final safeNights = nights > 0 ? nights : 0;
+          final estTotal = safeNights * pricePerNight;
+          return AlertDialog(
+            title: const Text('Book room'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(labelText: 'Full name'),
+                  ),
+                  TextField(
+                    controller: emailCtrl,
+                    decoration: const InputDecoration(labelText: 'Email'),
+                  ),
+                  TextField(
+                    controller: phoneCtrl,
+                    decoration: const InputDecoration(labelText: 'Phone'),
+                  ),
+                  TextField(
+                    controller: checkInCtrl,
+                    decoration: const InputDecoration(
+                        labelText: 'Check-in (YYYY-MM-DD)'),
+                    onChanged: (_) => setLocal(() {}),
+                  ),
+                  TextField(
+                    controller: checkOutCtrl,
+                    decoration: const InputDecoration(
+                        labelText: 'Check-out (YYYY-MM-DD)'),
+                    onChanged: (_) => setLocal(() {}),
+                  ),
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Duration: $safeNights night${safeNights == 1 ? '' : 's'}\nEstimated charge: ₱${estTotal.toStringAsFixed(2)}',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop({
+                  'room_id': (room['id'] ?? '').toString(),
+                  'guest_name': nameCtrl.text.trim(),
+                  'guest_email': emailCtrl.text.trim(),
+                  'guest_phone': phoneCtrl.text.trim(),
+                  'check_in': checkInCtrl.text.trim(),
+                  'check_out': checkOutCtrl.text.trim(),
+                }),
+                child: const Text('Book now'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (payload == null || _booking) return;
+    setState(() => _booking = true);
+    try {
+      final res = await publicDio().post<Map<String, dynamic>>(
+        '/customer/bookings',
+        data: {
+          'hotel_id': widget.hotelId,
+          ...payload,
+        },
+      );
+      if (!mounted) return;
+      final booking = res.data?['booking'] as Map<String, dynamic>?;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Booking submitted: ${(booking?['booking_reference'] ?? 'Reference generated')}'),
+        ),
+      );
+      await _load();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+    } finally {
+      if (mounted) setState(() => _booking = false);
     }
   }
 
@@ -1424,23 +1700,27 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
           return Card(
             child: ListTile(
               contentPadding: const EdgeInsets.all(10),
+              onTap: () => _bookRoom(r),
               title: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.network(
-                      (r['image_url'] ?? '').toString(),
-                      height: 130,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
+                  InkWell(
+                    onTap: () => _bookRoom(r),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.network(
+                        (r['image_url'] ?? '').toString(),
                         height: 130,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest,
-                        alignment: Alignment.center,
-                        child: const Icon(Icons.bed_outlined),
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          height: 130,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest,
+                          alignment: Alignment.center,
+                          child: const Icon(Icons.bed_outlined),
+                        ),
                       ),
                     ),
                   ),

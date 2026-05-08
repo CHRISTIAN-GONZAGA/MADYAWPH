@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\RoomController;
 use App\Http\Controllers\Api\StaffController;
 use App\Http\Controllers\Api\TaskController;
 use App\Models\AmenityClaim;
+use App\Models\AmenityMenuItem;
 use App\Models\Booking;
 use App\Models\BillingCharge;
 use App\Models\CheckoutReminder;
@@ -197,15 +198,70 @@ Route::middleware('role:admin')->group(function (): void {
         return response()->json(['ok' => true, 'claim' => $claim]);
     })->name('api.v1.admin.amenities.fulfill');
 
+    Route::get('/admin/amenity-menu', function (Request $request) {
+        $items = AmenityMenuItem::query()
+            ->where('hotel_id', (string) $request->user()->hotel_id)
+            ->orderBy('amenity_type')
+            ->orderBy('name')
+            ->get();
+
+        return response()->json(['data' => $items]);
+    })->name('api.v1.admin.amenity.menu.index');
+
+    Route::post('/admin/amenity-menu', function (Request $request) {
+        $validated = $request->validate([
+            'amenity_type' => ['required', 'string', 'max:100'],
+            'name' => ['required', 'string', 'max:255'],
+            'price' => ['required', 'numeric', 'min:0'],
+            'is_active' => ['nullable', 'boolean'],
+        ]);
+
+        $item = AmenityMenuItem::withoutGlobalScopes()->create([
+            ...$validated,
+            'hotel_id' => (string) $request->user()->hotel_id,
+            'is_active' => (bool) ($validated['is_active'] ?? true),
+        ]);
+
+        return response()->json($item, 201);
+    })->name('api.v1.admin.amenity.menu.store');
+
+    Route::put('/admin/amenity-menu/{id}', function (Request $request, string $id) {
+        $validated = $request->validate([
+            'amenity_type' => ['required', 'string', 'max:100'],
+            'name' => ['required', 'string', 'max:255'],
+            'price' => ['required', 'numeric', 'min:0'],
+            'is_active' => ['required', 'boolean'],
+        ]);
+        $item = AmenityMenuItem::withoutGlobalScopes()
+            ->where('hotel_id', (string) $request->user()->hotel_id)
+            ->findOrFail($id);
+        $item->update($validated);
+
+        return response()->json($item->fresh());
+    })->name('api.v1.admin.amenity.menu.update');
+
+    Route::delete('/admin/amenity-menu/{id}', function (Request $request, string $id) {
+        AmenityMenuItem::withoutGlobalScopes()
+            ->where('hotel_id', (string) $request->user()->hotel_id)
+            ->findOrFail($id)
+            ->delete();
+
+        return response()->json(['ok' => true]);
+    })->name('api.v1.admin.amenity.menu.delete');
+
     Route::patch('/admin/rooms/{id}/status', function (Request $request, string $id) {
         $validated = $request->validate([
-            'status' => ['required', 'in:available,booked,maintenance,reserved'],
+            'status' => ['required', 'in:available,booked,checked_in,checked_out,maintenance,reserved'],
         ]);
 
         $room = Room::query()->findOrFail($id);
         $previousStatus = $room->status?->value ?? (string) $room->status;
-        $room->update(['status' => $validated['status']]);
-        if ($validated['status'] === 'maintenance') {
+        $nextStatus = (string) $validated['status'];
+        if ($previousStatus === 'checked_in' && $nextStatus === 'checked_out') {
+            $nextStatus = 'maintenance';
+        }
+        $room->update(['status' => $nextStatus]);
+        if ($nextStatus === 'maintenance') {
             $staff = StaffMember::query()->where('hotel_id', (string) $request->user()->hotel_id)->first();
             if ($staff) {
                 Task::query()->create([
@@ -223,7 +279,7 @@ Route::middleware('role:admin')->group(function (): void {
             (string) $request->user()->hotel_id,
             $request->user(),
             "Updated room {$room->room_number} status",
-            ['from' => $previousStatus, 'to' => $validated['status']]
+            ['from' => $previousStatus, 'to' => $nextStatus]
         );
 
         return response()->json(['ok' => true, 'room' => $room]);
@@ -354,10 +410,12 @@ Route::get('/rooms/available', [RoomController::class, 'available']);
 Route::get('/rooms/{room}', [RoomController::class, 'show']);
 Route::post('/rooms', [RoomController::class, 'store'])->middleware('role:admin');
 Route::put('/rooms/{room}/status', [RoomController::class, 'updateStatus'])->middleware('role:admin,staff');
+Route::delete('/rooms/{room}', [RoomController::class, 'destroy'])->middleware('role:admin');
 
 // Room categories
 Route::get('/room-categories', [RoomCategoryController::class, 'index'])->middleware('role:admin,staff');
 Route::post('/room-categories', [RoomCategoryController::class, 'store'])->middleware('role:admin');
+Route::delete('/room-categories/{roomCategory}', [RoomCategoryController::class, 'destroy'])->middleware('role:admin');
 
 // Bookings
 Route::get('/bookings', [BookingController::class, 'index'])->middleware('role:admin,staff');
@@ -660,13 +718,20 @@ Route::get('/admin/rooms/{room}', function (Request $request, Room $room) {
     $charges = $booking
         ? BillingCharge::withoutGlobalScopes()->where('hotel_id', $hotelId)->where('booking_id', (string) $booking->id)->latest()->limit(50)->get()
         : collect();
+    $chargesTotal = (float) $charges->sum(fn ($charge) => (float) ($charge->amount ?? 0));
+    $nights = $booking && $booking->check_in_date && $booking->check_out_date
+        ? max(1, now()->parse($booking->check_in_date)->diffInDays(now()->parse($booking->check_out_date)))
+        : null;
 
     return response()->json([
         'room' => array_merge($room->toArray(), [
             'room_access_password' => (string) ($room->current_access_code ?? ''),
         ]),
-        'active_booking' => $booking,
+        'active_booking' => $booking ? array_merge($booking->toArray(), [
+            'stay_nights' => $nights,
+        ]) : null,
         'booking_charges' => $charges,
+        'booking_charges_total' => $chargesTotal,
     ]);
 })->middleware('role:admin');
 

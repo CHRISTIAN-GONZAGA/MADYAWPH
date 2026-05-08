@@ -36,8 +36,10 @@ Route::get('/rooms/{room}', [RoomController::class, 'show']);
 Route::get('/rooms/available', [RoomController::class, 'available']);
 Route::post('/rooms', [RoomController::class, 'store'])->middleware('role:admin');
 Route::put('/rooms/{room}/status', [RoomController::class, 'updateStatus'])->middleware('role:admin,staff');
+Route::delete('/rooms/{room}', [RoomController::class, 'destroy'])->middleware('role:admin');
 Route::get('/room-categories', [RoomCategoryController::class, 'index'])->middleware('role:admin,staff');
 Route::post('/room-categories', [RoomCategoryController::class, 'store'])->middleware('role:admin');
+Route::delete('/room-categories/{roomCategory}', [RoomCategoryController::class, 'destroy'])->middleware('role:admin');
 
 Route::get('/bookings', [BookingController::class, 'index'])->middleware('role:admin,staff');
 Route::put('/bookings/{booking}/cancel', [BookingController::class, 'cancel'])->middleware('role:admin,staff');

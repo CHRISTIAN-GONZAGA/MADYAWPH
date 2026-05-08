@@ -14,13 +14,27 @@ class ReportController extends Controller
     public function sales(Request $request)
     {
         $period = $request->query('period', 'weekly');
-        $groupFormat = $period === 'monthly' ? '%Y-%m' : '%Y-%u';
-
         $rows = Booking::query()
-            ->selectRaw("strftime('{$groupFormat}', created_at) as label, sum(total_amount) as total")
-            ->groupBy('label')
-            ->orderBy('label')
-            ->get();
+            ->get(['created_at', 'total_amount'])
+            ->groupBy(function ($booking) use ($period) {
+                $createdAt = $booking->created_at;
+                if (! $createdAt) {
+                    return 'unknown';
+                }
+
+                return $period === 'monthly'
+                    ? $createdAt->format('Y-m')
+                    : $createdAt->format('o-W');
+            })
+            ->map(function ($group, $label) {
+                return [
+                    'label' => (string) $label,
+                    'total' => (float) $group->sum(fn ($booking) => (float) ($booking->total_amount ?? 0)),
+                ];
+            })
+            ->values()
+            ->sortBy('label')
+            ->values();
 
         return response()->json($rows);
     }
@@ -46,7 +60,7 @@ class ReportController extends Controller
 
     public function salesCsv(Request $request)
     {
-        $rows = $this->sales($request)->getData(true);
+        $rows = $this->sales($request)->getData(true) ?? [];
         $csv = "label,total\n";
         foreach ($rows as $row) {
             $csv .= "{$row['label']},{$row['total']}\n";

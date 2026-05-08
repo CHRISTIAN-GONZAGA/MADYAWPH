@@ -158,6 +158,10 @@ class _AdminRoomsScreenState extends State<AdminRoomsScreen> {
                         value: 'available', child: Text('available')),
                     DropdownMenuItem(value: 'booked', child: Text('booked')),
                     DropdownMenuItem(
+                        value: 'checked_in', child: Text('checked_in')),
+                    DropdownMenuItem(
+                        value: 'checked_out', child: Text('checked_out')),
+                    DropdownMenuItem(
                         value: 'maintenance', child: Text('maintenance')),
                     DropdownMenuItem(
                         value: 'reserved', child: Text('reserved')),
@@ -438,6 +442,8 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
           items: const [
             DropdownMenuItem(value: 'available', child: Text('available')),
             DropdownMenuItem(value: 'booked', child: Text('booked')),
+            DropdownMenuItem(value: 'checked_in', child: Text('checked_in')),
+            DropdownMenuItem(value: 'checked_out', child: Text('checked_out')),
             DropdownMenuItem(value: 'maintenance', child: Text('maintenance')),
             DropdownMenuItem(value: 'reserved', child: Text('reserved')),
           ],
@@ -580,6 +586,8 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     final room = _data!['room'] as Map<String, dynamic>;
     final booking = _data!['active_booking'] as Map<String, dynamic>?;
     final charges = (_data!['booking_charges'] as List<dynamic>?) ?? const [];
+    final chargesTotal =
+        ((_data!['booking_charges_total'] as num?)?.toDouble() ?? 0);
 
     final roomNo = (room['room_number'] ?? '').toString();
     final status = (room['status'] ?? '').toString();
@@ -661,6 +669,8 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         ),
         const SizedBox(height: 16),
         Text('Charges', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        Text('Total fee: ₱${chargesTotal.toStringAsFixed(2)}'),
         const SizedBox(height: 8),
         if (charges.isEmpty)
           const Text('No charges yet.')

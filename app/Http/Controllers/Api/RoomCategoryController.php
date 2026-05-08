@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Room;
 use App\Models\RoomCategory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -50,5 +51,13 @@ class RoomCategoryController extends Controller
             'default_price' => (float) ($category->default_price ?? 0),
             'image_url' => (string) ($category->image_url ?? ''),
         ], 201);
+    }
+
+    public function destroy(RoomCategory $roomCategory)
+    {
+        Room::query()->where('category_id', (string) $roomCategory->id)->delete();
+        $roomCategory->delete();
+
+        return response()->json(['ok' => true]);
     }
 }

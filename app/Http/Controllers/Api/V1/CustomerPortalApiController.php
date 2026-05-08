@@ -7,6 +7,7 @@ use App\Enums\BookingStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\RoomStatus;
 use App\Http\Controllers\Controller;
+use App\Models\BillingCharge;
 use App\Models\Booking;
 use App\Models\ExternalReservation;
 use App\Models\Hotel;
@@ -187,6 +188,20 @@ class CustomerPortalApiController extends Controller
             'total_amount' => $total,
             'source' => BookingSource::KIOSK->value,
             'status' => BookingStatus::CONFIRMED->value,
+        ]);
+        BillingCharge::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $room->hotel_id,
+            'booking_id' => (string) $booking->id,
+            'room_id' => (string) $room->id,
+            'type' => 'room',
+            'label' => "Room charge ({$nights} night".($nights > 1 ? 's' : '').')',
+            'amount' => $total,
+            'quantity' => 1,
+            'is_manual' => false,
+            'metadata' => [
+                'nightly_rate' => $nightly,
+                'nights' => $nights,
+            ],
         ]);
 
         $generatedPassword = strtoupper(Str::random(8));

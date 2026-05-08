@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\BookingStatus;
 use App\Enums\RoomStatus;
+use App\Models\BillingCharge;
 use App\Models\Booking;
 use App\Models\Room;
 use App\Models\User;
@@ -50,6 +51,21 @@ class BookingService
                 'nights' => $nights,
                 'total_amount' => $totalAmount,
                 'status' => BookingStatus::BOOKED->value,
+            ]);
+            BillingCharge::withoutGlobalScopes()->create([
+                'hotel_id' => (string) $room->hotel_id,
+                'booking_id' => (string) $booking->id,
+                'room_id' => (string) $room->id,
+                'type' => 'room',
+                'label' => "Room charge ({$nights} night".($nights > 1 ? 's' : '').')',
+                'amount' => $baseRoomCharge,
+                'quantity' => 1,
+                'is_manual' => false,
+                'created_by' => (string) ($actor?->id ?? ''),
+                'metadata' => [
+                    'nightly_rate' => $adjustedNightly,
+                    'nights' => $nights,
+                ],
             ]);
             $generatedPassword = strtoupper(Str::random(8));
 

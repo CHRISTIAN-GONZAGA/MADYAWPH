@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\AmenityClaim;
+use App\Models\AmenityMenuItem;
 use App\Models\BillingCharge;
 use App\Models\Booking;
 use App\Models\GuestMessage;
@@ -38,7 +39,7 @@ class GuestPortalApiController extends Controller
         }
 
         $roomStatus = $room->status?->value ?? (string) $room->status;
-        if ($roomStatus !== RoomStatus::BOOKED->value) {
+        if (! in_array($roomStatus, [RoomStatus::BOOKED->value, RoomStatus::CHECKED_IN->value], true)) {
             return response()->json(['message' => 'Room is not currently checked in.'], 422);
         }
 
@@ -109,6 +110,18 @@ class GuestPortalApiController extends Controller
                     'status' => $claim->status,
                     'claimedAt' => optional($claim->claimed_at)->toISOString(),
                 ]),
+            'amenityMenu' => AmenityMenuItem::query()
+                ->where('hotel_id', (string) $portal['hotel_id'])
+                ->where('is_active', true)
+                ->orderBy('amenity_type')
+                ->orderBy('name')
+                ->get()
+                ->map(fn ($item) => [
+                    'id' => (string) $item->id,
+                    'amenityType' => (string) $item->amenity_type,
+                    'amenityName' => (string) $item->name,
+                    'price' => (float) $item->price,
+                ]),
         ]);
     }
 
@@ -116,26 +129,50 @@ class GuestPortalApiController extends Controller
     {
         $portal = $request->attributes->get('guest_portal');
         $validated = $request->validate([
-            'amenityType' => ['required', 'string', 'max:100'],
-            'amenityName' => ['required', 'string', 'max:255'],
+            'amenityItemId' => ['required', 'string'],
             'quantity' => ['required', 'integer', 'min:1', 'max:20'],
         ]);
+        $item = AmenityMenuItem::query()
+            ->where('hotel_id', (string) $portal['hotel_id'])
+            ->where('is_active', true)
+            ->findOrFail($validated['amenityItemId']);
 
         $claim = AmenityClaim::query()->create([
             'hotel_id' => (string) $portal['hotel_id'],
             'room_id' => $portal['room_id'],
             'room_number' => $portal['room_number'],
             'guest_name' => 'In-House Guest',
-            'amenity_type' => $validated['amenityType'],
-            'amenity_name' => $validated['amenityName'],
+            'amenity_type' => (string) $item->amenity_type,
+            'amenity_name' => (string) $item->name,
             'quantity' => (int) $validated['quantity'],
             'status' => 'pending',
             'claimed_at' => now(),
         ]);
+        $booking = Booking::query()
+            ->where('room_id', $portal['room_id'])
+            ->latest('created_at')
+            ->first();
+        if ($booking) {
+            $qty = (int) $validated['quantity'];
+            BillingCharge::withoutGlobalScopes()->create([
+                'hotel_id' => (string) $portal['hotel_id'],
+                'booking_id' => (string) $booking->id,
+                'room_id' => $portal['room_id'],
+                'type' => 'amenity',
+                'label' => "Amenity: {$item->name}",
+                'amount' => ((float) $item->price) * $qty,
+                'quantity' => $qty,
+                'is_manual' => false,
+                'metadata' => [
+                    'amenity_item_id' => (string) $item->id,
+                    'unit_price' => (float) $item->price,
+                ],
+            ]);
+        }
         app(ActivityLogService::class)->log(
             $portal['hotel_id'],
             null,
-            "Guest claimed amenity {$validated['amenityName']}",
+            "Guest claimed amenity {$item->name}",
             ['claim_id' => (string) $claim->id, 'room_id' => $portal['room_id']]
         );
 
