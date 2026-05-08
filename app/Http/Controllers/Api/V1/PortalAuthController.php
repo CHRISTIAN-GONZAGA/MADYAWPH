@@ -12,6 +12,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class PortalAuthController extends Controller
@@ -159,13 +160,31 @@ class PortalAuthController extends Controller
         }
 
         try {
+            Log::info('Portal login: deleting existing tokens', [
+                'user_id' => (string) $user->id,
+                'user_hotel_id' => (string) $user->hotel_id,
+                'role' => $role,
+            ]);
+
             PersonalAccessToken::query()
                 ->where('tokenable_id', (string) $user->getAuthIdentifier())
                 ->where('tokenable_type', $user->getMorphClass())
                 ->delete();
 
             $token = $user->createToken('flutter-'.$role)->plainTextToken;
+
+            Log::info('Portal login: token created', [
+                'user_id' => (string) $user->id,
+                'token_prefix' => substr($token, 0, 8),
+            ]);
         } catch (Throwable $e) {
+            Log::error('Portal login failed', [
+                'user_id' => (string) $user->id,
+                'hotel_id' => (string) $user->hotel_id,
+                'role' => $role,
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
             report($e);
 
             return response()->json([
