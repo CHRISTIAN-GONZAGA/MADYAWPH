@@ -129,7 +129,7 @@ class PortalAuthController extends Controller
 
         $role = (string) ($validated['role'] ?? '');
         $identifier = (string) ($validated['username'] ?? $validated['email'] ?? '');
-        $identifierField = filled($validated['username']) ? 'name' : 'email';
+        $identifierField = filled($validated['username'] ?? null) ? 'name' : 'email';
 
         $user = User::withoutGlobalScopes()
             ->where($identifierField, $identifier)
