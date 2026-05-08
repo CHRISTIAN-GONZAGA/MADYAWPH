@@ -30,6 +30,15 @@ class AdminDashboardApiController extends Controller
     {
         try {
             $user = $request->user();
+            Log::info('Admin dashboard request', [
+                'user_id' => $user?->id,
+                'hotel_id' => $user?->hotel_id,
+                'auth_header' => $request->header('Authorization') ? 'present' : 'missing',
+                'role' => $user?->roleValue(),
+            ]);
+            if (!$user) {
+                return response()->json(['message' => 'Unauthenticated.'], 401);
+            }
             $hotel = Hotel::withoutGlobalScopes()->find($user?->hotel_id);
             $rooms = Room::query()->get();
         $latestBookingsByRoom = Booking::withoutGlobalScopes()
