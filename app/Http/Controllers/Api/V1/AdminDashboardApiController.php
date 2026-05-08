@@ -22,14 +22,16 @@ use App\Models\Task;
 use App\Models\UserSetting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class AdminDashboardApiController extends Controller
 {
     public function __invoke(Request $request): JsonResponse
     {
-        $user = $request->user();
-        $hotel = Hotel::withoutGlobalScopes()->find($user?->hotel_id);
-        $rooms = Room::query()->get();
+        try {
+            $user = $request->user();
+            $hotel = Hotel::withoutGlobalScopes()->find($user?->hotel_id);
+            $rooms = Room::query()->get();
         $latestBookingsByRoom = Booking::withoutGlobalScopes()
             ->where('hotel_id', (string) $user->hotel_id)
             ->latest('created_at')
@@ -118,5 +120,17 @@ class AdminDashboardApiController extends Controller
         ];
 
         return response()->json($payload);
+        } catch (\Throwable $e) {
+            Log::error('Admin dashboard load failed', [
+                'user_id' => $request->user()?->id,
+                'hotel_id' => $request->user()?->hotel_id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => config('app.debug') ? $e->getMessage() : 'Server error while loading admin dashboard.',
+            ], 500);
+        }
     }
 }
