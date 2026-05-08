@@ -13,6 +13,10 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use MongoDB\Laravel\Auth\User as Authenticatable;
 
+/**
+ * Hotel portal accounts (admin/staff) live in the `users` collection with a string `role`
+ * of `admin` or `staff`. There is no separate MongoDB `admins` collection in this app.
+ */
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
@@ -57,17 +61,36 @@ class User extends Authenticatable
 
     public function roleValue(): string
     {
-        $rawRole = $this->getRawOriginal('role');
+        $fromCast = $this->getAttribute('role');
+        if ($fromCast instanceof UserRole) {
+            return $fromCast->value;
+        }
+        if (is_string($fromCast)) {
+            return strtolower(trim($fromCast));
+        }
 
+        $rawRole = $this->getRawOriginal('role');
         if ($rawRole instanceof UserRole) {
             return $rawRole->value;
         }
-
-        if (! is_string($rawRole)) {
-            return '';
+        if (is_string($rawRole)) {
+            return strtolower(trim($rawRole));
+        }
+        if (is_array($rawRole)) {
+            $candidate = $rawRole['value'] ?? $rawRole['name'] ?? null;
+            if (is_string($candidate)) {
+                return strtolower(trim($candidate));
+            }
+        }
+        if (is_object($rawRole) && ! ($rawRole instanceof UserRole)) {
+            foreach (['value', 'name'] as $prop) {
+                if (isset($rawRole->{$prop}) && is_string($rawRole->{$prop})) {
+                    return strtolower(trim($rawRole->{$prop}));
+                }
+            }
         }
 
-        return strtolower(trim($rawRole));
+        return '';
     }
 
     public function staffMember(): HasOne

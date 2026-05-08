@@ -523,7 +523,11 @@ class _PortalLoginScreenState extends State<PortalLoginScreen> {
         });
         return;
       }
-      await AuthStorage.setPortalAuth(token: token, role: widget.role);
+      final serverRole = res.data?['role'] as String?;
+      await AuthStorage.setPortalAuth(
+        token: token,
+        role: (serverRole != null && serverRole.isNotEmpty) ? serverRole : widget.role,
+      );
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } on DioException catch (e) {
