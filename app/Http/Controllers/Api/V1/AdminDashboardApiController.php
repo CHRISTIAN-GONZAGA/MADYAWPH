@@ -119,7 +119,12 @@ class AdminDashboardApiController extends Controller
             'staff' => StaffMember::query()->limit(25)->get(),
             'categories' => RoomCategory::query()->orderBy('name')->get(),
             'activityLogs' => ActivityLog::query()->latest('created_at')->limit(30)->get(),
-            'guestMessages' => GuestMessage::query()->latest('sent_at')->limit(30)->get()->map(fn ($message) => array_merge($message->toArray(), [
+            'guestMessages' => GuestMessage::withoutGlobalScopes()
+                ->where('hotel_id', (string) $user->hotel_id)
+                ->latest('sent_at')
+                ->limit(30)
+                ->get()
+                ->map(fn ($message) => array_merge($message->toArray(), [
                 'is_read' => (bool) ($message->is_read ?? false),
             ])),
             'reservations' => ExternalReservation::query()->latest()->limit(30)->get(),

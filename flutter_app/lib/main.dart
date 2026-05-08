@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
 import 'intro/app_bootstrap.dart';
+import 'theme_controller.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  loadThemeSeedColor();
   runApp(const GlorettoApp());
 }
 
@@ -12,13 +14,18 @@ class GlorettoApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Gloretto',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2563EB)),
-        useMaterial3: true,
-      ),
-      home: const AppBootstrap(),
+    return ValueListenableBuilder<Color>(
+      valueListenable: themeSeedColorNotifier,
+      builder: (context, seed, _) {
+        return MaterialApp(
+          title: 'Gloretto',
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(seedColor: seed),
+            useMaterial3: true,
+          ),
+          home: const AppBootstrap(),
+        );
+      },
     );
   }
 }

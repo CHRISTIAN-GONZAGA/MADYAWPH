@@ -122,6 +122,7 @@ class GuestPortalApiController extends Controller
         ]);
 
         $claim = AmenityClaim::query()->create([
+            'hotel_id' => (string) $portal['hotel_id'],
             'room_id' => $portal['room_id'],
             'room_number' => $portal['room_number'],
             'guest_name' => 'In-House Guest',
@@ -157,6 +158,7 @@ class GuestPortalApiController extends Controller
         }
 
         $msg = GuestMessage::query()->create([
+            'hotel_id' => (string) $portal['hotel_id'],
             'room_id' => $portal['room_id'],
             'room_number' => $portal['room_number'],
             'guest_name' => 'In-House Guest',
@@ -203,6 +205,7 @@ class GuestPortalApiController extends Controller
         $room->update(['current_check_out' => $newCheckout->toDateString()]);
 
         BillingCharge::query()->create([
+            'hotel_id' => (string) $portal['hotel_id'],
             'booking_id' => (string) $booking->id,
             'room_id' => $portal['room_id'],
             'type' => 'extend-stay',
@@ -239,6 +242,7 @@ class GuestPortalApiController extends Controller
             ->where('room_id', $portal['room_id'])
             ->findOrFail($validated['booking_id']);
         $review = StayReview::query()->create([
+            'hotel_id' => (string) $portal['hotel_id'],
             'booking_id' => (string) $booking->id,
             'room_id' => $portal['room_id'],
             'guest_name' => $booking->guest_name ?? 'In-House Guest',

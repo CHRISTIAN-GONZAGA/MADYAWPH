@@ -1,0 +1,293 @@
+import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
+
+import '../dio_client.dart';
+import '../widgets/theme_fab.dart';
+
+class AdminChatInboxScreen extends StatefulWidget {
+  const AdminChatInboxScreen({super.key});
+
+  @override
+  State<AdminChatInboxScreen> createState() => _AdminChatInboxScreenState();
+}
+
+class _AdminChatInboxScreenState extends State<AdminChatInboxScreen> {
+  List<dynamic> _threads = const [];
+  String? _error;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final res =
+          await portalDio().get<Map<String, dynamic>>('/admin/chat/inbox');
+      setState(() {
+        _threads = (res.data?['threads'] as List?) ?? const [];
+        _loading = false;
+      });
+    } on DioException catch (e) {
+      setState(() {
+        _error = dioErrorMessage(e);
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = '$e';
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Guest chat inbox'),
+        actions: [
+          IconButton(onPressed: _load, icon: const Icon(Icons.refresh))
+        ],
+      ),
+      floatingActionButton: const ThemeFab(),
+      body: _buildBody(),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(_error!, textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              FilledButton(onPressed: _load, child: const Text('Retry')),
+            ],
+          ),
+        ),
+      );
+    }
+    if (_threads.isEmpty) {
+      return const Center(child: Text('No messages yet.'));
+    }
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(12),
+        itemCount: _threads.length,
+        itemBuilder: (context, i) {
+          final t = _threads[i] as Map<String, dynamic>;
+          final roomId = (t['room_id'] ?? '').toString();
+          final roomNo = (t['room_number'] ?? '').toString();
+          final latest = (t['latest_message'] ?? '').toString();
+          final unread = (t['unread_count'] ?? 0).toString();
+          return Card(
+            child: ListTile(
+              leading: const Icon(Icons.forum_outlined),
+              title: Text('Room $roomNo'),
+              subtitle:
+                  Text(latest, maxLines: 2, overflow: TextOverflow.ellipsis),
+              trailing: unread == '0'
+                  ? const Icon(Icons.chevron_right)
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color:
+                                Theme.of(context).colorScheme.primaryContainer,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(unread),
+                        ),
+                        const SizedBox(width: 8),
+                        const Icon(Icons.chevron_right),
+                      ],
+                    ),
+              onTap: () async {
+                await Navigator.of(context).push<void>(
+                  MaterialPageRoute<void>(
+                      builder: (_) => AdminChatRoomScreen(
+                          roomId: roomId, roomNumber: roomNo)),
+                );
+                await _load();
+              },
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class AdminChatRoomScreen extends StatefulWidget {
+  const AdminChatRoomScreen(
+      {super.key, required this.roomId, required this.roomNumber});
+
+  final String roomId;
+  final String roomNumber;
+
+  @override
+  State<AdminChatRoomScreen> createState() => _AdminChatRoomScreenState();
+}
+
+class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
+  List<dynamic> _messages = const [];
+  String? _error;
+  bool _loading = true;
+  bool _sending = false;
+  final _ctrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final res = await portalDio()
+          .get<Map<String, dynamic>>('/admin/chat/rooms/${widget.roomId}');
+      setState(() {
+        _messages = (res.data?['messages'] as List?) ?? const [];
+        _loading = false;
+      });
+    } on DioException catch (e) {
+      setState(() {
+        _error = dioErrorMessage(e);
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = '$e';
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _send() async {
+    final text = _ctrl.text.trim();
+    if (text.isEmpty || _sending) return;
+    setState(() => _sending = true);
+    try {
+      await portalDio().post('/admin/chat/reply', data: {
+        'room_id': widget.roomId,
+        'room_number': widget.roomNumber,
+        'guest_name': 'In-House Guest',
+        'message': text,
+      });
+      _ctrl.clear();
+      await _load();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Room ${widget.roomNumber}'),
+        actions: [
+          IconButton(onPressed: _load, icon: const Icon(Icons.refresh))
+        ],
+      ),
+      floatingActionButton: const ThemeFab(),
+      body: Column(
+        children: [
+          Expanded(child: _buildBody()),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _ctrl,
+                    decoration: const InputDecoration(
+                      hintText: 'Type a reply…',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                FilledButton(
+                  onPressed: _sending ? null : _send,
+                  child: _sending
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('Send'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return Center(child: Text(_error!));
+    }
+    if (_messages.isEmpty) {
+      return const Center(child: Text('No messages in this thread yet.'));
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: _messages.length,
+      itemBuilder: (context, i) {
+        final m = _messages[i] as Map<String, dynamic>;
+        final role = (m['sender_role'] ?? '').toString();
+        final isAdmin = role == 'admin';
+        final bubbleColor = isAdmin
+            ? Theme.of(context).colorScheme.primaryContainer
+            : Theme.of(context).colorScheme.surfaceContainerHighest;
+        return Align(
+          alignment: isAdmin ? Alignment.centerRight : Alignment.centerLeft,
+          child: Container(
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.all(12),
+            constraints: const BoxConstraints(maxWidth: 320),
+            decoration: BoxDecoration(
+              color: bubbleColor,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Text((m['message'] ?? '').toString()),
+          ),
+        );
+      },
+    );
+  }
+}

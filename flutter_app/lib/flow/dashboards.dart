@@ -3,6 +3,11 @@ import 'package:flutter/material.dart';
 
 import '../auth_storage.dart';
 import '../dio_client.dart';
+import 'admin_rooms.dart';
+import 'admin_categories.dart';
+import 'admin_chat.dart';
+import 'customer_tools.dart';
+import '../widgets/theme_fab.dart';
 
 // --- Admin ---
 
@@ -152,6 +157,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ],
       ),
       body: _buildBody(context),
+      floatingActionButton: const ThemeFab(),
     );
   }
 
@@ -233,16 +239,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           const SizedBox(height: 8),
           _AdminActionTile(
             title: 'Rooms & status management',
-            subtitle: 'View all rooms and available rooms',
+            subtitle: 'Passwords, booking details, add fees',
             icon: Icons.hotel_outlined,
-            onTap: () => _runAction('Load rooms', () async {
-              final all = await portalDio().get('/rooms');
-              final avail = await portalDio().get('/rooms/available');
-              return {
-                'message':
-                    'Loaded ${(all.data as Map?)?['total'] ?? 'rooms'} rooms and ${(avail.data as List?)?.length ?? 0} available.',
-              };
-            }),
+            onTap: () async {
+              await Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                    builder: (_) => const AdminRoomsScreen()),
+              );
+              await _load();
+            },
           ),
           _AdminActionTile(
             title: 'Bookings operations',
@@ -291,6 +296,30 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               await portalDio().delete('/admin/theme/reset');
               return {'message': 'Personal theme reset.'};
             }),
+          ),
+          _AdminActionTile(
+            title: 'Room categories',
+            subtitle: 'Create categories and organize rooms',
+            icon: Icons.category_outlined,
+            onTap: () async {
+              await Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                    builder: (_) => const AdminCategoriesScreen()),
+              );
+              await _load();
+            },
+          ),
+          _AdminActionTile(
+            title: 'Guest chat inbox',
+            subtitle: 'Receive and reply to guest messages',
+            icon: Icons.forum_outlined,
+            onTap: () async {
+              await Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                    builder: (_) => const AdminChatInboxScreen()),
+              );
+              await _load();
+            },
           ),
           _AdminActionTile(
             title: 'Room password control',
@@ -1097,7 +1126,16 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
       appBar: AppBar(
         title: const Text('Book a stay'),
         actions: [
-          IconButton(onPressed: _load, icon: const Icon(Icons.refresh))
+          IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
+          IconButton(
+            onPressed: () => Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) => CustomerToolsScreen(hotelId: widget.hotelId),
+              ),
+            ),
+            icon: const Icon(Icons.manage_search_outlined),
+            tooltip: 'Track booking / OTP',
+          ),
         ],
       ),
       body: _buildBody(context),

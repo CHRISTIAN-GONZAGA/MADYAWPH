@@ -13,6 +13,7 @@ class AuthStorage {
   static const _kPortalToken = 'portal_token';
   static const _kPortalRole = 'portal_role';
   static const _kGuestToken = 'guest_token';
+  static const _kUiSeedColor = 'ui_seed_color';
 
   static Future<String?> hotelId() => _storage.read(key: _kHotelId);
 
@@ -25,12 +26,17 @@ class AuthStorage {
 
   static Future<String?> guestToken() => _storage.read(key: _kGuestToken);
 
-  static Future<void> setHotelContext({required String id, required String name}) async {
+  /// Hex like "#2563eb" (seed color for Material3).
+  static Future<String?> uiSeedColorHex() => _storage.read(key: _kUiSeedColor);
+
+  static Future<void> setHotelContext(
+      {required String id, required String name}) async {
     await _storage.write(key: _kHotelId, value: id);
     await _storage.write(key: _kHotelName, value: name);
   }
 
-  static Future<void> setPortalAuth({required String token, required String role}) async {
+  static Future<void> setPortalAuth(
+      {required String token, required String role}) async {
     await _storage.write(key: _kPortalToken, value: token);
     await _storage.write(key: _kPortalRole, value: role);
   }
@@ -45,6 +51,9 @@ class AuthStorage {
   }
 
   static Future<void> clearGuestAuth() => _storage.delete(key: _kGuestToken);
+
+  static Future<void> setUiSeedColorHex(String hex) =>
+      _storage.write(key: _kUiSeedColor, value: hex);
 
   /// Full sign-out / switch hotel: clears all persisted auth.
   static Future<void> clearAll() async {

@@ -22,7 +22,11 @@ class StaffDashboardApiController extends Controller
         return response()->json([
             'auth' => ['user' => $request->user()],
             'tasks' => $tasks,
-            'guestMessages' => GuestMessage::query()->latest('sent_at')->limit(25)->get(),
+            'guestMessages' => GuestMessage::withoutGlobalScopes()
+                ->where('hotel_id', (string) $request->user()->hotel_id)
+                ->latest('sent_at')
+                ->limit(25)
+                ->get(),
             'rooms' => Room::query()->latest()->limit(30)->get(),
         ]);
     }

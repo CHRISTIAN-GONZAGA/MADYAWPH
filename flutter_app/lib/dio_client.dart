@@ -34,7 +34,7 @@ String dioErrorMessage(DioException e) {
   return e.message ?? e.type.name;
 }
 
-enum _AuthKind { none, portal, guest }
+enum _AuthKind { portal, guest }
 
 Dio _baseDio() => Dio(
       BaseOptions(
