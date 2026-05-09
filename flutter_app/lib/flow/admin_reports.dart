@@ -1,11 +1,13 @@
 import 'package:dio/dio.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../dio_client.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/app_card.dart';
-import '../widgets/app_input.dart';
 import '../widgets/app_state_views.dart';
 
+/// Revenue and operations charts with daily / weekly / monthly / annual granularity.
 class AdminReportsScreen extends StatefulWidget {
   const AdminReportsScreen({super.key});
 
@@ -23,6 +25,13 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   String? _error;
   String _granularity = 'week';
 
+  static const _granularityLabels = {
+    'day': 'Daily',
+    'week': 'Weekly',
+    'month': 'Monthly',
+    'year': 'Annual',
+  };
+
   @override
   void initState() {
     super.initState();
@@ -35,13 +44,14 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       _error = null;
     });
     try {
+      final qp = {'granularity': _granularity};
       final sales = await portalDio().get<Map<String, dynamic>>(
         '/reports/sales/timeseries',
-        queryParameters: {'granularity': _granularity},
+        queryParameters: qp,
       );
       final timeline = await portalDio().get<Map<String, dynamic>>(
         '/reports/activity/timeline',
-        queryParameters: {'granularity': _granularity},
+        queryParameters: qp,
       );
       final transfers =
           await portalDio().get<Map<String, dynamic>>('/reports/transfers');
@@ -72,9 +82,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppScaffold(
       appBar: AppBar(
-        title: const Text('Reports Center'),
+        title: const Text('Reports & analytics'),
         actions: [
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
         ],
@@ -86,43 +96,54 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   Widget _buildBody() {
     if (_loading) return const AppLoadingView();
     if (_error != null) return AppErrorView(message: _error!, onRetry: _load);
+    final scheme = Theme.of(context).colorScheme;
     final salesSummary = (_sales?['totals'] as Map<String, dynamic>?) ?? {};
+    final salesPoints = (_sales?['points'] as List<dynamic>?) ?? [];
     final timelinePoints = (_timeline?['points'] as List<dynamic>?) ?? [];
-    final transferSummary = (_transfers?['summary'] as Map<String, dynamic>?) ?? {};
+    final transferSummary =
+        (_transfers?['summary'] as Map<String, dynamic>?) ?? {};
     final taskSummary = (_tasks?['summary'] as Map<String, dynamic>?) ?? {};
+
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         children: [
           AppSectionCard(
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: AppSelect<String>(
-                    label: 'Report period',
-                    value: _granularity,
-                    onChanged: (v) {
-                      if (v == null) return;
-                      setState(() => _granularity = v);
-                      _load();
-                    },
-                    items: const [
-                      DropdownMenuItem(value: 'day', child: Text('Daily')),
-                      DropdownMenuItem(value: 'week', child: Text('Weekly')),
-                      DropdownMenuItem(value: 'month', child: Text('Monthly')),
-                    ],
-                  ),
+                Text(
+                  'Period',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 10),
+                SegmentedButton<String>(
+                  segments: _granularityLabels.entries
+                      .map(
+                        (e) => ButtonSegment<String>(
+                          value: e.key,
+                          label: Text(e.value),
+                        ),
+                      )
+                      .toList(),
+                  selected: {_granularity},
+                  onSelectionChanged: (s) {
+                    setState(() => _granularity = s.first);
+                    _load();
+                  },
                 ),
               ],
             ),
           ),
+          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
                 child: _KpiCard(
-                  label: 'Sales',
-                  value: '₱${(salesSummary['sales'] ?? 0).toString()}',
+                  label: 'Total revenue',
+                  value:
+                      '₱${_fmtNum(salesSummary['sales'] ?? salesSummary['gross_sales'] ?? 0)}',
                   icon: Icons.payments_outlined,
                 ),
               ),
@@ -139,7 +160,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
             children: [
               Expanded(
                 child: _KpiCard(
-                  label: 'Transfers',
+                  label: 'Room transfers',
                   value: '${transferSummary['count'] ?? 0}',
                   icon: Icons.swap_horiz_outlined,
                 ),
@@ -157,118 +178,293 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Occupancy', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 6),
+                Text(
+                  'Occupancy',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
                 Text(
                   'Booked ${_occupancy?['booked_rooms'] ?? 0} / ${_occupancy?['total_rooms'] ?? 0} rooms (${_occupancy?['occupancy_rate'] ?? 0}%)',
                 ),
               ],
             ),
           ),
+          Text(
+            'Revenue by period',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
           AppSectionCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Activity timeline', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
-                if (timelinePoints.isEmpty)
-                  const Text('No activity found.')
-                else
-                  ...timelinePoints.take(12).map((p) {
-                    final m = p as Map<String, dynamic>;
-                    return ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.timeline_outlined),
-                      title: Text((m['period_label'] ?? '').toString()),
-                      subtitle: Text('Events: ${(m['total_events'] ?? 0)}'),
-                    );
-                  }),
-              ],
+            child: SizedBox(
+              height: 240,
+              child: salesPoints.isEmpty
+                  ? const Center(child: Text('No booking revenue in range.'))
+                  : Padding(
+                      padding: const EdgeInsets.only(
+                          right: 12, top: 12, bottom: 4),
+                      child: BarChart(
+                        _salesBarData(salesPoints, scheme),
+                      ),
+                    ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Bookings count',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          AppSectionCard(
+            child: SizedBox(
+              height: 220,
+              child: salesPoints.isEmpty
+                  ? const Center(child: Text('No bookings in range.'))
+                  : Padding(
+                      padding: const EdgeInsets.only(
+                          right: 12, top: 12, bottom: 4),
+                      child: LineChart(_bookingsLineData(salesPoints, scheme)),
+                    ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Activity volume',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          AppSectionCard(
+            child: SizedBox(
+              height: 220,
+              child: timelinePoints.isEmpty
+                  ? const Center(child: Text('No activity logs in range.'))
+                  : Padding(
+                      padding: const EdgeInsets.only(
+                          right: 12, top: 12, bottom: 4),
+                      child: BarChart(
+                        _activityBarData(timelinePoints, scheme),
+                      ),
+                    ),
             ),
           ),
         ],
       ),
     );
   }
-}
 
-class AdminActivityLogsScreen extends StatefulWidget {
-  const AdminActivityLogsScreen({super.key});
-
-  @override
-  State<AdminActivityLogsScreen> createState() => _AdminActivityLogsScreenState();
-}
-
-class _AdminActivityLogsScreenState extends State<AdminActivityLogsScreen> {
-  List<dynamic> _logs = const [];
-  bool _loading = true;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final res = await portalDio().get<Map<String, dynamic>>('/activity-logs');
-      setState(() {
-        _logs = (res.data?['data'] as List<dynamic>? ?? []);
-        _loading = false;
-      });
-    } on DioException catch (e) {
-      setState(() {
-        _error = dioErrorMessage(e);
-        _loading = false;
-      });
+  BarChartData _salesBarData(List<dynamic> points, ColorScheme scheme) {
+    final groups = <BarChartGroupData>[];
+    final maxShow = points.length > 20 ? 20 : points.length;
+    var maxY = 1.0;
+    for (var i = 0; i < maxShow; i++) {
+      final m = points[i] as Map<String, dynamic>;
+      final v = (m['gross_sales'] ?? 0).toDouble();
+      if (v > maxY) maxY = v;
+      groups.add(
+        BarChartGroupData(
+          x: i,
+          barRods: [
+            BarChartRodData(
+              toY: v,
+              width: 10,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+              color: scheme.primary,
+            ),
+          ],
+        ),
+      );
     }
-  }
 
-  String _groupLabel(DateTime? dt) {
-    if (dt == null) return 'Older';
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final d = DateTime(dt.year, dt.month, dt.day);
-    final diff = today.difference(d).inDays;
-    if (diff == 0) return 'Today';
-    if (diff <= 7) return 'This Week';
-    return 'Older';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Activity Logs')),
-      body: _loading
-          ? const AppLoadingView()
-          : _error != null
-              ? AppErrorView(message: _error!, onRetry: _load)
-              : ListView(
-                  padding: const EdgeInsets.all(12),
-                  children: [
-                    ..._logs.map((l) {
-                      final m = l as Map<String, dynamic>;
-                      final created = DateTime.tryParse(
-                          (m['created_at'] ?? '').toString());
-                      return AppSectionCard(
-                        child: ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: const Icon(Icons.history_outlined),
-                          title: Text((m['action'] ?? 'Activity').toString()),
-                          subtitle: Text(
-                            '${_groupLabel(created)} · ${(created ?? DateTime.now()).toLocal()}',
-                          ),
-                        ),
-                      );
-                    }),
-                  ],
+    return BarChartData(
+      maxY: maxY * 1.15,
+      gridData: FlGridData(
+        show: true,
+        drawVerticalLine: false,
+        horizontalInterval: maxY > 0 ? maxY / 4 : 1,
+        getDrawingHorizontalLine: (_) => FlLine(
+          color: scheme.outlineVariant.withOpacity(0.5),
+          strokeWidth: 1,
+        ),
+      ),
+      borderData: FlBorderData(show: false),
+      titlesData: FlTitlesData(
+        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        leftTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            reservedSize: 42,
+            getTitlesWidget: (v, _) => Text(
+              v >= 1000 ? '${(v / 1000).toStringAsFixed(1)}k' : v.toInt().toString(),
+              style: const TextStyle(fontSize: 10),
+            ),
+          ),
+        ),
+        bottomTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            reservedSize: 28,
+            getTitlesWidget: (xv, _) {
+              final i = xv.toInt();
+              if (i < 0 || i >= maxShow) return const SizedBox.shrink();
+              final m = points[i] as Map<String, dynamic>;
+              final raw = (m['period_label'] ?? '').toString();
+              final short =
+                  raw.length > 8 ? raw.substring(raw.length - 7) : raw;
+              return Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  short,
+                  style: const TextStyle(fontSize: 9),
                 ),
+              );
+            },
+          ),
+        ),
+      ),
+      barGroups: groups,
     );
+  }
+
+  LineChartData _bookingsLineData(List<dynamic> points, ColorScheme scheme) {
+    final spots = <FlSpot>[];
+    var maxY = 4.0;
+    final n = points.length > 24 ? 24 : points.length;
+    for (var i = 0; i < n; i++) {
+      final m = points[i] as Map<String, dynamic>;
+      final c = (m['booking_count'] ?? 0).toDouble();
+      if (c > maxY) maxY = c;
+      spots.add(FlSpot(i.toDouble(), c));
+    }
+
+    return LineChartData(
+      minY: 0,
+      maxY: maxY * 1.2,
+      gridData: FlGridData(
+        show: true,
+        drawVerticalLine: false,
+        getDrawingHorizontalLine: (_) => FlLine(
+          color: scheme.outlineVariant.withOpacity(0.45),
+          strokeWidth: 1,
+        ),
+      ),
+      borderData: FlBorderData(show: false),
+      titlesData: FlTitlesData(
+        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        leftTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            reservedSize: 28,
+            getTitlesWidget: (v, _) => Text(
+              v.toInt().toString(),
+              style: const TextStyle(fontSize: 10),
+            ),
+          ),
+        ),
+        bottomTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            reservedSize: 22,
+            getTitlesWidget: (xv, _) {
+              final i = xv.toInt();
+              if (i < 0 || i >= n) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text('$i', style: const TextStyle(fontSize: 9)),
+              );
+            },
+          ),
+        ),
+      ),
+      lineBarsData: [
+        LineChartBarData(
+          spots: spots,
+          isCurved: true,
+          color: scheme.tertiary,
+          barWidth: 3,
+          dotData: const FlDotData(show: true),
+          belowBarData: BarAreaData(
+            show: true,
+            color: scheme.tertiary.withOpacity(0.12),
+          ),
+        ),
+      ],
+    );
+  }
+
+  BarChartData _activityBarData(List<dynamic> points, ColorScheme scheme) {
+    final groups = <BarChartGroupData>[];
+    final maxShow = points.length > 16 ? 16 : points.length;
+    var maxY = 1.0;
+    for (var i = 0; i < maxShow; i++) {
+      final m = points[i] as Map<String, dynamic>;
+      final v = (m['total_events'] ?? 0).toDouble();
+      if (v > maxY) maxY = v;
+      groups.add(
+        BarChartGroupData(
+          x: i,
+          barRods: [
+            BarChartRodData(
+              toY: v,
+              width: 14,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+              color: scheme.secondary,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return BarChartData(
+      maxY: maxY * 1.2,
+      gridData: FlGridData(
+        show: true,
+        drawVerticalLine: false,
+        getDrawingHorizontalLine: (_) => FlLine(
+          color: scheme.outlineVariant.withOpacity(0.45),
+          strokeWidth: 1,
+        ),
+      ),
+      borderData: FlBorderData(show: false),
+      titlesData: FlTitlesData(
+        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        leftTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            reservedSize: 28,
+            getTitlesWidget: (v, _) => Text(
+              v.toInt().toString(),
+              style: const TextStyle(fontSize: 10),
+            ),
+          ),
+        ),
+        bottomTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            reservedSize: 26,
+            getTitlesWidget: (xv, _) {
+              final i = xv.toInt();
+              if (i < 0 || i >= maxShow) return const SizedBox.shrink();
+              final m = points[i] as Map<String, dynamic>;
+              final raw = (m['period_label'] ?? '').toString();
+              final short =
+                  raw.length > 6 ? raw.substring(raw.length - 5) : raw;
+              return Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(short, style: const TextStyle(fontSize: 9)),
+              );
+            },
+          ),
+        ),
+      ),
+      barGroups: groups,
+    );
+  }
+
+  static String _fmtNum(Object? v) {
+    final n = (v is num) ? v.toDouble() : double.tryParse('$v') ?? 0;
+    return n.toStringAsFixed(n >= 100 ? 0 : 2);
   }
 }
 

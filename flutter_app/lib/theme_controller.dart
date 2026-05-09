@@ -4,7 +4,7 @@ import 'auth_storage.dart';
 import 'dio_client.dart';
 
 final ValueNotifier<Color> themeSeedColorNotifier =
-    ValueNotifier<Color>(const Color(0xFF2563EB));
+    ValueNotifier<Color>(const Color(0xFF1E88E5));
 
 String _toHex(Color c) =>
     '#${c.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}';

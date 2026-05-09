@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../auth_storage.dart';
+import '../widgets/app_scaffold.dart';
+import '../widgets/app_state_views.dart';
 import 'flow_state.dart';
 import 'hotel_screens.dart';
 
@@ -35,8 +37,8 @@ class _FlowRootState extends State<FlowRoot> {
   @override
   Widget build(BuildContext context) {
     if (_hydrating) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      return const AppScaffold(
+        body: AppLoadingView(),
       );
     }
     return ValueListenableBuilder<HotelSession?>(

@@ -2,10 +2,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../dio_client.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_input.dart';
-import '../widgets/theme_fab.dart';
-
 class CustomerToolsScreen extends StatelessWidget {
   const CustomerToolsScreen({super.key, required this.hotelId});
 
@@ -13,9 +12,8 @@ class CustomerToolsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppScaffold(
       appBar: AppBar(title: const Text('Customer tools')),
-      floatingActionButton: const ThemeFab(),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -140,9 +138,8 @@ class _TrackBookingScreenState extends State<TrackBookingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppScaffold(
       appBar: AppBar(title: const Text('Track booking')),
-      floatingActionButton: const ThemeFab(),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -285,9 +282,8 @@ class _OtpScreenState extends State<OtpScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppScaffold(
       appBar: AppBar(title: const Text('OTP verification')),
-      floatingActionButton: const ThemeFab(),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [

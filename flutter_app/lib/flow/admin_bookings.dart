@@ -2,9 +2,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../dio_client.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_state_views.dart';
-import '../widgets/theme_fab.dart';
 
 class AdminBookingsScreen extends StatefulWidget {
   const AdminBookingsScreen({super.key});
@@ -72,14 +72,13 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppScaffold(
       appBar: AppBar(
         title: const Text('Booking operations'),
         actions: [
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh))
         ],
       ),
-      floatingActionButton: const ThemeFab(),
       body: _buildBody(),
     );
   }

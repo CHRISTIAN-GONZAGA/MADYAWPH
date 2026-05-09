@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'app_visual.dart';
 import 'design_tokens.dart';
 
 class AppTheme {
@@ -17,18 +18,31 @@ class AppTheme {
       brightness: Brightness.light,
       colorScheme: scheme,
       visualDensity: const VisualDensity(horizontal: -1, vertical: -1),
-      scaffoldBackgroundColor: UiTokens.lightBase,
+      scaffoldBackgroundColor: scheme.surface,
+      canvasColor: scheme.surface,
       cardTheme: CardThemeData(
-        color: UiTokens.lightElevated,
+        color: scheme.surfaceContainerLow,
         margin: const EdgeInsets.all(UiTokens.s8),
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(UiTokens.r12),
-          side: const BorderSide(color: UiTokens.lightBorder, width: 0.8),
+          side: BorderSide(color: scheme.outlineVariant, width: 0.8),
         ),
       ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: scheme.surfaceContainerHigh,
+        surfaceTintColor: Colors.transparent,
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: scheme.surfaceContainerHigh,
+        surfaceTintColor: Colors.transparent,
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: scheme.surfaceContainer,
+        indicatorColor: scheme.primaryContainer,
+      ),
       appBarTheme: AppBarTheme(
-        backgroundColor: UiTokens.lightBase,
+        backgroundColor: scheme.surface,
         foregroundColor: scheme.onSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
@@ -41,30 +55,50 @@ class AppTheme {
           letterSpacing: -0.1,
         ),
       ),
-      dividerTheme: const DividerThemeData(
+      dividerTheme: DividerThemeData(
         thickness: 0.8,
-        color: UiTokens.lightBorder,
+        color: scheme.outlineVariant,
         space: UiTokens.s16,
       ),
       inputDecorationTheme: InputDecorationTheme(
-        isDense: true,
+        isDense: false,
         contentPadding: const EdgeInsets.symmetric(
-          horizontal: UiTokens.s12,
-          vertical: UiTokens.s12,
+          horizontal: UiTokens.s16,
+          vertical: UiTokens.s16,
         ),
         filled: true,
-        fillColor: UiTokens.lightElevated,
+        fillColor: scheme.surfaceContainerHighest,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(UiTokens.r8),
-          borderSide: const BorderSide(color: UiTokens.lightBorder, width: 0.8),
+          borderRadius: BorderRadius.circular(UiTokens.r12),
+          borderSide: BorderSide(color: scheme.outlineVariant, width: 0.8),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(UiTokens.r8),
-          borderSide: const BorderSide(color: UiTokens.lightBorder, width: 0.8),
+          borderRadius: BorderRadius.circular(UiTokens.r12),
+          borderSide: BorderSide(color: scheme.outlineVariant, width: 0.8),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(UiTokens.r8),
-          borderSide: BorderSide(color: scheme.primary, width: 1),
+          borderRadius: BorderRadius.circular(UiTokens.r12),
+          borderSide: BorderSide(color: scheme.primary, width: 1.4),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: scheme.primary,
+          foregroundColor: scheme.onPrimary,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(UiTokens.r12),
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: scheme.primary,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(UiTokens.r12),
+          ),
+          side: BorderSide(color: scheme.outline),
         ),
       ),
       listTileTheme: const ListTileThemeData(
@@ -76,13 +110,15 @@ class AppTheme {
         minLeadingWidth: 20,
       ),
       chipTheme: ChipThemeData(
+        backgroundColor: scheme.surfaceContainerHigh,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(UiTokens.r8),
-          side: const BorderSide(color: UiTokens.lightBorder, width: 0.8),
+          side: BorderSide(color: scheme.outlineVariant, width: 0.8),
         ),
-        side: const BorderSide(color: UiTokens.lightBorder, width: 0.8),
+        side: BorderSide(color: scheme.outlineVariant, width: 0.8),
       ),
       textTheme: _textTheme(Brightness.light),
+      extensions: [AppVisual.light(scheme)],
     );
   }
 
@@ -98,48 +134,81 @@ class AppTheme {
       brightness: Brightness.dark,
       colorScheme: scheme,
       visualDensity: const VisualDensity(horizontal: -1, vertical: -1),
-      scaffoldBackgroundColor: UiTokens.darkBase,
+      scaffoldBackgroundColor: scheme.surface,
+      canvasColor: scheme.surface,
       cardTheme: CardThemeData(
-        color: UiTokens.darkElevated,
+        color: scheme.surfaceContainerLow,
         margin: const EdgeInsets.all(UiTokens.s8),
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(UiTokens.r12),
-          side: const BorderSide(color: UiTokens.darkBorder, width: 0.8),
+          side: BorderSide(color: scheme.outlineVariant, width: 0.8),
         ),
       ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: scheme.surfaceContainerHigh,
+        surfaceTintColor: Colors.transparent,
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: scheme.surfaceContainerHigh,
+        surfaceTintColor: Colors.transparent,
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: scheme.surfaceContainer,
+        indicatorColor: scheme.primaryContainer,
+      ),
       appBarTheme: AppBarTheme(
-        backgroundColor: UiTokens.darkBase,
+        backgroundColor: scheme.surface,
         foregroundColor: scheme.onSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
         surfaceTintColor: Colors.transparent,
       ),
-      dividerTheme: const DividerThemeData(
+      dividerTheme: DividerThemeData(
         thickness: 0.8,
-        color: UiTokens.darkBorder,
+        color: scheme.outlineVariant,
         space: UiTokens.s16,
       ),
       inputDecorationTheme: InputDecorationTheme(
-        isDense: true,
+        isDense: false,
         contentPadding: const EdgeInsets.symmetric(
-          horizontal: UiTokens.s12,
-          vertical: UiTokens.s12,
+          horizontal: UiTokens.s16,
+          vertical: UiTokens.s16,
         ),
         filled: true,
-        fillColor: UiTokens.darkElevated,
+        fillColor: scheme.surfaceContainerHighest,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(UiTokens.r8),
-          borderSide: const BorderSide(color: UiTokens.darkBorder, width: 0.8),
+          borderRadius: BorderRadius.circular(UiTokens.r12),
+          borderSide: BorderSide(color: scheme.outlineVariant, width: 0.8),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(UiTokens.r8),
-          borderSide: const BorderSide(color: UiTokens.darkBorder, width: 0.8),
+          borderRadius: BorderRadius.circular(UiTokens.r12),
+          borderSide: BorderSide(color: scheme.outlineVariant, width: 0.8),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(UiTokens.r8),
-          borderSide: BorderSide(color: scheme.primary, width: 1),
+          borderRadius: BorderRadius.circular(UiTokens.r12),
+          borderSide: BorderSide(color: scheme.primary, width: 1.4),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: scheme.primary,
+          foregroundColor: scheme.onPrimary,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(UiTokens.r12),
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: scheme.primary,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(UiTokens.r12),
+          ),
+          side: BorderSide(color: scheme.outline),
         ),
       ),
       listTileTheme: const ListTileThemeData(
@@ -150,6 +219,7 @@ class AppTheme {
         ),
       ),
       textTheme: _textTheme(Brightness.dark),
+      extensions: [AppVisual.light(scheme)],
     );
   }
 

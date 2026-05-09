@@ -2,11 +2,10 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../dio_client.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_input.dart';
 import '../widgets/app_state_views.dart';
-import '../widgets/theme_fab.dart';
-
 class AdminChatInboxScreen extends StatefulWidget {
   const AdminChatInboxScreen({super.key});
 
@@ -52,14 +51,13 @@ class _AdminChatInboxScreenState extends State<AdminChatInboxScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppScaffold(
       appBar: AppBar(
         title: const Text('Guest chat inbox'),
         actions: [
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh))
         ],
       ),
-      floatingActionButton: const ThemeFab(),
       body: _buildBody(),
     );
   }
@@ -203,14 +201,13 @@ class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppScaffold(
       appBar: AppBar(
         title: Text('Room ${widget.roomNumber}'),
         actions: [
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh))
         ],
       ),
-      floatingActionButton: const ThemeFab(),
       body: Column(
         children: [
           Expanded(child: _buildBody()),

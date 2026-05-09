@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../auth_storage.dart';
 import '../theme_controller.dart';
 
+/// Draggable palette control; persists corner offset from bottom-right.
 class ThemeFab extends StatefulWidget {
   const ThemeFab({super.key});
 
@@ -9,19 +11,26 @@ class ThemeFab extends StatefulWidget {
   State<ThemeFab> createState() => _ThemeFabState();
 }
 
-class _ThemeFabState extends State<ThemeFab>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 180),
-    upperBound: 0.02,
-  );
+class _ThemeFabState extends State<ThemeFab> {
+  double _dxFromRight = 16;
+  double _dyFromBottom = 24;
+
+  static const _fabSize = 56.0;
 
   @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    AuthStorage.themeFabOffset().then((v) {
+      if (!mounted || v == null) return;
+      setState(() {
+        _dxFromRight = v.$1;
+        _dyFromBottom = v.$2;
+      });
+    });
   }
+
+  Future<void> _persistOffset() =>
+      AuthStorage.setThemeFabOffset(_dxFromRight, _dyFromBottom);
 
   Future<void> _openPicker() async {
     Color temp = themeSeedColorNotifier.value;
@@ -93,29 +102,57 @@ class _ThemeFabState extends State<ThemeFab>
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<Color>(
-      valueListenable: themeSeedColorNotifier,
-      builder: (context, c, _) {
-        return FloatingActionButton(
-          onPressed: _openPicker,
-          backgroundColor: c,
-          foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          child: GestureDetector(
-            onTapDown: (_) => _c.forward(),
-            onTapUp: (_) => _c.reverse(),
-            onTapCancel: () => _c.reverse(),
-            child: AnimatedBuilder(
-              animation: _c,
-              builder: (context, _) => Transform.scale(
-                scale: 1 - _c.value,
-                child: const Icon(Icons.palette_outlined),
+    final mq = MediaQuery.of(context);
+    final safe = mq.padding;
+    final maxW = mq.size.width - safe.horizontal - _fabSize - 8;
+    final maxH = mq.size.height - safe.vertical - _fabSize - 8;
+
+    return SizedBox.expand(
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.bottomRight,
+        children: [
+          Positioned(
+            right: _dxFromRight.clamp(8, maxW > 8 ? maxW : 8),
+            bottom: _dyFromBottom.clamp(8, maxH > 8 ? maxH : 8),
+            child: GestureDetector(
+              onPanUpdate: (d) {
+                setState(() {
+                  _dxFromRight -= d.delta.dx;
+                  _dyFromBottom -= d.delta.dy;
+                });
+              },
+              onPanEnd: (_) => _persistOffset(),
+              child: ValueListenableBuilder<Color>(
+                valueListenable: themeSeedColorNotifier,
+                builder: (context, c, _) {
+                  final onFab =
+                      ThemeData.estimateBrightnessForColor(c) == Brightness.dark
+                          ? Colors.white
+                          : Colors.black87;
+                  return Material(
+                    elevation: 4,
+                    shadowColor: Colors.black26,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    color: c,
+                    child: InkWell(
+                      onTap: _openPicker,
+                      borderRadius: BorderRadius.circular(14),
+                      child: SizedBox(
+                        width: _fabSize,
+                        height: _fabSize,
+                        child: Icon(Icons.palette_outlined, color: onFab),
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ),
-        );
-      },
+        ],
+      ),
     );
   }
 }
@@ -140,7 +177,7 @@ class _SliderRow extends StatelessWidget {
         SizedBox(width: 90, child: Text(label)),
         Expanded(
           child: Slider(
-            value: value,
+            value: value.clamp(0, max),
             max: max,
             onChanged: onChanged,
           ),

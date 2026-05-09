@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 
 import '../auth_storage.dart';
 import '../dio_client.dart';
+import '../ui/app_visual.dart';
+import '../widgets/app_scaffold.dart';
 import 'dashboards.dart';
 import 'flow_state.dart';
 
@@ -77,58 +79,98 @@ class _HotelGateScreenState extends State<HotelGateScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Hotel sign-in')),
-      body: ListView(
-        padding: const EdgeInsets.all(24),
-        children: [
-          Text(
-            'Sign in with your hotel gate account. After that you can open admin, staff, customer, or guest flows.',
-            style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-          ),
-          const SizedBox(height: 24),
-          TextField(
-            controller: _user,
-            decoration: const InputDecoration(
-              labelText: 'Hotel username',
-              border: OutlineInputBorder(),
+    return AppScaffold(
+      appBar: AppBar(title: const Text('MADYAWPH · Hotel access')),
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: ListView(
+              padding: const EdgeInsets.all(24),
+              children: [
+                  Text(
+                    'MADYAWPH',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.2,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Hotel operations hub — sign in to manage rooms, staff, guests, and bookings.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      height: 1.45,
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  Material(
+                    elevation: 2,
+                    shadowColor: Colors.black26,
+                    borderRadius: BorderRadius.circular(20),
+                    color: theme.colorScheme.surfaceContainerHigh,
+                    child: Padding(
+                      padding: const EdgeInsets.all(22),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          TextField(
+                            controller: _user,
+                            decoration: const InputDecoration(
+                              labelText: 'Hotel username',
+                              prefixIcon: Icon(Icons.person_outline),
+                            ),
+                            textInputAction: TextInputAction.next,
+                            autocorrect: false,
+                          ),
+                          const SizedBox(height: 16),
+                          TextField(
+                            controller: _pass,
+                            decoration: const InputDecoration(
+                              labelText: 'Password',
+                              prefixIcon: Icon(Icons.lock_outline),
+                            ),
+                            obscureText: true,
+                            onSubmitted: (_) => _busy ? null : _submit(),
+                          ),
+                          if (_error != null) ...[
+                            const SizedBox(height: 14),
+                            Text(
+                              _error!,
+                              style:
+                                  TextStyle(color: theme.colorScheme.error),
+                            ),
+                          ],
+                          const SizedBox(height: 22),
+                          FilledButton(
+                            onPressed: _busy ? null : _submit,
+                            child: _busy
+                                ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  )
+                                : const Text('Continue'),
+                          ),
+                          const SizedBox(height: 12),
+                          OutlinedButton.icon(
+                            onPressed: _openRegister,
+                            icon: const Icon(Icons.add_business_outlined),
+                            label: const Text('Register new hotel'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-            textInputAction: TextInputAction.next,
-            autocorrect: false,
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _pass,
-            decoration: const InputDecoration(
-              labelText: 'Password',
-              border: OutlineInputBorder(),
-            ),
-            obscureText: true,
-            onSubmitted: (_) => _busy ? null : _submit(),
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
-          ],
-          const SizedBox(height: 20),
-          FilledButton(
-            onPressed: _busy ? null : _submit,
-            child: _busy
-                ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Continue to menu'),
-          ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: _openRegister,
-            icon: const Icon(Icons.add_business_outlined),
-            label: const Text('Create new hotel'),
-          ),
-        ],
-      ),
+        ),
     );
   }
 }
@@ -212,7 +254,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppScaffold(
       appBar: AppBar(title: const Text('Create hotel')),
       body: ListView(
         padding: const EdgeInsets.all(24),
@@ -365,9 +407,9 @@ class RoleMenuScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Scaffold(
+    return AppScaffold(
       appBar: AppBar(
-        title: const Text('Gloretto'),
+        title: const Text('MADYAWPH'),
         actions: [
           TextButton(
             onPressed: () => _switchHotel(context),
@@ -439,30 +481,47 @@ class _RoleCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: color,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Row(
-            children: [
-              Icon(icon, size: 40),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 4),
-                    Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-                  ],
-                ),
+    final visual = AppVisual.of(context);
+    final scheme = Theme.of(context).colorScheme;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: visual.radiusLg,
+        boxShadow: visual.cardShadow,
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+      ),
+      child: ClipRRect(
+        borderRadius: visual.radiusLg,
+        child: Material(
+          color: color,
+          child: InkWell(
+            onTap: onTap,
+            splashColor: scheme.primary.withValues(alpha: 0.12),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                children: [
+                  Hero(
+                    tag: 'role_$title',
+                    child: Icon(icon, size: 40),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title,
+                            style: Theme.of(context).textTheme.titleMedium),
+                        const SizedBox(height: 4),
+                        Text(subtitle,
+                            style: Theme.of(context).textTheme.bodySmall),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.chevron_right_rounded, color: scheme.outline),
+                ],
               ),
-              const Icon(Icons.chevron_right),
-            ],
+            ),
           ),
         ),
       ),
@@ -546,7 +605,7 @@ class _PortalLoginScreenState extends State<PortalLoginScreen> {
   @override
   Widget build(BuildContext context) {
     final label = widget.role == 'admin' ? 'Administrator' : 'Staff';
-    return Scaffold(
+    return AppScaffold(
       appBar: AppBar(title: Text('$label sign-in')),
       body: ListView(
         padding: const EdgeInsets.all(24),
@@ -654,7 +713,7 @@ class _GuestRoomLoginScreenState extends State<GuestRoomLoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppScaffold(
       appBar: AppBar(title: const Text('Guest sign-in')),
       body: ListView(
         padding: const EdgeInsets.all(24),

@@ -216,6 +216,22 @@ class GuestPortalApiController extends Controller
         return response()->json(['ok' => true, 'id' => (string) $msg->id], 201);
     }
 
+    /**
+     * Thread for the signed-in guest room (guest + admin/staff replies).
+     */
+    public function chatMessages(Request $request): JsonResponse
+    {
+        $portal = $request->attributes->get('guest_portal');
+        $messages = GuestMessage::query()
+            ->where('hotel_id', (string) $portal['hotel_id'])
+            ->where('room_id', $portal['room_id'])
+            ->orderBy('sent_at', 'asc')
+            ->limit(250)
+            ->get();
+
+        return response()->json(['messages' => $messages]);
+    }
+
     public function extendStay(Request $request, FinancialComputationService $financialComputationService): JsonResponse
     {
         $portal = $request->attributes->get('guest_portal');

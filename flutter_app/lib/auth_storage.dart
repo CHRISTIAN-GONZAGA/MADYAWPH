@@ -14,6 +14,8 @@ class AuthStorage {
   static const _kPortalRole = 'portal_role';
   static const _kGuestToken = 'guest_token';
   static const _kUiSeedColor = 'ui_seed_color';
+  static const _kThemeFabDx = 'theme_fab_dx';
+  static const _kThemeFabDy = 'theme_fab_dy';
 
   static Future<String?> hotelId() => _storage.read(key: _kHotelId);
 
@@ -54,6 +56,22 @@ class AuthStorage {
 
   static Future<void> setUiSeedColorHex(String hex) =>
       _storage.write(key: _kUiSeedColor, value: hex);
+
+  /// Last FAB position for theme picker (logical px from bottom-right anchor).
+  static Future<void> setThemeFabOffset(double dxFromRight, double dyFromBottom) async {
+    await _storage.write(key: _kThemeFabDx, value: dxFromRight.toString());
+    await _storage.write(key: _kThemeFabDy, value: dyFromBottom.toString());
+  }
+
+  static Future<(double, double)?> themeFabOffset() async {
+    final xs = await _storage.read(key: _kThemeFabDx);
+    final ys = await _storage.read(key: _kThemeFabDy);
+    if (xs == null || ys == null) return null;
+    final dx = double.tryParse(xs);
+    final dy = double.tryParse(ys);
+    if (dx == null || dy == null) return null;
+    return (dx, dy);
+  }
 
   /// Full sign-out / switch hotel: clears all persisted auth.
   static Future<void> clearAll() async {

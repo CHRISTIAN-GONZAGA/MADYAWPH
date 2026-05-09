@@ -2,9 +2,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../dio_client.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/app_state_views.dart';
-import '../widgets/theme_fab.dart';
-
 class AdminCategoriesScreen extends StatefulWidget {
   const AdminCategoriesScreen({super.key});
 
@@ -58,45 +57,74 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     final imgCtrl = TextEditingController();
     final payload = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Create category'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameCtrl,
-              decoration: const InputDecoration(
-                  labelText: 'Name', border: OutlineInputBorder()),
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Create category',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: nameCtrl,
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(
+                      labelText: 'Name',
+                      prefixIcon: Icon(Icons.label_outline),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: descCtrl,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      labelText: 'Description',
+                      alignLabelWithHint: true,
+                      prefixIcon: Icon(Icons.notes_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: imgCtrl,
+                    keyboardType: TextInputType.url,
+                    decoration: const InputDecoration(
+                      labelText: 'Cover image URL',
+                      hintText: 'https://…',
+                      prefixIcon: Icon(Icons.image_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton(
+                        onPressed: () => Navigator.of(context).pop({
+                          'name': nameCtrl.text.trim(),
+                          'description': descCtrl.text.trim(),
+                          'image_url': imgCtrl.text.trim(),
+                        }),
+                        child: const Text('Create'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: descCtrl,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                  labelText: 'Description', border: OutlineInputBorder()),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: imgCtrl,
-              decoration: const InputDecoration(
-                  labelText: 'Category image URL',
-                  border: OutlineInputBorder()),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop({
-              'name': nameCtrl.text.trim(),
-              'description': descCtrl.text.trim(),
-              'image_url': imgCtrl.text.trim(),
-            }),
-            child: const Text('Create'),
           ),
-        ],
+        ),
       ),
     );
     if (payload == null) return;
@@ -129,69 +157,115 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     final payload = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setLocal) => AlertDialog(
-          title: Text('Create room in ${(category['name'] ?? 'category')}'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(labelText: 'Display name'),
-                ),
-                TextField(
-                  controller: roomNoCtrl,
-                  decoration: const InputDecoration(labelText: 'Room number'),
-                ),
-                DropdownButtonFormField<String>(
-                  initialValue: roomType,
-                  items: const [
-                    DropdownMenuItem(value: 'Single', child: Text('Single')),
-                    DropdownMenuItem(value: 'Double', child: Text('Double')),
-                    DropdownMenuItem(value: 'Suite', child: Text('Suite')),
-                    DropdownMenuItem(value: 'Deluxe', child: Text('Deluxe')),
+        builder: (context, setLocal) => Dialog(
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 18, vertical: 28),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: Padding(
+              padding: const EdgeInsets.all(22),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'New room · ${(category['name'] ?? 'category')}',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 18),
+                    TextField(
+                      controller: nameCtrl,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(
+                        labelText: 'Display name',
+                        prefixIcon: Icon(Icons.badge_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: roomNoCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Room number',
+                        prefixIcon: Icon(Icons.door_front_door_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    DropdownButtonFormField<String>(
+                      key: ValueKey<String>(roomType),
+                      initialValue: roomType,
+                      decoration: const InputDecoration(
+                        labelText: 'Room type',
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'Single', child: Text('Single')),
+                        DropdownMenuItem(value: 'Double', child: Text('Double')),
+                        DropdownMenuItem(value: 'Suite', child: Text('Suite')),
+                        DropdownMenuItem(value: 'Deluxe', child: Text('Deluxe')),
+                      ],
+                      onChanged: (v) =>
+                          setLocal(() => roomType = v ?? roomType),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: priceCtrl,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'Price per night (PHP)',
+                        prefixIcon: Icon(Icons.payments_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    DropdownButtonFormField<String>(
+                      key: ValueKey<String>(status),
+                      initialValue: status,
+                      decoration: const InputDecoration(
+                        labelText: 'Status',
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                            value: 'available', child: Text('available')),
+                        DropdownMenuItem(value: 'booked', child: Text('booked')),
+                        DropdownMenuItem(
+                            value: 'checked_in', child: Text('checked_in')),
+                        DropdownMenuItem(
+                            value: 'checked_out', child: Text('checked_out')),
+                        DropdownMenuItem(
+                            value: 'maintenance', child: Text('maintenance')),
+                        DropdownMenuItem(
+                            value: 'reserved', child: Text('reserved')),
+                      ],
+                      onChanged: (v) => setLocal(() => status = v ?? status),
+                    ),
+                    const SizedBox(height: 22),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('Cancel'),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: () => Navigator.of(context).pop({
+                            'category_id': (category['id'] ?? '').toString(),
+                            'display_name': nameCtrl.text.trim(),
+                            'room_number': roomNoCtrl.text.trim(),
+                            'room_type': roomType,
+                            'price_per_night':
+                                double.tryParse(priceCtrl.text.trim()) ?? 0,
+                            'status': status,
+                          }),
+                          child: const Text('Create'),
+                        ),
+                      ],
+                    ),
                   ],
-                  onChanged: (v) => setLocal(() => roomType = v ?? roomType),
                 ),
-                TextField(
-                  controller: priceCtrl,
-                  decoration:
-                      const InputDecoration(labelText: 'Price per night'),
-                ),
-                DropdownButtonFormField<String>(
-                  initialValue: status,
-                  items: const [
-                    DropdownMenuItem(value: 'available', child: Text('available')),
-                    DropdownMenuItem(value: 'booked', child: Text('booked')),
-                    DropdownMenuItem(
-                        value: 'checked_in', child: Text('checked_in')),
-                    DropdownMenuItem(
-                        value: 'checked_out', child: Text('checked_out')),
-                    DropdownMenuItem(
-                        value: 'maintenance', child: Text('maintenance')),
-                    DropdownMenuItem(value: 'reserved', child: Text('reserved')),
-                  ],
-                  onChanged: (v) => setLocal(() => status = v ?? status),
-                ),
-              ],
+              ),
             ),
           ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel')),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop({
-                'category_id': (category['id'] ?? '').toString(),
-                'display_name': nameCtrl.text.trim(),
-                'room_number': roomNoCtrl.text.trim(),
-                'room_type': roomType,
-                'price_per_night': double.tryParse(priceCtrl.text.trim()) ?? 0,
-                'status': status,
-              }),
-              child: const Text('Create'),
-            )
-          ],
         ),
       ),
     );
@@ -296,7 +370,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppScaffold(
       appBar: AppBar(
         title: const Text('Room categories'),
         actions: [
@@ -305,7 +379,6 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
               onPressed: _busy ? null : _create, icon: const Icon(Icons.add)),
         ],
       ),
-      floatingActionButton: const ThemeFab(),
       body: _buildBody(),
     );
   }

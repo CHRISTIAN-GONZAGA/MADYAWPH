@@ -86,13 +86,20 @@ class ReportController extends Controller
     public function salesTimeseries(Request $request)
     {
         $validated = $request->validate([
-            'granularity' => ['nullable', 'in:day,week,month'],
+            'granularity' => ['nullable', 'in:day,week,month,year'],
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
         ]);
 
         $granularity = $validated['granularity'] ?? 'week';
-        $from = isset($validated['from']) ? Carbon::parse($validated['from'])->startOfDay() : now()->subDays(30)->startOfDay();
+        $defaultFrom = match ($granularity) {
+            'day' => now()->subDays(14)->startOfDay(),
+            'week' => now()->subWeeks(12)->startOfDay(),
+            'month' => now()->subMonths(12)->startOfMonth(),
+            'year' => now()->subYears(5)->startOfYear(),
+            default => now()->subDays(30)->startOfDay(),
+        };
+        $from = isset($validated['from']) ? Carbon::parse($validated['from'])->startOfDay() : $defaultFrom;
         $to = isset($validated['to']) ? Carbon::parse($validated['to'])->endOfDay() : now()->endOfDay();
 
         $rows = Booking::query()
@@ -124,13 +131,20 @@ class ReportController extends Controller
     public function activityTimeline(Request $request)
     {
         $validated = $request->validate([
-            'granularity' => ['nullable', 'in:day,week,month'],
+            'granularity' => ['nullable', 'in:day,week,month,year'],
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
         ]);
 
         $granularity = $validated['granularity'] ?? 'day';
-        $from = isset($validated['from']) ? Carbon::parse($validated['from'])->startOfDay() : now()->subDays(14)->startOfDay();
+        $defaultFrom = match ($granularity) {
+            'day' => now()->subDays(14)->startOfDay(),
+            'week' => now()->subWeeks(12)->startOfDay(),
+            'month' => now()->subMonths(12)->startOfMonth(),
+            'year' => now()->subYears(5)->startOfYear(),
+            default => now()->subDays(14)->startOfDay(),
+        };
+        $from = isset($validated['from']) ? Carbon::parse($validated['from'])->startOfDay() : $defaultFrom;
         $to = isset($validated['to']) ? Carbon::parse($validated['to'])->endOfDay() : now()->endOfDay();
 
         $points = ActivityLog::query()
@@ -218,6 +232,7 @@ class ReportController extends Controller
         return match ($granularity) {
             'day' => $date->format('Y-m-d'),
             'month' => $date->format('Y-m'),
+            'year' => $date->format('Y'),
             default => $date->format('o-W'),
         };
     }

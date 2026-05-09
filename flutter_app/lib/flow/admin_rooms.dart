@@ -2,8 +2,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../dio_client.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/app_state_views.dart';
-import '../widgets/theme_fab.dart';
 import 'admin_categories.dart';
 
 class AdminRoomsScreen extends StatefulWidget {
@@ -15,10 +15,8 @@ class AdminRoomsScreen extends StatefulWidget {
 
 class _AdminRoomsScreenState extends State<AdminRoomsScreen> {
   List<dynamic> _rooms = const [];
-  List<dynamic> _categories = const [];
   String? _error;
   bool _loading = true;
-  bool _creating = false;
 
   @override
   void initState() {
@@ -33,11 +31,8 @@ class _AdminRoomsScreenState extends State<AdminRoomsScreen> {
     });
     try {
       final res = await portalDio().get<Map<String, dynamic>>('/admin/rooms');
-      final cat =
-          await portalDio().get<Map<String, dynamic>>('/room-categories');
       setState(() {
         _rooms = (res.data?['data'] as List<dynamic>?) ?? const [];
-        _categories = (cat.data?['data'] as List<dynamic>?) ?? const [];
         _loading = false;
       });
     } on DioException catch (e) {
@@ -55,16 +50,11 @@ class _AdminRoomsScreenState extends State<AdminRoomsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppScaffold(
       appBar: AppBar(
         title: const Text('Manage rooms'),
         actions: [
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
-          IconButton(
-            onPressed: _creating ? null : _createRoom,
-            icon: const Icon(Icons.add_business_outlined),
-            tooltip: 'Create room',
-          ),
           IconButton(
             onPressed: () => Navigator.of(context).push<void>(
               MaterialPageRoute<void>(
@@ -75,165 +65,8 @@ class _AdminRoomsScreenState extends State<AdminRoomsScreen> {
           ),
         ],
       ),
-      floatingActionButton: const ThemeFab(),
       body: _buildBody(),
     );
-  }
-
-  Future<void> _createRoom() async {
-    if (_categories.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Create a category first.')),
-      );
-      return;
-    }
-    final nameCtrl = TextEditingController();
-    final roomNoCtrl = TextEditingController();
-    final priceCtrl = TextEditingController();
-    final imgCtrl = TextEditingController();
-    final amenitiesCtrl = TextEditingController();
-    String categoryId =
-        ((_categories.first as Map<String, dynamic>)['id'] ?? '').toString();
-    String roomType = 'Single';
-    String status = 'available';
-    final payload = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setLocal) => AlertDialog(
-          title: const Text('Create room'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                DropdownButtonFormField<String>(
-                  initialValue: categoryId,
-                  items: _categories.map((c) {
-                    final m = c as Map<String, dynamic>;
-                    final id = (m['id'] ?? '').toString();
-                    final name = (m['name'] ?? 'Unknown').toString();
-                    return DropdownMenuItem(value: id, child: Text(name));
-                  }).toList(),
-                  onChanged: (v) =>
-                      setLocal(() => categoryId = v ?? categoryId),
-                  decoration: const InputDecoration(
-                      labelText: 'Category', border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                    controller: nameCtrl,
-                    decoration: const InputDecoration(
-                        labelText: 'Display name',
-                        border: OutlineInputBorder())),
-                const SizedBox(height: 10),
-                TextField(
-                    controller: roomNoCtrl,
-                    decoration: const InputDecoration(
-                        labelText: 'Room number',
-                        border: OutlineInputBorder())),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  initialValue: roomType,
-                  items: const [
-                    DropdownMenuItem(value: 'Single', child: Text('Single')),
-                    DropdownMenuItem(value: 'Double', child: Text('Double')),
-                    DropdownMenuItem(value: 'Suite', child: Text('Suite')),
-                    DropdownMenuItem(value: 'Deluxe', child: Text('Deluxe')),
-                  ],
-                  onChanged: (v) => setLocal(() => roomType = v ?? roomType),
-                  decoration: const InputDecoration(
-                      labelText: 'Room type', border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                    controller: priceCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                        labelText: 'Price per night',
-                        border: OutlineInputBorder())),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  initialValue: status,
-                  items: const [
-                    DropdownMenuItem(
-                        value: 'available', child: Text('available')),
-                    DropdownMenuItem(value: 'booked', child: Text('booked')),
-                    DropdownMenuItem(
-                        value: 'checked_in', child: Text('checked_in')),
-                    DropdownMenuItem(
-                        value: 'checked_out', child: Text('checked_out')),
-                    DropdownMenuItem(
-                        value: 'maintenance', child: Text('maintenance')),
-                    DropdownMenuItem(
-                        value: 'reserved', child: Text('reserved')),
-                  ],
-                  onChanged: (v) => setLocal(() => status = v ?? status),
-                  decoration: const InputDecoration(
-                      labelText: 'Status', border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: amenitiesCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Amenities (comma separated)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: imgCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Room image URL (or upload later)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel')),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop({
-                'category_id': categoryId,
-                'display_name': nameCtrl.text.trim(),
-                'room_number': roomNoCtrl.text.trim(),
-                'room_type': roomType,
-                'price_per_night': double.tryParse(priceCtrl.text.trim()) ?? 0,
-                'status': status,
-                'amenities': amenitiesCtrl.text
-                    .split(',')
-                    .map((e) => e.trim())
-                    .where((e) => e.isNotEmpty)
-                    .toList(),
-                'image_url': imgCtrl.text.trim(),
-              }),
-              child: const Text('Create'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (payload == null) return;
-
-    if (_creating) return;
-    setState(() => _creating = true);
-    try {
-      final imageUrl = (payload['image_url'] ?? '').toString();
-      if (imageUrl.isEmpty) payload.remove('image_url');
-      await portalDio().post('/rooms', data: payload);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Room created.')));
-      await _load();
-    } on DioException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
-    } finally {
-      if (mounted) setState(() => _creating = false);
-    }
   }
 
   Widget _buildBody() {
@@ -542,14 +375,13 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppScaffold(
       appBar: AppBar(
         title: const Text('Room details'),
         actions: [
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
         ],
       ),
-      floatingActionButton: const ThemeFab(),
       body: _buildBody(),
     );
   }

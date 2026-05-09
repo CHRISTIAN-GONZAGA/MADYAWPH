@@ -20,11 +20,12 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
   late final AnimationController _ripple;
   bool _ended = false;
 
-  static const _navy = Color(0xFF1B2B4A);
-  static const _navyDeep = Color(0xFF152238);
-  static const _sky = Color(0xFF4A90D9);
-  static const _skyLight = Color(0xFF7AB8F0);
-  static const _mist = Color(0xFFF0F4FA);
+  /// Brand palette aligned with MADYAW sailboat mark.
+  static const _navy = Color(0xFF1A3150);
+  static const _navyDeep = Color(0xFF142640);
+  static const _sky = Color(0xFF1E88E5);
+  static const _skyLight = Color(0xFF64B5F6);
+  static const _mist = Color(0xFFE0E4E8);
 
   @override
   void initState() {
@@ -171,42 +172,54 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
                         opacity: wordmark,
                         child: Transform.translate(
                           offset: Offset(0, 12 * (1 - wordmark)),
-                          child: Text(
-                            'madyaw',
-                            style: TextStyle(
-                              fontSize: 38,
-                              height: 1.05,
-                              fontWeight: FontWeight.w500,
-                              letterSpacing: -0.8,
-                              fontFamily: 'Georgia',
-                              fontFamilyFallback: const ['serif'],
-                              color: _sky,
-                              shadows: [
-                                Shadow(
-                                  color: _skyLight.withOpacity(0.55),
-                                  blurRadius: 18,
-                                  offset: const Offset(0, 2),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'MADYAW',
+                                style: TextStyle(
+                                  fontSize: 36,
+                                  height: 1.05,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 2,
+                                  color: _navy,
+                                  shadows: [
+                                    Shadow(
+                                      color: _skyLight.withOpacity(0.35),
+                                      blurRadius: 20,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
                                 ),
-                                Shadow(
-                                  color: _navy.withOpacity(0.2),
-                                  blurRadius: 0.5,
-                                  offset: const Offset(0, 1.5),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.only(left: 4),
+                                child: Text(
+                                  'PH',
+                                  style: TextStyle(
+                                    fontSize: 36,
+                                    height: 1.05,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 1,
+                                    color: _sky,
+                                  ),
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 8),
                       Opacity(
                         opacity: subline,
                         child: Transform.translate(
                           offset: Offset(0, 8 * (1 - subline)),
                           child: Text(
-                            'BOOKING APP',
+                            'BOOKING · HOSPITALITY',
                             style: TextStyle(
-                              fontSize: 11.5,
-                              letterSpacing: 5.2,
+                              fontSize: 11,
+                              letterSpacing: 4,
                               fontWeight: FontWeight.w700,
                               color: _navy.withOpacity(0.88),
                             ),

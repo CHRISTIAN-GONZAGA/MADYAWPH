@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,7 +7,9 @@ import 'package:flutter/services.dart';
 import '../auth_storage.dart';
 import '../dio_client.dart';
 import '../widgets/app_button.dart';
+import '../widgets/app_card.dart';
 import '../widgets/app_input.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/app_state_views.dart';
 import 'admin_rooms.dart';
 import 'admin_categories.dart';
@@ -13,8 +17,6 @@ import 'admin_chat.dart';
 import 'admin_bookings.dart';
 import 'admin_reports.dart';
 import 'customer_tools.dart';
-import '../widgets/theme_fab.dart';
-
 // --- Admin ---
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -265,36 +267,81 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final priceCtrl = TextEditingController(text: '120');
     final payload = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add amenity menu item'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-                controller: typeCtrl,
-                decoration: const InputDecoration(labelText: 'Type')),
-            TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(labelText: 'Name')),
-            TextField(
-                controller: priceCtrl,
-                decoration: const InputDecoration(labelText: 'Price')),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop({
-              'amenity_type': typeCtrl.text.trim(),
-              'name': nameCtrl.text.trim(),
-              'price': double.tryParse(priceCtrl.text.trim()) ?? 0,
-              'is_active': true,
-            }),
-            child: const Text('Create'),
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Add amenity menu item',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Guests see these items when requesting amenities from their room.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: typeCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Category / type',
+                      hintText: 'e.g. Breakfast, Laundry',
+                      prefixIcon: Icon(Icons.category_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Item name',
+                      hintText: 'Displayed on menus',
+                      prefixIcon: Icon(Icons.restaurant_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: priceCtrl,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Price (PHP)',
+                      prefixIcon: Icon(Icons.payments_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton(
+                        onPressed: () => Navigator.of(context).pop({
+                          'amenity_type': typeCtrl.text.trim(),
+                          'name': nameCtrl.text.trim(),
+                          'price': double.tryParse(priceCtrl.text.trim()) ?? 0,
+                          'is_active': true,
+                        }),
+                        child: const Text('Create'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ),
-        ],
+        ),
       ),
     );
     if (payload == null) return;
@@ -307,7 +354,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppScaffold(
       appBar: AppBar(
         title: const Text('Admin dashboard'),
         actions: [
@@ -323,7 +370,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ],
       ),
       body: _buildBody(context),
-      floatingActionButton: const ThemeFab(),
     );
   }
 
@@ -374,28 +420,28 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             physics: const NeverScrollableScrollPhysics(),
             childAspectRatio: 1.7,
             children: [
-              _AdminMetricCard(
+              AppMetricCard(
                   label: 'Rooms',
                   value: '${rooms.length}',
                   icon: Icons.meeting_room_outlined),
-              _AdminMetricCard(
+              AppMetricCard(
                   label: 'Tasks',
                   value: '${tasks.length}',
                   icon: Icons.task_alt_outlined),
-              _AdminMetricCard(
+              AppMetricCard(
                   label: 'Staff',
                   value: '${staff.length}',
                   icon: Icons.groups_outlined),
-              _AdminMetricCard(
+              AppMetricCard(
                   label: 'Credit',
                   value: balance,
                   icon: Icons.account_balance_wallet_outlined),
-              _AdminMetricCard(
+              AppMetricCard(
                   label: 'Reservations',
                   value: '${reservations.length}',
                   icon: Icons.event_note_outlined),
-              _AdminMetricCard(
-                  label: 'Activity Logs',
+              AppMetricCard(
+                  label: 'Logged events',
                   value: '${activity.length}',
                   icon: Icons.timeline_outlined),
             ],
@@ -403,7 +449,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           const SizedBox(height: 20),
           Text('Management', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
-          _AdminActionTile(
+          AppActionTile(
             title: 'Rooms & status management',
             subtitle: 'Passwords, booking details, add fees',
             icon: Icons.hotel_outlined,
@@ -415,7 +461,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               await _load();
             },
           ),
-          _AdminActionTile(
+          AppActionTile(
             title: 'Bookings operations',
             subtitle: 'Handle booking and reservation requests',
             icon: Icons.book_online_outlined,
@@ -427,7 +473,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               await _load();
             },
           ),
-          _AdminActionTile(
+          AppActionTile(
             title: 'Billing and checkout reminders',
             subtitle: 'Process due reminders and billing visibility',
             icon: Icons.receipt_long_outlined,
@@ -439,33 +485,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               };
             }),
           ),
-          _AdminActionTile(
+          AppActionTile(
             title: 'Recharge credits',
             subtitle: 'Top up hotel credits via PayMongo wallet',
             icon: Icons.account_balance_wallet_outlined,
             onTap: _showRechargeDialog,
           ),
-          _AdminActionTile(
-            title: 'Reports and activity logs',
-            subtitle: 'Open professional reports center',
-            icon: Icons.assessment_outlined,
+          AppActionTile(
+            title: 'Reports & analytics',
+            subtitle: 'Revenue, bookings, occupancy by day / week / month / year',
+            icon: Icons.insights_outlined,
             onTap: () => Navigator.of(context).push<void>(
               MaterialPageRoute<void>(
                 builder: (_) => const AdminReportsScreen(),
               ),
             ),
           ),
-          _AdminActionTile(
-            title: 'Activity logs',
-            subtitle: 'View transferred rooms, task updates, and events',
-            icon: Icons.timeline_outlined,
-            onTap: () => Navigator.of(context).push<void>(
-              MaterialPageRoute<void>(
-                builder: (_) => const AdminActivityLogsScreen(),
-              ),
-            ),
-          ),
-          _AdminActionTile(
+          AppActionTile(
             title: 'Theme and personalization',
             subtitle: 'View/reset theme and tune pricing',
             icon: Icons.palette_outlined,
@@ -474,13 +510,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               return {'message': 'Personal theme reset.'};
             }),
           ),
-          _AdminActionTile(
+          AppActionTile(
             title: 'Surge pricing settings',
             subtitle: 'Auto-markup when occupancy exceeds threshold',
             icon: Icons.trending_up_outlined,
             onTap: _showSurgePricingDialog,
           ),
-          _AdminActionTile(
+          AppActionTile(
             title: 'Room categories',
             subtitle: 'Create categories and organize rooms',
             icon: Icons.category_outlined,
@@ -492,7 +528,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               await _load();
             },
           ),
-          _AdminActionTile(
+          AppActionTile(
             title: 'Guest chat inbox',
             subtitle: 'Receive and reply to guest messages',
             icon: Icons.forum_outlined,
@@ -504,7 +540,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               await _load();
             },
           ),
-          _AdminActionTile(
+          AppActionTile(
             title: 'Amenity menu',
             subtitle: 'Add paid amenity and breakfast options',
             icon: Icons.restaurant_menu_outlined,
@@ -520,70 +556,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             const LinearProgressIndicator(),
           ],
         ],
-      ),
-    );
-  }
-}
-
-class _AdminMetricCard extends StatelessWidget {
-  const _AdminMetricCard({
-    required this.label,
-    required this.value,
-    required this.icon,
-  });
-
-  final String label;
-  final String value;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            Icon(icon),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label, style: Theme.of(context).textTheme.labelMedium),
-                  Text(value, style: Theme.of(context).textTheme.titleMedium),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AdminActionTile extends StatelessWidget {
-  const _AdminActionTile({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: ListTile(
-        leading: Icon(icon),
-        title: Text(title),
-        subtitle: Text(subtitle),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: onTap,
       ),
     );
   }
@@ -731,7 +703,7 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppScaffold(
       appBar: AppBar(
         title: const Text('Staff dashboard'),
         actions: [
@@ -785,24 +757,24 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
             physics: const NeverScrollableScrollPhysics(),
             childAspectRatio: 1.7,
             children: [
-              _AdminMetricCard(
+              AppMetricCard(
                   label: 'Tasks',
                   value: '${tasks.length}',
                   icon: Icons.task_outlined),
-              _AdminMetricCard(
+              AppMetricCard(
                   label: 'Guest msgs',
                   value: '${msgs.length}',
                   icon: Icons.chat_outlined),
-              _AdminMetricCard(
+              AppMetricCard(
                   label: 'Rooms',
                   value: '${rooms.length}',
                   icon: Icons.meeting_room_outlined),
-              _AdminMetricCard(
+              AppMetricCard(
                   label: 'Role', value: 'Staff', icon: Icons.badge_outlined),
             ],
           ),
           const SizedBox(height: 16),
-          _AdminActionTile(
+          AppActionTile(
             title: 'My assigned tasks',
             subtitle: 'Fetch assigned tasks from API',
             icon: Icons.assignment_ind_outlined,
@@ -814,13 +786,13 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
               };
             }),
           ),
-          _AdminActionTile(
+          AppActionTile(
             title: 'Update task status',
             subtitle: 'Mark task pending, in-progress, or completed',
             icon: Icons.checklist_rtl_outlined,
             onTap: _showUpdateTaskStatusDialog,
           ),
-          _AdminActionTile(
+          AppActionTile(
             title: 'Room operations',
             subtitle: 'View all and available rooms',
             icon: Icons.hotel_outlined,
@@ -833,13 +805,13 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
               };
             }),
           ),
-          _AdminActionTile(
-            title: 'Bookings and activity',
-            subtitle: 'Open professional logs and operations view',
-            icon: Icons.history_outlined,
+          AppActionTile(
+            title: 'Reports & analytics',
+            subtitle: 'Charts for revenue and operations',
+            icon: Icons.insights_outlined,
             onTap: () => Navigator.of(context).push<void>(
               MaterialPageRoute<void>(
-                builder: (_) => const AdminActivityLogsScreen(),
+                builder: (_) => const AdminReportsScreen(),
               ),
             ),
           ),
@@ -882,10 +854,58 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
   bool _loading = true;
   bool _busyAction = false;
 
+  List<dynamic> _chatMessages = const [];
+  final _chatInput = TextEditingController();
+  final _chatScroll = ScrollController();
+  Timer? _poll;
+  bool _chatSending = false;
+
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    _chatInput.dispose();
+    _chatScroll.dispose();
+    super.dispose();
+  }
+
+  void _startChatPoll() {
+    _poll?.cancel();
+    _poll = Timer.periodic(const Duration(seconds: 12), (_) {
+      if (mounted) _refreshChat(silent: true);
+    });
+  }
+
+  Future<void> _refreshChat({bool silent = false}) async {
+    try {
+      final res =
+          await guestDio().get<Map<String, dynamic>>('/guest/chat/messages');
+      if (!mounted) return;
+      final list = (res.data?['messages'] as List?) ?? [];
+      setState(() => _chatMessages = list);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollChatToEnd());
+    } catch (_) {
+      if (!silent && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not refresh messages.')),
+        );
+      }
+    }
+  }
+
+  void _scrollChatToEnd() {
+    if (!_chatScroll.hasClients) return;
+    final max = _chatScroll.position.maxScrollExtent;
+    _chatScroll.animateTo(
+      max,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   Future<void> _load() async {
@@ -900,6 +920,8 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
         _data = res.data;
         _loading = false;
       });
+      await _refreshChat(silent: true);
+      _startChatPoll();
     } on DioException catch (e) {
       setState(() {
         _error = dioErrorMessage(e);
@@ -910,6 +932,66 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
         _error = '$e';
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _silentReload() async {
+    try {
+      final res =
+          await guestDio().get<Map<String, dynamic>>('/guest/dashboard');
+      if (!mounted) return;
+      setState(() => _data = res.data);
+      await _refreshChat(silent: true);
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dioErrorMessage(e))),
+      );
+    }
+  }
+
+  String _formatSentAt(Object? raw) {
+    final s = raw?.toString() ?? '';
+    if (s.isEmpty) return '';
+    final dt = DateTime.tryParse(s);
+    if (dt != null) {
+      final l = dt.toLocal();
+      return '${l.month}/${l.day} ${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}';
+    }
+    return s.length > 24 ? '${s.substring(0, 22)}…' : s;
+  }
+
+  bool _isGuestMessage(Map<String, dynamic> m) {
+    final r =
+        (m['sender_role'] ?? m['senderRole'] ?? '').toString().toLowerCase();
+    return r == 'guest';
+  }
+
+  Future<void> _sendChatLine() async {
+    final text = _chatInput.text.trim();
+    if (text.isEmpty || _chatSending) return;
+    setState(() => _chatSending = true);
+    try {
+      await guestDio().post('/guest/chat/messages', data: {'message': text});
+      if (!mounted) return;
+      _chatInput.clear();
+      await _refreshChat(silent: true);
+    } on DioException catch (e) {
+      if (!mounted) return;
+      if (e.response?.statusCode == 401) {
+        await _signOut();
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dioErrorMessage(e))),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e')),
+      );
+    } finally {
+      if (mounted) setState(() => _chatSending = false);
     }
   }
 
@@ -967,43 +1049,72 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
     final payload = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setLocal) => AlertDialog(
-          title: const Text('Request Amenity'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                initialValue: selectedId,
-                items: items.map((item) {
-                  final id = (item['id'] ?? '').toString();
-                  final name = (item['amenityName'] ?? '').toString();
-                  final type = (item['amenityType'] ?? '').toString();
-                  final price = (item['price'] ?? 0).toString();
-                  return DropdownMenuItem(
-                    value: id,
-                    child: Text('$name ($type) - ₱$price'),
-                  );
-                }).toList(),
-                onChanged: (v) => setLocal(() => selectedId = v ?? selectedId),
-                decoration: const InputDecoration(labelText: 'Menu item'),
+        builder: (context, setLocal) => Dialog(
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: Padding(
+              padding: const EdgeInsets.all(22),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Request amenity',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    key: ValueKey<String>(selectedId),
+                    initialValue: selectedId,
+                    decoration: const InputDecoration(
+                      labelText: 'Menu item',
+                    ),
+                    items: items.map((item) {
+                      final id = (item['id'] ?? '').toString();
+                      final name = (item['amenityName'] ?? '').toString();
+                      final type = (item['amenityType'] ?? '').toString();
+                      final price = (item['price'] ?? 0).toString();
+                      return DropdownMenuItem(
+                        value: id,
+                        child: Text('$name ($type) · ₱$price'),
+                      );
+                    }).toList(),
+                    onChanged: (v) =>
+                        setLocal(() => selectedId = v ?? selectedId),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: qtyCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Quantity',
+                      prefixIcon: Icon(Icons.numbers_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton(
+                        onPressed: () => Navigator.of(context).pop({
+                          'amenityItemId': selectedId,
+                          'quantity': int.tryParse(qtyCtrl.text.trim()) ?? 1,
+                        }),
+                        child: const Text('Submit'),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              TextField(
-                  controller: qtyCtrl,
-                  decoration: const InputDecoration(labelText: 'Quantity')),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel')),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop({
-                'amenityItemId': selectedId,
-                'quantity': int.tryParse(qtyCtrl.text.trim()) ?? 1,
-              }),
-              child: const Text('Send'),
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -1012,37 +1123,6 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
     await _runGuestAction('Amenity request', () async {
       await guestDio().post('/guest/amenities/claim', data: payload);
       return {'message': 'Amenity request submitted and added to charges.'};
-    });
-  }
-
-  Future<void> _sendGuestMessage() async {
-    final ctrl = TextEditingController();
-    final message = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Message Staff'),
-        content: TextField(
-          controller: ctrl,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            labelText: 'Message',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.of(context).pop(ctrl.text.trim()),
-              child: const Text('Send')),
-        ],
-      ),
-    );
-    if (message == null || message.isEmpty) return;
-    await _runGuestAction('Guest message', () async {
-      await guestDio().post('/guest/chat/messages', data: {'message': message});
-      return {'message': 'Message sent to hotel staff.'};
     });
   }
 
@@ -1102,7 +1182,8 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<int>(
-                value: rating,
+                key: ValueKey<int>(rating),
+                initialValue: rating,
                 items: const [
                   DropdownMenuItem(value: 5, child: Text('5 - Excellent')),
                   DropdownMenuItem(value: 4, child: Text('4 - Good')),
@@ -1145,11 +1226,11 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppScaffold(
       appBar: AppBar(
         title: const Text('Guest dashboard'),
         actions: [
-          IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
+          IconButton(onPressed: _silentReload, icon: const Icon(Icons.refresh)),
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'out') _signOut();
@@ -1189,79 +1270,271 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
     final roomNo = room?['roomNumber'] ?? '—';
     final checkout = room?['checkOutAt']?.toString() ?? '—';
 
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          Text(hotel, style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 8),
-          Text('Room $roomNo · Checkout: $checkout'),
-          const SizedBox(height: 14),
-          GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-            physics: const NeverScrollableScrollPhysics(),
-            childAspectRatio: 1.7,
-            children: [
-              _AdminMetricCard(
-                  label: 'Amenity claims',
-                  value: '${claims.length}',
-                  icon: Icons.local_mall_outlined),
-              _AdminMetricCard(
-                  label: 'Review prompt',
-                  value: (room?['showReviewPrompt'] == true) ? 'Yes' : 'No',
-                  icon: Icons.reviews_outlined),
-            ],
+    final scheme = Theme.of(context).colorScheme;
+
+    return Column(
+      children: [
+        Expanded(
+          flex: 11,
+          child: RefreshIndicator(
+            onRefresh: _silentReload,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+              children: [
+                Text(hotel, style: Theme.of(context).textTheme.headlineSmall),
+                const SizedBox(height: 8),
+                Text('Room $roomNo · Checkout: $checkout'),
+                const SizedBox(height: 14),
+                GridView.count(
+                  crossAxisCount: 2,
+                  shrinkWrap: true,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  physics: const NeverScrollableScrollPhysics(),
+                  childAspectRatio: 1.7,
+                  children: [
+                    AppMetricCard(
+                        label: 'Amenity claims',
+                        value: '${claims.length}',
+                        icon: Icons.local_mall_outlined),
+                    AppMetricCard(
+                        label: 'Review prompt',
+                        value: (room?['showReviewPrompt'] == true)
+                            ? 'Yes'
+                            : 'No',
+                        icon: Icons.reviews_outlined),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                AppActionTile(
+                  title: 'Request amenity',
+                  subtitle: 'Submit a housekeeping/amenity claim',
+                  icon: Icons.room_service_outlined,
+                  onTap: _claimAmenity,
+                ),
+                AppActionTile(
+                  title: 'Extend stay',
+                  subtitle: 'Request extra nights with updated billing',
+                  icon: Icons.calendar_month_outlined,
+                  onTap: _extendStay,
+                ),
+                AppActionTile(
+                  title: 'Submit review',
+                  subtitle: 'Rate your stay and leave feedback',
+                  icon: Icons.rate_review_outlined,
+                  onTap: _submitReview,
+                ),
+                const SizedBox(height: 12),
+                Text('Recent amenity claims',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                ...claims.take(5).map((c) {
+                  final m = c as Map<String, dynamic>;
+                  return Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.shopping_bag_outlined),
+                      title: Text((m['amenityName'] ?? '').toString()),
+                      subtitle: Text(
+                          'Qty ${(m['quantity'] ?? 1)} · Status ${(m['status'] ?? 'pending')}'),
+                    ),
+                  );
+                }),
+                if (_busyAction) ...[
+                  const SizedBox(height: 10),
+                  const LinearProgressIndicator(),
+                ],
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
-          _AdminActionTile(
-            title: 'Request amenity',
-            subtitle: 'Submit a housekeeping/amenity claim',
-            icon: Icons.room_service_outlined,
-            onTap: _claimAmenity,
-          ),
-          _AdminActionTile(
-            title: 'Message hotel staff',
-            subtitle: 'Send an in-house message',
-            icon: Icons.chat_bubble_outline,
-            onTap: _sendGuestMessage,
-          ),
-          _AdminActionTile(
-            title: 'Extend stay',
-            subtitle: 'Request extra nights with updated billing',
-            icon: Icons.calendar_month_outlined,
-            onTap: _extendStay,
-          ),
-          _AdminActionTile(
-            title: 'Submit review',
-            subtitle: 'Rate your stay and leave feedback',
-            icon: Icons.rate_review_outlined,
-            onTap: _submitReview,
-          ),
-          const SizedBox(height: 12),
-          Text('Recent amenity claims',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          ...claims.take(5).map((c) {
-            final m = c as Map<String, dynamic>;
-            return Card(
-              child: ListTile(
-                leading: const Icon(Icons.shopping_bag_outlined),
-                title: Text((m['amenityName'] ?? '').toString()),
-                subtitle: Text(
-                    'Qty ${(m['quantity'] ?? 1)} · Status ${(m['status'] ?? 'pending')}'),
+        ),
+        Expanded(
+          flex: 10,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: Material(
+              elevation: 1,
+              shadowColor: Colors.black26,
+              borderRadius: BorderRadius.circular(16),
+              color: scheme.surfaceContainerLow,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 6),
+                      child: Row(
+                        children: [
+                          Icon(Icons.forum_outlined, color: scheme.primary),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Concierge chat',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () => _refreshChat(silent: false),
+                            child: const Text('Refresh'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Divider(height: 1, color: scheme.outlineVariant),
+                    Expanded(
+                      child: _chatMessages.isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Text(
+                                  'No messages yet.\nSay hello to the front desk — replies appear here.',
+                                  textAlign: TextAlign.center,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(
+                                        color: scheme.onSurfaceVariant,
+                                      ),
+                                ),
+                              ),
+                            )
+                          : ListView.builder(
+                              controller: _chatScroll,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 10),
+                              itemCount: _chatMessages.length,
+                              itemBuilder: (context, i) {
+                                final raw = _chatMessages[i];
+                                final m = raw is Map<String, dynamic>
+                                    ? raw
+                                    : <String, dynamic>{};
+                                final body =
+                                    (m['message'] ?? '').toString().trim();
+                                final guestSide = _isGuestMessage(m);
+                                final bubbleColor = guestSide
+                                    ? scheme.surfaceContainerHighest
+                                    : scheme.primaryContainer;
+                                final align = guestSide
+                                    ? Alignment.centerLeft
+                                    : Alignment.centerRight;
+                                final sentRaw = m['sent_at'] ?? m['sentAt'];
+                                final sent = _formatSentAt(sentRaw);
+                                return Align(
+                                  alignment: align,
+                                  child: Container(
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 10),
+                                    constraints: const BoxConstraints(
+                                        maxWidth: 300),
+                                    decoration: BoxDecoration(
+                                      color: bubbleColor,
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        if (!guestSide)
+                                          Text(
+                                            'Hotel',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .labelSmall
+                                                ?.copyWith(
+                                                  color: scheme
+                                                      .onPrimaryContainer,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                          ),
+                                        if (guestSide)
+                                          Text(
+                                            'You',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .labelSmall
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                          ),
+                                        const SizedBox(height: 4),
+                                        SelectableText(body),
+                                        if (sent.isNotEmpty) ...[
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            sent,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .labelSmall
+                                                ?.copyWith(
+                                                  color: scheme
+                                                      .onSurfaceVariant,
+                                                ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                    Divider(height: 1, color: scheme.outlineVariant),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 10),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _chatInput,
+                              minLines: 1,
+                              maxLines: 4,
+                              textInputAction: TextInputAction.send,
+                              onSubmitted: (_) => _sendChatLine(),
+                              decoration: InputDecoration(
+                                hintText: 'Message the hotel…',
+                                filled: true,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton(
+                            onPressed:
+                                _chatSending ? null : () => _sendChatLine(),
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.all(16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            child: _chatSending
+                                ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.send_rounded),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            );
-          }),
-          if (_busyAction) ...[
-            const SizedBox(height: 10),
-            const LinearProgressIndicator(),
-          ],
-        ],
-      ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1318,7 +1591,7 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppScaffold(
       appBar: AppBar(
         title: const Text('Book a stay'),
         actions: [
@@ -1659,7 +1932,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppScaffold(
       appBar: AppBar(
         title: Text(widget.categoryName),
         actions: [
