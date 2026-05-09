@@ -127,7 +127,22 @@ class AdminDashboardApiController extends Controller
                 ->map(fn ($message) => array_merge($message->toArray(), [
                 'is_read' => (bool) ($message->is_read ?? false),
             ])),
-            'reservations' => ExternalReservation::query()->latest()->limit(30)->get(),
+            'reservations' => ExternalReservation::query()
+                ->latest()
+                ->limit(80)
+                ->get()
+                ->sortBy(function ($r) {
+                    $s = (string) ($r->status ?? '');
+
+                    return match ($s) {
+                        'pending_approval' => 0,
+                        'approved' => 1,
+                        'reserved' => 2,
+                        default => 3,
+                    };
+                })
+                ->take(40)
+                ->values(),
             'reminders' => CheckoutReminder::query()->latest()->limit(30)->get(),
             'reviews' => StayReview::query()->latest()->limit(30)->get(),
             'transfers' => RoomTransfer::query()->latest()->limit(30)->get(),

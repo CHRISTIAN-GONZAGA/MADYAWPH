@@ -137,8 +137,10 @@ class CustomerPortalApiController extends Controller
         $this->assertRoomInHotel($room, $hotelId);
 
         $checkInDay = Carbon::parse($validated['check_in'])->startOfDay();
-        if ($checkInDay->greaterThan(Carbon::today())) {
-            return $this->createFutureReservation($validated);
+        if ($checkInDay->isAfter(Carbon::today())) {
+            return response()->json([
+                'message' => 'For future dates use Reserve — your request will be reviewed by the hotel.',
+            ], 422);
         }
 
         $roomStatus = $room->status?->value ?? (string) $room->status;
@@ -253,21 +255,12 @@ class CustomerPortalApiController extends Controller
         }
 
         $roomStatus = $room->status?->value ?? (string) $room->status;
-        if (! in_array($roomStatus, [RoomStatus::AVAILABLE->value, RoomStatus::RESERVED->value], true)) {
+        if ($roomStatus !== RoomStatus::AVAILABLE->value) {
             return response()->json(['message' => 'This room cannot be reserved for those dates right now.'], 422);
         }
 
-        $hasConflict = ExternalReservation::query()
-            ->where('hotel_id', $hotelId)
-            ->where('assigned_room_id', (string) $room->id)
-            ->whereIn('status', ['reserved', 'booked'])
-            ->where(function ($query) use ($checkIn, $checkOut) {
-                $query->whereBetween('check_in_date', [$checkIn->toDateString(), $checkOut->toDateString()])
-                    ->orWhereBetween('check_out_date', [$checkIn->toDateString(), $checkOut->toDateString()]);
-            })
-            ->exists();
-        if ($hasConflict) {
-            return response()->json(['message' => 'Room already reserved on selected dates.'], 422);
+        if ($this->reservationRangeHasConflict($hotelId, (string) $room->id, $checkIn, $checkOut, null)) {
+            return response()->json(['message' => 'Room already has a reservation overlapping these dates.'], 422);
         }
 
         $reservation = ExternalReservation::query()->create([
@@ -280,17 +273,43 @@ class CustomerPortalApiController extends Controller
             'check_in_date' => $checkIn->toDateString(),
             'check_out_date' => $checkOut->toDateString(),
             'assigned_room_id' => (string) $room->id,
-            'status' => 'reserved',
+            'status' => 'pending_approval',
         ]);
-        $room->update(['status' => RoomStatus::RESERVED->value]);
         app(ActivityLogService::class)->log(
             $hotelId,
             Auth::user(),
-            "Created reservation {$reservation->external_reference} for room {$room->room_number}",
+            "Reservation request {$reservation->external_reference} pending approval (room {$room->room_number})",
             ['reservation_id' => (string) $reservation->id, 'room_id' => (string) $room->id]
         );
 
         return response()->json(['ok' => true, 'reservation' => $reservation]);
+    }
+
+    /**
+     * @param  \Carbon\CarbonInterface  $checkIn
+     * @param  \Carbon\CarbonInterface  $checkOut
+     */
+    private function reservationRangeHasConflict(
+        string $hotelId,
+        string $roomId,
+        $checkIn,
+        $checkOut,
+        ?string $excludeReservationId
+    ): bool {
+        $in = Carbon::parse($checkIn)->startOfDay()->toDateString();
+        $out = Carbon::parse($checkOut)->startOfDay()->toDateString();
+
+        $q = ExternalReservation::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where('assigned_room_id', $roomId)
+            ->whereIn('status', ['pending_approval', 'approved', 'reserved', 'booked'])
+            ->where('check_in_date', '<', $out)
+            ->where('check_out_date', '>', $in);
+        if ($excludeReservationId !== null && $excludeReservationId !== '') {
+            $q->where('id', '!=', $excludeReservationId);
+        }
+
+        return $q->exists();
     }
 
     private function generateUniqueRoomPassword(): string

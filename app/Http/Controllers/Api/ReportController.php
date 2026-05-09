@@ -250,10 +250,21 @@ class ReportController extends Controller
             ->get(['action', 'created_at'])
             ->groupBy(fn ($log) => $this->bucketLabel(optional($log->created_at), $granularity))
             ->map(function ($group, $label) {
+                $topActions = $group->groupBy('action')
+                    ->map(fn ($g) => (int) $g->count())
+                    ->sortDesc()
+                    ->take(3)
+                    ->map(fn ($count, $action) => [
+                        'action' => (string) $action,
+                        'count' => (int) $count,
+                    ])
+                    ->values()
+                    ->all();
+
                 return [
                     'period_label' => (string) $label,
                     'total_events' => (int) $group->count(),
-                    'top_actions' => $group->groupBy('action')->map->count()->sortDesc()->take(3),
+                    'top_actions' => $topActions,
                 ];
             })
             ->sortBy('period_label')
@@ -343,12 +354,13 @@ class ReportController extends Controller
             ->get(['booking_id', 'amount']);
         $byBooking = [];
         foreach ($bookingIds as $id) {
-            $set = $charges->where('booking_id', $id);
+            $idStr = (string) $id;
+            $set = $charges->filter(fn ($c) => (string) ($c->booking_id ?? '') === $idStr);
             if ($set->isEmpty()) {
-                $booking = $bookings->firstWhere('id', $id);
-                $byBooking[$id] = (float) ($booking?->total_amount ?? 0);
+                $booking = $bookings->first(fn ($b) => (string) $b->id === $idStr);
+                $byBooking[$idStr] = (float) ($booking?->total_amount ?? 0);
             } else {
-                $byBooking[$id] = (float) $set->sum(fn ($c) => (float) ($c->amount ?? 0));
+                $byBooking[$idStr] = (float) $set->sum(fn ($c) => (float) ($c->amount ?? 0));
             }
         }
 

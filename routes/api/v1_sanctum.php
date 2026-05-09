@@ -27,6 +27,7 @@ use App\Models\StaffMember;
 use App\Models\StayReview;
 use App\Models\SystemSetting;
 use App\Models\Task;
+use App\Models\User;
 use App\Models\UserSetting;
 use App\Services\ActivityLogService;
 use App\Services\BookingService;
@@ -40,6 +41,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Laravel\Sanctum\PersonalAccessToken;
 
 Route::middleware('role:admin')->group(function (): void {
     Route::get('/admin/dashboard', AdminDashboardApiController::class)->name('api.v1.admin.dashboard');
@@ -289,10 +291,9 @@ Route::middleware('role:admin')->group(function (): void {
             $booking = Booking::withoutGlobalScopes()
                 ->where('hotel_id', $hotelId)
                 ->where('room_id', (string) $room->id)
-                ->whereIn('status', [
-                    BookingStatus::CONFIRMED->value,
-                    BookingStatus::BOOKED->value,
-                    BookingStatus::RESERVED->value,
+                ->whereNotIn('status', [
+                    BookingStatus::COMPLETED->value,
+                    BookingStatus::CANCELLED->value,
                 ])
                 ->latest('created_at')
                 ->first();
@@ -954,6 +955,124 @@ Route::get('/admin/guest-history', function (Request $request) {
 
     return response()->json(['data' => $rows]);
 })->middleware('role:admin');
+
+Route::post('/admin/reservations/{id}/approve', function (Request $request, string $id) {
+    $hotelId = (string) $request->user()->hotel_id;
+    $res = ExternalReservation::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->findOrFail($id);
+    if ((string) ($res->status ?? '') !== 'pending_approval') {
+        return response()->json(['message' => 'Only pending reservation requests can be approved.'], 422);
+    }
+    $room = Room::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->find($res->assigned_room_id);
+    if (! $room) {
+        return response()->json(['message' => 'Room is no longer available for this reservation.'], 422);
+    }
+    $roomStatus = $room->status?->value ?? (string) $room->status;
+    if ($roomStatus !== RoomStatus::AVAILABLE->value) {
+        return response()->json(['message' => 'Room must be available to approve this reservation.'], 422);
+    }
+    $in = Carbon::parse($res->check_in_date)->startOfDay()->toDateString();
+    $out = Carbon::parse($res->check_out_date)->startOfDay()->toDateString();
+    $overlap = ExternalReservation::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->where('assigned_room_id', (string) $room->id)
+        ->where('id', '!=', (string) $res->id)
+        ->whereIn('status', ['pending_approval', 'approved', 'reserved', 'booked'])
+        ->where('check_in_date', '<', $out)
+        ->where('check_out_date', '>', $in)
+        ->exists();
+    if ($overlap) {
+        return response()->json(['message' => 'Another reservation overlaps these dates for this room.'], 422);
+    }
+    $res->update(['status' => 'approved']);
+    $room->update(['status' => RoomStatus::RESERVED->value]);
+    app(ActivityLogService::class)->log(
+        $hotelId,
+        $request->user(),
+        "Approved reservation {$res->external_reference} for room {$room->room_number}",
+        ['reservation_id' => (string) $res->id, 'room_id' => (string) $room->id]
+    );
+
+    return response()->json(['ok' => true, 'reservation' => $res->fresh()]);
+})->middleware('role:admin')->name('api.v1.admin.reservations.approve');
+
+Route::post('/admin/reservations/{id}/reject', function (Request $request, string $id) {
+    $hotelId = (string) $request->user()->hotel_id;
+    $res = ExternalReservation::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->findOrFail($id);
+    if ((string) ($res->status ?? '') !== 'pending_approval') {
+        return response()->json(['message' => 'Only pending reservation requests can be rejected.'], 422);
+    }
+    $res->update(['status' => 'rejected']);
+    app(ActivityLogService::class)->log(
+        $hotelId,
+        $request->user(),
+        "Rejected reservation request {$res->external_reference}",
+        ['reservation_id' => (string) $res->id]
+    );
+
+    return response()->json(['ok' => true, 'reservation' => $res->fresh()]);
+})->middleware('role:admin')->name('api.v1.admin.reservations.reject');
+
+Route::put('/admin/profile', function (Request $request) {
+    $validated = $request->validate([
+        'name' => ['required', 'string', 'max:255'],
+        'current_password' => ['nullable', 'required_with:password', 'string'],
+        'password' => ['nullable', 'string', 'min:6', 'confirmed'],
+    ]);
+    $user = $request->user();
+    if (! empty($validated['password'])) {
+        if (empty($validated['current_password']) || ! Hash::check($validated['current_password'], (string) $user->password)) {
+            return response()->json(['message' => 'Current password is incorrect.'], 422);
+        }
+        $user->password = $validated['password'];
+    }
+    $user->name = $validated['name'];
+    $user->save();
+
+    return response()->json(['ok' => true, 'user' => $user->fresh()]);
+})->middleware('role:admin')->name('api.v1.admin.profile');
+
+Route::put('/admin/hotel/access', function (Request $request) {
+    $validated = $request->validate([
+        'current_password' => ['required', 'string'],
+        'access_username' => ['required', 'string', 'max:255'],
+        'access_password' => ['required', 'string', 'min:6', 'confirmed'],
+    ]);
+    $hotelId = (string) $request->user()->hotel_id;
+    $hotel = Hotel::withoutGlobalScopes()->find($hotelId);
+    if (! $hotel || ! Hash::check($validated['current_password'], (string) ($hotel->access_password ?? ''))) {
+        return response()->json(['message' => 'Current hotel password is incorrect.'], 422);
+    }
+    $hotel->update([
+        'access_username' => $validated['access_username'],
+        'access_password' => Hash::make($validated['access_password']),
+    ]);
+    $morph = (new User)->getMorphClass();
+    $userIds = User::withoutGlobalScopes()->where('hotel_id', $hotelId)->pluck('id')->map(fn ($id) => (string) $id)->all();
+    if ($userIds !== []) {
+        PersonalAccessToken::query()
+            ->where('tokenable_type', $morph)
+            ->whereIn('tokenable_id', $userIds)
+            ->delete();
+    }
+    app(ActivityLogService::class)->log(
+        $hotelId,
+        $request->user(),
+        'Hotel access credentials changed; all staff sessions revoked.',
+        []
+    );
+
+    return response()->json([
+        'ok' => true,
+        'message' => 'Hotel login updated. Everyone must sign in again.',
+        'session_revoked' => true,
+    ]);
+})->middleware('role:admin')->name('api.v1.admin.hotel.access');
 
 // Admin room list with access codes (admin-only visibility)
 Route::get('/admin/rooms', function (Request $request) {

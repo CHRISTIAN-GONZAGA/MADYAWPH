@@ -6,6 +6,7 @@ import '../widgets/app_scaffold.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_state_views.dart';
 
+/// Approve or reject public reservation requests (future stays).
 class AdminBookingsScreen extends StatefulWidget {
   const AdminBookingsScreen({super.key});
 
@@ -14,7 +15,6 @@ class AdminBookingsScreen extends StatefulWidget {
 }
 
 class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
-  List<dynamic> _bookings = const [];
   List<dynamic> _reservations = const [];
   String? _error;
   bool _loading = true;
@@ -32,10 +32,8 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
       _error = null;
     });
     try {
-      final b = await portalDio().get<Map<String, dynamic>>('/bookings');
       final d = await portalDio().get<Map<String, dynamic>>('/admin/dashboard');
       setState(() {
-        _bookings = (b.data?['data'] as List?) ?? const [];
         _reservations = (d.data?['reservations'] as List?) ?? const [];
         _loading = false;
       });
@@ -52,19 +50,41 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
     }
   }
 
-  Future<void> _bookingAction(String id, String action) async {
-    if (_busy) return;
+  Future<void> _approve(String id) async {
+    if (_busy || id.isEmpty) return;
     setState(() => _busy = true);
     try {
-      await portalDio().put('/bookings/$id/$action');
+      await portalDio().post<Map<String, dynamic>>('/admin/reservations/$id/approve');
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Booking $action done.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Reservation approved. Room is held until check-in date.')),
+      );
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dioErrorMessage(e))),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _reject(String id) async {
+    if (_busy || id.isEmpty) return;
+    setState(() => _busy = true);
+    try {
+      await portalDio().post<Map<String, dynamic>>('/admin/reservations/$id/reject');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Reservation request rejected.')),
+      );
+      await _load();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dioErrorMessage(e))),
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -74,9 +94,9 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
   Widget build(BuildContext context) {
     return AppScaffold(
       appBar: AppBar(
-        title: const Text('Booking operations'),
+        title: const Text('Reservation requests'),
         actions: [
-          IconButton(onPressed: _load, icon: const Icon(Icons.refresh))
+          IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
         ],
       ),
       body: _buildBody(),
@@ -91,48 +111,58 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
       child: ListView(
         padding: const EdgeInsets.all(12),
         children: [
-          Text('Reservations', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
+          Text(
+            'Approve requests to reserve the room from the guest’s check-in date. '
+            'The app promotes approved holds to active bookings automatically on that date.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
           if (_reservations.isEmpty)
             const Text('No reservation requests.')
           else
-            ..._reservations.take(30).map((r) {
+            ..._reservations.map((r) {
               final m = r as Map<String, dynamic>;
-              return AppSectionCard(
-                child: ListTile(
-                  leading: const Icon(Icons.event_available_outlined),
-                  title: Text((m['guest_name'] ?? 'Guest').toString()),
-                  subtitle: Text(
-                    'Ref: ${(m['external_reference'] ?? '').toString()} · '
-                    'Status: ${(m['status'] ?? '').toString()}',
-                  ),
-                ),
-              );
-            }),
-          const SizedBox(height: 16),
-          Text('Bookings', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          if (_bookings.isEmpty)
-            const Text('No bookings yet.')
-          else
-            ..._bookings.map((b) {
-              final m = b as Map<String, dynamic>;
               final id = (m['id'] ?? m['_id'] ?? '').toString();
+              final status = (m['status'] ?? '').toString();
+              final pending = status == 'pending_approval';
               return AppSectionCard(
-                child: ListTile(
-                  leading: const Icon(Icons.bed_outlined),
-                  title: Text((m['guest_name'] ?? 'Guest').toString()),
-                  subtitle: Text(
-                    'Ref: ${(m['booking_reference'] ?? '').toString()} · '
-                    'Status: ${(m['status'] ?? '').toString()}',
-                  ),
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (v) => _bookingAction(id, v),
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(value: 'cancel', child: Text('Cancel')),
-                      PopupMenuItem(value: 'complete', child: Text('Complete')),
-                    ],
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.event_available_outlined),
+                      title: Text((m['guest_name'] ?? 'Guest').toString()),
+                      subtitle: Text(
+                        [
+                          'Ref: ${(m['external_reference'] ?? '').toString()}',
+                          'Status: $status',
+                          if ((m['check_in_date'] ?? '').toString().isNotEmpty)
+                            'Check-in: ${m['check_in_date']}',
+                          if ((m['check_out_date'] ?? '').toString().isNotEmpty)
+                            'Check-out: ${m['check_out_date']}',
+                        ].join('\n'),
+                      ),
+                    ),
+                    if (pending && id.isNotEmpty)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: _busy ? null : () => _reject(id),
+                              child: const Text('Reject'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: _busy ? null : () => _approve(id),
+                              child: const Text('Approve'),
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
                 ),
               );
             }),

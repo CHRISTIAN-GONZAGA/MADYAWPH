@@ -86,7 +86,16 @@ class RoomController extends Controller
                 ], 422);
             }
             $this->createAutoMaintenanceTask($request, $room);
-            $toStatus = RoomStatus::MAINTENANCE->value;
+            $activeBooking->update(['status' => BookingStatus::COMPLETED->value]);
+            $room->update([
+                'status' => RoomStatus::MAINTENANCE->value,
+                'current_guest_name' => null,
+                'current_check_in' => null,
+                'current_check_out' => null,
+                'current_access_code' => null,
+            ]);
+
+            return response()->json($room);
         }
 
         $room->update(['status' => $toStatus]);

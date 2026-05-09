@@ -11,6 +11,7 @@ import '../widgets/app_card.dart';
 import '../widgets/app_input.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/app_state_views.dart';
+import '../widgets/dashboard_clock.dart';
 import 'admin_rooms.dart';
 import 'admin_categories.dart';
 import 'admin_chat.dart';
@@ -359,6 +360,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       appBar: AppBar(
         title: const Text('Admin dashboard'),
         actions: [
+          const DashboardClockAction(),
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
           PopupMenuButton<String>(
             onSelected: (v) {
@@ -476,8 +478,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             },
           ),
           AppActionTile(
-            title: 'Bookings operations',
-            subtitle: 'Handle booking and reservation requests',
+            title: 'Reservation requests',
+            subtitle: 'Approve or reject customer holds; auto-books on arrival date',
             icon: Icons.book_online_outlined,
             onTap: () async {
               await Navigator.of(context).push<void>(
@@ -579,6 +581,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             onTap: () => Navigator.of(context).push<void>(
               MaterialPageRoute<void>(
                 builder: (_) => const AdminActivityLogsScreen(),
+              ),
+            ),
+          ),
+          AppActionTile(
+            title: 'Account & hotel login',
+            subtitle: 'Change admin username/password; update hotel gate (signs everyone out)',
+            icon: Icons.lock_outline,
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) => const AdminAccountSettingsScreen(),
               ),
             ),
           ),
@@ -998,6 +1010,7 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
       appBar: AppBar(
         title: const Text('Staff dashboard'),
         actions: [
+          const DashboardClockAction(),
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
           PopupMenuButton<String>(
             onSelected: (v) {
@@ -1909,6 +1922,7 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
       appBar: AppBar(
         title: const Text('Guest dashboard'),
         actions: [
+          const DashboardClockAction(),
           IconButton(onPressed: _silentReload, icon: const Icon(Icons.refresh)),
           PopupMenuButton<String>(
             onSelected: (v) {
@@ -2214,6 +2228,245 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class AdminAccountSettingsScreen extends StatefulWidget {
+  const AdminAccountSettingsScreen({super.key});
+
+  @override
+  State<AdminAccountSettingsScreen> createState() =>
+      _AdminAccountSettingsScreenState();
+}
+
+class _AdminAccountSettingsScreenState extends State<AdminAccountSettingsScreen> {
+  final _nameCtrl = TextEditingController();
+  final _adminCurrentPass = TextEditingController();
+  final _adminNewPass = TextEditingController();
+  final _adminNewPass2 = TextEditingController();
+  final _hotelCurrentPass = TextEditingController();
+  final _hotelUserCtrl = TextEditingController();
+  final _hotelNewPass = TextEditingController();
+  final _hotelNewPass2 = TextEditingController();
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDefaults();
+  }
+
+  Future<void> _loadDefaults() async {
+    try {
+      final r = await portalDio().get<Map<String, dynamic>>('/admin/dashboard');
+      final u =
+          (r.data?['auth'] as Map<String, dynamic>?)?['user'] as Map<String, dynamic>?;
+      final n = (u?['name'] ?? '').toString();
+      if (mounted && n.isNotEmpty) {
+        _nameCtrl.text = n;
+      }
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _adminCurrentPass.dispose();
+    _adminNewPass.dispose();
+    _adminNewPass2.dispose();
+    _hotelCurrentPass.dispose();
+    _hotelUserCtrl.dispose();
+    _hotelNewPass.dispose();
+    _hotelNewPass2.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveAdminProfile() async {
+    if (_busy) return;
+    if (_nameCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a username / display name.')),
+      );
+      return;
+    }
+    final hasNew = _adminNewPass.text.isNotEmpty;
+    if (hasNew && _adminNewPass.text != _adminNewPass2.text) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('New passwords do not match.')),
+      );
+      return;
+    }
+    if (hasNew && _adminCurrentPass.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter your current password to set a new one.')),
+      );
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final data = <String, dynamic>{
+        'name': _nameCtrl.text.trim(),
+      };
+      if (hasNew) {
+        data['current_password'] = _adminCurrentPass.text;
+        data['password'] = _adminNewPass.text;
+        data['password_confirmation'] = _adminNewPass2.text;
+      }
+      await portalDio().put<Map<String, dynamic>>('/admin/profile', data: data);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Admin profile updated.')),
+      );
+      _adminCurrentPass.clear();
+      _adminNewPass.clear();
+      _adminNewPass2.clear();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dioErrorMessage(e))),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _saveHotelAccess() async {
+    if (_busy) return;
+    if (_hotelUserCtrl.text.trim().isEmpty ||
+        _hotelCurrentPass.text.isEmpty ||
+        _hotelNewPass.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Fill hotel username, current password, and new password.'),
+        ),
+      );
+      return;
+    }
+    if (_hotelNewPass.text != _hotelNewPass2.text) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('New hotel passwords do not match.')),
+      );
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final res = await portalDio().put<Map<String, dynamic>>(
+        '/admin/hotel/access',
+        data: {
+          'current_password': _hotelCurrentPass.text,
+          'access_username': _hotelUserCtrl.text.trim(),
+          'access_password': _hotelNewPass.text,
+          'access_password_confirmation': _hotelNewPass2.text,
+        },
+      );
+      if (!mounted) return;
+      final revoked = res.data?['session_revoked'] == true;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            revoked
+                ? 'Hotel login updated. Please sign in again with your admin account.'
+                : 'Hotel login updated.',
+          ),
+        ),
+      );
+      if (revoked) {
+        await AuthStorage.clearPortalAuth();
+        if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
+      }
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dioErrorMessage(e))),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppScaffold(
+      appBar: AppBar(title: const Text('Account & hotel login')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text(
+            'Admin sign-in',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Username is the same value you use on the staff/admin login screen (stored as name).',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          AppInput(controller: _nameCtrl, label: 'Username'),
+          const SizedBox(height: 8),
+          AppInput(
+            controller: _adminCurrentPass,
+            label: 'Current password',
+            obscureText: true,
+          ),
+          const SizedBox(height: 8),
+          AppInput(
+            controller: _adminNewPass,
+            label: 'New password (optional)',
+            obscureText: true,
+          ),
+          const SizedBox(height: 8),
+          AppInput(
+            controller: _adminNewPass2,
+            label: 'Confirm new password',
+            obscureText: true,
+          ),
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: _busy ? null : _saveAdminProfile,
+            child: const Text('Save admin profile'),
+          ),
+          const SizedBox(height: 28),
+          Text(
+            'Hotel gate password',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'This is the property login guests use before choosing admin/staff. '
+            'After a change, every admin and staff member must log in again.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          AppInput(
+            controller: _hotelUserCtrl,
+            label: 'Hotel username',
+          ),
+          const SizedBox(height: 8),
+          AppInput(
+            controller: _hotelCurrentPass,
+            label: 'Current hotel password',
+            obscureText: true,
+          ),
+          const SizedBox(height: 8),
+          AppInput(
+            controller: _hotelNewPass,
+            label: 'New hotel password',
+            obscureText: true,
+          ),
+          const SizedBox(height: 8),
+          AppInput(
+            controller: _hotelNewPass2,
+            label: 'Confirm new hotel password',
+            obscureText: true,
+          ),
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: _busy ? null : _saveHotelAccess,
+            child: const Text('Update hotel login'),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2575,7 +2828,10 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     }
   }
 
-  Future<void> _bookRoom(Map<String, dynamic> room) async {
+  Future<void> _bookRoom(
+    Map<String, dynamic> room, {
+    required bool reserve,
+  }) async {
     final nameCtrl = TextEditingController();
     final emailCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
@@ -2595,13 +2851,17 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
           final safeNights = nights > 0 ? nights : 0;
           final estTotal = safeNights * pricePerNight;
 
+          final now = DateTime.now();
+          final today = DateTime(now.year, now.month, now.day);
+          final firstCheckIn =
+              reserve ? today.add(const Duration(days: 1)) : today;
+
           Future<void> pickCheckIn() async {
-            final now = DateTime.now();
             final picked = await showDatePicker(
               context: context,
-              firstDate: DateTime(now.year, now.month, now.day),
-              lastDate: now.add(const Duration(days: 365)),
-              initialDate: checkInDate ?? now,
+              firstDate: firstCheckIn,
+              lastDate: today.add(const Duration(days: 365)),
+              initialDate: checkInDate ?? firstCheckIn,
             );
             if (picked == null) return;
             checkInDate = picked;
@@ -2612,17 +2872,6 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
             checkInCtrl.text = picked.toIso8601String().split('T').first;
             setLocal(() {});
           }
-
-          final clock = DateTime.now();
-          final today = DateTime(clock.year, clock.month, clock.day);
-          final startDay = checkInDate != null
-              ? DateTime(
-                  checkInDate!.year,
-                  checkInDate!.month,
-                  checkInDate!.day,
-                )
-              : today;
-          final futureReservation = startDay.isAfter(today);
 
           Future<void> pickCheckOut() async {
             if (checkInDate == null) {
@@ -2645,7 +2894,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
           }
 
           return AlertDialog(
-            title: const Text('Book room'),
+            title: Text(reserve ? 'Request reservation' : 'Book room'),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -2669,7 +2918,9 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                   const SizedBox(height: 8),
                   AppInput(
                     controller: checkInCtrl,
-                    label: 'Check-in date',
+                    label: reserve
+                        ? 'Check-in (from tomorrow)'
+                        : 'Check-in (today for walk-in)',
                     hint: 'Tap to open calendar',
                     readOnly: true,
                     onTap: pickCheckIn,
@@ -2688,8 +2939,8 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      futureReservation
-                          ? 'Reservation: check-in is on a future date — room stays reserved until then.'
+                      reserve
+                          ? 'The hotel will approve your dates. You will be notified when the stay is activated on check-in day.'
                           : 'Duration: $safeNights night${safeNights == 1 ? '' : 's'}\nEstimated charge: ₱${estTotal.toStringAsFixed(2)}',
                     ),
                   ),
@@ -2702,7 +2953,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                 child: const Text('Cancel'),
               ),
               AppPrimaryButton(
-                label: futureReservation ? 'Reserve' : 'Book now',
+                label: reserve ? 'Submit request' : 'Book now',
                 onPressed: () => Navigator.of(context).pop({
                   'room_id': (room['id'] ?? '').toString(),
                   'guest_name': nameCtrl.text.trim(),
@@ -2720,16 +2971,8 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     if (payload == null || _booking) return;
     setState(() => _booking = true);
     try {
-      final checkInStr = payload['check_in']?.toString() ?? '';
-      final parsedIn = DateTime.tryParse(checkInStr);
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      final startDay = parsedIn != null
-          ? DateTime(parsedIn.year, parsedIn.month, parsedIn.day)
-          : today;
-      final path = startDay.isAfter(today)
-          ? '/customer/reservations'
-          : '/customer/bookings';
+      final path =
+          reserve ? '/customer/reservations' : '/customer/bookings';
 
       final res = await publicDio().post<Map<String, dynamic>>(
         path,
@@ -2748,8 +2991,8 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            path.endsWith('reservations')
-                ? 'Reservation held: ${ref.isEmpty ? 'reference generated' : ref}'
+            reserve
+                ? 'Request sent (ref ${ref.isEmpty ? 'pending' : ref}). Awaiting hotel approval.'
                 : 'Booking submitted: ${ref.isEmpty ? 'Reference generated' : ref}',
           ),
         ),
@@ -2816,9 +3059,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
               color: scheme.surfaceContainerLow,
               borderRadius: BorderRadius.circular(20),
               clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: () => _bookRoom(r),
-                child: Column(
+              child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Stack(
@@ -2908,21 +3149,22 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                           const SizedBox(height: 12),
                           Row(
                             children: [
-                              Icon(
-                                Icons.touch_app_outlined,
-                                size: 18,
-                                color: scheme.primary,
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: _booking
+                                      ? null
+                                      : () => _bookRoom(r, reserve: true),
+                                  child: const Text('Reserve'),
+                                ),
                               ),
-                              const SizedBox(width: 6),
-                              Text(
-                                'Tap to book or reserve',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelLarge
-                                    ?.copyWith(
-                                      color: scheme.primary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: FilledButton(
+                                  onPressed: _booking
+                                      ? null
+                                      : () => _bookRoom(r, reserve: false),
+                                  child: const Text('Book'),
+                                ),
                               ),
                             ],
                           ),
@@ -2931,7 +3173,6 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                     ),
                   ],
                 ),
-              ),
             ),
           );
         },

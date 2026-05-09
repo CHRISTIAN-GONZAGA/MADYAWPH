@@ -413,8 +413,11 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
 
   Future<void> _changeStatus() async {
     final room = _data?['room'] as Map<String, dynamic>?;
+    final booking = _data?['active_booking'] as Map<String, dynamic>?;
     final roomId = (room?['id'] ?? widget.roomId).toString();
     final current = (room?['status'] ?? 'available').toString();
+    final paid = (booking?['payment_status'] ?? '').toString() == 'paid';
+    final canCheckout = current != 'checked_in' || paid;
     String status = current;
     final chosen = await showDialog<String>(
       context: context,
@@ -422,13 +425,14 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         title: const Text('Change room status'),
         content: DropdownButtonFormField<String>(
           initialValue: current,
-          items: const [
-            DropdownMenuItem(value: 'available', child: Text('available')),
-            DropdownMenuItem(value: 'booked', child: Text('booked')),
-            DropdownMenuItem(value: 'checked_in', child: Text('checked_in')),
-            DropdownMenuItem(value: 'checked_out', child: Text('checked_out')),
-            DropdownMenuItem(value: 'maintenance', child: Text('maintenance')),
-            DropdownMenuItem(value: 'reserved', child: Text('reserved')),
+          items: [
+            const DropdownMenuItem(value: 'available', child: Text('available')),
+            const DropdownMenuItem(value: 'booked', child: Text('booked')),
+            const DropdownMenuItem(value: 'checked_in', child: Text('checked_in')),
+            if (canCheckout)
+              const DropdownMenuItem(value: 'checked_out', child: Text('checked_out')),
+            const DropdownMenuItem(value: 'maintenance', child: Text('maintenance')),
+            const DropdownMenuItem(value: 'reserved', child: Text('reserved')),
           ],
           onChanged: (v) => status = v ?? current,
         ),

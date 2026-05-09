@@ -23,6 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withSchedule(function (Schedule $schedule): void {
+        $schedule->command('hotel:activate-reservations')->hourly();
         $schedule->command('hotel:activate-reservations')->dailyAt('00:05');
     })
     ->withMiddleware(function (Middleware $middleware): void {
