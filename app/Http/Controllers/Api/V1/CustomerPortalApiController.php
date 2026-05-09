@@ -17,6 +17,7 @@ use App\Services\ActivityLogService;
 use App\Services\RoomPricingService;
 use App\Services\SmsService;
 use Carbon\Carbon;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -116,43 +117,7 @@ class CustomerPortalApiController extends Controller
             'check_out' => ['required', 'date', 'after:check_in'],
         ]);
 
-        $hotelId = $validated['hotel_id'];
-        $room = Room::query()->findOrFail($validated['room_id']);
-        $checkIn = Carbon::parse($validated['check_in']);
-        $checkOut = Carbon::parse($validated['check_out']);
-
-        $hasConflict = ExternalReservation::query()
-            ->where('assigned_room_id', (string) $room->id)
-            ->whereIn('status', ['reserved', 'booked'])
-            ->where(function ($query) use ($checkIn, $checkOut) {
-                $query->whereBetween('check_in_date', [$checkIn->toDateString(), $checkOut->toDateString()])
-                    ->orWhereBetween('check_out_date', [$checkIn->toDateString(), $checkOut->toDateString()]);
-            })
-            ->exists();
-        if ($hasConflict) {
-            return response()->json(['message' => 'Room already reserved on selected dates.'], 422);
-        }
-
-        $reservation = ExternalReservation::query()->create([
-            'source' => 'app-customer',
-            'external_reference' => 'RES'.now()->format('YmdHis').strtoupper(Str::random(4)),
-            'guest_name' => $validated['guest_name'],
-            'guest_email' => $validated['guest_email'],
-            'guest_phone' => $validated['guest_phone'],
-            'check_in_date' => $checkIn->toDateString(),
-            'check_out_date' => $checkOut->toDateString(),
-            'assigned_room_id' => (string) $room->id,
-            'status' => 'reserved',
-        ]);
-        $room->update(['status' => RoomStatus::RESERVED->value]);
-        app(ActivityLogService::class)->log(
-            $hotelId,
-            Auth::user(),
-            "Created reservation {$reservation->external_reference} for room {$room->room_number}",
-            ['reservation_id' => (string) $reservation->id, 'room_id' => (string) $room->id]
-        );
-
-        return response()->json(['ok' => true, 'reservation' => $reservation]);
+        return $this->createFutureReservation($validated);
     }
 
     public function storeBooking(Request $request): JsonResponse
@@ -169,6 +134,20 @@ class CustomerPortalApiController extends Controller
 
         $hotelId = $validated['hotel_id'];
         $room = Room::query()->findOrFail($validated['room_id']);
+        $this->assertRoomInHotel($room, $hotelId);
+
+        $checkInDay = Carbon::parse($validated['check_in'])->startOfDay();
+        if ($checkInDay->greaterThan(Carbon::today())) {
+            return $this->createFutureReservation($validated);
+        }
+
+        $roomStatus = $room->status?->value ?? (string) $room->status;
+        if ($roomStatus !== RoomStatus::AVAILABLE->value) {
+            return response()->json([
+                'message' => 'This room is not available for an immediate booking right now.',
+            ], 422);
+        }
+
         $checkIn = Carbon::parse($validated['check_in']);
         $checkOut = Carbon::parse($validated['check_out']);
         $nights = max(1, $checkIn->diffInDays($checkOut));
@@ -176,6 +155,7 @@ class CustomerPortalApiController extends Controller
         $total = $nightly * $nights;
 
         $booking = Booking::query()->create([
+            'hotel_id' => (string) $room->hotel_id,
             'booking_reference' => 'BK'.now()->format('YmdHis').strtoupper(Str::random(4)),
             'room_id' => (string) $room->id,
             'guest_name' => $validated['guest_name'],
@@ -242,5 +222,72 @@ class CustomerPortalApiController extends Controller
         $from = $request->input('hotel_id') ?? $request->query('hotel_id') ?? $request->query('hotel');
 
         return $from !== null ? trim((string) $from) : '';
+    }
+
+    private function assertRoomInHotel(Room $room, string $hotelId): void
+    {
+        if ((string) $room->hotel_id !== $hotelId) {
+            throw new HttpResponseException(response()->json(['message' => 'Room does not belong to this hotel.'], 422));
+        }
+    }
+
+    /**
+     * Future check-in: hold dates as an external reservation and mark room reserved until activation.
+     *
+     * @param  array{hotel_id: string, room_id: string, guest_name: string, guest_email: string, guest_phone: string, check_in: string, check_out: string}  $validated
+     */
+    private function createFutureReservation(array $validated): JsonResponse
+    {
+        $hotelId = $validated['hotel_id'];
+        $room = Room::query()->findOrFail($validated['room_id']);
+        $this->assertRoomInHotel($room, $hotelId);
+
+        $checkIn = Carbon::parse($validated['check_in'])->startOfDay();
+        $checkOut = Carbon::parse($validated['check_out'])->startOfDay();
+        if ($checkIn->lessThanOrEqualTo(Carbon::today())) {
+            return response()->json([
+                'message' => 'For today’s arrival use instant booking (short stay flow).',
+            ], 422);
+        }
+
+        $roomStatus = $room->status?->value ?? (string) $room->status;
+        if (! in_array($roomStatus, [RoomStatus::AVAILABLE->value, RoomStatus::RESERVED->value], true)) {
+            return response()->json(['message' => 'This room cannot be reserved for those dates right now.'], 422);
+        }
+
+        $hasConflict = ExternalReservation::query()
+            ->where('hotel_id', $hotelId)
+            ->where('assigned_room_id', (string) $room->id)
+            ->whereIn('status', ['reserved', 'booked'])
+            ->where(function ($query) use ($checkIn, $checkOut) {
+                $query->whereBetween('check_in_date', [$checkIn->toDateString(), $checkOut->toDateString()])
+                    ->orWhereBetween('check_out_date', [$checkIn->toDateString(), $checkOut->toDateString()]);
+            })
+            ->exists();
+        if ($hasConflict) {
+            return response()->json(['message' => 'Room already reserved on selected dates.'], 422);
+        }
+
+        $reservation = ExternalReservation::query()->create([
+            'hotel_id' => $hotelId,
+            'source' => 'app-customer',
+            'external_reference' => 'RES'.now()->format('YmdHis').strtoupper(Str::random(4)),
+            'guest_name' => $validated['guest_name'],
+            'guest_email' => $validated['guest_email'],
+            'guest_phone' => $validated['guest_phone'],
+            'check_in_date' => $checkIn->toDateString(),
+            'check_out_date' => $checkOut->toDateString(),
+            'assigned_room_id' => (string) $room->id,
+            'status' => 'reserved',
+        ]);
+        $room->update(['status' => RoomStatus::RESERVED->value]);
+        app(ActivityLogService::class)->log(
+            $hotelId,
+            Auth::user(),
+            "Created reservation {$reservation->external_reference} for room {$room->room_number}",
+            ['reservation_id' => (string) $reservation->id, 'room_id' => (string) $room->id]
+        );
+
+        return response()->json(['ok' => true, 'reservation' => $reservation]);
     }
 }

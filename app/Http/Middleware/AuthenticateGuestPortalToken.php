@@ -20,17 +20,33 @@ class AuthenticateGuestPortalToken
         $token = $request->bearerToken();
         $portal = GuestPortalStore::read($token);
         if ($portal === null) {
-            return response()->json(['message' => 'Guest session expired or invalid.'], 401);
+            return response()->json([
+                'message' => 'Please sign in again with your room number and the current room password.',
+            ], 401);
         }
 
         $room = Room::withoutGlobalScopes()
             ->where('hotel_id', (string) ($portal['hotel_id'] ?? ''))
             ->find((string) ($portal['room_id'] ?? ''));
-        $roomStatus = $room?->status?->value ?? (string) ($room?->status ?? '');
-        if (! $room || $roomStatus !== RoomStatus::BOOKED->value || ! filled($room->current_access_code)) {
+
+        if (! $room) {
             GuestPortalStore::forget($token);
 
-            return response()->json(['message' => 'Guest session expired. Please sign in again.'], 401);
+            return response()->json(['message' => 'Room no longer exists. Please sign in again.'], 401);
+        }
+
+        $roomStatus = $room->status?->value ?? (string) ($room->status ?? '');
+        $allowsGuestPortal = in_array($roomStatus, [
+            RoomStatus::BOOKED->value,
+            RoomStatus::CHECKED_IN->value,
+        ], true);
+
+        if (! $allowsGuestPortal || ! filled($room->current_access_code)) {
+            GuestPortalStore::forget($token);
+
+            return response()->json([
+                'message' => 'Guest access has ended for this room. Sign in again after the hotel assigns you a new stay.',
+            ], 401);
         }
 
         $request->attributes->set('guest_portal', $portal);

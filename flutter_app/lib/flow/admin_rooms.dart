@@ -18,6 +18,57 @@ class _AdminRoomsScreenState extends State<AdminRoomsScreen> {
   String? _error;
   bool _loading = true;
 
+  static String _categoryLabel(Map<String, dynamic> r) {
+    final cn = (r['category_name'] ?? '').toString().trim();
+    if (cn.isNotEmpty) {
+      return cn;
+    }
+    final rt = (r['room_type'] ?? '').toString().trim();
+    if (rt.isEmpty) {
+      return 'Uncategorized';
+    }
+    if (rt.length == 1) {
+      return rt.toUpperCase();
+    }
+    return '${rt[0].toUpperCase()}${rt.substring(1)}';
+  }
+
+  static int _compareRoomNumber(Map<String, dynamic> a, Map<String, dynamic> b) {
+    final na = (a['room_number'] ?? '').toString();
+    final nb = (b['room_number'] ?? '').toString();
+    final ia = int.tryParse(na);
+    final ib = int.tryParse(nb);
+    if (ia != null && ib != null) {
+      return ia.compareTo(ib);
+    }
+    return na.toLowerCase().compareTo(nb.toLowerCase());
+  }
+
+  /// Groups rooms by category label; sorts rooms within each group.
+  Map<String, List<Map<String, dynamic>>> _roomsByCategory() {
+    final map = <String, List<Map<String, dynamic>>>{};
+    for (final raw in _rooms) {
+      final r = raw as Map<String, dynamic>;
+      final label = _categoryLabel(r);
+      map.putIfAbsent(label, () => []).add(r);
+    }
+    for (final list in map.values) {
+      list.sort(_compareRoomNumber);
+    }
+    return map;
+  }
+
+  List<String> _sortedCategoryKeys(Map<String, List<Map<String, dynamic>>> grouped) {
+    final keys = grouped.keys.toList();
+    keys.sort((a, b) {
+      const unc = 'Uncategorized';
+      if (a == unc) return 1;
+      if (b == unc) return -1;
+      return a.toLowerCase().compareTo(b.toLowerCase());
+    });
+    return keys;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -75,41 +126,149 @@ class _AdminRoomsScreenState extends State<AdminRoomsScreen> {
       return AppErrorView(message: _error!, onRetry: _load);
     }
 
+    if (_rooms.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'No rooms yet. Add rooms or sync from your property setup.',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyLarge,
+          ),
+        ),
+      );
+    }
+
+    final grouped = _roomsByCategory();
+    final categories = _sortedCategoryKeys(grouped);
+    final theme = Theme.of(context);
+
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView.builder(
-        padding: const EdgeInsets.all(12),
-        itemCount: _rooms.length,
-        itemBuilder: (context, i) {
-          final r = _rooms[i] as Map<String, dynamic>;
-          final roomNo = (r['room_number'] ?? '').toString();
-          final status = (r['status'] ?? '').toString();
-          final guest = (r['current_guest_name'] ?? '').toString();
-          final pwd = (r['room_access_password'] ?? '').toString();
-          final id = (r['id'] ?? r['_id'] ?? '').toString();
-          return Card(
-            child: ListTile(
-              leading: const Icon(Icons.meeting_room_outlined),
-              title: Text('Room $roomNo'),
-              subtitle: Text(
-                [
-                  if (status.isNotEmpty) 'Status: $status',
-                  if (guest.isNotEmpty) 'Guest: $guest',
-                  if (pwd.isNotEmpty) 'Password: $pwd',
-                ].join(' · '),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8, left: 4),
+            child: Text(
+              'Rooms are grouped by category. Tap a section to expand or collapse.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () async {
-                await Navigator.of(context).push<void>(
-                  MaterialPageRoute<void>(
-                    builder: (_) => AdminRoomDetailScreen(roomId: id),
-                  ),
-                );
-                await _load();
-              },
             ),
-          );
-        },
+          ),
+          ...categories.asMap().entries.map((entry) {
+            final index = entry.key;
+            final cat = entry.value;
+            final rooms = grouped[cat]!;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Theme(
+                data: theme.copyWith(dividerColor: Colors.transparent),
+                child: ExpansionTile(
+                  key: PageStorageKey<String>('admin_room_cat_$cat'),
+                  initiallyExpanded: index == 0,
+                  tilePadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  collapsedShape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(color: theme.colorScheme.outlineVariant),
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(color: theme.colorScheme.outlineVariant),
+                  ),
+                  backgroundColor: theme.colorScheme.surfaceContainerHighest
+                      .withValues(alpha: 0.35),
+                  collapsedBackgroundColor:
+                      theme.colorScheme.surfaceContainerHighest
+                          .withValues(alpha: 0.2),
+                  leading: Icon(
+                    Icons.folder_outlined,
+                    color: theme.colorScheme.primary,
+                  ),
+                  title: Text(
+                    cat,
+                    style: theme.textTheme.titleMedium,
+                  ),
+                  subtitle: Text(
+                    '${rooms.length} room${rooms.length == 1 ? '' : 's'}',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  childrenPadding:
+                      const EdgeInsets.only(left: 8, right: 8, bottom: 12),
+                  children: [
+                    for (final r in rooms)
+                      _AdminRoomRow(
+                        room: r,
+                        categoryFallback: cat,
+                        onOpenDetail: () async {
+                          final id =
+                              (r['id'] ?? r['_id'] ?? '').toString();
+                          await Navigator.of(context).push<void>(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  AdminRoomDetailScreen(roomId: id),
+                            ),
+                          );
+                          await _load();
+                        },
+                      ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+}
+
+class _AdminRoomRow extends StatelessWidget {
+  const _AdminRoomRow({
+    required this.room,
+    required this.categoryFallback,
+    required this.onOpenDetail,
+  });
+
+  final Map<String, dynamic> room;
+  final String categoryFallback;
+  final VoidCallback onOpenDetail;
+
+  @override
+  Widget build(BuildContext context) {
+    final roomNo = (room['room_number'] ?? '').toString();
+    final status = (room['status'] ?? '').toString();
+    final guest = (room['current_guest_name'] ?? '').toString();
+    final pwd = (room['room_access_password'] ?? '').toString();
+    final displayName = (room['display_name'] ?? '').toString().trim();
+    final typeHint = (room['room_type'] ?? '').toString().trim();
+    final subtitleParts = <String>[
+      if (status.isNotEmpty) 'Status: $status',
+      if (guest.isNotEmpty) 'Guest: $guest',
+      if (pwd.isNotEmpty) 'Password: $pwd',
+    ];
+
+    final extra = <String>[
+      if (displayName.isNotEmpty) displayName,
+      ...subtitleParts,
+      if (typeHint.isNotEmpty && categoryFallback == 'Uncategorized')
+        'Type: $typeHint',
+    ];
+
+    return Card(
+      margin: const EdgeInsets.only(top: 8),
+      child: ListTile(
+        leading: const Icon(Icons.meeting_room_outlined),
+        title: Text('Room $roomNo'),
+        subtitle: Text(
+          extra.join(' · '),
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: onOpenDetail,
       ),
     );
   }
@@ -434,13 +593,43 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
           Card(
             child: ListTile(
               leading: const Icon(Icons.person_outline),
+              isThreeLine: true,
               title: Text((booking['guest_name'] ?? '').toString()),
-              subtitle: Text(
-                [
-                  'Phone: ${(booking['guest_phone'] ?? '').toString()}',
-                  'Email: ${(booking['guest_email'] ?? '').toString()}',
-                  'Ref: ${(booking['booking_reference'] ?? '').toString()}',
-                ].where((s) => !s.endsWith(': ')).join('\n'),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    [
+                      'Phone: ${(booking['guest_phone'] ?? '').toString()}',
+                      'Email: ${(booking['guest_email'] ?? '').toString()}',
+                      'Ref: ${(booking['booking_reference'] ?? '').toString()}',
+                    ].where((s) => !s.endsWith(': ')).join('\n'),
+                  ),
+                  if ((booking['stay_duration_label'] ?? '')
+                      .toString()
+                      .isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        (booking['stay_duration_label'] ?? '').toString(),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  if ((booking['check_in_display'] ?? '')
+                      .toString()
+                      .isNotEmpty)
+                    Text(
+                      'Arrival: ${(booking['check_in_display'] ?? '').toString()}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  if ((booking['check_out_display'] ?? '')
+                      .toString()
+                      .isNotEmpty)
+                    Text(
+                      'Departure: ${(booking['check_out_display'] ?? '').toString()}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                ],
               ),
             ),
           ),

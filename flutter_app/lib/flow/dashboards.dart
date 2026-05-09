@@ -17,6 +17,7 @@ import 'admin_chat.dart';
 import 'admin_bookings.dart';
 import 'admin_reports.dart';
 import 'customer_tools.dart';
+import 'guest_list_history.dart';
 // --- Admin ---
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -471,6 +472,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     builder: (_) => const AdminBookingsScreen()),
               );
               await _load();
+            },
+          ),
+          AppActionTile(
+            title: 'Guest list history',
+            subtitle: 'Completed stays after checkout clears the room',
+            icon: Icons.history_edu_outlined,
+            onTap: () async {
+              await Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (_) => const GuestListHistoryScreen(),
+                ),
+              );
             },
           ),
           AppActionTile(
@@ -1811,6 +1824,17 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
             setLocal(() {});
           }
 
+          final clock = DateTime.now();
+          final today = DateTime(clock.year, clock.month, clock.day);
+          final startDay = checkInDate != null
+              ? DateTime(
+                  checkInDate!.year,
+                  checkInDate!.month,
+                  checkInDate!.day,
+                )
+              : today;
+          final futureReservation = startDay.isAfter(today);
+
           Future<void> pickCheckOut() async {
             if (checkInDate == null) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -1875,7 +1899,9 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      'Duration: $safeNights night${safeNights == 1 ? '' : 's'}\nEstimated charge: ₱${estTotal.toStringAsFixed(2)}',
+                      futureReservation
+                          ? 'Reservation: check-in is on a future date — room stays reserved until then.'
+                          : 'Duration: $safeNights night${safeNights == 1 ? '' : 's'}\nEstimated charge: ₱${estTotal.toStringAsFixed(2)}',
                     ),
                   ),
                 ],
@@ -1887,7 +1913,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                 child: const Text('Cancel'),
               ),
               AppPrimaryButton(
-                label: 'Book now',
+                label: futureReservation ? 'Reserve' : 'Book now',
                 onPressed: () => Navigator.of(context).pop({
                   'room_id': (room['id'] ?? '').toString(),
                   'guest_name': nameCtrl.text.trim(),
@@ -1905,8 +1931,19 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     if (payload == null || _booking) return;
     setState(() => _booking = true);
     try {
+      final checkInStr = payload['check_in']?.toString() ?? '';
+      final parsedIn = DateTime.tryParse(checkInStr);
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final startDay = parsedIn != null
+          ? DateTime(parsedIn.year, parsedIn.month, parsedIn.day)
+          : today;
+      final path = startDay.isAfter(today)
+          ? '/customer/reservations'
+          : '/customer/bookings';
+
       final res = await publicDio().post<Map<String, dynamic>>(
-        '/customer/bookings',
+        path,
         data: {
           'hotel_id': widget.hotelId,
           ...payload,
@@ -1914,10 +1951,18 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
       );
       if (!mounted) return;
       final booking = res.data?['booking'] as Map<String, dynamic>?;
+      final reservation = res.data?['reservation'] as Map<String, dynamic>?;
+      final ref = (booking?['booking_reference'] ??
+              reservation?['external_reference'] ??
+              '')
+          .toString();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-              'Booking submitted: ${(booking?['booking_reference'] ?? 'Reference generated')}'),
+            path.endsWith('reservations')
+                ? 'Reservation held: ${ref.isEmpty ? 'reference generated' : ref}'
+                : 'Booking submitted: ${ref.isEmpty ? 'Reference generated' : ref}',
+          ),
         ),
       );
       await _load();

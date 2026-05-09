@@ -4,11 +4,13 @@ import 'intro/app_bootstrap.dart';
 import 'theme_controller.dart';
 import 'ui/app_theme.dart';
 import 'ui/design_tokens.dart';
-import 'widgets/theme_fab.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  loadThemeSeedColor();
+  await Future.wait<void>([
+    loadThemeSeedColor(),
+    loadThemeMode(),
+  ]);
   runApp(const MadyawPhApp());
 }
 
@@ -20,24 +22,20 @@ class MadyawPhApp extends StatelessWidget {
     return ValueListenableBuilder<Color>(
       valueListenable: themeSeedColorNotifier,
       builder: (context, seed, _) {
-        return MaterialApp(
-          title: 'MADYAWPH',
-          debugShowCheckedModeBanner: false,
-          themeAnimationDuration: UiTokens.dStd,
-          themeAnimationCurve: UiTokens.easeOperational,
-          themeMode: ThemeMode.system,
-          theme: AppTheme.light(seed),
-          darkTheme: AppTheme.dark(seed),
-          builder: (context, child) {
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                if (child != null) child,
-                const ThemeFab(),
-              ],
+        return ValueListenableBuilder<ThemeMode>(
+          valueListenable: themeModeNotifier,
+          builder: (context, mode, _) {
+            return MaterialApp(
+              title: 'MADYAWPH',
+              debugShowCheckedModeBanner: false,
+              themeAnimationDuration: UiTokens.dStd,
+              themeAnimationCurve: UiTokens.easeOperational,
+              themeMode: mode,
+              theme: AppTheme.light(seed),
+              darkTheme: AppTheme.dark(seed),
+              home: const AppBootstrap(),
             );
           },
-          home: const AppBootstrap(),
         );
       },
     );

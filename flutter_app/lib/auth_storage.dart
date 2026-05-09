@@ -14,6 +14,7 @@ class AuthStorage {
   static const _kPortalRole = 'portal_role';
   static const _kGuestToken = 'guest_token';
   static const _kUiSeedColor = 'ui_seed_color';
+  static const _kThemeMode = 'ui_theme_mode';
   static const _kThemeFabDx = 'theme_fab_dx';
   static const _kThemeFabDy = 'theme_fab_dy';
 
@@ -30,6 +31,13 @@ class AuthStorage {
 
   /// Hex like "#2563eb" (seed color for Material3).
   static Future<String?> uiSeedColorHex() => _storage.read(key: _kUiSeedColor);
+
+  /// `light`, `dark`, or `system`.
+  static Future<String?> themeModePreference() =>
+      _storage.read(key: _kThemeMode);
+
+  static Future<void> setThemeModePreference(String mode) =>
+      _storage.write(key: _kThemeMode, value: mode);
 
   static Future<void> setHotelContext(
       {required String id, required String name}) async {

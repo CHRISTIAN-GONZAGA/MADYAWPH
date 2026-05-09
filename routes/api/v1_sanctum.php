@@ -1,5 +1,7 @@
 <?php
 
+use App\Enums\BookingStatus;
+use App\Enums\RoomStatus;
 use App\Http\Controllers\Api\V1\AdminDashboardApiController;
 use App\Http\Controllers\Api\V1\StaffDashboardApiController;
 use App\Http\Controllers\Api\ActivityLogController;
@@ -31,6 +33,7 @@ use App\Services\BookingService;
 use App\Services\FinancialComputationService;
 use App\Services\PaymentGatewayService;
 use App\Services\SmsService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
@@ -255,17 +258,52 @@ Route::middleware('role:admin')->group(function (): void {
         ]);
 
         $room = Room::query()->findOrFail($id);
+        $hotelId = (string) $request->user()->hotel_id;
+        if ((string) $room->hotel_id !== $hotelId) {
+            return response()->json(['message' => 'Room outside hotel scope.'], 403);
+        }
+
         $previousStatus = $room->status?->value ?? (string) $room->status;
         $nextStatus = (string) $validated['status'];
-        if ($previousStatus === 'checked_in' && $nextStatus === 'checked_out') {
-            $nextStatus = 'maintenance';
+        if ($previousStatus === RoomStatus::CHECKED_IN->value && $nextStatus === RoomStatus::CHECKED_OUT->value) {
+            $nextStatus = RoomStatus::MAINTENANCE->value;
         }
-        $room->update(['status' => $nextStatus]);
-        if ($nextStatus === 'maintenance') {
-            $staff = StaffMember::query()->where('hotel_id', (string) $request->user()->hotel_id)->first();
+
+        $archiveGuest = $nextStatus === RoomStatus::MAINTENANCE->value;
+
+        if ($archiveGuest) {
+            $booking = Booking::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
+                ->where('room_id', (string) $room->id)
+                ->whereIn('status', [
+                    BookingStatus::CONFIRMED->value,
+                    BookingStatus::BOOKED->value,
+                    BookingStatus::RESERVED->value,
+                ])
+                ->latest('created_at')
+                ->first();
+            if ($booking) {
+                $booking->update(['status' => BookingStatus::COMPLETED->value]);
+            }
+
+            $room->update([
+                'status' => $nextStatus,
+                'current_guest_name' => null,
+                'current_check_in' => null,
+                'current_check_out' => null,
+                'current_access_code' => null,
+            ]);
+        } else {
+            $room->update(['status' => $nextStatus]);
+        }
+
+        $room->refresh();
+
+        if ($nextStatus === RoomStatus::MAINTENANCE->value) {
+            $staff = StaffMember::query()->where('hotel_id', $hotelId)->first();
             if ($staff) {
                 Task::query()->create([
-                    'hotel_id' => (string) $request->user()->hotel_id,
+                    'hotel_id' => $hotelId,
                     'title' => "Maintenance check for Room {$room->room_number}",
                     'description' => 'Auto-created from room status change.',
                     'assigned_to' => (string) $staff->id,
@@ -276,10 +314,10 @@ Route::middleware('role:admin')->group(function (): void {
             }
         }
         app(ActivityLogService::class)->log(
-            (string) $request->user()->hotel_id,
+            $hotelId,
             $request->user(),
             "Updated room {$room->room_number} status",
-            ['from' => $previousStatus, 'to' => $nextStatus]
+            ['from' => $previousStatus, 'to' => $nextStatus, 'guest_cleared' => $archiveGuest]
         );
 
         return response()->json(['ok' => true, 'room' => $room]);
@@ -693,6 +731,18 @@ Route::get('/reports/tasks/performance', [ReportController::class, 'taskPerforma
 Route::get('/activity-logs', [ActivityLogController::class, 'index'])->middleware('role:admin');
 Route::post('/activity-logs', [ActivityLogController::class, 'store'])->middleware('role:admin,staff');
 
+Route::get('/admin/guest-history', function (Request $request) {
+    $hotelId = (string) $request->user()->hotel_id;
+    $rows = Booking::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->where('status', BookingStatus::COMPLETED->value)
+        ->orderByDesc('updated_at')
+        ->limit(200)
+        ->get();
+
+    return response()->json(['data' => $rows]);
+})->middleware('role:admin');
+
 // Admin room list with access codes (admin-only visibility)
 Route::get('/admin/rooms', function (Request $request) {
     $hotelId = (string) $request->user()->hotel_id;
@@ -716,6 +766,10 @@ Route::get('/admin/rooms/{room}', function (Request $request, Room $room) {
     $booking = Booking::withoutGlobalScopes()
         ->where('hotel_id', $hotelId)
         ->where('room_id', (string) $room->id)
+        ->whereNotIn('status', [
+            BookingStatus::COMPLETED->value,
+            BookingStatus::CANCELLED->value,
+        ])
         ->latest('created_at')
         ->first();
 
@@ -724,16 +778,31 @@ Route::get('/admin/rooms/{room}', function (Request $request, Room $room) {
         : collect();
     $chargesTotal = (float) $charges->sum(fn ($charge) => (float) ($charge->amount ?? 0));
     $nights = $booking && $booking->check_in_date && $booking->check_out_date
-        ? max(1, now()->parse($booking->check_in_date)->diffInDays(now()->parse($booking->check_out_date)))
+        ? max(1, Carbon::parse($booking->check_in_date)->diffInDays(Carbon::parse($booking->check_out_date)))
         : null;
+
+    $bookingPayload = null;
+    if ($booking) {
+        $ci = Carbon::parse($booking->check_in_date)->startOfDay();
+        $co = Carbon::parse($booking->check_out_date)->startOfDay();
+        $bookingPayload = array_merge($booking->toArray(), [
+            'stay_nights' => $nights,
+            'check_in_datetime_iso' => $ci->toIso8601String(),
+            'check_out_datetime_iso' => $co->toIso8601String(),
+            'stay_duration_label' => $nights !== null
+                ? "{$nights} night".($nights === 1 ? '' : 's').' · '
+                    .$ci->format('M j, Y').' → '.$co->format('M j, Y')
+                : null,
+            'check_in_display' => $ci->format('l, M j, Y').' · after 3:00 PM',
+            'check_out_display' => $co->format('l, M j, Y').' · before 11:00 AM',
+        ]);
+    }
 
     return response()->json([
         'room' => array_merge($room->toArray(), [
             'room_access_password' => (string) ($room->current_access_code ?? ''),
         ]),
-        'active_booking' => $booking ? array_merge($booking->toArray(), [
-            'stay_nights' => $nights,
-        ]) : null,
+        'active_booking' => $bookingPayload,
         'booking_charges' => $charges,
         'booking_charges_total' => $chargesTotal,
     ]);

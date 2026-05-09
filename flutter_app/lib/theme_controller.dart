@@ -4,7 +4,43 @@ import 'auth_storage.dart';
 import 'dio_client.dart';
 
 final ValueNotifier<Color> themeSeedColorNotifier =
-    ValueNotifier<Color>(const Color(0xFF1E88E5));
+    ValueNotifier<Color>(const Color(0xFF1565C0));
+
+final ValueNotifier<ThemeMode> themeModeNotifier =
+    ValueNotifier<ThemeMode>(ThemeMode.light);
+
+ThemeMode _parseThemeMode(String? raw) {
+  switch (raw) {
+    case 'dark':
+      return ThemeMode.dark;
+    case 'system':
+      return ThemeMode.system;
+    case 'light':
+    default:
+      return ThemeMode.light;
+  }
+}
+
+String _themeModeToStorage(ThemeMode mode) {
+  switch (mode) {
+    case ThemeMode.dark:
+      return 'dark';
+    case ThemeMode.system:
+      return 'system';
+    case ThemeMode.light:
+      return 'light';
+  }
+}
+
+Future<void> loadThemeMode() async {
+  final raw = await AuthStorage.themeModePreference();
+  themeModeNotifier.value = _parseThemeMode(raw);
+}
+
+Future<void> setThemeMode(ThemeMode mode) async {
+  themeModeNotifier.value = mode;
+  await AuthStorage.setThemeModePreference(_themeModeToStorage(mode));
+}
 
 String _toHex(Color c) =>
     '#${c.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}';
@@ -21,7 +57,9 @@ Color? _fromHex(String? hex) {
 Future<void> loadThemeSeedColor() async {
   final hex = await AuthStorage.uiSeedColorHex();
   final c = _fromHex(hex);
-  if (c != null) themeSeedColorNotifier.value = c;
+  if (c != null) {
+    themeSeedColorNotifier.value = c;
+  }
 }
 
 Future<void> setThemeSeedColor(Color c) async {

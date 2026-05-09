@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../flow/root_flow.dart';
+import '../widgets/theme_fab.dart';
 import 'madyaw_intro_screen.dart';
 
 /// Shows the Madyaw motion intro once, then the main hotel flow.
@@ -21,9 +22,16 @@ class _AppBootstrapState extends State<AppBootstrap> {
 
   @override
   Widget build(BuildContext context) {
-    if (_showIntro) {
-      return MadyawIntroScreen(onFinished: _onIntroDone);
-    }
-    return const FlowRoot();
+    return Stack(
+      fit: StackFit.expand,
+      clipBehavior: Clip.none,
+      children: [
+        if (_showIntro)
+          MadyawIntroScreen(onFinished: _onIntroDone)
+        else
+          const FlowRoot(),
+        if (!_showIntro) const ThemeFab(),
+      ],
+    );
   }
 }

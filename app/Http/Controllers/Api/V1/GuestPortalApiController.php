@@ -11,6 +11,7 @@ use App\Models\GuestMessage;
 use App\Models\Hotel;
 use App\Models\Room;
 use App\Models\StayReview;
+use App\Enums\BookingStatus;
 use App\Enums\RoomStatus;
 use App\Services\ActivityLogService;
 use App\Services\FinancialComputationService;
@@ -40,7 +41,9 @@ class GuestPortalApiController extends Controller
 
         $roomStatus = $room->status?->value ?? (string) $room->status;
         if (! in_array($roomStatus, [RoomStatus::BOOKED->value, RoomStatus::CHECKED_IN->value], true)) {
-            return response()->json(['message' => 'Room is not currently checked in.'], 422);
+            return response()->json([
+                'message' => 'Guest access is only available when the room is booked or checked in. Ask the front desk if your stay is not active yet.',
+            ], 422);
         }
 
         if (! $room->current_access_code || $validated['password'] !== (string) $room->current_access_code) {
@@ -76,6 +79,10 @@ class GuestPortalApiController extends Controller
         $hotel = Hotel::withoutGlobalScopes()->find($portal['hotel_id']);
         $activeBooking = Booking::query()
             ->where('room_id', $portal['room_id'])
+            ->whereNotIn('status', [
+                BookingStatus::COMPLETED->value,
+                BookingStatus::CANCELLED->value,
+            ])
             ->latest('created_at')
             ->first();
         $hasReview = $activeBooking
