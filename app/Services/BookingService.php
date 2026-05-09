@@ -10,7 +10,6 @@ use App\Models\Room;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class BookingService
@@ -49,6 +48,8 @@ class BookingService
                 'hotel_id' => $room->hotel_id,
                 'booking_reference' => 'BK'.now()->format('YmdHis').random_int(100, 999),
                 'nights' => $nights,
+                'payment_status' => 'unpaid',
+                'paid_at' => null,
                 'total_amount' => $totalAmount,
                 'status' => BookingStatus::BOOKED->value,
             ]);
@@ -67,7 +68,7 @@ class BookingService
                     'nights' => $nights,
                 ],
             ]);
-            $generatedPassword = strtoupper(Str::random(8));
+            $generatedPassword = $this->generateUniqueRoomPassword();
 
             $room->update([
                 'status' => RoomStatus::BOOKED->value,
@@ -182,5 +183,24 @@ class BookingService
 
             return $booking->fresh();
         });
+    }
+
+    private function generateUniqueRoomPassword(): string
+    {
+        // Restrict to uppercase+digits for front-desk readability while keeping high entropy.
+        $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        $size = 12;
+
+        do {
+            $candidate = '';
+            for ($i = 0; $i < $size; $i++) {
+                $candidate .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+            }
+            $exists = Room::withoutGlobalScopes()
+                ->where('current_access_code', $candidate)
+                ->exists();
+        } while ($exists);
+
+        return $candidate;
     }
 }

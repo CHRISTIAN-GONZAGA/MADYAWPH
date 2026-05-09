@@ -26,12 +26,7 @@ class SmsService
                 'user_id' => $actor?->id,
                 'phone' => $phone,
             ]);
-            Log::info('SMS simulated (local fallback)', [
-                'phone' => $phone,
-                'message' => $message,
-            ]);
-
-            return true;
+            return false;
         }
 
         try {
@@ -59,15 +54,26 @@ class SmsService
             }
 
             if ($genericReady) {
+                $path = (string) config('services.sms.path', '/messages');
                 $response = Http::timeout(15)
                     ->withToken($apiKey)
-                    ->post(rtrim($baseUrl, '/').'/messages', [
+                    ->post(rtrim($baseUrl, '/').'/'.ltrim($path, '/'), [
                         'to' => $phone,
                         'message' => $message,
                         'sender' => $sender !== '' ? $sender : 'MADYAW',
                     ]);
 
-                return $response->successful();
+                if ($response->successful()) {
+                    return true;
+                }
+
+                Log::warning('Generic SMS gateway failed', [
+                    'hotel_id' => $hotelId,
+                    'user_id' => $actor?->id,
+                    'phone' => $phone,
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
             }
 
             return false;

@@ -12,8 +12,7 @@ class PaymentGatewayService
      *
      * Priority:
      * 1. PayMongo (PAYMONGO_SECRET_KEY) — returns checkout URL; credits apply on webhook payment.paid.
-     * 2. Custom gateway (PAYMENTS_API_BASE_URL + PAYMENTS_API_KEY) — POST /payments/charge.
-     * 3. Sandbox — no HTTP call.
+ * 2. Custom gateway (PAYMENTS_API_BASE_URL + PAYMENTS_API_KEY) — POST /payments/charge.
      */
     public function charge(string $method, float $amount, array $metadata = []): array
     {
@@ -50,10 +49,8 @@ class PaymentGatewayService
         }
 
         return [
-            'ok' => true,
-            'provider' => 'Sandbox '.ucfirst($method),
-            'transaction_id' => 'sandbox-'.Str::uuid(),
-            'reference' => 'SBX-'.strtoupper(Str::random(8)),
+            'ok' => false,
+            'message' => 'No payment provider is configured. Set PAYMONGO_SECRET_KEY or PAYMENTS_API_BASE_URL with PAYMENTS_API_KEY.',
         ];
     }
 }

@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Enums\PaymentMethod;
 use App\Models\ActivityLog;
+use App\Models\BillingCharge;
 use App\Models\Booking;
 use App\Models\Room;
 use App\Models\RoomTransfer;
@@ -102,19 +104,93 @@ class ReportController extends Controller
         $from = isset($validated['from']) ? Carbon::parse($validated['from'])->startOfDay() : $defaultFrom;
         $to = isset($validated['to']) ? Carbon::parse($validated['to'])->endOfDay() : now()->endOfDay();
 
-        $rows = Booking::query()
-            ->whereBetween('created_at', [$from, $to])
-            ->get(['created_at', 'total_amount'])
-            ->groupBy(fn ($b) => $this->bucketLabel(optional($b->created_at), $granularity))
-            ->map(function ($group, $label) {
+        $bookings = Booking::query()
+            ->where('payment_status', 'paid')
+            ->whereBetween('paid_at', [$from, $to])
+            ->get();
+        $revenueByBooking = $this->recognizedRevenueByBooking($bookings);
+        $rows = $bookings
+            ->groupBy(fn ($b) => $this->bucketLabel(optional($b->paid_at), $granularity))
+            ->map(function ($group, $label) use ($revenueByBooking) {
+                $transactions = $group
+                    ->map(function ($booking) use ($revenueByBooking) {
+                        $bookingId = (string) $booking->id;
+                        $amount = (float) ($revenueByBooking[$bookingId] ?? (float) ($booking->total_amount ?? 0));
+                        $method = $this->paymentMethodLabel($booking);
+                        $channel = $this->paymentChannel($booking);
+
+                        return [
+                            'booking_id' => $bookingId,
+                            'booking_reference' => (string) ($booking->booking_reference ?? ''),
+                            'room_id' => (string) ($booking->room_id ?? ''),
+                            'room_number' => $this->roomNumberForBooking($booking),
+                            'guest_name' => (string) ($booking->guest_name ?? ''),
+                            'payment_status' => (string) ($booking->payment_status ?? 'unpaid'),
+                            'payment_method' => $method,
+                            'payment_channel' => $channel,
+                            'amount' => $amount,
+                            'line' => sprintf(
+                                'Room %s: fully paid (%s · %s), %.2f, %s',
+                                $this->roomNumberForBooking($booking),
+                                $channel,
+                                $method,
+                                $amount,
+                                (string) ($booking->guest_name ?? '')
+                            ),
+                        ];
+                    })
+                    ->values();
                 return [
                     'period_label' => (string) $label,
                     'booking_count' => (int) $group->count(),
-                    'gross_sales' => (float) $group->sum(fn ($b) => (float) ($b->total_amount ?? 0)),
+                    'gross_sales' => (float) $transactions->sum('amount'),
+                    'transactions' => $transactions,
                 ];
             })
             ->sortBy('period_label')
             ->values();
+        $rowsByLabel = $rows->keyBy('period_label');
+        $refundCharges = BillingCharge::query()
+            ->where('type', 'refund')
+            ->whereBetween('created_at', [$from, $to])
+            ->get();
+        foreach ($refundCharges as $refund) {
+            $label = $this->bucketLabel(optional($refund->created_at), $granularity);
+            $entry = $rowsByLabel->get($label, [
+                'period_label' => $label,
+                'booking_count' => 0,
+                'gross_sales' => 0.0,
+                'transactions' => collect(),
+            ]);
+            $refundAmount = (float) ($refund->amount ?? 0);
+            $refundBooking = Booking::query()->find((string) ($refund->booking_id ?? ''));
+            $entry['gross_sales'] = (float) ($entry['gross_sales'] ?? 0) + $refundAmount;
+            $refundMethod = $refundBooking ? $this->paymentMethodLabel($refundBooking) : '';
+            $refundChannel = $refundBooking ? $this->paymentChannel($refundBooking) : '';
+            $entry['transactions'] = collect($entry['transactions'] ?? [])->push([
+                'booking_id' => (string) ($refund->booking_id ?? ''),
+                'booking_reference' => (string) ($refundBooking?->booking_reference ?? ''),
+                'room_id' => (string) ($refund->room_id ?? ''),
+                'room_number' => $this->roomNumberByRoomId((string) ($refund->room_id ?? '')),
+                'guest_name' => (string) ($refundBooking?->guest_name ?? ''),
+                'payment_status' => (string) ($refundBooking?->payment_status ?? 'unpaid'),
+                'payment_method' => $refundMethod,
+                'payment_channel' => $refundChannel,
+                'amount' => $refundAmount,
+                'line' => sprintf(
+                    'Room %s: refund (%s), %.2f, %s',
+                    $this->roomNumberByRoomId((string) ($refund->room_id ?? '')),
+                    $refundMethod !== '' ? $refundMethod : 'n/a',
+                    $refundAmount,
+                    (string) ($refundBooking?->guest_name ?? '')
+                ),
+            ]);
+            $rowsByLabel->put($label, $entry);
+        }
+        $rows = $rowsByLabel->values()->map(function ($row) {
+            $row['transactions'] = collect($row['transactions'] ?? [])->values();
+            return $row;
+        })->sortBy('period_label')->values();
 
         return response()->json([
             'granularity' => $granularity,
@@ -125,6 +201,28 @@ class ReportController extends Controller
                 'bookings' => (int) $rows->sum('booking_count'),
                 'sales' => (float) $rows->sum('gross_sales'),
             ],
+        ]);
+    }
+
+    public function profitOverview(Request $request)
+    {
+        $validated = $request->validate([
+            'anchor_date' => ['nullable', 'date'],
+        ]);
+        $anchor = isset($validated['anchor_date'])
+            ? Carbon::parse($validated['anchor_date'])
+            : now();
+
+        $daily = $this->revenueInRange($anchor->copy()->startOfDay(), $anchor->copy()->endOfDay());
+        $weekly = $this->revenueInRange($anchor->copy()->startOfWeek(), $anchor->copy()->endOfWeek());
+        $monthly = $this->revenueInRange($anchor->copy()->startOfMonth(), $anchor->copy()->endOfMonth());
+        $annual = $this->revenueInRange($anchor->copy()->startOfYear(), $anchor->copy()->endOfYear());
+
+        return response()->json([
+            'daily' => $daily,
+            'weekly' => $weekly,
+            'monthly' => $monthly,
+            'annual' => $annual,
         ]);
     }
 
@@ -235,5 +333,88 @@ class ReportController extends Controller
             'year' => $date->format('Y'),
             default => $date->format('o-W'),
         };
+    }
+
+    private function recognizedRevenueByBooking($bookings): array
+    {
+        $bookingIds = $bookings->map(fn ($b) => (string) $b->id)->values();
+        $charges = BillingCharge::query()
+            ->whereIn('booking_id', $bookingIds->all())
+            ->get(['booking_id', 'amount']);
+        $byBooking = [];
+        foreach ($bookingIds as $id) {
+            $set = $charges->where('booking_id', $id);
+            if ($set->isEmpty()) {
+                $booking = $bookings->firstWhere('id', $id);
+                $byBooking[$id] = (float) ($booking?->total_amount ?? 0);
+            } else {
+                $byBooking[$id] = (float) $set->sum(fn ($c) => (float) ($c->amount ?? 0));
+            }
+        }
+
+        return $byBooking;
+    }
+
+    private function paymentMethodLabel(?Booking $booking): string
+    {
+        if (! $booking) {
+            return '';
+        }
+        $pm = $booking->payment_method;
+        if ($pm instanceof PaymentMethod) {
+            return $pm->value;
+        }
+
+        return (string) $pm;
+    }
+
+    private function paymentChannel(?Booking $booking): string
+    {
+        $label = strtolower(trim($this->paymentMethodLabel($booking)));
+        if ($label === '') {
+            return 'unknown';
+        }
+
+        return $label === 'cash' ? 'cash' : 'online';
+    }
+
+    private function roomNumberForBooking($booking): string
+    {
+        $roomId = (string) ($booking->room_id ?? '');
+        if ($roomId === '') {
+            return '-';
+        }
+        $room = Room::query()->find($roomId);
+
+        return (string) ($room?->room_number ?? '-');
+    }
+
+    private function roomNumberByRoomId(string $roomId): string
+    {
+        if ($roomId === '') {
+            return '-';
+        }
+        $room = Room::query()->find($roomId);
+        return (string) ($room?->room_number ?? '-');
+    }
+
+    private function revenueInRange(Carbon $from, Carbon $to): array
+    {
+        $bookings = Booking::query()
+            ->where('payment_status', 'paid')
+            ->whereBetween('paid_at', [$from, $to])
+            ->get();
+        $map = $this->recognizedRevenueByBooking($bookings);
+        $refunds = BillingCharge::query()
+            ->where('type', 'refund')
+            ->whereBetween('created_at', [$from, $to])
+            ->sum('amount');
+
+        return [
+            'from' => $from->toDateString(),
+            'to' => $to->toDateString(),
+            'bookings' => (int) $bookings->count(),
+            'profit' => (float) (collect($map)->sum() + (float) $refunds),
+        ];
     }
 }

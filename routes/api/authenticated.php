@@ -1,6 +1,7 @@
 <?php
 
 
+use App\Enums\RoomStatus;
 use App\Http\Controllers\Api\ActivityLogController;
 use App\Http\Controllers\Api\AuthApiController;
 use App\Http\Controllers\Api\BookingController;
@@ -9,6 +10,7 @@ use App\Http\Controllers\Api\RoomCategoryController;
 use App\Http\Controllers\Api\RoomController;
 use App\Http\Controllers\Api\StaffController;
 use App\Http\Controllers\Api\TaskController;
+use App\Models\AmenityClaim;
 use App\Models\BillingCharge;
 use App\Models\Booking;
 use App\Models\CheckoutReminder;
@@ -302,9 +304,26 @@ Route::post('/room-transfers', function (Request $request, FinancialComputationS
         ->where('hotel_id', $hotelId)
         ->where('room_id', (string) $fromRoom->id)
         ->update(['room_id' => (string) $toRoom->id, 'room_number' => (string) $toRoom->room_number]);
-    $fromRoom->update(['status' => 'available', 'current_guest_name' => null, 'current_check_in' => null, 'current_check_out' => null, 'current_access_code' => null]);
+    BillingCharge::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->where('booking_id', (string) $booking->id)
+        ->update(['room_id' => (string) $toRoom->id]);
+    CheckoutReminder::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->where('booking_id', (string) $booking->id)
+        ->update(['room_id' => (string) $toRoom->id]);
+    AmenityClaim::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->where('room_id', (string) $fromRoom->id)
+        ->update([
+            'room_id' => (string) $toRoom->id,
+            'room_number' => (string) $toRoom->room_number,
+        ]);
+    $fromStatus = $fromRoom->status instanceof RoomStatus ? $fromRoom->status->value : (string) $fromRoom->status;
+    $toRoomGuestStatus = $fromStatus === RoomStatus::CHECKED_IN->value ? RoomStatus::CHECKED_IN->value : RoomStatus::BOOKED->value;
+    $fromRoom->update(['status' => RoomStatus::AVAILABLE->value, 'current_guest_name' => null, 'current_check_in' => null, 'current_check_out' => null, 'current_access_code' => null]);
     $toRoom->update([
-        'status' => 'booked',
+        'status' => $toRoomGuestStatus,
         'current_guest_name' => $booking->guest_name,
         'current_check_in' => $booking->check_in_date,
         'current_check_out' => $booking->check_out_date,

@@ -289,6 +289,8 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   bool _loading = true;
   bool _busy = false;
   bool _changingStatus = false;
+  bool _updatingPayment = false;
+  bool _issuingRefund = false;
 
   @override
   void initState() {
@@ -532,6 +534,186 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     }
   }
 
+  Future<void> _updatePaymentStatus() async {
+    final booking = _data?['active_booking'] as Map<String, dynamic>?;
+    final bookingId = (booking?['id'] ?? '').toString();
+    if (bookingId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No active booking for this room.')),
+      );
+      return;
+    }
+    final current = (booking?['payment_status'] ?? 'unpaid').toString();
+    final currentMethodRaw = (booking?['payment_method'] ?? '').toString().trim();
+    String method = (() {
+      final lower = currentMethodRaw.toLowerCase();
+      if (lower == 'gcash' || lower == 'g-cash') return 'GCash';
+      if (lower == 'paymaya' || lower == 'maya' || lower == 'pay maya') {
+        return 'PayMaya';
+      }
+      if (lower == 'credit card' || lower == 'credit_card' || lower == 'card') {
+        return 'Credit Card';
+      }
+      return 'Cash';
+    })();
+    String next = current;
+    final refCtrl =
+        TextEditingController(text: (booking?['payment_reference'] ?? '').toString());
+    final payload = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocal) => AlertDialog(
+          title: const Text('Payment status'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: current,
+                items: const [
+                  DropdownMenuItem(value: 'unpaid', child: Text('unpaid')),
+                  DropdownMenuItem(value: 'paid', child: Text('paid')),
+                ],
+                onChanged: (v) => setLocal(() => next = v ?? current),
+                decoration: const InputDecoration(
+                  labelText: 'Status',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: refCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Payment reference (optional)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                initialValue: method,
+                items: const [
+                  DropdownMenuItem(value: 'Cash', child: Text('Cash')),
+                  DropdownMenuItem(value: 'GCash', child: Text('GCash')),
+                  DropdownMenuItem(value: 'PayMaya', child: Text('PayMaya')),
+                  DropdownMenuItem(
+                    value: 'Credit Card',
+                    child: Text('Credit Card'),
+                  ),
+                ],
+                onChanged: (v) => setLocal(() => method = v ?? method),
+                decoration: const InputDecoration(
+                  labelText: 'Payment method',
+                  border: OutlineInputBorder(),
+                  helperText: 'Manual tracking only. Not linked to PayMongo.',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop({
+                'payment_status': next,
+                'payment_reference': refCtrl.text.trim(),
+                'payment_method': method,
+              }),
+              child: const Text('Update'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (payload == null || _updatingPayment) return;
+    setState(() => _updatingPayment = true);
+    try {
+      await portalDio().post('/admin/bookings/$bookingId/payment-status', data: payload);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Payment status updated.')),
+      );
+      await _load();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+    } finally {
+      if (mounted) setState(() => _updatingPayment = false);
+    }
+  }
+
+  Future<void> _issueRefund() async {
+    final booking = _data?['active_booking'] as Map<String, dynamic>?;
+    final bookingId = (booking?['id'] ?? '').toString();
+    if (bookingId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No active booking for this room.')),
+      );
+      return;
+    }
+    final amountCtrl = TextEditingController();
+    final reasonCtrl = TextEditingController();
+    final payload = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Issue refund'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: amountCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Amount (optional, leave blank for max refundable)',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: reasonCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Reason',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop({
+              'amount': double.tryParse(amountCtrl.text.trim()),
+              'reason': reasonCtrl.text.trim(),
+            }),
+            child: const Text('Refund'),
+          ),
+        ],
+      ),
+    );
+    if (payload == null || _issuingRefund) return;
+    setState(() => _issuingRefund = true);
+    try {
+      await portalDio().post('/admin/bookings/$bookingId/refund', data: payload);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Refund recorded and reports updated.')),
+      );
+      await _load();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+    } finally {
+      if (mounted) setState(() => _issuingRefund = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
@@ -556,6 +738,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     final charges = (_data!['booking_charges'] as List<dynamic>?) ?? const [];
     final chargesTotal =
         ((_data!['booking_charges_total'] as num?)?.toDouble() ?? 0);
+    final refundTotal = ((_data!['refund_total'] as num?)?.toDouble() ?? 0);
 
     final roomNo = (room['room_number'] ?? '').toString();
     final status = (room['status'] ?? '').toString();
@@ -629,6 +812,14 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                       'Departure: ${(booking['check_out_display'] ?? '').toString()}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
+                  Text(
+                    'Payment method: ${(booking['payment_method'] ?? '-').toString()}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  Text(
+                    'Payment status: ${(booking['payment_status'] ?? 'unpaid').toString()}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 ],
               ),
             ),
@@ -641,6 +832,26 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                 onPressed: _busy ? null : _addFee,
                 icon: const Icon(Icons.add),
                 label: const Text('Add fee'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _updatingPayment ? null : _updatePaymentStatus,
+                icon: const Icon(Icons.payments_outlined),
+                label: const Text('Payment'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _issuingRefund ? null : _issueRefund,
+                icon: const Icon(Icons.replay_outlined),
+                label: const Text('Refund'),
               ),
             ),
           ],
@@ -668,7 +879,8 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         const SizedBox(height: 16),
         Text('Charges', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 4),
-        Text('Total fee: ₱${chargesTotal.toStringAsFixed(2)}'),
+        Text(
+            'Total fee: ₱${chargesTotal.toStringAsFixed(2)} · Refunds: ₱${refundTotal.toStringAsFixed(2)}'),
         const SizedBox(height: 8),
         if (charges.isEmpty)
           const Text('No charges yet.')

@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\BookingStatus;
 use App\Enums\RoomStatus;
 use App\Http\Controllers\Controller;
+use App\Models\Booking;
 use App\Models\RoomCategory;
 use App\Models\Room;
 use App\Models\StaffMember;
@@ -69,6 +71,20 @@ class RoomController extends Controller
         $toStatus = (string) $validated['status'];
 
         if ($fromStatus === RoomStatus::CHECKED_IN->value && $toStatus === RoomStatus::CHECKED_OUT->value) {
+            $activeBooking = Booking::withoutGlobalScopes()
+                ->where('hotel_id', (string) $room->hotel_id)
+                ->where('room_id', (string) $room->id)
+                ->whereNotIn('status', [
+                    BookingStatus::COMPLETED->value,
+                    BookingStatus::CANCELLED->value,
+                ])
+                ->latest('created_at')
+                ->first();
+            if (! $activeBooking || (string) ($activeBooking->payment_status ?? 'unpaid') !== 'paid') {
+                return response()->json([
+                    'message' => 'Mark the stay as paid in room details before checkout.',
+                ], 422);
+            }
             $this->createAutoMaintenanceTask($request, $room);
             $toStatus = RoomStatus::MAINTENANCE->value;
         }

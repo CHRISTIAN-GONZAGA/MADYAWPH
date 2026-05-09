@@ -54,6 +54,7 @@ class GuestPortalApiController extends Controller
             'hotel_id' => $validated['hotel_id'],
             'room_id' => (string) $room->id,
             'room_number' => (string) $room->room_number,
+            'access_code_hash' => hash('sha256', (string) $room->current_access_code),
         ];
         $token = GuestPortalStore::issue($portal);
 

@@ -266,6 +266,20 @@ Route::middleware('role:admin')->group(function (): void {
         $previousStatus = $room->status?->value ?? (string) $room->status;
         $nextStatus = (string) $validated['status'];
         if ($previousStatus === RoomStatus::CHECKED_IN->value && $nextStatus === RoomStatus::CHECKED_OUT->value) {
+            $activeBooking = Booking::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
+                ->where('room_id', (string) $room->id)
+                ->whereNotIn('status', [
+                    BookingStatus::COMPLETED->value,
+                    BookingStatus::CANCELLED->value,
+                ])
+                ->latest('created_at')
+                ->first();
+            if (! $activeBooking || (string) ($activeBooking->payment_status ?? 'unpaid') !== 'paid') {
+                return response()->json([
+                    'message' => 'Mark the stay as paid in room details before checkout.',
+                ], 422);
+            }
             $nextStatus = RoomStatus::MAINTENANCE->value;
         }
 
@@ -391,6 +405,142 @@ Route::middleware('role:admin')->group(function (): void {
 
         return response()->json(['ok' => true, 'message' => $reply], 201);
     })->name('api.v1.admin.chat.reply');
+
+    Route::post('/admin/bookings/{booking}/payment-status', function (Request $request, Booking $booking) {
+        $validated = $request->validate([
+            'payment_status' => ['required', 'in:paid,unpaid'],
+            'payment_reference' => ['nullable', 'string', 'max:120'],
+            'payment_method' => ['nullable', 'string', 'max:40'],
+        ]);
+        $hotelId = (string) $request->user()->hotel_id;
+        if ((string) $booking->hotel_id !== $hotelId) {
+            return response()->json(['message' => 'Booking outside hotel scope.'], 403);
+        }
+
+        $newStatus = (string) $validated['payment_status'];
+        $wasStatus = (string) ($booking->payment_status ?? 'unpaid');
+        $methodRaw = trim((string) ($validated['payment_method'] ?? ''));
+        $normalizedMethod = match (strtolower($methodRaw)) {
+            '', 'cash' => 'Cash',
+            'gcash', 'g-cash' => 'GCash',
+            'paymaya', 'maya', 'pay maya' => 'PayMaya',
+            'credit card', 'credit_card', 'card' => 'Credit Card',
+            default => null,
+        };
+        if ($methodRaw !== '' && $normalizedMethod === null) {
+            return response()->json(['message' => 'Unsupported payment method.'], 422);
+        }
+
+        $nextReference = array_key_exists('payment_reference', $validated)
+            ? $validated['payment_reference']
+            : ($booking->payment_reference ?? null);
+        $nextMethod = $normalizedMethod ?? ($booking->payment_method?->value ?? $booking->payment_method ?? 'Cash');
+        $methodChanged = (string) ($booking->payment_method?->value ?? $booking->payment_method ?? 'Cash') !== (string) $nextMethod;
+        $referenceChanged = (string) ($booking->payment_reference ?? '') !== (string) ($nextReference ?? '');
+        if ($wasStatus === $newStatus && ! $methodChanged && ! $referenceChanged) {
+            return response()->json(['ok' => true, 'booking' => $booking->fresh()]);
+        }
+
+        $charges = BillingCharge::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where('booking_id', (string) $booking->id)
+            ->get();
+        $billTotal = (float) $charges->sum(fn ($c) => (float) ($c->amount ?? 0));
+
+        $updates = [
+            'payment_status' => $newStatus,
+            'paid_at' => $newStatus === 'paid' ? now() : null,
+            'payment_reference' => $nextReference,
+            'payment_method' => $nextMethod,
+        ];
+        if ($newStatus === 'paid' && $billTotal > 0) {
+            $updates['total_amount'] = round($billTotal, 2);
+        }
+
+        $booking->update($updates);
+
+        app(ActivityLogService::class)->log(
+            $hotelId,
+            $request->user(),
+            "Updated payment status for booking {$booking->booking_reference}",
+            [
+                'booking_id' => (string) $booking->id,
+                'from' => $wasStatus,
+                'to' => $newStatus,
+                'payment_reference' => (string) ($booking->payment_reference ?? ''),
+                'payment_method' => (string) ($booking->payment_method?->value ?? $booking->payment_method ?? ''),
+                'bill_total_synced' => $newStatus === 'paid' ? $billTotal : null,
+            ]
+        );
+
+        return response()->json(['ok' => true, 'booking' => $booking->fresh()]);
+    })->name('api.v1.admin.bookings.payment-status');
+
+    Route::post('/admin/bookings/{booking}/refund', function (Request $request, Booking $booking) {
+        $validated = $request->validate([
+            'amount' => ['nullable', 'numeric', 'min:0.01'],
+            'reason' => ['nullable', 'string', 'max:255'],
+        ]);
+        $hotelId = (string) $request->user()->hotel_id;
+        if ((string) $booking->hotel_id !== $hotelId) {
+            return response()->json(['message' => 'Booking outside hotel scope.'], 403);
+        }
+
+        $charges = BillingCharge::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where('booking_id', (string) $booking->id)
+            ->get();
+        $paidGross = (float) $charges
+            ->reject(fn ($charge) => (string) ($charge->type ?? '') === 'refund')
+            ->sum(fn ($charge) => (float) ($charge->amount ?? 0));
+        if ($paidGross <= 0) {
+            $paidGross = (float) ($booking->total_amount ?? 0);
+        }
+        $alreadyRefunded = (float) $charges
+            ->filter(fn ($charge) => (string) ($charge->type ?? '') === 'refund')
+            ->sum(fn ($charge) => abs((float) ($charge->amount ?? 0)));
+        $maxRefundable = max(0, $paidGross - $alreadyRefunded);
+        if ($maxRefundable <= 0) {
+            return response()->json(['message' => 'No refundable amount remaining for this booking.'], 422);
+        }
+
+        $requestedAmount = isset($validated['amount']) ? (float) $validated['amount'] : $maxRefundable;
+        $refundAmount = min($requestedAmount, $maxRefundable);
+        $roomId = (string) ($booking->room_id ?? '');
+        BillingCharge::withoutGlobalScopes()->create([
+            'hotel_id' => $hotelId,
+            'booking_id' => (string) $booking->id,
+            'room_id' => $roomId,
+            'type' => 'refund',
+            'label' => 'Refund'.(! empty($validated['reason']) ? ': '.$validated['reason'] : ''),
+            'amount' => -1 * $refundAmount,
+            'quantity' => 1,
+            'is_manual' => true,
+            'created_by' => (string) $request->user()->id,
+            'metadata' => [
+                'reason' => (string) ($validated['reason'] ?? 'Admin initiated refund'),
+                'refunded_by' => (string) $request->user()->id,
+                'booking_reference' => (string) $booking->booking_reference,
+            ],
+        ]);
+
+        app(ActivityLogService::class)->log(
+            $hotelId,
+            $request->user(),
+            "Issued refund for booking {$booking->booking_reference}",
+            [
+                'booking_id' => (string) $booking->id,
+                'refund_amount' => $refundAmount,
+                'reason' => (string) ($validated['reason'] ?? 'Admin initiated refund'),
+            ]
+        );
+
+        return response()->json([
+            'ok' => true,
+            'refund_amount' => $refundAmount,
+            'remaining_refundable' => max(0, $maxRefundable - $refundAmount),
+        ]);
+    })->name('api.v1.admin.bookings.refund');
 });
 
 Route::middleware('role:staff')->group(function (): void {
@@ -434,6 +584,50 @@ Route::middleware('role:staff')->group(function (): void {
 
         return response()->json(['ok' => true, 'report' => $report], 201);
     })->name('api.v1.staff.report.maintenance');
+
+    Route::get('/staff/chat/admin/messages', function (Request $request) {
+        $hotelId = (string) $request->user()->hotel_id;
+        $staffThreadId = 'STAFF-ADMIN:'.(string) $request->user()->id;
+        $messages = GuestMessage::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where('room_id', $staffThreadId)
+            ->orderBy('sent_at', 'asc')
+            ->limit(250)
+            ->get();
+
+        return response()->json([
+            'thread_id' => $staffThreadId,
+            'messages' => $messages,
+        ]);
+    })->name('api.v1.staff.chat.admin.messages');
+
+    Route::post('/staff/chat/admin/messages', function (Request $request) {
+        $validated = $request->validate([
+            'message' => ['required', 'string', 'max:500'],
+        ]);
+
+        $staffThreadId = 'STAFF-ADMIN:'.(string) $request->user()->id;
+        $staffName = (string) ($request->user()->name ?? 'Staff');
+        $msg = GuestMessage::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $request->user()->hotel_id,
+            'room_id' => $staffThreadId,
+            'room_number' => 'STAFF',
+            'guest_name' => $staffName,
+            'message' => $validated['message'],
+            'sender_role' => 'staff',
+            'is_read' => false,
+            'sent_at' => now(),
+        ]);
+
+        app(ActivityLogService::class)->log(
+            (string) $request->user()->hotel_id,
+            $request->user(),
+            'Staff sent message to admin',
+            ['message_id' => (string) $msg->id]
+        );
+
+        return response()->json(['ok' => true, 'message' => $msg], 201);
+    })->name('api.v1.staff.chat.admin.send');
 });
 
 /**
@@ -674,9 +868,26 @@ Route::post('/room-transfers', function (Request $request, FinancialComputationS
         ->where('hotel_id', $hotelId)
         ->where('room_id', (string) $fromRoom->id)
         ->update(['room_id' => (string) $toRoom->id, 'room_number' => (string) $toRoom->room_number]);
-    $fromRoom->update(['status' => 'available', 'current_guest_name' => null, 'current_check_in' => null, 'current_check_out' => null, 'current_access_code' => null]);
+    BillingCharge::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->where('booking_id', (string) $booking->id)
+        ->update(['room_id' => (string) $toRoom->id]);
+    CheckoutReminder::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->where('booking_id', (string) $booking->id)
+        ->update(['room_id' => (string) $toRoom->id]);
+    AmenityClaim::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->where('room_id', (string) $fromRoom->id)
+        ->update([
+            'room_id' => (string) $toRoom->id,
+            'room_number' => (string) $toRoom->room_number,
+        ]);
+    $fromStatus = $fromRoom->status instanceof RoomStatus ? $fromRoom->status->value : (string) $fromRoom->status;
+    $toRoomGuestStatus = $fromStatus === RoomStatus::CHECKED_IN->value ? RoomStatus::CHECKED_IN->value : RoomStatus::BOOKED->value;
+    $fromRoom->update(['status' => RoomStatus::AVAILABLE->value, 'current_guest_name' => null, 'current_check_in' => null, 'current_check_out' => null, 'current_access_code' => null]);
     $toRoom->update([
-        'status' => 'booked',
+        'status' => $toRoomGuestStatus,
         'current_guest_name' => $booking->guest_name,
         'current_check_in' => $booking->check_in_date,
         'current_check_out' => $booking->check_out_date,
@@ -719,6 +930,7 @@ Route::get('/tasks/assigned-to-me', [TaskController::class, 'assignedToMe'])->mi
 // Reports
 Route::get('/reports/sales', [ReportController::class, 'sales'])->middleware('role:admin');
 Route::get('/reports/sales/timeseries', [ReportController::class, 'salesTimeseries'])->middleware('role:admin');
+Route::get('/reports/profit-overview', [ReportController::class, 'profitOverview'])->middleware('role:admin');
 Route::get('/reports/sales-csv', [ReportController::class, 'salesCsv'])->middleware('role:admin');
 Route::get('/reports/sales-pdf', [ReportController::class, 'salesPdf'])->middleware('role:admin');
 Route::get('/reports/staff-performance', [ReportController::class, 'staffPerformance'])->middleware('role:admin');
@@ -795,6 +1007,10 @@ Route::get('/admin/rooms/{room}', function (Request $request, Room $room) {
                 : null,
             'check_in_display' => $ci->format('l, M j, Y').' · after 3:00 PM',
             'check_out_display' => $co->format('l, M j, Y').' · before 11:00 AM',
+            'payment_method' => (string) ($booking->payment_method?->value ?? $booking->payment_method ?? ''),
+            'payment_status' => (string) ($booking->payment_status ?? 'unpaid'),
+            'paid_at_iso' => optional($booking->paid_at)->toIso8601String(),
+            'payment_reference' => (string) ($booking->payment_reference ?? ''),
         ]);
     }
 
@@ -805,6 +1021,9 @@ Route::get('/admin/rooms/{room}', function (Request $request, Room $room) {
         'active_booking' => $bookingPayload,
         'booking_charges' => $charges,
         'booking_charges_total' => $chargesTotal,
+        'refund_total' => (float) $charges
+            ->filter(fn ($charge) => (string) ($charge->type ?? '') === 'refund')
+            ->sum(fn ($charge) => abs((float) ($charge->amount ?? 0))),
     ]);
 })->middleware('role:admin');
 

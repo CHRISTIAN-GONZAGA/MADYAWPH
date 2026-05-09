@@ -165,6 +165,8 @@ class CustomerPortalApiController extends Controller
             'check_out_date' => $checkOut->toDateString(),
             'nights' => $nights,
             'payment_method' => PaymentMethod::CASH->value,
+            'payment_status' => 'unpaid',
+            'paid_at' => null,
             'total_amount' => $total,
             'source' => BookingSource::KIOSK->value,
             'status' => BookingStatus::CONFIRMED->value,
@@ -184,7 +186,7 @@ class CustomerPortalApiController extends Controller
             ],
         ]);
 
-        $generatedPassword = strtoupper(Str::random(8));
+        $generatedPassword = $this->generateUniqueRoomPassword();
         $room->update([
             'status' => RoomStatus::BOOKED->value,
             'current_guest_name' => $validated['guest_name'],
@@ -289,5 +291,23 @@ class CustomerPortalApiController extends Controller
         );
 
         return response()->json(['ok' => true, 'reservation' => $reservation]);
+    }
+
+    private function generateUniqueRoomPassword(): string
+    {
+        $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        $size = 12;
+
+        do {
+            $candidate = '';
+            for ($i = 0; $i < $size; $i++) {
+                $candidate .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+            }
+            $exists = Room::withoutGlobalScopes()
+                ->where('current_access_code', $candidate)
+                ->exists();
+        } while ($exists);
+
+        return $candidate;
     }
 }

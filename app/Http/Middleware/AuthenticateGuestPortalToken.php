@@ -49,6 +49,16 @@ class AuthenticateGuestPortalToken
             ], 401);
         }
 
+        $expectedHash = (string) ($portal['access_code_hash'] ?? '');
+        $actualHash = hash('sha256', (string) $room->current_access_code);
+        if ($expectedHash === '' || ! hash_equals($expectedHash, $actualHash)) {
+            GuestPortalStore::forget($token);
+
+            return response()->json([
+                'message' => 'Room password changed. Please sign in again using your latest room password.',
+            ], 401);
+        }
+
         $request->attributes->set('guest_portal', $portal);
         $request->attributes->set('guest_token', $token);
 

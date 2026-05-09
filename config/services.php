@@ -50,6 +50,7 @@ return [
     'sms' => [
         'base_url' => env('SMS_API_BASE_URL'),
         'api_key' => env('SMS_API_KEY'),
+        'path' => env('SMS_API_PATH', '/messages'),
         'sender' => env('SMS_SENDER', 'MADYAW'),
     ],
 

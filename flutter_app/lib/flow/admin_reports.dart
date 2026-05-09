@@ -21,6 +21,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   Map<String, dynamic>? _transfers;
   Map<String, dynamic>? _tasks;
   Map<String, dynamic>? _occupancy;
+  Map<String, dynamic>? _profitOverview;
   bool _loading = true;
   String? _error;
   String _granularity = 'week';
@@ -59,12 +60,15 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           await portalDio().get<Map<String, dynamic>>('/reports/tasks/performance');
       final occupancy =
           await portalDio().get<Map<String, dynamic>>('/reports/room-occupancy');
+      final overview =
+          await portalDio().get<Map<String, dynamic>>('/reports/profit-overview');
       setState(() {
         _sales = sales.data;
         _timeline = timeline.data;
         _transfers = transfers.data;
         _tasks = tasks.data;
         _occupancy = occupancy.data;
+        _profitOverview = overview.data;
         _loading = false;
       });
     } on DioException catch (e) {
@@ -103,12 +107,34 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     final transferSummary =
         (_transfers?['summary'] as Map<String, dynamic>?) ?? {};
     final taskSummary = (_tasks?['summary'] as Map<String, dynamic>?) ?? {};
+    final overview = _profitOverview ?? const {};
 
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          AppSectionCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Total profit overview',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                    'Daily: ₱${_fmtNum((overview['daily'] as Map?)?['profit'] ?? 0)}'),
+                Text(
+                    'Weekly: ₱${_fmtNum((overview['weekly'] as Map?)?['profit'] ?? 0)}'),
+                Text(
+                    'Monthly: ₱${_fmtNum((overview['monthly'] as Map?)?['profit'] ?? 0)}'),
+                Text(
+                    'Annual: ₱${_fmtNum((overview['annual'] as Map?)?['profit'] ?? 0)}'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
           AppSectionCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -245,6 +271,63 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                       ),
                     ),
             ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Paid transactions',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          AppSectionCard(
+            child: salesPoints.isEmpty
+                ? const Text('No paid transactions in selected range.')
+                : Column(
+                    children: salesPoints
+                        .expand((point) {
+                          final p = point as Map<String, dynamic>;
+                          final txns = (p['transactions'] as List<dynamic>? ?? const []);
+                          return txns.take(10);
+                        })
+                        .take(30)
+                        .map((txnRaw) {
+                          final txn = txnRaw as Map<String, dynamic>;
+                          final line = (txn['line'] ?? '').toString();
+                          final amount =
+                              ((txn['amount'] as num?)?.toDouble() ?? 0).toStringAsFixed(2);
+                          final method =
+                              (txn['payment_method'] ?? '').toString().trim();
+                          final channelRaw =
+                              (txn['payment_channel'] ?? '').toString().trim();
+                          final channelLabel = switch (channelRaw.toLowerCase()) {
+                            'cash' => 'Cash',
+                            'online' => 'Online',
+                            'unknown' => '',
+                            _ => channelRaw.isEmpty ? '' : channelRaw,
+                          };
+                          final payBits = <String>[
+                            if (method.isNotEmpty) method,
+                            if (channelLabel.isNotEmpty) channelLabel,
+                          ];
+                          final payLine = payBits.isEmpty
+                              ? 'Payment: —'
+                              : 'Payment: ${payBits.join(' · ')}';
+                          return ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(Icons.receipt_long_outlined),
+                            title: Text(
+                              line.isEmpty ? 'Transaction' : line,
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                            subtitle: Text(
+                              'Guest: ${(txn['guest_name'] ?? '').toString()}\n$payLine',
+                            ),
+                            isThreeLine: true,
+                            trailing: Text('₱$amount'),
+                          );
+                        })
+                        .toList(),
+                  ),
           ),
         ],
       ),

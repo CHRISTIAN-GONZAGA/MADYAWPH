@@ -21,7 +21,7 @@ final class GuestPortalStore
     }
 
     /**
-     * @return array{hotel_id: string, room_id: string, room_number: string}|null
+     * @return array{hotel_id: string, room_id: string, room_number: string, access_code_hash?: string}|null
      */
     public static function read(?string $token): ?array
     {

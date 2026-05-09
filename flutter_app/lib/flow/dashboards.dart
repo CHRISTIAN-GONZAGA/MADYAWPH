@@ -451,6 +451,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           Text('Management', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           AppActionTile(
+            title: 'Room summary',
+            subtitle:
+                'Booked, available, maintenance, checked-in with guest names',
+            icon: Icons.summarize_outlined,
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) => AdminRoomSummaryScreen(
+                  rooms: rooms.cast<Map<String, dynamic>>(),
+                ),
+              ),
+            ),
+          ),
+          AppActionTile(
             title: 'Rooms & status management',
             subtitle: 'Passwords, booking details, add fees',
             icon: Icons.hotel_outlined,
@@ -559,6 +572,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             icon: Icons.restaurant_menu_outlined,
             onTap: _manageAmenityMenu,
           ),
+          AppActionTile(
+            title: 'Activity logs',
+            subtitle: 'View all tracked admin/staff activities',
+            icon: Icons.list_alt_outlined,
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) => const AdminActivityLogsScreen(),
+              ),
+            ),
+          ),
           const SizedBox(height: 12),
           Text(
             'Live feed: ${claims.length} amenity claims, ${chats.length} guest messages, ${tasks.length} tasks.',
@@ -570,6 +593,323 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ],
         ],
       ),
+    );
+  }
+}
+
+class AdminRoomSummaryScreen extends StatelessWidget {
+  const AdminRoomSummaryScreen({super.key, required this.rooms});
+
+  final List<Map<String, dynamic>> rooms;
+
+  List<Map<String, dynamic>> _byStatus(String status) {
+    return rooms
+        .where((room) =>
+            (room['status'] ?? '').toString().toLowerCase() ==
+            status.toLowerCase())
+        .toList();
+  }
+
+  void _openDetail(
+    BuildContext context, {
+    required String title,
+    required List<Map<String, dynamic>> list,
+    required bool showGuest,
+  }) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => AdminRoomSummaryDetailScreen(
+          title: title,
+          rooms: list,
+          showGuest: showGuest,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final booked = _byStatus('booked');
+    final available = _byStatus('available');
+    final maintenance = _byStatus('maintenance');
+    final checkedIn = _byStatus('checked_in');
+    return AppScaffold(
+      appBar: AppBar(title: const Text('Room summary')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text(
+            'Tap any category to open the full room list and manage details.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 16),
+          GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 1.15,
+            children: [
+              _AdminSummaryCategoryCard(
+                label: 'Booked',
+                count: booked.length,
+                icon: Icons.book_online_outlined,
+                color: scheme.primaryContainer,
+                onTap: () => _openDetail(
+                  context,
+                  title: 'Booked rooms',
+                  list: booked,
+                  showGuest: true,
+                ),
+              ),
+              _AdminSummaryCategoryCard(
+                label: 'Available',
+                count: available.length,
+                icon: Icons.event_available_outlined,
+                color: scheme.secondaryContainer,
+                onTap: () => _openDetail(
+                  context,
+                  title: 'Available rooms',
+                  list: available,
+                  showGuest: false,
+                ),
+              ),
+              _AdminSummaryCategoryCard(
+                label: 'Maintenance',
+                count: maintenance.length,
+                icon: Icons.build_circle_outlined,
+                color: scheme.tertiaryContainer,
+                onTap: () => _openDetail(
+                  context,
+                  title: 'Maintenance rooms',
+                  list: maintenance,
+                  showGuest: false,
+                ),
+              ),
+              _AdminSummaryCategoryCard(
+                label: 'Checked in',
+                count: checkedIn.length,
+                icon: Icons.hotel_class_outlined,
+                color: scheme.surfaceContainerHighest,
+                onTap: () => _openDetail(
+                  context,
+                  title: 'Checked-in rooms',
+                  list: checkedIn,
+                  showGuest: true,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AdminSummaryCategoryCard extends StatelessWidget {
+  const _AdminSummaryCategoryCard({
+    required this.label,
+    required this.count,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String label;
+  final int count;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: color,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, size: 28, color: scheme.onSurface),
+              const Spacer(),
+              Text(
+                '$count',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Tap for details',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class AdminRoomSummaryDetailScreen extends StatelessWidget {
+  const AdminRoomSummaryDetailScreen({
+    super.key,
+    required this.title,
+    required this.rooms,
+    required this.showGuest,
+  });
+
+  final String title;
+  final List<Map<String, dynamic>> rooms;
+  final bool showGuest;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppScaffold(
+      appBar: AppBar(title: Text(title)),
+      body: rooms.isEmpty
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'No rooms in this category.',
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+              ),
+            )
+          : ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: rooms.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (context, i) {
+                final room = rooms[i];
+                final roomId = (room['id'] ?? room['_id'] ?? '').toString();
+                final roomNo = (room['room_number'] ?? '-').toString();
+                final guest =
+                    (room['current_guest_name'] ?? '').toString().trim();
+                final category =
+                    (room['category_name'] ?? '').toString().trim();
+                final status = (room['status'] ?? '').toString();
+                return Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.meeting_room_outlined),
+                    title: Text('Room $roomNo'),
+                    subtitle: Text(
+                      [
+                        if (category.isNotEmpty) 'Category: $category',
+                        'Status: $status',
+                        if (showGuest && guest.isNotEmpty) 'Guest: $guest',
+                        if (showGuest && guest.isEmpty) 'Guest: —',
+                      ].join('\n'),
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: roomId.isEmpty
+                        ? null
+                        : () {
+                            Navigator.of(context).push<void>(
+                              MaterialPageRoute<void>(
+                                builder: (_) =>
+                                    AdminRoomDetailScreen(roomId: roomId),
+                              ),
+                            );
+                          },
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+class AdminActivityLogsScreen extends StatefulWidget {
+  const AdminActivityLogsScreen({super.key});
+
+  @override
+  State<AdminActivityLogsScreen> createState() => _AdminActivityLogsScreenState();
+}
+
+class _AdminActivityLogsScreenState extends State<AdminActivityLogsScreen> {
+  List<dynamic> _logs = const [];
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final res = await portalDio().get<Map<String, dynamic>>('/activity-logs');
+      final data = (res.data?['data'] as List<dynamic>?) ?? const [];
+      setState(() {
+        _logs = data;
+        _loading = false;
+      });
+    } on DioException catch (e) {
+      setState(() {
+        _error = dioErrorMessage(e);
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = '$e';
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppScaffold(
+      appBar: AppBar(
+        title: const Text('Activity logs'),
+        actions: [IconButton(onPressed: _load, icon: const Icon(Icons.refresh))],
+      ),
+      body: _loading
+          ? const AppLoadingView()
+          : _error != null
+              ? AppErrorView(message: _error!, onRetry: _load)
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: _logs.length,
+                    itemBuilder: (context, i) {
+                      final log = _logs[i] as Map<String, dynamic>;
+                      return Card(
+                        child: ListTile(
+                          leading: const Icon(Icons.event_note_outlined),
+                          title: Text((log['action'] ?? '').toString()),
+                          subtitle: Text(
+                            'By: ${(log['user_name'] ?? 'System').toString()}',
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
     );
   }
 }
@@ -652,68 +992,6 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     }
   }
 
-  Future<void> _showUpdateTaskStatusDialog() async {
-    final idCtrl = TextEditingController();
-    String status = 'in-progress';
-    final payload = await showDialog<Map<String, String>>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setLocal) => AlertDialog(
-          title: const Text('Update Task Status'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: idCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Task ID',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: status,
-                items: const [
-                  DropdownMenuItem(value: 'pending', child: Text('pending')),
-                  DropdownMenuItem(
-                      value: 'in-progress', child: Text('in-progress')),
-                  DropdownMenuItem(
-                      value: 'completed', child: Text('completed')),
-                ],
-                onChanged: (v) => setLocal(() => status = v ?? 'in-progress'),
-                decoration: const InputDecoration(
-                  labelText: 'Status',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel')),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop({
-                'taskId': idCtrl.text.trim(),
-                'status': status,
-              }),
-              child: const Text('Update'),
-            ),
-          ],
-        ),
-      ),
-    );
-    final taskId = payload?['taskId'] ?? '';
-    final statusPicked = payload?['status'] ?? '';
-    if (taskId.isEmpty || statusPicked.isEmpty) return;
-
-    await _runAction('Update task', () async {
-      await portalDio()
-          .put('/tasks/$taskId/status', data: {'status': statusPicked});
-      return {'message': 'Task updated to $statusPicked.'};
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
@@ -789,42 +1067,38 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
           const SizedBox(height: 16),
           AppActionTile(
             title: 'My assigned tasks',
-            subtitle: 'Fetch assigned tasks from API',
+            subtitle: 'Open full list and update statuses inside',
             icon: Icons.assignment_ind_outlined,
-            onTap: () => _runAction('Load assigned tasks', () async {
-              final res =
-                  await portalDio().get<List<dynamic>>('/tasks/assigned-to-me');
-              return {
-                'message': 'Loaded ${(res.data ?? []).length} assigned tasks.'
-              };
-            }),
-          ),
-          AppActionTile(
-            title: 'Update task status',
-            subtitle: 'Mark task pending, in-progress, or completed',
-            icon: Icons.checklist_rtl_outlined,
-            onTap: _showUpdateTaskStatusDialog,
+            onTap: () async {
+              await Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (_) => const StaffAssignedTasksScreen(),
+                ),
+              );
+              await _load();
+            },
           ),
           AppActionTile(
             title: 'Room operations',
-            subtitle: 'View all and available rooms',
+            subtitle:
+                'View all rooms by category and maintenance assignments',
             icon: Icons.hotel_outlined,
-            onTap: () => _runAction('Load rooms', () async {
-              final all = await portalDio().get('/rooms');
-              final avail = await portalDio().get('/rooms/available');
-              return {
-                'message':
-                    'Loaded ${(all.data as Map?)?['total'] ?? 'rooms'} rooms and ${(avail.data as List?)?.length ?? 0} available.',
-              };
-            }),
-          ),
-          AppActionTile(
-            title: 'Reports & analytics',
-            subtitle: 'Charts for revenue and operations',
-            icon: Icons.insights_outlined,
             onTap: () => Navigator.of(context).push<void>(
               MaterialPageRoute<void>(
-                builder: (_) => const AdminReportsScreen(),
+                builder: (_) => StaffRoomOperationsScreen(
+                  groupedRooms:
+                      (_data!['roomOperations'] as List<dynamic>? ?? const []),
+                ),
+              ),
+            ),
+          ),
+          AppActionTile(
+            title: 'Message admin',
+            subtitle: 'Send updates or request help from administrators',
+            icon: Icons.support_agent_outlined,
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) => const StaffAdminMessagesScreen(),
               ),
             ),
           ),
@@ -848,6 +1122,398 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
           ],
         ],
       ),
+    );
+  }
+}
+
+class StaffAssignedTasksScreen extends StatefulWidget {
+  const StaffAssignedTasksScreen({super.key});
+
+  @override
+  State<StaffAssignedTasksScreen> createState() => _StaffAssignedTasksScreenState();
+}
+
+class _StaffAssignedTasksScreenState extends State<StaffAssignedTasksScreen> {
+  List<dynamic> _tasks = const [];
+  bool _loading = true;
+  String? _error;
+  String _statusFilter = 'all';
+  final Set<String> _savingIds = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final res = await portalDio().get<List<dynamic>>('/tasks/assigned-to-me');
+      setState(() {
+        _tasks = res.data ?? const [];
+        _loading = false;
+      });
+    } on DioException catch (e) {
+      setState(() {
+        _error = dioErrorMessage(e);
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = '$e';
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _updateTaskStatus(Map<String, dynamic> task, String status) async {
+    final taskId = (task['id'] ?? '').toString();
+    if (taskId.isEmpty || _savingIds.contains(taskId)) return;
+    setState(() => _savingIds.add(taskId));
+    try {
+      await portalDio().put('/tasks/$taskId/status', data: {'status': status});
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Task updated to $status.')),
+      );
+      await _load();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dioErrorMessage(e))),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _savingIds.remove(taskId));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppScaffold(
+      appBar: AppBar(
+        title: const Text('My assigned tasks'),
+        actions: [
+          IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
+        ],
+      ),
+      body: _buildBody(context),
+    );
+  }
+
+  Widget _buildBody(BuildContext context) {
+    if (_loading) return const AppLoadingView();
+    if (_error != null) return AppErrorView(message: _error!, onRetry: _load);
+    final filtered = _tasks.where((raw) {
+      final task = raw as Map<String, dynamic>;
+      final status = (task['status'] ?? '').toString().toLowerCase();
+      return _statusFilter == 'all' || status == _statusFilter;
+    }).toList();
+
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ChoiceChip(
+                label: const Text('All'),
+                selected: _statusFilter == 'all',
+                onSelected: (_) => setState(() => _statusFilter = 'all'),
+              ),
+              ChoiceChip(
+                label: const Text('Pending'),
+                selected: _statusFilter == 'pending',
+                onSelected: (_) => setState(() => _statusFilter = 'pending'),
+              ),
+              ChoiceChip(
+                label: const Text('In progress'),
+                selected: _statusFilter == 'in-progress',
+                onSelected: (_) => setState(() => _statusFilter = 'in-progress'),
+              ),
+              ChoiceChip(
+                label: const Text('Completed'),
+                selected: _statusFilter == 'completed',
+                onSelected: (_) => setState(() => _statusFilter = 'completed'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (filtered.isEmpty)
+            const Card(
+              child: ListTile(
+                leading: Icon(Icons.task_alt_outlined),
+                title: Text('No tasks found for this filter.'),
+              ),
+            ),
+          ...filtered.map((raw) {
+            final task = raw as Map<String, dynamic>;
+            final taskId = (task['id'] ?? '').toString();
+            final title = (task['title'] ?? 'Task').toString();
+            final desc = (task['description'] ?? '').toString();
+            final current = (task['status'] ?? 'pending').toString();
+            final saving = _savingIds.contains(taskId);
+            return Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: Theme.of(context).textTheme.titleMedium),
+                    if (desc.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(desc),
+                    ],
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: current,
+                            items: const [
+                              DropdownMenuItem(
+                                  value: 'pending', child: Text('pending')),
+                              DropdownMenuItem(
+                                  value: 'in-progress',
+                                  child: Text('in-progress')),
+                              DropdownMenuItem(
+                                  value: 'completed', child: Text('completed')),
+                            ],
+                            onChanged: saving
+                                ? null
+                                : (v) {
+                                    final next = (v ?? current).trim();
+                                    if (next.isEmpty || next == current) return;
+                                    _updateTaskStatus(task, next);
+                                  },
+                            decoration: const InputDecoration(
+                              labelText: 'Status',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                        if (saving) ...[
+                          const SizedBox(width: 10),
+                          const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+}
+
+class StaffRoomOperationsScreen extends StatelessWidget {
+  const StaffRoomOperationsScreen({super.key, required this.groupedRooms});
+
+  final List<dynamic> groupedRooms;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppScaffold(
+      appBar: AppBar(title: const Text('Room operations')),
+      body: groupedRooms.isEmpty
+          ? const Center(child: Text('No room data available.'))
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: groupedRooms.map((groupRaw) {
+                final group = groupRaw as Map<String, dynamic>;
+                final category = (group['category'] ?? 'Uncategorized').toString();
+                final rooms = (group['rooms'] as List<dynamic>? ?? const []);
+                return AppSectionCard(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(category, style: Theme.of(context).textTheme.titleMedium),
+                        const SizedBox(height: 8),
+                        ...rooms.map((roomRaw) {
+                          final room = roomRaw as Map<String, dynamic>;
+                          final roomNo = (room['room_number'] ?? '').toString();
+                          final status = (room['status'] ?? 'unknown').toString();
+                          final assignment =
+                              room['maintenanceAssignment'] as Map<String, dynamic>?;
+                          final assignee = (assignment?['assignedStaffName'] ??
+                                  'No active maintenance assignment')
+                              .toString();
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(Icons.meeting_room_outlined),
+                            title: Text('Room $roomNo'),
+                            subtitle: Text(
+                                'Status: $status\nMaintenance staff: $assignee'),
+                            dense: true,
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+    );
+  }
+}
+
+class StaffAdminMessagesScreen extends StatefulWidget {
+  const StaffAdminMessagesScreen({super.key});
+
+  @override
+  State<StaffAdminMessagesScreen> createState() => _StaffAdminMessagesScreenState();
+}
+
+class _StaffAdminMessagesScreenState extends State<StaffAdminMessagesScreen> {
+  List<dynamic> _messages = const [];
+  bool _loading = true;
+  bool _sending = false;
+  String? _error;
+  final _ctrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final res = await portalDio().get<Map<String, dynamic>>(
+        '/staff/chat/admin/messages',
+      );
+      setState(() {
+        _messages = (res.data?['messages'] as List<dynamic>?) ?? const [];
+        _loading = false;
+      });
+    } on DioException catch (e) {
+      setState(() {
+        _error = dioErrorMessage(e);
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = '$e';
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _send() async {
+    final message = _ctrl.text.trim();
+    if (message.isEmpty || _sending) return;
+    setState(() => _sending = true);
+    try {
+      await portalDio().post('/staff/chat/admin/messages', data: {
+        'message': message,
+      });
+      _ctrl.clear();
+      await _load();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dioErrorMessage(e))),
+      );
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppScaffold(
+      appBar: AppBar(
+        title: const Text('Message admin'),
+        actions: [
+          IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
+        ],
+      ),
+      body: Column(
+        children: [
+          Expanded(child: _buildBody()),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: AppInput(
+                    controller: _ctrl,
+                    label: 'Message',
+                    hint: 'Type a message to admin',
+                  ),
+                ),
+                const SizedBox(width: 10),
+                AppPrimaryButton(
+                  label: 'Send',
+                  onPressed: _sending ? null : _send,
+                  isLoading: _sending,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_loading) return const AppLoadingView();
+    if (_error != null) return AppErrorView(message: _error!, onRetry: _load);
+    if (_messages.isEmpty) {
+      return const Center(
+        child: Text('No messages yet. Start the conversation with admin.'),
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: _messages.length,
+      itemBuilder: (context, i) {
+        final m = _messages[i] as Map<String, dynamic>;
+        final role = (m['sender_role'] ?? '').toString();
+        final isStaff = role == 'staff';
+        return Align(
+          alignment: isStaff ? Alignment.centerRight : Alignment.centerLeft,
+          child: Container(
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.all(12),
+            constraints: const BoxConstraints(maxWidth: 320),
+            decoration: BoxDecoration(
+              color: isStaff
+                  ? Theme.of(context).colorScheme.primaryContainer
+                  : Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Text((m['message'] ?? '').toString()),
+          ),
+        );
+      },
     );
   }
 }
@@ -1650,13 +2316,14 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
       'https://picsum.photos/seed/hero-3/1200/600',
     ];
 
+    final scheme = Theme.of(context).colorScheme;
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
           SizedBox(
-            height: 180,
+            height: 200,
             child: PageView.builder(
               itemCount: placeholders.length,
               itemBuilder: (context, i) {
@@ -1664,64 +2331,186 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: Image.network(
-                      url,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest,
-                        alignment: Alignment.center,
-                        child: const Icon(Icons.image_outlined),
-                      ),
+                    borderRadius: BorderRadius.circular(20),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Image.network(
+                          url,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            color: scheme.surfaceContainerHighest,
+                            alignment: Alignment.center,
+                            child: const Icon(Icons.image_outlined, size: 48),
+                          ),
+                        ),
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.black.withValues(alpha: 0.05),
+                                Colors.black.withValues(alpha: 0.55),
+                              ],
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          left: 16,
+                          right: 16,
+                          bottom: 16,
+                          child: Text(
+                            hotelName,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleLarge
+                                ?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  shadows: const [
+                                    Shadow(
+                                      blurRadius: 8,
+                                      color: Colors.black45,
+                                    ),
+                                  ],
+                                ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 );
               },
             ),
           ),
-          Text(hotelName, style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 4),
           Text(
-            'Choose a category to see available rooms.',
-            style: Theme.of(context).textTheme.bodySmall,
+            'Find your room',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 6),
+          Text(
+            'Browse categories, compare rates, and book in a few taps.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+          ),
+          const SizedBox(height: 20),
           ...categories.map((c) {
             final m = c as Map<String, dynamic>;
             final id = '${m['id']}';
             final name = '${m['name']}';
             final imageUrl = '${m['image_url'] ?? ''}';
-            return Card(
-              child: ListTile(
-                leading: imageUrl.isEmpty
-                    ? const Icon(Icons.category_outlined)
-                    : ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                          imageUrl,
-                          width: 44,
-                          height: 44,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              const Icon(Icons.broken_image_outlined),
+            final desc = '${m['description'] ?? ''}'.trim();
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Material(
+                color: scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(18),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: () {
+                    Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (_) => CustomerRoomsScreen(
+                          hotelId: widget.hotelId,
+                          categoryId: id,
+                          categoryName: name,
                         ),
                       ),
-                title: Text(name),
-                subtitle: Text('${m['description'] ?? ''}'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.of(context).push<void>(
-                    MaterialPageRoute<void>(
-                      builder: (_) => CustomerRoomsScreen(
-                        hotelId: widget.hotelId,
-                        categoryId: id,
-                        categoryName: name,
-                      ),
+                    );
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (imageUrl.isEmpty)
+                          CircleAvatar(
+                            radius: 32,
+                            backgroundColor:
+                                scheme.primaryContainer.withValues(alpha: 0.6),
+                            child: Icon(
+                              Icons.category_outlined,
+                              color: scheme.onPrimaryContainer,
+                            ),
+                          )
+                        else
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: Image.network(
+                              imageUrl,
+                              width: 64,
+                              height: 64,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => SizedBox(
+                                width: 64,
+                                height: 64,
+                                child: Icon(
+                                  Icons.broken_image_outlined,
+                                  color: scheme.outline,
+                                ),
+                              ),
+                            ),
+                          ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                name,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                              if (desc.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  desc,
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                        color: scheme.onSurfaceVariant,
+                                      ),
+                                ),
+                              ],
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.arrow_forward_rounded,
+                                    size: 18,
+                                    color: scheme.primary,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'See rooms & prices',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelLarge
+                                        ?.copyWith(
+                                          color: scheme.primary,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                  );
-                },
+                  ),
+                ),
               ),
             );
           }),
@@ -2006,47 +2795,142 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
       );
     }
     final rooms = (_data!['rooms'] as List<dynamic>?) ?? [];
+    final scheme = Theme.of(context).colorScheme;
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView.builder(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         itemCount: rooms.length,
         itemBuilder: (context, i) {
           final r = rooms[i] as Map<String, dynamic>;
-          return Card(
-            child: ListTile(
-              contentPadding: const EdgeInsets.all(10),
-              onTap: () => _bookRoom(r),
-              title: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  InkWell(
-                    onTap: () => _bookRoom(r),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.network(
-                        (r['image_url'] ?? '').toString(),
-                        height: 130,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          height: 130,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerHighest,
-                          alignment: Alignment.center,
-                          child: const Icon(Icons.bed_outlined),
+          final roomNo = '${r['room_number'] ?? ''}';
+          final title = '${r['display_name'] ?? r['room_number']}';
+          final status = '${r['status'] ?? ''}'.toLowerCase();
+          final price = (r['price_per_night'] as num?)?.toDouble() ?? 0;
+          final surge = r['base_price_per_night'] != null &&
+              r['base_price_per_night'] != r['price_per_night'];
+          final statusOpen = status == 'available' || status.isEmpty;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: Material(
+              color: scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(20),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () => _bookRoom(r),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Stack(
+                      children: [
+                        Image.network(
+                          (r['image_url'] ?? '').toString(),
+                          height: 160,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            height: 160,
+                            color: scheme.surfaceContainerHighest,
+                            alignment: Alignment.center,
+                            child: Icon(
+                              Icons.bed_outlined,
+                              size: 40,
+                              color: scheme.outline,
+                            ),
+                          ),
                         ),
+                        Positioned(
+                          top: 10,
+                          right: 10,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Colors.black54,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                              child: Text(
+                                '₱${price.toStringAsFixed(0)} / night',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  title,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.w800),
+                                ),
+                              ),
+                              if (status.isNotEmpty)
+                                Chip(
+                                  visualDensity: VisualDensity.compact,
+                                  padding: EdgeInsets.zero,
+                                  label: Text(
+                                    statusOpen ? 'Open' : status.replaceAll('_', ' '),
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                  backgroundColor: statusOpen
+                                      ? scheme.primaryContainer
+                                      : scheme.secondaryContainer,
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Room $roomNo'
+                            '${surge ? ' · Includes demand pricing' : ''}',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: scheme.onSurfaceVariant),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.touch_app_outlined,
+                                size: 18,
+                                color: scheme.primary,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Tap to book or reserve',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelLarge
+                                    ?.copyWith(
+                                      color: scheme.primary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text('${r['display_name'] ?? r['room_number']}'),
-                ],
-              ),
-              subtitle: Text(
-                'Room ${r['room_number']} · ${r['status']} · ₱${r['price_per_night']}'
-                '${r['base_price_per_night'] != null && r['base_price_per_night'] != r['price_per_night'] ? ' (surge applied)' : ''}',
+                  ],
+                ),
               ),
             ),
           );
