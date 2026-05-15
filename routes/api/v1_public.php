@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\ChatMediaController;
 use App\Http\Controllers\Api\V1\GuestPortalApiController;
 use App\Http\Controllers\Api\V1\PortalAuthController;
 use App\Http\Controllers\Api\BookingController;
+use App\Services\PaymentGatewayService;
 use App\Services\SmsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -16,6 +17,71 @@ Route::get('/', static fn () => response()->json([
     'message' => 'Gloretto API v1.',
     'hint' => 'Open GET /api/v1/hotels in a browser or from the Flutter app to verify connectivity.',
 ]));
+
+Route::post('/integrations/run-test', function (
+    Request $request,
+    SmsService $smsService,
+    PaymentGatewayService $paymentGateway
+) {
+    $expected = (string) config('services.integrations.test_token');
+    $provided = (string) $request->header('X-Integrations-Test-Token', '');
+    if ($expected === '' || ! hash_equals($expected, $provided)) {
+        abort(404);
+    }
+
+    $validated = $request->validate([
+        'phone' => ['required', 'string', 'max:30'],
+        'amount' => ['nullable', 'numeric', 'min:1'],
+        'method' => ['nullable', 'in:gcash,paymaya'],
+    ]);
+
+    $phone = (string) $validated['phone'];
+    $amount = (float) ($validated['amount'] ?? 100);
+    $method = (string) ($validated['method'] ?? 'gcash');
+
+    $sms = $smsService->sendDetailed(
+        $phone,
+        'MADYAWPH integration test at '.now()->toDateTimeString()
+    );
+
+    $payment = $paymentGateway->charge($method, $amount, [
+        'hotel_id' => 'integration-test',
+        'initiated_by' => 'integrations-run-test',
+        'test' => 'true',
+    ]);
+
+    return response()->json([
+        'sms' => $sms->toArray(),
+        'payment' => $payment,
+        'config' => [
+            'sms' => array_merge($smsService->status(), [
+                'semaphore_api_key_length' => strlen((string) config('services.semaphore.api_key')),
+                'semaphore_sender' => (string) config('services.semaphore.sender'),
+            ]),
+            'payment_provider' => $paymentGateway->activeProvider(),
+        ],
+    ]);
+})->middleware('throttle:3,1');
+
+Route::get('/integrations/status', function (SmsService $smsService) {
+    $apiKey = (string) config('services.semaphore.api_key');
+
+    return response()->json([
+        'app_url' => (string) config('app.url'),
+        'sms' => array_merge($smsService->status(), [
+            'semaphore_api_key_present' => $apiKey !== '',
+            'semaphore_api_key_length' => strlen($apiKey),
+            'semaphore_sender' => (string) config('services.semaphore.sender'),
+            'hint' => $apiKey === ''
+                ? 'Set SEMAPHORE_API_KEY on Render, redeploy, then open this URL again.'
+                : 'If sent is still false on register, check Semaphore credits and approved sender name.',
+        ]),
+        'payments' => [
+            'xendit' => (string) config('services.xendit.secret_key') !== '',
+            'paymongo' => (string) config('services.paymongo.secret') !== '',
+        ],
+    ]);
+})->middleware('throttle:30,1');
 
 Route::get('/hotels', [PortalAuthController::class, 'hotels']);
 Route::post('/hotel/access', [PortalAuthController::class, 'hotelAccess'])->middleware('throttle:8,1');
@@ -42,10 +108,23 @@ Route::post('/otp/send', function (Request $request, SmsService $smsService) {
     ]);
     $otp = (string) random_int(100000, 999999);
     Cache::put('otp:'.$validated['phone'], $otp, now()->addMinutes(5));
-    $smsService->send($validated['phone'], "Your MADYAW OTP code is {$otp}. It expires in 5 minutes.");
+    $sms = $smsService->sendDetailed(
+        $validated['phone'],
+        "Your MADYAW OTP code is {$otp}. It expires in 5 minutes."
+    );
 
-    return response()->json(['ok' => true, 'expires_in_seconds' => 300]);
-})->middleware('throttle:10,1');
+    $payload = [
+        'ok' => true,
+        'expires_in_seconds' => 300,
+        'sms' => $sms->toArray(),
+    ];
+    if (! $sms->sent) {
+        $payload['otp'] = $otp;
+        $payload['message'] = 'SMS could not be sent. Use otp from this response or fix SEMAPHORE_API_KEY on the server.';
+    }
+
+    return response()->json($payload);
+})->middleware('throttle:5,1');
 
 Route::post('/otp/verify', function (Request $request) {
     $validated = $request->validate([

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\User;
+use App\Support\PhilippinePhone;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -18,62 +19,107 @@ class SmsService
         private readonly SemaphoreSmsService $semaphore
     ) {}
 
+    public function isConfigured(): bool
+    {
+        return $this->semaphore->isConfigured()
+            || $this->twilioReady()
+            || $this->genericReady();
+    }
+
+    /**
+     * @return array{configured: bool, providers: list<string>}
+     */
+    public function status(): array
+    {
+        $providers = [];
+        if ($this->semaphore->isConfigured()) {
+            $providers[] = 'semaphore';
+        }
+        if ($this->twilioReady()) {
+            $providers[] = 'twilio';
+        }
+        if ($this->genericReady()) {
+            $providers[] = 'generic';
+        }
+
+        return [
+            'configured' => $providers !== [],
+            'providers' => $providers,
+            'primary' => $providers[0] ?? null,
+        ];
+    }
+
     public function send(string $phone, string $message, ?string $hotelId = null, ?User $actor = null): bool
     {
+        return $this->sendDetailed($phone, $message, $hotelId, $actor)->sent;
+    }
+
+    public function sendDetailed(
+        string $phone,
+        string $message,
+        ?string $hotelId = null,
+        ?User $actor = null
+    ): SmsSendResult {
+        $normalized = PhilippinePhone::forSms($phone);
+
         if ($this->semaphore->isConfigured()) {
-            $sent = $this->semaphore->send($phone, $message);
-            if ($sent) {
-                return true;
+            $result = $this->semaphore->sendDetailed($normalized, $message);
+            if ($result->sent) {
+                Log::info('SMS sent via Semaphore', [
+                    'hotel_id' => $hotelId,
+                    'phone' => $normalized,
+                ]);
+
+                return new SmsSendResult(true, 'semaphore', $normalized);
+            }
+
+            if ($this->twilioReady() || $this->genericReady()) {
+                Log::warning('Semaphore failed; trying fallback SMS provider', [
+                    'hotel_id' => $hotelId,
+                    'error' => $result->error,
+                ]);
+            } else {
+                $this->logFailure($hotelId, $actor, $normalized, $result->error ?? 'Semaphore delivery failed.');
+
+                return new SmsSendResult(false, 'semaphore', $normalized, $result->error);
             }
         }
 
-        $sid = (string) config('services.twilio.sid');
-        $token = (string) config('services.twilio.token');
-        $from = (string) config('services.twilio.from');
-        $baseUrl = (string) config('services.sms.base_url');
-        $apiKey = (string) config('services.sms.api_key');
-        $sender = (string) config('services.sms.sender');
+        if (! $this->semaphore->isConfigured() && ! $this->twilioReady() && ! $this->genericReady()) {
+            $error = 'No SMS provider configured. Set SEMAPHORE_API_KEY on the server (see .env.example).';
+            $this->logFailure($hotelId, $actor, $normalized, $error);
 
-        $twilioReady = $sid !== '' && $token !== '' && $from !== '';
-        $genericReady = $baseUrl !== '' && $apiKey !== '';
-
-        if (! $twilioReady && ! $genericReady) {
-            Log::warning('SMS credentials missing; soft-fail log only', [
-                'hotel_id' => $hotelId,
-                'user_id' => $actor?->id,
-                'phone' => $phone,
-                'providers_tried' => $this->semaphore->isConfigured() ? ['semaphore'] : [],
-            ]);
-
-            return false;
+            return new SmsSendResult(false, null, $normalized, $error);
         }
 
         try {
-            if ($twilioReady) {
-                $response = Http::withBasicAuth($sid, $token)
+            if ($this->twilioReady()) {
+                $response = Http::withBasicAuth((string) config('services.twilio.sid'), (string) config('services.twilio.token'))
                     ->timeout(15)
                     ->asForm()
-                    ->post("https://api.twilio.com/2010-04-01/Accounts/{$sid}/Messages.json", [
+                    ->post('https://api.twilio.com/2010-04-01/Accounts/'.config('services.twilio.sid').'/Messages.json', [
                         'To' => $phone,
-                        'From' => $from,
+                        'From' => (string) config('services.twilio.from'),
                         'Body' => $message,
                     ]);
 
                 if ($response->successful()) {
-                    return true;
+                    return new SmsSendResult(true, 'twilio', $normalized);
                 }
 
                 Log::warning('Twilio SMS failed', [
                     'hotel_id' => $hotelId,
-                    'user_id' => $actor?->id,
-                    'phone' => $phone,
+                    'phone' => $normalized,
                     'status' => $response->status(),
                     'body' => $response->body(),
                 ]);
             }
 
-            if ($genericReady) {
+            if ($this->genericReady()) {
+                $baseUrl = (string) config('services.sms.base_url');
+                $apiKey = (string) config('services.sms.api_key');
                 $path = (string) config('services.sms.path', '/messages');
+                $sender = (string) config('services.sms.sender', 'MADYAW');
                 $response = Http::timeout(15)
                     ->withToken($apiKey)
                     ->post(rtrim($baseUrl, '/').'/'.ltrim($path, '/'), [
@@ -83,28 +129,50 @@ class SmsService
                     ]);
 
                 if ($response->successful()) {
-                    return true;
+                    return new SmsSendResult(true, 'generic', $normalized);
                 }
 
                 Log::warning('Generic SMS gateway failed', [
                     'hotel_id' => $hotelId,
-                    'user_id' => $actor?->id,
-                    'phone' => $phone,
+                    'phone' => $normalized,
                     'status' => $response->status(),
                     'body' => $response->body(),
                 ]);
             }
 
-            return false;
-        } catch (\Throwable $exception) {
-            Log::warning('SMS delivery failed (soft-fail)', [
-                'hotel_id' => $hotelId,
-                'user_id' => $actor?->id,
-                'phone' => $phone,
-                'error' => $exception->getMessage(),
-            ]);
+            $error = 'SMS delivery failed. Check server logs and Semaphore dashboard.';
+            $this->logFailure($hotelId, $actor, $normalized, $error);
 
-            return false;
+            return new SmsSendResult(false, $this->status()['primary'], $normalized, $error);
+        } catch (\Throwable $exception) {
+            $error = $exception->getMessage();
+            $this->logFailure($hotelId, $actor, $normalized, $error);
+
+            return new SmsSendResult(false, $this->status()['primary'], $normalized, $error);
         }
+    }
+
+    private function twilioReady(): bool
+    {
+        return (string) config('services.twilio.sid') !== ''
+            && (string) config('services.twilio.token') !== ''
+            && (string) config('services.twilio.from') !== '';
+    }
+
+    private function genericReady(): bool
+    {
+        return (string) config('services.sms.base_url') !== ''
+            && (string) config('services.sms.api_key') !== '';
+    }
+
+    private function logFailure(?string $hotelId, ?User $actor, string $phone, string $error): void
+    {
+        Log::warning('SMS delivery failed (soft-fail)', [
+            'hotel_id' => $hotelId,
+            'user_id' => $actor?->id,
+            'phone' => $phone,
+            'error' => $error,
+            'sms_status' => $this->status(),
+        ]);
     }
 }

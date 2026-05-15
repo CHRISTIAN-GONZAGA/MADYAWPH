@@ -54,10 +54,18 @@ return [
         'webhook_secret' => env('PAYMONGO_WEBHOOK_SECRET'),
     ],
 
+    'integrations' => [
+        'test_token' => trim((string) env('INTEGRATIONS_TEST_TOKEN', '')),
+    ],
+
     'semaphore' => [
-        'api_key' => env('SEMAPHORE_API_KEY'),
+        // Accept common env name variants (Render / copy-paste mistakes).
+        'api_key' => trim((string) env(
+            'SEMAPHORE_API_KEY',
+            env('SEMAPHORE_APIKEY', env('SEMAPHORE_KEY', ''))
+        )),
         'base_url' => env('SEMAPHORE_BASE_URL', 'https://api.semaphore.co'),
-        'sender' => env('SEMAPHORE_SENDER_NAME', 'MADYAW'),
+        'sender' => trim((string) env('SEMAPHORE_SENDER_NAME', env('SEMAPHORE_SENDER', 'SEMAPHORE'))),
     ],
 
     'sms' => [

@@ -192,7 +192,12 @@ Future<void> showHotelRegistrationCredentialsDialog(
   BuildContext context, {
   required String hotelName,
   required Map<String, dynamic>? portalAccounts,
+  Map<String, dynamic>? sms,
+  String? verificationCode,
 }) async {
+  final smsSent = sms?['sent'] == true;
+  final smsPhone = (sms?['phone'] ?? '').toString();
+  final smsError = (sms?['error'] ?? '').toString();
   final gate = portalAccounts?['hotel_gate'] as Map<String, dynamic>?;
   final superA = portalAccounts?['super_admin'] as Map<String, dynamic>?;
   final adminA = portalAccounts?['admin'] as Map<String, dynamic>?;
@@ -226,6 +231,41 @@ Future<void> showHotelRegistrationCredentialsDialog(
             Text(
               'Write these down or copy them now. Passwords are shown once.',
               style: Theme.of(ctx).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: smsSent
+                    ? Colors.green.withValues(alpha: 0.12)
+                    : Colors.orange.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    smsSent ? 'SMS sent' : 'SMS not sent',
+                    style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                  if (smsPhone.isNotEmpty)
+                    Text('To: $smsPhone', style: Theme.of(ctx).textTheme.bodySmall),
+                  if (!smsSent && smsError.isNotEmpty)
+                    Text(smsError, style: Theme.of(ctx).textTheme.bodySmall),
+                  if (!smsSent && verificationCode != null) ...[
+                    const SizedBox(height: 8),
+                    SelectableText(
+                      'Verification code: $verificationCode',
+                      style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ],
+                ],
+              ),
             ),
             const SizedBox(height: 16),
             _CredentialBlock(

@@ -116,7 +116,7 @@ class PortalAuthController extends Controller
         $verificationCode = (string) random_int(100000, 999999);
         Cache::put('hotel_verify:'.(string) $hotel->id, $verificationCode, now()->addHours(24));
 
-        $this->smsService->send(
+        $sms = $this->smsService->sendDetailed(
             $validated['contact_number'],
             "MADYAW Hotel verification code: {$verificationCode}. Keep this for your records.",
             (string) $hotel->id,
@@ -125,11 +125,14 @@ class PortalAuthController extends Controller
 
         $token = $admin->createToken('flutter-register')->plainTextToken;
 
-        return response()->json([
+        $payload = [
             'hotel_id' => (string) $hotel->id,
             'token' => $token,
             'user' => $admin,
-            'message' => 'Hotel registered. Verification code sent by SMS.',
+            'sms' => $sms->toArray(),
+            'message' => $sms->sent
+                ? 'Hotel registered. Verification code sent by SMS to '.$sms->normalizedPhone.'.'
+                : 'Hotel registered. SMS was not delivered — use verification_code below (also check SEMAPHORE_API_KEY on the server).',
             'portal_accounts' => [
                 'hotel_gate' => [
                     'username' => $validated['username'],
@@ -147,7 +150,13 @@ class PortalAuthController extends Controller
                     'note' => 'Role menu → Administrator.',
                 ],
             ],
-        ], 201);
+        ];
+
+        if (! $sms->sent) {
+            $payload['verification_code'] = $verificationCode;
+        }
+
+        return response()->json($payload, 201);
     }
 
     public function portalLogin(Request $request): JsonResponse
@@ -278,17 +287,25 @@ class PortalAuthController extends Controller
             'code' => $code,
         ], now()->addMinutes(30));
 
-        $this->smsService->send(
+        $sms = $this->smsService->sendDetailed(
             $hotelContact,
             "MADYAW password reset code: {$code}",
             (string) $user->hotel_id,
             $user
         );
 
-        return response()->json([
+        $payload = [
             'ok' => true,
-            'message' => 'Reset code sent to the hotel number ending in '.substr($hotelContact, -4).'.',
-        ]);
+            'sms' => $sms->toArray(),
+            'message' => $sms->sent
+                ? 'Reset code sent to the hotel number ending in '.substr($hotelContact, -4).'.'
+                : 'Reset code could not be sent by SMS. Ask your server admin to configure SEMAPHORE_API_KEY.',
+        ];
+        if (! $sms->sent) {
+            $payload['reset_code'] = $code;
+        }
+
+        return response()->json($payload);
     }
 
     public function forgotReset(Request $request): JsonResponse

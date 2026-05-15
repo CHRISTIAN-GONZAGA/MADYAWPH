@@ -247,10 +247,29 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
       await AuthStorage.setPortalAuth(token: token, role: 'admin');
       await AuthStorage.clearGuestAuth();
       if (!mounted) return;
+      final sms = res.data?['sms'] as Map<String, dynamic>?;
+      final smsSent = sms?['sent'] == true;
+      final verificationCode =
+          (res.data?['verification_code'] ?? '').toString();
+      if (!smsSent && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              verificationCode.isNotEmpty
+                  ? 'SMS not delivered. Verification code: $verificationCode (also in the next screen).'
+                  : 'SMS not delivered. Check server SEMAPHORE_API_KEY or Semaphore dashboard.',
+            ),
+            duration: const Duration(seconds: 8),
+          ),
+        );
+      }
       await showHotelRegistrationCredentialsDialog(
         context,
         hotelName: name,
         portalAccounts: res.data?['portal_accounts'] as Map<String, dynamic>?,
+        sms: sms,
+        verificationCode:
+            verificationCode.isNotEmpty ? verificationCode : null,
       );
       if (!mounted) return;
       Navigator.of(context).pop();
