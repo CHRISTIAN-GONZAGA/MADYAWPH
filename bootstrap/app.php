@@ -40,6 +40,7 @@ return Application::configure(basePath: dirname(__DIR__))
         );
 
         $middleware->validateCsrfTokens(except: [
+            'webhooks/xendit',
             'webhooks/paymongo',
             'auth/hotel/login',
             'auth/hotel/register',

@@ -2,14 +2,17 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\HotelCredit;
+use App\Services\HotelCreditRechargeService;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\Response;
 
 class PayMongoWebhookController extends Controller
 {
+    public function __construct(
+        private readonly HotelCreditRechargeService $creditRecharge
+    ) {}
+
     public function handle(Request $request): Response
     {
         $raw = $request->getContent();
@@ -110,42 +113,12 @@ class PayMongoWebhookController extends Controller
             ? (float) $meta['amount_php']
             : ((int) ($attributes['amount'] ?? 0)) / 100;
 
-        if ($amountPhp <= 0) {
-            return;
-        }
-
-        $credit = HotelCredit::withoutGlobalScopes()->firstOrCreate(
-            ['hotel_id' => $hotelId],
-            [
-                'current_credits' => 0,
-                'warning_threshold' => 5000,
-                'custom_markup_percentage' => 10,
-                'total_spent' => 0,
-                'transactions' => [],
-            ]
+        $this->creditRecharge->apply(
+            $hotelId,
+            $amountPhp,
+            $paymentId,
+            'PayMongo',
+            'Credit recharge via PayMongo (wallet)'
         );
-
-        $transactions = collect($credit->transactions ?? []);
-        if ($transactions->contains(fn (mixed $row): bool => is_array($row) && (($row['transactionId'] ?? $row['transaction_id'] ?? '') === $paymentId))) {
-            return;
-        }
-
-        $newBalance = (float) $credit->current_credits + $amountPhp;
-        $transactions = $transactions->push([
-            'id' => (string) Str::uuid(),
-            'type' => 'recharge',
-            'description' => 'Credit recharge via PayMongo (wallet)',
-            'amount' => $amountPhp,
-            'timestamp' => now()->toISOString(),
-            'balanceAfter' => $newBalance,
-            'paymentProvider' => 'PayMongo',
-            'transactionId' => $paymentId,
-            'reference' => $paymentId,
-        ])->values()->all();
-
-        $credit->update([
-            'current_credits' => $newBalance,
-            'transactions' => $transactions,
-        ]);
     }
 }

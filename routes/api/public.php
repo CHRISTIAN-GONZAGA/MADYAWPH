@@ -3,7 +3,7 @@
 /**
  * Guest and unauthenticated API routes (no Sanctum middleware).
  *
- * OTP sends SMS via App\Services\SmsService — configure Twilio or generic SMS in .env (see .env.example).
+ * OTP sends SMS via App\Services\SmsService — configure Semaphore in .env (see .env.example).
  */
 
 use App\Http\Controllers\Api\AuthApiController;

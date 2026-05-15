@@ -8,8 +8,40 @@ import '../widgets/app_scaffold.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_input.dart';
 import '../widgets/app_state_views.dart';
+
+/// Hub with separate guest and staff chat inboxes.
+class AdminChatHubScreen extends StatelessWidget {
+  const AdminChatHubScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: AppScaffold(
+        appBar: AppBar(
+          title: const Text('Chat'),
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'Guests', icon: Icon(Icons.hotel_outlined)),
+              Tab(text: 'Staff', icon: Icon(Icons.badge_outlined)),
+            ],
+          ),
+        ),
+        body: const TabBarView(
+          children: [
+            AdminChatInboxScreen(staffOnly: false),
+            AdminChatInboxScreen(staffOnly: true),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class AdminChatInboxScreen extends StatefulWidget {
-  const AdminChatInboxScreen({super.key});
+  const AdminChatInboxScreen({super.key, required this.staffOnly});
+
+  final bool staffOnly;
 
   @override
   State<AdminChatInboxScreen> createState() => _AdminChatInboxScreenState();
@@ -34,8 +66,13 @@ class _AdminChatInboxScreenState extends State<AdminChatInboxScreen> {
     try {
       final res =
           await portalDio().get<Map<String, dynamic>>('/admin/chat/inbox');
+      final key = widget.staffOnly ? 'staff_threads' : 'guest_threads';
+      final threads = (res.data?[key] as List?) ??
+          (widget.staffOnly
+              ? _filterStaffThreads(res.data?['threads'] as List?)
+              : (res.data?['threads'] as List?) ?? const []);
       setState(() {
-        _threads = (res.data?['threads'] as List?) ?? const [];
+        _threads = threads;
         _loading = false;
       });
     } on DioException catch (e) {
@@ -51,26 +88,28 @@ class _AdminChatInboxScreenState extends State<AdminChatInboxScreen> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return AppScaffold(
-      appBar: AppBar(
-        title: const Text('Guest chat inbox'),
-        actions: [
-          IconButton(onPressed: _load, icon: const Icon(Icons.refresh))
-        ],
-      ),
-      body: _buildBody(),
-    );
+  List<dynamic> _filterStaffThreads(List<dynamic>? threads) {
+    if (threads == null) return const [];
+    return threads
+        .where((t) =>
+            ((t as Map)['room_id'] ?? '').toString().startsWith('STAFF-ADMIN:'))
+        .toList();
   }
 
-  Widget _buildBody() {
+  @override
+  Widget build(BuildContext context) {
     if (_loading) return const AppLoadingView();
     if (_error != null) {
       return AppErrorView(message: _error!, onRetry: _load);
     }
     if (_threads.isEmpty) {
-      return const Center(child: Text('No messages yet.'));
+      return Center(
+        child: Text(
+          widget.staffOnly
+              ? 'No staff messages yet.'
+              : 'No guest messages yet.',
+        ),
+      );
     }
     return RefreshIndicator(
       onRefresh: _load,
@@ -81,14 +120,27 @@ class _AdminChatInboxScreenState extends State<AdminChatInboxScreen> {
           final t = _threads[i] as Map<String, dynamic>;
           final roomId = (t['room_id'] ?? '').toString();
           final roomNo = (t['room_number'] ?? '').toString();
+          final staffName = (t['staff_name'] ?? '').toString();
           final latest = (t['latest_message'] ?? '').toString();
           final unread = (t['unread_count'] ?? 0).toString();
+          final isStaff = widget.staffOnly ||
+              roomId.startsWith('STAFF-ADMIN:') ||
+              (t['is_staff_thread'] == true);
+          final title =
+              isStaff ? (staffName.isNotEmpty ? staffName : 'Staff') : 'Room $roomNo';
+          final subtitlePrefix =
+              isStaff ? 'Staff chat · ' : '';
           return Card(
             child: ListTile(
-              leading: const Icon(Icons.forum_outlined),
-              title: Text('Room $roomNo'),
-              subtitle:
-                  Text(latest, maxLines: 2, overflow: TextOverflow.ellipsis),
+              leading: Icon(
+                isStaff ? Icons.badge_outlined : Icons.forum_outlined,
+              ),
+              title: Text(title),
+              subtitle: Text(
+                '$subtitlePrefix$latest',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
               trailing: unread == '0'
                   ? const Icon(Icons.chevron_right)
                   : Row(
@@ -109,10 +161,19 @@ class _AdminChatInboxScreenState extends State<AdminChatInboxScreen> {
                       ],
                     ),
               onTap: () async {
+                final replyName = isStaff
+                    ? (staffName.isNotEmpty ? staffName : 'Staff')
+                    : 'In-House Guest';
                 await Navigator.of(context).push<void>(
                   MaterialPageRoute<void>(
-                      builder: (_) => AdminChatRoomScreen(
-                          roomId: roomId, roomNumber: roomNo)),
+                    builder: (_) => AdminChatRoomScreen(
+                      roomId: roomId,
+                      roomNumber: roomNo,
+                      displayTitle: title,
+                      replyGuestName: replyName,
+                      isStaffThread: isStaff,
+                    ),
+                  ),
                 );
                 await _load();
               },
@@ -125,11 +186,20 @@ class _AdminChatInboxScreenState extends State<AdminChatInboxScreen> {
 }
 
 class AdminChatRoomScreen extends StatefulWidget {
-  const AdminChatRoomScreen(
-      {super.key, required this.roomId, required this.roomNumber});
+  const AdminChatRoomScreen({
+    super.key,
+    required this.roomId,
+    required this.roomNumber,
+    this.displayTitle,
+    this.replyGuestName = 'In-House Guest',
+    this.isStaffThread = false,
+  });
 
   final String roomId;
   final String roomNumber;
+  final String? displayTitle;
+  final String replyGuestName;
+  final bool isStaffThread;
 
   @override
   State<AdminChatRoomScreen> createState() => _AdminChatRoomScreenState();
@@ -160,8 +230,10 @@ class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
       _error = null;
     });
     try {
-      final res = await portalDio()
-          .get<Map<String, dynamic>>('/admin/chat/rooms/${widget.roomId}');
+      final encodedRoomId = Uri.encodeComponent(widget.roomId);
+      final res = await portalDio().get<Map<String, dynamic>>(
+        '/admin/chat/rooms/$encodedRoomId',
+      );
       setState(() {
         _messages = (res.data?['messages'] as List?) ?? const [];
         _loading = false;
@@ -185,24 +257,20 @@ class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
     if (_sending) return;
     setState(() => _sending = true);
     try {
+      final fields = {
+        'room_id': widget.roomId,
+        'room_number': widget.roomNumber,
+        'guest_name': widget.replyGuestName,
+        'message': text.isEmpty ? '(image)' : text,
+      };
       if (image != null) {
         final form = await ChatAttachment.formWithImage(
-          fields: {
-            'room_id': widget.roomId,
-            'room_number': widget.roomNumber,
-            'guest_name': 'In-House Guest',
-            'message': text.isEmpty ? '(image)' : text,
-          },
+          fields: fields,
           file: image,
         );
         await portalDio().post('/admin/chat/reply', data: form);
       } else {
-        await portalDio().post('/admin/chat/reply', data: {
-          'room_id': widget.roomId,
-          'room_number': widget.roomNumber,
-          'guest_name': 'In-House Guest',
-          'message': text,
-        });
+        await portalDio().post('/admin/chat/reply', data: fields);
       }
       _ctrl.clear();
       await _load();
@@ -217,9 +285,13 @@ class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final title = widget.displayTitle ??
+        (widget.isStaffThread
+            ? widget.replyGuestName
+            : 'Room ${widget.roomNumber}');
     return AppScaffold(
       appBar: AppBar(
-        title: Text('Room ${widget.roomNumber}'),
+        title: Text(title),
         actions: [
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh))
         ],
@@ -278,7 +350,7 @@ class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
       itemBuilder: (context, i) {
         final m = _messages[i] as Map<String, dynamic>;
         final role = (m['sender_role'] ?? '').toString();
-        final isAdmin = role == 'admin' || role == 'staff';
+        final isAdmin = role == 'admin';
         return ChatMessageBubble.fromMap(m, isMine: isAdmin);
       },
     );

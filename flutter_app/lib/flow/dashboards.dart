@@ -236,7 +236,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         await showDialog<void>(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Complete PayMongo Payment'),
+            title: const Text('Complete payment'),
             content: SelectableText(
               'Open this URL in your browser to complete payment:\n\n$redirectUrl',
             ),
@@ -572,13 +572,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             },
           ),
           AppActionTile(
-            title: 'Guest chat inbox',
-            subtitle: 'Receive and reply to guest messages',
+            title: 'Chat',
+            subtitle: 'Guest and staff messages in separate inboxes',
             icon: Icons.forum_outlined,
             onTap: () async {
               await Navigator.of(context).push<void>(
                 MaterialPageRoute<void>(
-                    builder: (_) => const AdminChatInboxScreen()),
+                    builder: (_) => const AdminChatHubScreen()),
               );
               await _load();
             },

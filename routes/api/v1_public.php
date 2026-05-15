@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\ChatMediaController;
 use App\Http\Controllers\Api\V1\GuestPortalApiController;
 use App\Http\Controllers\Api\V1\PortalAuthController;
 use App\Http\Controllers\Api\BookingController;
@@ -9,6 +10,8 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Route;
 
 // Browsers often open /api/v1 alone; without this route Laravel returns 404.
+Route::get('/chat/media', [ChatMediaController::class, 'show'])->name('api.v1.chat.media');
+
 Route::get('/', static fn () => response()->json([
     'message' => 'Gloretto API v1.',
     'hint' => 'Open GET /api/v1/hotels in a browser or from the Flutter app to verify connectivity.',

@@ -131,15 +131,20 @@ class PortalAuthController extends Controller
             'user' => $admin,
             'message' => 'Hotel registered. Verification code sent by SMS.',
             'portal_accounts' => [
+                'hotel_gate' => [
+                    'username' => $validated['username'],
+                    'password' => $validated['password'],
+                    'note' => 'Property login on the first screen (Hotel access). Everyone at this hotel signs in here before choosing a role.',
+                ],
                 'super_admin' => [
                     'username' => $validated['username'],
                     'password' => $validated['contact_number'],
-                    'note' => 'Use “Super admin” on the role menu; password is the hotel contact number you entered.',
+                    'note' => 'Role menu → Super admin. Password is the contact number you entered at registration.',
                 ],
                 'admin' => [
                     'username' => $operatorLogin,
                     'password' => $validated['username'].'123',
-                    'note' => 'Use “Administrator” on the role menu.',
+                    'note' => 'Role menu → Administrator.',
                 ],
             ],
         ], 201);

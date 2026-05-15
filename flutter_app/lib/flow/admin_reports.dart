@@ -119,18 +119,26 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Total profit overview',
+                  'Financial overview',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 8),
-                Text(
-                    'Daily: ₱${_fmtNum((overview['daily'] as Map?)?['profit'] ?? 0)}'),
-                Text(
-                    'Weekly: ₱${_fmtNum((overview['weekly'] as Map?)?['profit'] ?? 0)}'),
-                Text(
-                    'Monthly: ₱${_fmtNum((overview['monthly'] as Map?)?['profit'] ?? 0)}'),
-                Text(
-                    'Annual: ₱${_fmtNum((overview['annual'] as Map?)?['profit'] ?? 0)}'),
+                _PeriodFinanceRow(
+                  label: 'Today (daily)',
+                  data: overview['daily'] as Map<String, dynamic>?,
+                ),
+                _PeriodFinanceRow(
+                  label: 'This week',
+                  data: overview['weekly'] as Map<String, dynamic>?,
+                ),
+                _PeriodFinanceRow(
+                  label: 'This month',
+                  data: overview['monthly'] as Map<String, dynamic>?,
+                ),
+                _PeriodFinanceRow(
+                  label: 'This year',
+                  data: overview['annual'] as Map<String, dynamic>?,
+                ),
               ],
             ),
           ),
@@ -167,10 +175,17 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
             children: [
               Expanded(
                 child: _KpiCard(
-                  label: 'Total revenue',
+                  label: 'Net revenue',
                   value:
-                      '₱${_fmtNum(salesSummary['sales'] ?? salesSummary['gross_sales'] ?? 0)}',
+                      '₱${_fmtNum(salesSummary['net_revenue'] ?? salesSummary['sales'] ?? salesSummary['gross_sales'] ?? 0)}',
                   icon: Icons.payments_outlined,
+                ),
+              ),
+              Expanded(
+                child: _KpiCard(
+                  label: 'Refunds',
+                  value: '₱${_fmtNum(salesSummary['refunds'] ?? 0)}',
+                  icon: Icons.money_off_outlined,
                 ),
               ),
               Expanded(
@@ -548,6 +563,40 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   static String _fmtNum(Object? v) {
     final n = (v is num) ? v.toDouble() : double.tryParse('$v') ?? 0;
     return n.toStringAsFixed(n >= 100 ? 0 : 2);
+  }
+}
+
+class _PeriodFinanceRow extends StatelessWidget {
+  const _PeriodFinanceRow({required this.label, this.data});
+
+  final String label;
+  final Map<String, dynamic>? data;
+
+  @override
+  Widget build(BuildContext context) {
+    final revenue = (data?['gross_revenue'] ?? data?['revenue'] ?? data?['profit'] ?? 0);
+    final refunds = (data?['refunds'] ?? 0);
+    final expenses = (data?['expenses'] ?? data?['refund_expense'] ?? 0);
+    final net = (data?['net_revenue'] ?? data?['profit'] ?? revenue);
+    final bookings = data?['bookings'] ?? 0;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: Theme.of(context).textTheme.titleSmall),
+          Text(
+            'Revenue ₱${_AdminReportsScreenState._fmtNum(revenue)} · '
+            'Refunds ₱${_AdminReportsScreenState._fmtNum(refunds)} · '
+            'Expenses ₱${_AdminReportsScreenState._fmtNum(expenses)} · '
+            'Net ₱${_AdminReportsScreenState._fmtNum(net)} · '
+            '$bookings paid booking(s)',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
   }
 }
 

@@ -6,10 +6,27 @@ use App\Models\User;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * SMS delivery with provider priority:
+ * 1. Semaphore (SEMAPHORE_API_KEY) — recommended for Philippines
+ * 2. Twilio (TWILIO_SID + TWILIO_AUTH_TOKEN + TWILIO_FROM_NUMBER)
+ * 3. Generic HTTP gateway (SMS_API_BASE_URL + SMS_API_KEY)
+ */
 class SmsService
 {
+    public function __construct(
+        private readonly SemaphoreSmsService $semaphore
+    ) {}
+
     public function send(string $phone, string $message, ?string $hotelId = null, ?User $actor = null): bool
     {
+        if ($this->semaphore->isConfigured()) {
+            $sent = $this->semaphore->send($phone, $message);
+            if ($sent) {
+                return true;
+            }
+        }
+
         $sid = (string) config('services.twilio.sid');
         $token = (string) config('services.twilio.token');
         $from = (string) config('services.twilio.from');
@@ -25,7 +42,9 @@ class SmsService
                 'hotel_id' => $hotelId,
                 'user_id' => $actor?->id,
                 'phone' => $phone,
+                'providers_tried' => $this->semaphore->isConfigured() ? ['semaphore'] : [],
             ]);
+
             return false;
         }
 

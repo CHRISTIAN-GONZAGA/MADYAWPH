@@ -6,8 +6,10 @@
  */
 
 use App\Http\Controllers\PayMongoWebhookController;
+use App\Http\Controllers\XenditWebhookController;
 use Illuminate\Support\Facades\Route;
 
+Route::post('/webhooks/xendit', [XenditWebhookController::class, 'handle'])->name('webhooks.xendit');
 Route::post('/webhooks/paymongo', [PayMongoWebhookController::class, 'handle'])->name('webhooks.paymongo');
 
 Route::get('/', function () {

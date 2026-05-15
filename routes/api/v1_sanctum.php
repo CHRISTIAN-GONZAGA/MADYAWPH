@@ -30,6 +30,8 @@ use App\Models\SystemSetting;
 use App\Models\Task;
 use App\Models\User;
 use App\Models\UserSetting;
+use App\Support\ChatAttachmentUrl;
+use App\Support\GuestMessageResource;
 use App\Services\ActivityLogService;
 use App\Services\BookingService;
 use App\Services\FinancialComputationService;
@@ -65,9 +67,10 @@ Route::middleware('role:admin')->group(function (): void {
     })->name('api.v1.admin.booking.room-password');
 
     Route::post('/admin/credits/recharge', function (Request $request) {
-        $paymongoMin = (string) config('services.paymongo.secret') !== '';
+        $gateway = app(PaymentGatewayService::class);
+        $minRecharge = $gateway->minimumRechargeAmount();
         $validated = $request->validate([
-            'amount' => ['required', 'numeric', 'min:'.($paymongoMin ? '100' : '1')],
+            'amount' => ['required', 'numeric', 'min:'.$minRecharge],
             'method' => ['required', 'in:gcash,paymaya'],
         ]);
 
@@ -75,8 +78,7 @@ Route::middleware('role:admin')->group(function (): void {
             ['hotel_id' => (string) $request->user()->hotel_id],
             ['current_credits' => 0, 'warning_threshold' => 5000, 'custom_markup_percentage' => 10, 'total_spent' => 0, 'transactions' => []]
         );
-        $paymentGateway = app(PaymentGatewayService::class);
-        $paymentResult = $paymentGateway->charge(
+        $paymentResult = $gateway->charge(
             $validated['method'],
             (float) $validated['amount'],
             [
@@ -95,7 +97,7 @@ Route::middleware('role:admin')->group(function (): void {
             return response()->json([
                 'ok' => true,
                 'redirect_url' => $paymentResult['checkout_url'],
-                'message' => 'Complete payment on PayMongo. Credits will update after payment succeeds.',
+                'message' => 'Complete payment via '.($paymentResult['provider'] ?? 'payment gateway').'. Credits will update after payment succeeds.',
             ]);
         }
 
@@ -379,8 +381,9 @@ Route::middleware('role:admin')->group(function (): void {
         ]);
         $uploadedImageUrl = null;
         if ($request->hasFile('image_file')) {
-            $uploadedImageUrl = Storage::disk('public')->url(
-                $request->file('image_file')->store('chat/admin', 'public')
+            $uploadedImageUrl = ChatAttachmentUrl::storeUploadedFile(
+                $request->file('image_file'),
+                'chat/admin'
             );
         }
 
@@ -391,7 +394,7 @@ Route::middleware('role:admin')->group(function (): void {
             'guest_name' => $validated['guest_name'],
             'message' => $validated['message'],
             'sender_role' => 'admin',
-            'attachment_url' => $uploadedImageUrl ?? ($validated['image_url'] ?? null),
+            'attachment_url' => $uploadedImageUrl ?? ChatAttachmentUrl::fromStoredUrl($validated['image_url'] ?? null),
             'attachment_type' => ($uploadedImageUrl || ! empty($validated['image_url'])) ? 'image' : null,
             'is_read' => true,
             'read_at' => now(),
@@ -405,7 +408,10 @@ Route::middleware('role:admin')->group(function (): void {
             ['message_id' => (string) $reply->id, 'room_id' => $validated['room_id']]
         );
 
-        return response()->json(['ok' => true, 'message' => $reply], 201);
+        return response()->json([
+            'ok' => true,
+            'message' => GuestMessageResource::one($reply),
+        ], 201);
     })->name('api.v1.admin.chat.reply');
 
     Route::post('/admin/bookings/{booking}/payment-status', function (Request $request, Booking $booking) {
@@ -558,8 +564,9 @@ Route::middleware('role:staff')->group(function (): void {
         ]);
         $uploadedImageUrl = null;
         if ($request->hasFile('image_file')) {
-            $uploadedImageUrl = Storage::disk('public')->url(
-                $request->file('image_file')->store('chat/staff', 'public')
+            $uploadedImageUrl = ChatAttachmentUrl::storeUploadedFile(
+                $request->file('image_file'),
+                'chat/staff'
             );
         }
 
@@ -571,7 +578,7 @@ Route::middleware('role:staff')->group(function (): void {
             'guest_name' => $staffName,
             'message' => "Maintenance update: {$validated['message']}",
             'sender_role' => 'staff',
-            'attachment_url' => $uploadedImageUrl ?? ($validated['image_url'] ?? null),
+            'attachment_url' => $uploadedImageUrl ?? ChatAttachmentUrl::fromStoredUrl($validated['image_url'] ?? null),
             'attachment_type' => ($uploadedImageUrl || ! empty($validated['image_url'])) ? 'image' : null,
             'is_read' => false,
             'sent_at' => now(),
@@ -599,7 +606,7 @@ Route::middleware('role:staff')->group(function (): void {
 
         return response()->json([
             'thread_id' => $staffThreadId,
-            'messages' => $messages,
+            'messages' => GuestMessageResource::collection($messages),
         ]);
     })->name('api.v1.staff.chat.admin.messages');
 
@@ -611,8 +618,9 @@ Route::middleware('role:staff')->group(function (): void {
         ]);
         $uploadedImageUrl = null;
         if ($request->hasFile('image_file')) {
-            $uploadedImageUrl = Storage::disk('public')->url(
-                $request->file('image_file')->store('chat/staff', 'public')
+            $uploadedImageUrl = ChatAttachmentUrl::storeUploadedFile(
+                $request->file('image_file'),
+                'chat/staff'
             );
         }
 
@@ -625,7 +633,7 @@ Route::middleware('role:staff')->group(function (): void {
             'guest_name' => $staffName,
             'message' => $validated['message'],
             'sender_role' => 'staff',
-            'attachment_url' => $uploadedImageUrl ?? ($validated['image_url'] ?? null),
+            'attachment_url' => $uploadedImageUrl ?? ChatAttachmentUrl::fromStoredUrl($validated['image_url'] ?? null),
             'attachment_type' => ($uploadedImageUrl || ! empty($validated['image_url'])) ? 'image' : null,
             'is_read' => false,
             'sent_at' => now(),
@@ -638,7 +646,10 @@ Route::middleware('role:staff')->group(function (): void {
             ['message_id' => (string) $msg->id]
         );
 
-        return response()->json(['ok' => true, 'message' => $msg], 201);
+        return response()->json([
+            'ok' => true,
+            'message' => GuestMessageResource::one($msg),
+        ], 201);
     })->name('api.v1.staff.chat.admin.send');
 });
 
@@ -1273,7 +1284,7 @@ Route::patch('/admin/pricing/surge', function (Request $request) {
     return response()->json(['ok' => true]);
 })->middleware('role:admin');
 
-// Admin chat inbox (guest messages scoped to hotel)
+// Admin chat inbox (guest + staff threads scoped to hotel)
 Route::get('/admin/chat/inbox', function (Request $request) {
     $hotelId = (string) $request->user()->hotel_id;
     $messages = GuestMessage::withoutGlobalScopes()
@@ -1282,24 +1293,41 @@ Route::get('/admin/chat/inbox', function (Request $request) {
         ->limit(200)
         ->get();
 
+    $mapThread = function ($msgs): array {
+        $latest = $msgs->first();
+        $roomId = (string) ($latest?->room_id ?? '');
+        $isStaff = str_starts_with($roomId, 'STAFF-ADMIN:');
+
+        return [
+            'room_id' => $roomId,
+            'room_number' => (string) ($latest?->room_number ?? ''),
+            'staff_name' => $isStaff ? (string) ($latest?->guest_name ?? 'Staff') : null,
+            'staff_user_id' => $isStaff ? str_replace('STAFF-ADMIN:', '', $roomId) : null,
+            'latest_message' => (string) ($latest?->message ?? ''),
+            'latest_sender_role' => (string) ($latest?->sender_role ?? ''),
+            'latest_sent_at' => optional($latest?->sent_at)->toISOString(),
+            'unread_count' => (int) $msgs->where('is_read', false)->where('sender_role', '!=', 'admin')->count(),
+            'is_staff_thread' => $isStaff,
+        ];
+    };
+
     $threads = $messages
         ->groupBy('room_id')
-        ->map(function ($msgs) {
-            $latest = $msgs->first();
-            return [
-                'room_id' => (string) ($latest?->room_id ?? ''),
-                'room_number' => (string) ($latest?->room_number ?? ''),
-                'latest_message' => (string) ($latest?->message ?? ''),
-                'latest_sender_role' => (string) ($latest?->sender_role ?? ''),
-                'latest_sent_at' => optional($latest?->sent_at)->toISOString(),
-                'unread_count' => (int) $msgs->where('is_read', false)->count(),
-            ];
-        })
+        ->map($mapThread)
+        ->values();
+
+    $guestThreads = $threads
+        ->filter(fn (array $t) => ! ($t['is_staff_thread'] ?? false))
+        ->values();
+    $staffThreads = $threads
+        ->filter(fn (array $t) => (bool) ($t['is_staff_thread'] ?? false))
         ->values();
 
     return response()->json([
-        'threads' => $threads,
-        'messages' => $messages,
+        'guest_threads' => $guestThreads,
+        'staff_threads' => $staffThreads,
+        'threads' => $guestThreads,
+        'messages' => GuestMessageResource::collection($messages),
     ]);
 })->middleware('role:admin');
 
@@ -1312,5 +1340,12 @@ Route::get('/admin/chat/rooms/{roomId}', function (Request $request, string $roo
         ->limit(250)
         ->get();
 
-    return response()->json(['messages' => $messages]);
+    GuestMessage::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->where('room_id', $roomId)
+        ->where('is_read', false)
+        ->where('sender_role', '!=', 'admin')
+        ->update(['is_read' => true, 'read_at' => now()]);
+
+    return response()->json(['messages' => GuestMessageResource::collection($messages)]);
 })->middleware('role:admin');

@@ -41,10 +41,23 @@ return [
         'api_key' => env('PAYMENTS_API_KEY'),
     ],
 
+    'xendit' => [
+        'secret_key' => env('XENDIT_SECRET_KEY'),
+        'webhook_token' => env('XENDIT_WEBHOOK_TOKEN'),
+        'min_amount' => (float) env('XENDIT_MIN_RECHARGE_AMOUNT', 1),
+        'invoice_duration_seconds' => (int) env('XENDIT_INVOICE_DURATION_SECONDS', 86400),
+    ],
+
     'paymongo' => [
         'secret' => env('PAYMONGO_SECRET_KEY'),
         'public' => env('PAYMONGO_PUBLIC_KEY'),
         'webhook_secret' => env('PAYMONGO_WEBHOOK_SECRET'),
+    ],
+
+    'semaphore' => [
+        'api_key' => env('SEMAPHORE_API_KEY'),
+        'base_url' => env('SEMAPHORE_BASE_URL', 'https://api.semaphore.co'),
+        'sender' => env('SEMAPHORE_SENDER_NAME', 'MADYAW'),
     ],
 
     'sms' => [

@@ -2,6 +2,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../config.dart';
+
 /// Pick a photo from gallery or camera and build multipart [FormData] for chat APIs.
 class ChatAttachment {
   ChatAttachment._();
@@ -30,6 +32,59 @@ class ChatAttachment {
     );
     if (source == null) return null;
     return _picker.pickImage(source: source, imageQuality: 85, maxWidth: 1920);
+  }
+
+  /// Resolves API attachment URLs so images load on device (not localhost /storage).
+  static String resolveMediaUrl(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return trimmed;
+
+    final origin = _apiOrigin();
+    if (trimmed.contains('/api/v1/chat/media')) {
+      if (trimmed.startsWith('http')) return trimmed;
+      return '$origin$trimmed';
+    }
+
+    if (trimmed.startsWith('chat/')) {
+      return '$origin/api/v1/chat/media?f=${Uri.encodeComponent(trimmed)}';
+    }
+
+    const storageMarker = '/storage/';
+    final storageIdx = trimmed.indexOf(storageMarker);
+    if (storageIdx >= 0) {
+      final path = trimmed.substring(storageIdx + storageMarker.length);
+      return '$origin/api/v1/chat/media?f=${Uri.encodeComponent(path)}';
+    }
+
+    if (trimmed.startsWith('/storage/')) {
+      final path = trimmed.substring('/storage/'.length);
+      return '$origin/api/v1/chat/media?f=${Uri.encodeComponent(path)}';
+    }
+
+    if (!trimmed.startsWith('http')) {
+      final path = trimmed.startsWith('/') ? trimmed.substring(1) : trimmed;
+      return '$origin/api/v1/chat/media?f=${Uri.encodeComponent(path)}';
+    }
+
+    final uri = Uri.tryParse(trimmed);
+    if (uri != null &&
+        {'localhost', '127.0.0.1', '10.0.2.2'}.contains(uri.host)) {
+      if (uri.path.contains('/api/v1/chat/media')) {
+        return '$origin${uri.path}${uri.hasQuery ? '?${uri.query}' : ''}';
+      }
+      final pathIdx = uri.path.indexOf(storageMarker);
+      if (pathIdx >= 0) {
+        final path = uri.path.substring(pathIdx + storageMarker.length);
+        return '$origin/api/v1/chat/media?f=${Uri.encodeComponent(path)}';
+      }
+    }
+
+    return trimmed;
+  }
+
+  static String _apiOrigin() {
+    final base = Uri.parse(kApiBaseUrl);
+    return '${base.scheme}://${base.host}${base.hasPort ? ':${base.port}' : ''}';
   }
 
   static Future<FormData> formWithImage({
@@ -67,7 +122,8 @@ class ChatMessageBubble extends StatelessWidget {
     return ChatMessageBubble(
       message: (m['message'] ?? '').toString(),
       isMine: isMine,
-      attachmentUrl: url.isEmpty ? null : url,
+      attachmentUrl:
+          url.isEmpty ? null : ChatAttachment.resolveMediaUrl(url),
     );
   }
 

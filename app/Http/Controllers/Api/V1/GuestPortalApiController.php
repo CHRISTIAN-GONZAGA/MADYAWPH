@@ -18,6 +18,8 @@ use App\Services\FinancialComputationService;
 use App\Support\GuestPortalStore;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use App\Support\ChatAttachmentUrl;
+use App\Support\GuestMessageResource;
 use Illuminate\Support\Facades\Storage;
 
 class GuestPortalApiController extends Controller
@@ -197,8 +199,9 @@ class GuestPortalApiController extends Controller
         ]);
         $uploadedImageUrl = null;
         if ($request->hasFile('image_file')) {
-            $uploadedImageUrl = Storage::disk('public')->url(
-                $request->file('image_file')->store('chat/guest', 'public')
+            $uploadedImageUrl = ChatAttachmentUrl::storeUploadedFile(
+                $request->file('image_file'),
+                'chat/guest'
             );
         }
 
@@ -209,7 +212,7 @@ class GuestPortalApiController extends Controller
             'guest_name' => 'In-House Guest',
             'message' => $validated['message'],
             'sender_role' => 'guest',
-            'attachment_url' => $uploadedImageUrl ?? ($validated['image_url'] ?? null),
+            'attachment_url' => $uploadedImageUrl ?? ChatAttachmentUrl::fromStoredUrl($validated['image_url'] ?? null),
             'attachment_type' => ($uploadedImageUrl || ! empty($validated['image_url'])) ? 'image' : null,
             'is_read' => false,
             'sent_at' => now(),
@@ -237,7 +240,7 @@ class GuestPortalApiController extends Controller
             ->limit(250)
             ->get();
 
-        return response()->json(['messages' => $messages]);
+        return response()->json(['messages' => GuestMessageResource::collection($messages)]);
     }
 
     public function extendStay(Request $request, FinancialComputationService $financialComputationService): JsonResponse

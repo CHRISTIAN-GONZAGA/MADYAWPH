@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../auth_storage.dart';
+import 'hotel_how_to.dart';
 import '../dio_client.dart';
 import '../ui/app_visual.dart';
 import '../widgets/app_scaffold.dart';
@@ -80,7 +81,16 @@ class _HotelGateScreenState extends State<HotelGateScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return AppScaffold(
-      appBar: AppBar(title: const Text('MADYAWPH · Hotel access')),
+      appBar: AppBar(
+        title: const Text('MADYAWPH · Hotel access'),
+        actions: [
+          TextButton.icon(
+            onPressed: () => HotelHowToGuide.show(context),
+            icon: const Icon(Icons.help_outline, size: 20),
+            label: const Text('How to'),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -237,34 +247,11 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
       await AuthStorage.setPortalAuth(token: token, role: 'admin');
       await AuthStorage.clearGuestAuth();
       if (!mounted) return;
-      final accounts = res.data?['portal_accounts'] as Map<String, dynamic>?;
-      if (accounts != null) {
-        final superA = accounts['super_admin'] as Map<String, dynamic>?;
-        final adminA = accounts['admin'] as Map<String, dynamic>?;
-        await showDialog<void>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Hotel created'),
-            content: SingleChildScrollView(
-              child: Text(
-                'Save these sign-in details:\n\n'
-                'Super admin\n'
-                '  Username: ${superA?['username'] ?? ''}\n'
-                '  Password: ${superA?['password'] ?? ''}\n\n'
-                'Administrator\n'
-                '  Username: ${adminA?['username'] ?? ''}\n'
-                '  Password: ${adminA?['password'] ?? ''}',
-              ),
-            ),
-            actions: [
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Continue'),
-              ),
-            ],
-          ),
-        );
-      }
+      await showHotelRegistrationCredentialsDialog(
+        context,
+        hotelName: name,
+        portalAccounts: res.data?['portal_accounts'] as Map<String, dynamic>?,
+      );
       if (!mounted) return;
       Navigator.of(context).pop();
       hotelSessionNotifier.value = HotelSession(hotelId: hid, hotelName: name);
