@@ -324,7 +324,7 @@ class ReportController extends Controller
         $tasks = Task::query()
             ->whereBetween('created_at', [$from, $to])
             ->get(['status', 'created_at']);
-        $completed = $tasks->filter(fn ($t) => (($t->status?->value ?? (string) $t->status) === 'completed'))->count();
+        $completed = $tasks->filter(fn ($t) => \App\Support\EnumHelper::toString($t->status) === 'completed')->count();
 
         return response()->json([
             'summary' => [
@@ -336,7 +336,7 @@ class ReportController extends Controller
                 ->map(fn ($group, $label) => [
                     'day' => $label,
                     'created' => (int) $group->count(),
-                    'completed' => (int) $group->filter(fn ($t) => (($t->status?->value ?? (string) $t->status) === 'completed'))->count(),
+                    'completed' => (int) $group->filter(fn ($t) => \App\Support\EnumHelper::toString($t->status) === 'completed')->count(),
                 ])
                 ->values(),
         ]);

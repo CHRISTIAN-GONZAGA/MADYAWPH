@@ -8,12 +8,11 @@ use App\Models\GuestMessage;
 use App\Models\Room;
 use App\Models\StaffMember;
 use App\Models\Task;
-use BackedEnum;
+use App\Support\EnumHelper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Throwable;
-use UnitEnum;
 
 class StaffDashboardApiController extends Controller
 {
@@ -58,7 +57,7 @@ class StaffDashboardApiController extends Controller
                 ->map(fn (StaffMember $staff) => [
                     'id' => (string) $staff->id,
                     'name' => (string) ($staff->name ?? ''),
-                    'role' => $this->enumToString($staff->role),
+                    'role' => EnumHelper::toString($staff->role),
                 ]);
             $staffById = $staffDirectory->keyBy('id');
             $activeAssignmentsByRoom = $this->buildRoomMaintenanceAssignments($maintenanceTasks, $staffById);
@@ -124,7 +123,7 @@ class StaffDashboardApiController extends Controller
                 $roomNumber => [
                     'taskId' => (string) $task->id,
                     'title' => $title,
-                    'status' => $this->enumToString($task->status),
+                    'status' => EnumHelper::toString($task->status),
                     'assignedStaffId' => (string) ($assignee['id'] ?? $task->assigned_to ?? ''),
                     'assignedStaffName' => (string) ($assignee['name'] ?? 'Unassigned'),
                 ],
@@ -135,29 +134,17 @@ class StaffDashboardApiController extends Controller
     private function serializeTask(Task $task): array
     {
         return array_merge($task->toArray(), [
-            'status' => $this->enumToString($task->status),
-            'priority' => $this->enumToString($task->priority),
+            'status' => EnumHelper::toString($task->status),
+            'priority' => EnumHelper::toString($task->priority),
         ]);
     }
 
     private function serializeRoom(Room $room): array
     {
         return array_merge($room->toArray(), [
-            'status' => $this->enumToString($room->status),
-            'room_type' => $this->enumToString($room->room_type),
+            'status' => EnumHelper::toString($room->status),
+            'room_type' => EnumHelper::toString($room->room_type),
         ]);
-    }
-
-    private function enumToString(mixed $value): string
-    {
-        if ($value instanceof BackedEnum) {
-            return $value->value;
-        }
-        if ($value instanceof UnitEnum) {
-            return $value->name;
-        }
-
-        return (string) ($value ?? '');
     }
 
     private function extractRoomNumber(string $text): ?string

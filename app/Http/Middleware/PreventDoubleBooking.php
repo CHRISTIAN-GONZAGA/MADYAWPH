@@ -21,7 +21,9 @@ class PreventDoubleBooking
         if ($request->isMethod('post') && $request->routeIs('api.bookings.store')) {
             // Mongo IDs are strings/ObjectIds; integer() coerces them to 0.
             $room = Room::withoutGlobalScopes()->find($request->input('room_id'));
-            if (! $room || $room->status !== RoomStatus::AVAILABLE) {
+            $status = $room?->status;
+            $statusValue = $status instanceof RoomStatus ? $status->value : (string) ($status ?? '');
+            if (! $room || $statusValue !== RoomStatus::AVAILABLE->value) {
                 return response()->json(['message' => 'Room is not available.'], 422);
             }
 

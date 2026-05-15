@@ -16,13 +16,16 @@ use App\Models\RoomCategory;
 use App\Services\ActivityLogService;
 use App\Services\RoomPricingService;
 use App\Services\SmsService;
+use App\Support\EnumHelper;
 use Carbon\Carbon;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Throwable;
 
 class CustomerPortalApiController extends Controller
 {
@@ -132,157 +135,126 @@ class CustomerPortalApiController extends Controller
 
     public function storeReservation(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'hotel_id' => ['required', 'string'],
-            'room_id' => ['required', 'string'],
-            'guest_name' => ['required', 'string', 'max:255'],
-            'guest_email' => ['required', 'email'],
-            'guest_phone' => ['required', 'string', 'max:30'],
-            'check_in' => ['required', 'date'],
-            'check_out' => ['required', 'date', 'after:check_in'],
-            'discount_type' => ['nullable', 'string', 'in:none,pwd,senior,student'],
-            'discount_id_file' => ['nullable', 'image', 'max:5120'],
-        ]);
-        $discount = $this->resolveDiscount($request, $validated);
-        $validated['discount_type'] = $discount['type'];
-        $validated['discount_percent'] = $discount['percent'];
-        $validated['discount_id_url'] = $discount['id_url'];
+        try {
+            $validated = $this->validateCustomerStay($request);
+            $validated = $this->mergeDiscountIntoValidated($request, $validated);
 
-        return $this->createFutureReservation($validated);
+            return $this->createFutureReservation($validated);
+        } catch (HttpResponseException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            return $this->customerErrorResponse($e, 'Could not submit your reservation request.');
+        }
     }
 
     public function storeBooking(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'hotel_id' => ['required', 'string'],
-            'room_id' => ['required', 'string'],
-            'guest_name' => ['required', 'string', 'max:255'],
-            'guest_email' => ['required', 'email'],
-            'guest_phone' => ['required', 'string', 'max:30'],
-            'check_in' => ['required', 'date'],
-            'check_out' => ['required', 'date', 'after:check_in'],
-            'discount_type' => ['nullable', 'string', 'in:none,pwd,senior,student'],
-            'discount_id_file' => ['nullable', 'image', 'max:5120'],
-        ]);
-        $discount = $this->resolveDiscount($request, $validated);
-        $validated['discount_type'] = $discount['type'];
-        $validated['discount_percent'] = $discount['percent'];
-        $validated['discount_id_url'] = $discount['id_url'];
+        try {
+            $validated = $this->validateCustomerStay($request);
+            $validated = $this->mergeDiscountIntoValidated($request, $validated);
 
-        $hotelId = $validated['hotel_id'];
-        $room = Room::query()->findOrFail($validated['room_id']);
-        $this->assertRoomInHotel($room, $hotelId);
+            $hotelId = $validated['hotel_id'];
+            $room = Room::query()->findOrFail($validated['room_id']);
+            $this->assertRoomInHotel($room, $hotelId);
 
-        $checkInDay = Carbon::parse($validated['check_in'])->startOfDay();
-        if ($checkInDay->isAfter(Carbon::today())) {
-            return response()->json([
-                'message' => 'For future dates use Reserve — your request will be reviewed by the hotel.',
-            ], 422);
-        }
+            $checkInDay = Carbon::parse($validated['check_in'])->startOfDay();
+            if ($checkInDay->isAfter(Carbon::today())) {
+                return response()->json([
+                    'message' => 'For future dates use Reserve — your request will be reviewed by the hotel.',
+                ], 422);
+            }
 
-        $roomStatus = $room->status?->value ?? (string) $room->status;
-        if ($roomStatus !== RoomStatus::AVAILABLE->value) {
-            return response()->json([
-                'message' => 'This room is not available for an immediate booking right now.',
-            ], 422);
-        }
+            if ($this->roomStatusValue($room) !== RoomStatus::AVAILABLE->value) {
+                return response()->json([
+                    'message' => 'This room is not available for an immediate booking right now.',
+                ], 422);
+            }
 
-        $checkIn = Carbon::parse($validated['check_in']);
-        $checkOut = Carbon::parse($validated['check_out']);
-        $nights = max(1, $checkIn->diffInDays($checkOut));
-        $nightly = $this->roomPricingService->applySurge((string) $hotelId, (float) $room->price_per_night);
-        $gross = $nightly * $nights;
-        $total = $this->applyDiscountToTotal($gross, (float) $validated['discount_percent']);
+            $checkIn = Carbon::parse($validated['check_in']);
+            $checkOut = Carbon::parse($validated['check_out']);
+            $nights = max(1, $checkIn->diffInDays($checkOut));
+            $nightly = $this->roomPricingService->applySurge((string) $hotelId, (float) $room->price_per_night);
+            $gross = round($nightly * $nights, 2);
+            $discountPercent = (float) ($validated['discount_percent'] ?? 0);
+            $total = $this->applyDiscountToTotal($gross, $discountPercent);
 
-        $booking = Booking::query()->create([
-            'hotel_id' => (string) $room->hotel_id,
-            'booking_reference' => 'BK'.now()->format('YmdHis').strtoupper(Str::random(4)),
-            'room_id' => (string) $room->id,
-            'guest_name' => $validated['guest_name'],
-            'guest_email' => $validated['guest_email'],
-            'guest_phone' => $validated['guest_phone'],
-            'check_in_date' => $checkIn->toDateString(),
-            'check_out_date' => $checkOut->toDateString(),
-            'nights' => $nights,
-            'payment_method' => PaymentMethod::CASH->value,
-            'payment_status' => 'unpaid',
-            'paid_at' => null,
-            'total_amount' => $total,
-            'source' => BookingSource::KIOSK->value,
-            'status' => BookingStatus::CONFIRMED->value,
-            'discount_type' => $validated['discount_type'] !== 'none' ? $validated['discount_type'] : null,
-            'discount_percent' => (float) $validated['discount_percent'] > 0 ? (float) $validated['discount_percent'] : null,
-            'discount_id_url' => $validated['discount_id_url'],
-            'discount_id_verified' => false,
-        ]);
-        $chargeMeta = [
-            'nightly_rate' => $nightly,
-            'nights' => $nights,
-            'gross_total' => $gross,
-        ];
-        if ((float) $validated['discount_percent'] > 0) {
-            $chargeMeta['discount_type'] = $validated['discount_type'];
-            $chargeMeta['discount_percent'] = (float) $validated['discount_percent'];
-        }
-        BillingCharge::withoutGlobalScopes()->create([
-            'hotel_id' => (string) $room->hotel_id,
-            'booking_id' => (string) $booking->id,
-            'room_id' => (string) $room->id,
-            'type' => 'room',
-            'label' => "Room charge ({$nights} night".($nights > 1 ? 's' : '').')',
-            'amount' => $total,
-            'quantity' => 1,
-            'is_manual' => false,
-            'metadata' => $chargeMeta,
-        ]);
-        if ($gross > $total) {
+            $booking = Booking::query()->create(
+                $this->buildBookingAttributes($validated, $room, $checkIn, $checkOut, $nights, $total)
+            );
+
+            $chargeMeta = [
+                'nightly_rate' => $nightly,
+                'nights' => $nights,
+                'gross_total' => $gross,
+            ];
+            if ($discountPercent > 0) {
+                $chargeMeta['discount_type'] = $validated['discount_type'];
+                $chargeMeta['discount_percent'] = $discountPercent;
+            }
             BillingCharge::withoutGlobalScopes()->create([
                 'hotel_id' => (string) $room->hotel_id,
                 'booking_id' => (string) $booking->id,
                 'room_id' => (string) $room->id,
-                'type' => 'discount',
-                'label' => strtoupper((string) $validated['discount_type']).' discount ('.(float) $validated['discount_percent'].'%)',
-                'amount' => -1 * round($gross - $total, 2),
+                'type' => 'room',
+                'label' => "Room charge ({$nights} night".($nights > 1 ? 's' : '').')',
+                'amount' => $total,
                 'quantity' => 1,
                 'is_manual' => false,
-                'metadata' => [
-                    'discount_type' => $validated['discount_type'],
-                    'discount_id_url' => $validated['discount_id_url'],
-                ],
+                'metadata' => $chargeMeta,
             ]);
+            if ($gross > $total && $discountPercent > 0) {
+                BillingCharge::withoutGlobalScopes()->create([
+                    'hotel_id' => (string) $room->hotel_id,
+                    'booking_id' => (string) $booking->id,
+                    'room_id' => (string) $room->id,
+                    'type' => 'discount',
+                    'label' => strtoupper((string) $validated['discount_type'])." discount ({$discountPercent}%)",
+                    'amount' => -1 * round($gross - $total, 2),
+                    'quantity' => 1,
+                    'is_manual' => false,
+                    'metadata' => [
+                        'discount_type' => $validated['discount_type'],
+                        'discount_id_url' => $validated['discount_id_url'] ?? null,
+                    ],
+                ]);
+            }
+
+            $generatedPassword = $this->generateUniqueRoomPassword();
+            $room->update([
+                'status' => RoomStatus::BOOKED->value,
+                'current_guest_name' => $validated['guest_name'],
+                'current_check_in' => $checkIn->toDateString(),
+                'current_check_out' => $checkOut->toDateString(),
+                'current_access_code' => $generatedPassword,
+            ]);
+
+            app(SmsService::class)->send(
+                $validated['guest_phone'],
+                sprintf(
+                    'MADYAW Booking Confirmed. Ref: %s, Room %s, Check-in: %s. Please get your room access password from hotel admin at check-in.',
+                    $booking->booking_reference,
+                    $room->room_number,
+                    $checkIn->toDateString()
+                ),
+                (string) $room->hotel_id,
+                null
+            );
+            app(ActivityLogService::class)->log(
+                (string) $room->hotel_id,
+                Auth::user(),
+                "Created booking {$booking->booking_reference} for room {$room->room_number}",
+                ['booking_id' => (string) $booking->id, 'room_id' => (string) $room->id]
+            );
+
+            return response()->json([
+                'ok' => true,
+                'booking' => $this->serializeBooking($booking),
+            ]);
+        } catch (HttpResponseException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            return $this->customerErrorResponse($e, 'Could not complete your booking.');
         }
-
-        $generatedPassword = $this->generateUniqueRoomPassword();
-        $room->update([
-            'status' => RoomStatus::BOOKED->value,
-            'current_guest_name' => $validated['guest_name'],
-            'current_check_in' => $checkIn->toDateString(),
-            'current_check_out' => $checkOut->toDateString(),
-            'current_access_code' => $generatedPassword,
-        ]);
-
-        app(SmsService::class)->send(
-            $validated['guest_phone'],
-            sprintf(
-                'MADYAW Booking Confirmed. Ref: %s, Room %s, Check-in: %s. Please get your room access password from hotel admin at check-in.',
-                $booking->booking_reference,
-                $room->room_number,
-                $checkIn->toDateString()
-            ),
-            (string) $room->hotel_id,
-            null
-        );
-        app(ActivityLogService::class)->log(
-            (string) $room->hotel_id,
-            Auth::user(),
-            "Created booking {$booking->booking_reference} for room {$room->room_number}",
-            ['booking_id' => (string) $booking->id, 'room_id' => (string) $room->id]
-        );
-
-        return response()->json([
-            'ok' => true,
-            'booking' => $booking,
-        ]);
     }
 
     private function resolveHotelId(Request $request): string
@@ -318,8 +290,7 @@ class CustomerPortalApiController extends Controller
             ], 422);
         }
 
-        $roomStatus = $room->status?->value ?? (string) $room->status;
-        if ($roomStatus !== RoomStatus::AVAILABLE->value) {
+        if ($this->roomStatusValue($room) !== RoomStatus::AVAILABLE->value) {
             return response()->json(['message' => 'This room cannot be reserved for those dates right now.'], 422);
         }
 
@@ -351,7 +322,10 @@ class CustomerPortalApiController extends Controller
             ['reservation_id' => (string) $reservation->id, 'room_id' => (string) $room->id]
         );
 
-        return response()->json(['ok' => true, 'reservation' => $reservation]);
+        return response()->json([
+            'ok' => true,
+            'reservation' => $this->serializeReservation($reservation),
+        ]);
     }
 
     /**
@@ -406,11 +380,117 @@ class CustomerPortalApiController extends Controller
             default => 0.0,
         };
 
-        $idUrl = Storage::disk('public')->url(
-            $request->file('discount_id_file')->store('bookings/discount-ids', 'public')
-        );
+        try {
+            $path = $request->file('discount_id_file')->store('bookings/discount-ids', 'public');
+            $idUrl = Storage::disk('public')->url($path);
+        } catch (Throwable $e) {
+            Log::warning('Discount ID upload failed', ['message' => $e->getMessage()]);
+            throw new HttpResponseException(response()->json([
+                'message' => 'Could not save discount ID photo. Try again or book without a discount.',
+            ], 422));
+        }
 
         return ['type' => $type, 'percent' => $percent, 'id_url' => $idUrl];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function validateCustomerStay(Request $request): array
+    {
+        return $request->validate([
+            'hotel_id' => ['required', 'string'],
+            'room_id' => ['required', 'string'],
+            'guest_name' => ['required', 'string', 'max:255'],
+            'guest_email' => ['required', 'email'],
+            'guest_phone' => ['required', 'string', 'max:30'],
+            'check_in' => ['required', 'date'],
+            'check_out' => ['required', 'date', 'after:check_in'],
+            'discount_type' => ['nullable', 'string', 'in:none,pwd,senior,student'],
+            'discount_id_file' => ['nullable', 'image', 'max:5120'],
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return array<string, mixed>
+     */
+    private function mergeDiscountIntoValidated(Request $request, array $validated): array
+    {
+        $discount = $this->resolveDiscount($request, $validated);
+        $validated['discount_type'] = $discount['type'];
+        $validated['discount_percent'] = $discount['percent'];
+        $validated['discount_id_url'] = $discount['id_url'];
+
+        return $validated;
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return array<string, mixed>
+     */
+    private function buildBookingAttributes(
+        array $validated,
+        Room $room,
+        Carbon $checkIn,
+        Carbon $checkOut,
+        int $nights,
+        float $total
+    ): array {
+        $attributes = [
+            'hotel_id' => (string) $room->hotel_id,
+            'booking_reference' => 'BK'.now()->format('YmdHis').strtoupper(Str::random(4)),
+            'room_id' => (string) $room->id,
+            'guest_name' => $validated['guest_name'],
+            'guest_email' => $validated['guest_email'],
+            'guest_phone' => $validated['guest_phone'],
+            'check_in_date' => $checkIn->toDateString(),
+            'check_out_date' => $checkOut->toDateString(),
+            'nights' => $nights,
+            'payment_method' => PaymentMethod::CASH->value,
+            'payment_status' => 'unpaid',
+            'total_amount' => round($total, 2),
+            'source' => BookingSource::KIOSK->value,
+            'status' => BookingStatus::CONFIRMED->value,
+        ];
+
+        $discountPercent = (float) ($validated['discount_percent'] ?? 0);
+        if ($discountPercent > 0 && ($validated['discount_type'] ?? 'none') !== 'none') {
+            $attributes['discount_type'] = (string) $validated['discount_type'];
+            $attributes['discount_percent'] = round($discountPercent, 2);
+            $attributes['discount_id_url'] = $validated['discount_id_url'] ?? null;
+            $attributes['discount_id_verified'] = false;
+        }
+
+        return EnumHelper::withoutEmptyDecimals($attributes, 'discount_percent', 'total_amount');
+    }
+
+    private function serializeBooking(Booking $booking): array
+    {
+        return array_merge($booking->fresh()->toArray(), [
+            'status' => EnumHelper::toString($booking->status),
+            'source' => EnumHelper::toString($booking->source),
+            'payment_method' => EnumHelper::toString($booking->payment_method),
+        ]);
+    }
+
+    private function serializeReservation(ExternalReservation $reservation): array
+    {
+        return $reservation->fresh()->toArray();
+    }
+
+    private function roomStatusValue(Room $room): string
+    {
+        return EnumHelper::toString($room->status);
+    }
+
+    private function customerErrorResponse(Throwable $e, string $message): JsonResponse
+    {
+        report($e);
+
+        return response()->json([
+            'message' => config('app.debug') ? $e->getMessage() : $message,
+        ], 500);
     }
 
     private function applyDiscountToTotal(float $gross, float $percent): float
