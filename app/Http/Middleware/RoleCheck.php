@@ -21,8 +21,12 @@ class RoleCheck
             abort(401, 'Unauthenticated.');
         }
 
-        if (! in_array($user->roleValue(), $roles, true)) {
-            Log::info('Role check failed', ['user_id' => $user->id, 'role' => $user->roleValue(), 'roles' => $roles]);
+        $userRole = $user->roleValue();
+        $allowed = in_array($userRole, $roles, true)
+            || ($userRole === 'super_admin' && in_array('admin', $roles, true));
+
+        if (! $allowed) {
+            Log::info('Role check failed', ['user_id' => $user->id, 'role' => $userRole, 'roles' => $roles]);
             abort(403, 'Insufficient role.');
         }
 

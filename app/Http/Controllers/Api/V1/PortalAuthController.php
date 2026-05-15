@@ -55,7 +55,7 @@ class PortalAuthController extends Controller
 
         $legacyRole = $legacyAdmin ? $legacyAdmin->roleValue() : '';
         if ($legacyAdmin
-            && $legacyRole === UserRole::ADMIN->value
+            && in_array($legacyRole, [UserRole::ADMIN->value, UserRole::SUPER_ADMIN->value], true)
             && $this->passwordMatchesUser($validated['password'], $legacyAdmin)) {
             $hid = (string) $legacyAdmin->hotel_id;
             $hotelModel = Hotel::withoutGlobalScopes()->find($hid);
@@ -81,6 +81,14 @@ class PortalAuthController extends Controller
             'admin_email' => ['required', 'email', 'max:255', 'unique:users,email'],
         ]);
 
+        $operatorLogin = $validated['username'].'_admin';
+        if (User::withoutGlobalScopes()->where('name', $operatorLogin)->exists()) {
+            return response()->json([
+                'message' => 'That hotel username cannot be used (conflict with an existing account name).',
+                'errors' => ['username' => ['Choose a different hotel username.']],
+            ], 422);
+        }
+
         $hotel = Hotel::withoutGlobalScopes()->create([
             'name' => $validated['hotel_name'],
             'location' => $validated['location'],
@@ -89,11 +97,19 @@ class PortalAuthController extends Controller
             'access_password' => Hash::make($validated['password']),
         ]);
 
+        User::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => $validated['username'],
+            'email' => 'super.'.substr(sha1((string) $hotel->id), 0, 12).'@super.local',
+            'password' => Hash::make($validated['contact_number']),
+            'role' => UserRole::SUPER_ADMIN,
+        ]);
+
         $admin = User::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
-            'name' => $validated['admin_email'],
+            'name' => $operatorLogin,
             'email' => $validated['admin_email'],
-            'password' => Hash::make($validated['password']),
+            'password' => Hash::make($validated['username'].'123'),
             'role' => UserRole::ADMIN,
         ]);
 
@@ -114,13 +130,25 @@ class PortalAuthController extends Controller
             'token' => $token,
             'user' => $admin,
             'message' => 'Hotel registered. Verification code sent by SMS.',
+            'portal_accounts' => [
+                'super_admin' => [
+                    'username' => $validated['username'],
+                    'password' => $validated['contact_number'],
+                    'note' => 'Use “Super admin” on the role menu; password is the hotel contact number you entered.',
+                ],
+                'admin' => [
+                    'username' => $operatorLogin,
+                    'password' => $validated['username'].'123',
+                    'note' => 'Use “Administrator” on the role menu.',
+                ],
+            ],
         ], 201);
     }
 
     public function portalLogin(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'role' => ['required', 'in:admin,staff'],
+            'role' => ['required', 'in:admin,staff,super_admin'],
             'username' => ['required_without:email', 'string', 'max:255'],
             'email' => ['required_without:username', 'email', 'max:255'],
             'password' => ['required', 'string'],
@@ -140,8 +168,10 @@ class PortalAuthController extends Controller
         }
 
         $userRole = $user->roleValue();
-        if ($userRole !== $role) {
-            return response()->json(['message' => 'Use the role that matches this account (admin or staff).'], 422);
+        $roleMatches = $userRole === $role
+            || ($role === UserRole::ADMIN->value && $userRole === UserRole::SUPER_ADMIN->value);
+        if (! $roleMatches) {
+            return response()->json(['message' => 'Use the role that matches this account (admin, super admin, or staff).'], 422);
         }
 
         $userHotelId = $this->normalizeHotelId($user->hotel_id);

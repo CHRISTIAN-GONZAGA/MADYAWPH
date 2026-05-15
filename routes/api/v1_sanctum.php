@@ -2,6 +2,7 @@
 
 use App\Enums\BookingStatus;
 use App\Enums\RoomStatus;
+use App\Enums\UserRole;
 use App\Http\Controllers\Api\V1\AdminDashboardApiController;
 use App\Http\Controllers\Api\V1\StaffDashboardApiController;
 use App\Http\Controllers\Api\ActivityLogController;
@@ -605,7 +606,15 @@ Route::middleware('role:staff')->group(function (): void {
     Route::post('/staff/chat/admin/messages', function (Request $request) {
         $validated = $request->validate([
             'message' => ['required', 'string', 'max:500'],
+            'image_url' => ['nullable', 'url'],
+            'image_file' => ['nullable', 'image', 'max:4096'],
         ]);
+        $uploadedImageUrl = null;
+        if ($request->hasFile('image_file')) {
+            $uploadedImageUrl = Storage::disk('public')->url(
+                $request->file('image_file')->store('chat/staff', 'public')
+            );
+        }
 
         $staffThreadId = 'STAFF-ADMIN:'.(string) $request->user()->id;
         $staffName = (string) ($request->user()->name ?? 'Staff');
@@ -616,6 +625,8 @@ Route::middleware('role:staff')->group(function (): void {
             'guest_name' => $staffName,
             'message' => $validated['message'],
             'sender_role' => 'staff',
+            'attachment_url' => $uploadedImageUrl ?? ($validated['image_url'] ?? null),
+            'attachment_type' => ($uploadedImageUrl || ! empty($validated['image_url'])) ? 'image' : null,
             'is_read' => false,
             'sent_at' => now(),
         ]);
@@ -739,7 +750,7 @@ Route::put('/reservations/{reservation}/assign-room', function (Request $request
         'guest_phone' => $reservation->guest_phone,
         'check_in_date' => optional($reservation->check_in_date)->toDateString(),
         'check_out_date' => optional($reservation->check_out_date)->toDateString(),
-        'payment_method' => $validated['payment_method'] ?? 'cash',
+        'payment_method' => $validated['payment_method'] ?? \App\Enums\PaymentMethod::CASH->value,
         'source' => 'website',
     ], $request->user());
 
@@ -1072,7 +1083,82 @@ Route::put('/admin/hotel/access', function (Request $request) {
         'message' => 'Hotel login updated. Everyone must sign in again.',
         'session_revoked' => true,
     ]);
-})->middleware('role:admin')->name('api.v1.admin.hotel.access');
+})->middleware('role:super_admin')->name('api.v1.admin.hotel.access');
+
+Route::get('/admin/portal-users', function (Request $request) {
+    $hotelId = (string) $request->user()->hotel_id;
+    $users = User::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->whereIn('role', [UserRole::ADMIN, UserRole::SUPER_ADMIN, 'admin', 'super_admin'])
+        ->orderBy('role')
+        ->orderBy('name')
+        ->get()
+        ->map(fn (User $u) => [
+            'id' => (string) $u->id,
+            'name' => (string) ($u->name ?? ''),
+            'email' => (string) ($u->email ?? ''),
+            'role' => $u->roleValue(),
+        ]);
+
+    return response()->json(['data' => $users]);
+})->middleware('role:admin')->name('api.v1.admin.portal-users');
+
+Route::delete('/admin/portal-users/{target}', function (Request $request, string $target) {
+    $actor = $request->user();
+    if ($actor->roleValue() !== 'super_admin') {
+        return response()->json(['message' => 'Only the super admin can remove portal accounts.'], 403);
+    }
+    $hotelId = (string) $actor->hotel_id;
+    $victim = User::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->where('id', $target)
+        ->first();
+    if (! $victim) {
+        return response()->json(['message' => 'User not found.'], 404);
+    }
+    if ((string) $victim->id === (string) $actor->id) {
+        return response()->json(['message' => 'You cannot delete your own account.'], 422);
+    }
+    if ($victim->roleValue() === 'super_admin') {
+        return response()->json(['message' => 'Cannot delete another super admin account.'], 422);
+    }
+    if ($victim->roleValue() === 'staff') {
+        return response()->json(['message' => 'Remove staff via staff management instead.'], 422);
+    }
+    $morph = (new User)->getMorphClass();
+    PersonalAccessToken::query()
+        ->where('tokenable_type', $morph)
+        ->where('tokenable_id', (string) $victim->id)
+        ->delete();
+    $victim->delete();
+    app(ActivityLogService::class)->log(
+        $hotelId,
+        $actor,
+        "Deleted portal user {$victim->name}",
+        ['deleted_user_id' => (string) $victim->id]
+    );
+
+    return response()->json(['ok' => true]);
+})->middleware('role:super_admin')->name('api.v1.admin.portal-users.delete');
+
+Route::put('/staff/profile', function (Request $request) {
+    $validated = $request->validate([
+        'name' => ['required', 'string', 'max:255'],
+        'current_password' => ['nullable', 'required_with:password', 'string'],
+        'password' => ['nullable', 'string', 'min:6', 'confirmed'],
+    ]);
+    $user = $request->user();
+    if (! empty($validated['password'])) {
+        if (empty($validated['current_password']) || ! Hash::check($validated['current_password'], (string) $user->password)) {
+            return response()->json(['message' => 'Current password is incorrect.'], 422);
+        }
+        $user->password = $validated['password'];
+    }
+    $user->name = $validated['name'];
+    $user->save();
+
+    return response()->json(['ok' => true, 'user' => $user->fresh()]);
+})->middleware('role:staff')->name('api.v1.staff.profile');
 
 // Admin room list with access codes (admin-only visibility)
 Route::get('/admin/rooms', function (Request $request) {

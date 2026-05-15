@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../auth_storage.dart';
 import '../dio_client.dart';
@@ -17,7 +18,9 @@ import 'admin_categories.dart';
 import 'admin_chat.dart';
 import 'admin_bookings.dart';
 import 'admin_reports.dart';
+import 'admin_staff.dart';
 import 'customer_tools.dart';
+import '../widgets/chat_attachment.dart';
 import 'guest_list_history.dart';
 // --- Admin ---
 
@@ -545,6 +548,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             onTap: _showSurgePricingDialog,
           ),
           AppActionTile(
+            title: 'Staff management',
+            subtitle: 'Add staff accounts and view performance',
+            icon: Icons.groups_outlined,
+            onTap: () async {
+              await Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                    builder: (_) => const AdminStaffScreen()),
+              );
+              await _load();
+            },
+          ),
+          AppActionTile(
             title: 'Room categories',
             subtitle: 'Create categories and organize rooms',
             icon: Icons.category_outlined,
@@ -972,6 +987,84 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     }
   }
 
+  Future<void> _staffChangePassword(BuildContext context) async {
+    final nameCtrl = TextEditingController();
+    final currentCtrl = TextEditingController();
+    final newCtrl = TextEditingController();
+    final confirmCtrl = TextEditingController();
+    final auth = (_data?['auth'] as Map<String, dynamic>?)?['user']
+        as Map<String, dynamic>?;
+    nameCtrl.text = (auth?['name'] ?? '').toString();
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Change password'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppInput(controller: nameCtrl, label: 'Username'),
+              const SizedBox(height: 8),
+              AppInput(
+                controller: currentCtrl,
+                label: 'Current password',
+                obscureText: true,
+              ),
+              const SizedBox(height: 8),
+              AppInput(
+                controller: newCtrl,
+                label: 'New password',
+                obscureText: true,
+              ),
+              const SizedBox(height: 8),
+              AppInput(
+                controller: confirmCtrl,
+                label: 'Confirm new password',
+                obscureText: true,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    if (newCtrl.text.isNotEmpty && newCtrl.text != confirmCtrl.text) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('New passwords do not match.')),
+      );
+      return;
+    }
+    try {
+      await portalDio().put('/staff/profile', data: {
+        'name': nameCtrl.text.trim(),
+        if (newCtrl.text.isNotEmpty) 'current_password': currentCtrl.text,
+        if (newCtrl.text.isNotEmpty) 'password': newCtrl.text,
+        if (newCtrl.text.isNotEmpty) 'password_confirmation': confirmCtrl.text,
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Staff profile updated.')),
+      );
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dioErrorMessage(e))),
+      );
+    }
+  }
+
   Future<void> _signOut() async {
     await AuthStorage.clearPortalAuth();
     if (mounted) Navigator.of(context).pop();
@@ -1114,6 +1207,12 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
                 builder: (_) => const StaffAdminMessagesScreen(),
               ),
             ),
+          ),
+          AppActionTile(
+            title: 'Change my password',
+            subtitle: 'Update your staff login username or password',
+            icon: Icons.lock_outline,
+            onTap: () => _staffChangePassword(context),
           ),
           const SizedBox(height: 16),
           Text('Recent Tasks', style: Theme.of(context).textTheme.titleMedium),
@@ -1439,14 +1538,25 @@ class _StaffAdminMessagesScreenState extends State<StaffAdminMessagesScreen> {
     }
   }
 
-  Future<void> _send() async {
+  Future<void> _send({XFile? image}) async {
     final message = _ctrl.text.trim();
-    if (message.isEmpty || _sending) return;
+    if (message.isEmpty && image == null) return;
+    if (_sending) return;
     setState(() => _sending = true);
     try {
-      await portalDio().post('/staff/chat/admin/messages', data: {
-        'message': message,
-      });
+      if (image != null) {
+        final form = await ChatAttachment.formWithImage(
+          fields: {
+            'message': message.isEmpty ? '(image)' : message,
+          },
+          file: image,
+        );
+        await portalDio().post('/staff/chat/admin/messages', data: form);
+      } else {
+        await portalDio().post('/staff/chat/admin/messages', data: {
+          'message': message,
+        });
+      }
       _ctrl.clear();
       await _load();
     } on DioException catch (e) {
@@ -1475,6 +1585,16 @@ class _StaffAdminMessagesScreenState extends State<StaffAdminMessagesScreen> {
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
             child: Row(
               children: [
+                IconButton(
+                  tooltip: 'Attach photo',
+                  onPressed: _sending
+                      ? null
+                      : () async {
+                          final file = await ChatAttachment.pick(context);
+                          if (file != null) await _send(image: file);
+                        },
+                  icon: const Icon(Icons.attach_file),
+                ),
                 Expanded(
                   child: AppInput(
                     controller: _ctrl,
@@ -1485,7 +1605,7 @@ class _StaffAdminMessagesScreenState extends State<StaffAdminMessagesScreen> {
                 const SizedBox(width: 10),
                 AppPrimaryButton(
                   label: 'Send',
-                  onPressed: _sending ? null : _send,
+                  onPressed: _sending ? null : () => _send(),
                   isLoading: _sending,
                 ),
               ],
@@ -1510,22 +1630,7 @@ class _StaffAdminMessagesScreenState extends State<StaffAdminMessagesScreen> {
       itemBuilder: (context, i) {
         final m = _messages[i] as Map<String, dynamic>;
         final role = (m['sender_role'] ?? '').toString();
-        final isStaff = role == 'staff';
-        return Align(
-          alignment: isStaff ? Alignment.centerRight : Alignment.centerLeft,
-          child: Container(
-            margin: const EdgeInsets.symmetric(vertical: 4),
-            padding: const EdgeInsets.all(12),
-            constraints: const BoxConstraints(maxWidth: 320),
-            decoration: BoxDecoration(
-              color: isStaff
-                  ? Theme.of(context).colorScheme.primaryContainer
-                  : Theme.of(context).colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Text((m['message'] ?? '').toString()),
-          ),
-        );
+        return ChatMessageBubble.fromMap(m, isMine: role == 'staff');
       },
     );
   }
@@ -1659,12 +1764,21 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
     return r == 'guest';
   }
 
-  Future<void> _sendChatLine() async {
+  Future<void> _sendChatLine({XFile? image}) async {
     final text = _chatInput.text.trim();
-    if (text.isEmpty || _chatSending) return;
+    if (text.isEmpty && image == null) return;
+    if (_chatSending) return;
     setState(() => _chatSending = true);
     try {
-      await guestDio().post('/guest/chat/messages', data: {'message': text});
+      if (image != null) {
+        final form = await ChatAttachment.formWithImage(
+          fields: {'message': text.isEmpty ? '(image)' : text},
+          file: image,
+        );
+        await guestDio().post('/guest/chat/messages', data: form);
+      } else {
+        await guestDio().post('/guest/chat/messages', data: {'message': text});
+      }
       if (!mounted) return;
       _chatInput.clear();
       await _refreshChat(silent: true);
@@ -2104,73 +2218,10 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
                                 final m = raw is Map<String, dynamic>
                                     ? raw
                                     : <String, dynamic>{};
-                                final body =
-                                    (m['message'] ?? '').toString().trim();
                                 final guestSide = _isGuestMessage(m);
-                                final bubbleColor = guestSide
-                                    ? scheme.surfaceContainerHighest
-                                    : scheme.primaryContainer;
-                                final align = guestSide
-                                    ? Alignment.centerLeft
-                                    : Alignment.centerRight;
-                                final sentRaw = m['sent_at'] ?? m['sentAt'];
-                                final sent = _formatSentAt(sentRaw);
-                                return Align(
-                                  alignment: align,
-                                  child: Container(
-                                    margin: const EdgeInsets.only(bottom: 8),
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 12, vertical: 10),
-                                    constraints: const BoxConstraints(
-                                        maxWidth: 300),
-                                    decoration: BoxDecoration(
-                                      color: bubbleColor,
-                                      borderRadius: BorderRadius.circular(14),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        if (!guestSide)
-                                          Text(
-                                            'Hotel',
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .labelSmall
-                                                ?.copyWith(
-                                                  color: scheme
-                                                      .onPrimaryContainer,
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                          ),
-                                        if (guestSide)
-                                          Text(
-                                            'You',
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .labelSmall
-                                                ?.copyWith(
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                          ),
-                                        const SizedBox(height: 4),
-                                        SelectableText(body),
-                                        if (sent.isNotEmpty) ...[
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            sent,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .labelSmall
-                                                ?.copyWith(
-                                                  color: scheme
-                                                      .onSurfaceVariant,
-                                                ),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
+                                return ChatMessageBubble.fromMap(
+                                  m,
+                                  isMine: guestSide,
                                 );
                               },
                             ),
@@ -2181,6 +2232,19 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
+                          IconButton(
+                            tooltip: 'Attach photo',
+                            onPressed: _chatSending
+                                ? null
+                                : () async {
+                                    final file =
+                                        await ChatAttachment.pick(context);
+                                    if (file != null) {
+                                      await _sendChatLine(image: file);
+                                    }
+                                  },
+                            icon: const Icon(Icons.attach_file),
+                          ),
                           Expanded(
                             child: TextField(
                               controller: _chatInput,
@@ -2199,8 +2263,9 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
                           ),
                           const SizedBox(width: 8),
                           FilledButton(
-                            onPressed:
-                                _chatSending ? null : () => _sendChatLine(),
+                            onPressed: _chatSending
+                                ? null
+                                : () => _sendChatLine(),
                             style: FilledButton.styleFrom(
                               padding: const EdgeInsets.all(16),
                               shape: RoundedRectangleBorder(
@@ -2250,6 +2315,8 @@ class _AdminAccountSettingsScreenState extends State<AdminAccountSettingsScreen>
   final _hotelNewPass = TextEditingController();
   final _hotelNewPass2 = TextEditingController();
   bool _busy = false;
+  bool _isSuperAdmin = false;
+  List<dynamic> _portalUsers = const [];
 
   @override
   void initState() {
@@ -2258,15 +2325,68 @@ class _AdminAccountSettingsScreenState extends State<AdminAccountSettingsScreen>
   }
 
   Future<void> _loadDefaults() async {
+    final role = await AuthStorage.portalRole();
+    var isSuper = role == 'super_admin';
     try {
       final r = await portalDio().get<Map<String, dynamic>>('/admin/dashboard');
       final u =
           (r.data?['auth'] as Map<String, dynamic>?)?['user'] as Map<String, dynamic>?;
       final n = (u?['name'] ?? '').toString();
-      if (mounted && n.isNotEmpty) {
-        _nameCtrl.text = n;
+      final apiRole = (u?['role'] ?? '').toString();
+      if (apiRole == 'super_admin') isSuper = true;
+      if (mounted && n.isNotEmpty) _nameCtrl.text = n;
+    } catch (_) {}
+    if (mounted) setState(() => _isSuperAdmin = isSuper);
+    if (isSuper) await _loadPortalUsers();
+  }
+
+  Future<void> _loadPortalUsers() async {
+    try {
+      final res =
+          await portalDio().get<Map<String, dynamic>>('/admin/portal-users');
+      if (mounted) {
+        setState(() {
+          _portalUsers = (res.data?['data'] as List<dynamic>?) ?? const [];
+        });
       }
     } catch (_) {}
+  }
+
+  Future<void> _deleteAdmin(String userId, String name) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove admin?'),
+        content: Text('Delete portal account "$name"? This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() => _busy = true);
+    try {
+      await portalDio().delete('/admin/portal-users/$userId');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Admin account removed.')),
+      );
+      await _loadPortalUsers();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dioErrorMessage(e))),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
@@ -2424,9 +2544,42 @@ class _AdminAccountSettingsScreenState extends State<AdminAccountSettingsScreen>
           const SizedBox(height: 12),
           FilledButton(
             onPressed: _busy ? null : _saveAdminProfile,
-            child: const Text('Save admin profile'),
+            child: const Text('Change my password / username'),
           ),
-          const SizedBox(height: 28),
+          if (_isSuperAdmin) ...[
+            const SizedBox(height: 28),
+            Text(
+              'Portal administrators',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Super admin can remove regular admin accounts. Staff accounts are managed under Staff management.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            ..._portalUsers.map((raw) {
+              final u = raw as Map<String, dynamic>;
+              final role = (u['role'] ?? '').toString();
+              final id = (u['id'] ?? '').toString();
+              final name = (u['name'] ?? '').toString();
+              final isSuper = role == 'super_admin';
+              return Card(
+                child: ListTile(
+                  title: Text(name),
+                  subtitle: Text(role.replaceAll('_', ' ')),
+                  trailing: isSuper
+                      ? const Text('You')
+                      : IconButton(
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: _busy ? null : () => _deleteAdmin(id, name),
+                        ),
+                ),
+              );
+            }),
+          ],
+          if (_isSuperAdmin) const SizedBox(height: 28),
+          if (_isSuperAdmin) ...[
           Text(
             'Hotel gate password',
             style: Theme.of(context).textTheme.titleMedium,
@@ -2465,6 +2618,7 @@ class _AdminAccountSettingsScreenState extends State<AdminAccountSettingsScreen>
             onPressed: _busy ? null : _saveHotelAccess,
             child: const Text('Update hotel login'),
           ),
+          ],
         ],
       ),
     );
@@ -2659,6 +2813,10 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
             final name = '${m['name']}';
             final imageUrl = '${m['image_url'] ?? ''}';
             final desc = '${m['description'] ?? ''}'.trim();
+            final available = (m['available_rooms'] as num?)?.toInt() ?? 0;
+            final availLabel = available == 1
+                ? '1 room available'
+                : '$available rooms available';
             return Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: Material(
@@ -2715,12 +2873,45 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                name,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      name,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: available > 0
+                                          ? scheme.primaryContainer
+                                          : scheme.errorContainer
+                                              .withValues(alpha: 0.5),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Text(
+                                      availLabel,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                            color: available > 0
+                                                ? scheme.onPrimaryContainer
+                                                : scheme.onErrorContainer,
+                                          ),
+                                    ),
+                                  ),
+                                ],
                               ),
                               if (desc.isNotEmpty) ...[
                                 const SizedBox(height: 4),
@@ -2840,6 +3031,8 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     final pricePerNight = (room['price_per_night'] as num?)?.toDouble() ?? 0;
     DateTime? checkInDate;
     DateTime? checkOutDate;
+    var discountType = 'none';
+    XFile? discountIdFile;
 
     final payload = await showDialog<Map<String, dynamic>>(
       context: context,
@@ -2850,6 +3043,14 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
               : 0;
           final safeNights = nights > 0 ? nights : 0;
           final estTotal = safeNights * pricePerNight;
+          final discountPct = switch (discountType) {
+            'pwd' => 20.0,
+            'senior' => 20.0,
+            'student' => 10.0,
+            _ => 0.0,
+          };
+          final estAfterDiscount =
+              estTotal * (1 - (discountPct / 100));
 
           final now = DateTime.now();
           final today = DateTime(now.year, now.month, now.day);
@@ -2916,6 +3117,53 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                     keyboardType: TextInputType.phone,
                   ),
                   const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    value: discountType,
+                    decoration: const InputDecoration(
+                      labelText: 'Discount (optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'none',
+                        child: Text('No discount'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'pwd',
+                        child: Text('PWD (20% off)'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'senior',
+                        child: Text('Senior citizen (20% off)'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'student',
+                        child: Text('Student (10% off)'),
+                      ),
+                    ],
+                    onChanged: (v) => setLocal(() {
+                      discountType = v ?? 'none';
+                      if (discountType == 'none') discountIdFile = null;
+                    }),
+                  ),
+                  if (discountType != 'none') ...[
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        final file = await ChatAttachment.pick(context);
+                        if (file != null) {
+                          setLocal(() => discountIdFile = file);
+                        }
+                      },
+                      icon: const Icon(Icons.badge_outlined),
+                      label: Text(
+                        discountIdFile == null
+                            ? 'Upload valid ID photo'
+                            : 'ID photo attached — tap to replace',
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
                   AppInput(
                     controller: checkInCtrl,
                     label: reserve
@@ -2941,7 +3189,9 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                     child: Text(
                       reserve
                           ? 'The hotel will approve your dates. You will be notified when the stay is activated on check-in day.'
-                          : 'Duration: $safeNights night${safeNights == 1 ? '' : 's'}\nEstimated charge: ₱${estTotal.toStringAsFixed(2)}',
+                          : 'Duration: $safeNights night${safeNights == 1 ? '' : 's'}\n'
+                              'Estimated: ₱${estTotal.toStringAsFixed(2)}'
+                              '${discountPct > 0 ? ' → ₱${estAfterDiscount.toStringAsFixed(2)} after discount' : ''}',
                     ),
                   ),
                 ],
@@ -2954,14 +3204,25 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
               ),
               AppPrimaryButton(
                 label: reserve ? 'Submit request' : 'Book now',
-                onPressed: () => Navigator.of(context).pop({
-                  'room_id': (room['id'] ?? '').toString(),
-                  'guest_name': nameCtrl.text.trim(),
-                  'guest_email': emailCtrl.text.trim(),
-                  'guest_phone': phoneCtrl.text.trim(),
-                  'check_in': checkInCtrl.text.trim(),
-                  'check_out': checkOutCtrl.text.trim(),
-                }),
+                onPressed: () {
+                  if (discountType != 'none' && discountIdFile == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Upload a photo of your discount ID.'),
+                      ),
+                    );
+                    return;
+                  }
+                  Navigator.of(context).pop({
+                    'room_id': (room['id'] ?? '').toString(),
+                    'guest_name': nameCtrl.text.trim(),
+                    'guest_email': emailCtrl.text.trim(),
+                    'guest_phone': phoneCtrl.text.trim(),
+                    'check_in': checkInCtrl.text.trim(),
+                    'check_out': checkOutCtrl.text.trim(),
+                    'discount_type': discountType,
+                  });
+                },
               ),
             ],
           );
@@ -2973,14 +3234,27 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     try {
       final path =
           reserve ? '/customer/reservations' : '/customer/bookings';
+      final discount = (payload['discount_type'] ?? 'none').toString();
+      final Map<String, dynamic> body = {
+        'hotel_id': widget.hotelId,
+        ...payload,
+      };
 
-      final res = await publicDio().post<Map<String, dynamic>>(
-        path,
-        data: {
-          'hotel_id': widget.hotelId,
-          ...payload,
-        },
-      );
+      final Response<Map<String, dynamic>> res;
+      if (discount != 'none' && discountIdFile != null) {
+        body.remove('discount_type');
+        final form = await ChatAttachment.formWithImage(
+          fields: {
+            ...body,
+            'discount_type': discount,
+          },
+          file: discountIdFile!,
+          fileField: 'discount_id_file',
+        );
+        res = await publicDio().post<Map<String, dynamic>>(path, data: form);
+      } else {
+        res = await publicDio().post<Map<String, dynamic>>(path, data: body);
+      }
       if (!mounted) return;
       final booking = res.data?['booking'] as Map<String, dynamic>?;
       final reservation = res.data?['reservation'] as Map<String, dynamic>?;

@@ -2,9 +2,9 @@
 
 namespace App\Models;
 
+use App\Casts\FlexiblePaymentMethodCast;
 use App\Enums\BookingSource;
 use App\Enums\BookingStatus;
-use App\Enums\PaymentMethod;
 use App\Models\Concerns\BelongsToHotel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -31,6 +31,10 @@ class Booking extends Model
         'total_amount',
         'source',
         'status',
+        'discount_type',
+        'discount_percent',
+        'discount_id_url',
+        'discount_id_verified',
     ];
 
     protected function casts(): array
@@ -38,11 +42,13 @@ class Booking extends Model
         return [
             'check_in_date' => 'date',
             'check_out_date' => 'date',
-            'payment_method' => PaymentMethod::class,
+            'payment_method' => FlexiblePaymentMethodCast::class,
             'paid_at' => 'datetime',
             'source' => BookingSource::class,
             'status' => BookingStatus::class,
             'total_amount' => 'decimal:2',
+            'discount_percent' => 'decimal:2',
+            'discount_id_verified' => 'boolean',
         ];
     }
 

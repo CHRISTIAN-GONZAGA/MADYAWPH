@@ -1,7 +1,9 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../dio_client.dart';
+import '../widgets/chat_attachment.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_input.dart';
@@ -177,17 +179,31 @@ class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
     }
   }
 
-  Future<void> _send() async {
+  Future<void> _send({XFile? image}) async {
     final text = _ctrl.text.trim();
-    if (text.isEmpty || _sending) return;
+    if (text.isEmpty && image == null) return;
+    if (_sending) return;
     setState(() => _sending = true);
     try {
-      await portalDio().post('/admin/chat/reply', data: {
-        'room_id': widget.roomId,
-        'room_number': widget.roomNumber,
-        'guest_name': 'In-House Guest',
-        'message': text,
-      });
+      if (image != null) {
+        final form = await ChatAttachment.formWithImage(
+          fields: {
+            'room_id': widget.roomId,
+            'room_number': widget.roomNumber,
+            'guest_name': 'In-House Guest',
+            'message': text.isEmpty ? '(image)' : text,
+          },
+          file: image,
+        );
+        await portalDio().post('/admin/chat/reply', data: form);
+      } else {
+        await portalDio().post('/admin/chat/reply', data: {
+          'room_id': widget.roomId,
+          'room_number': widget.roomNumber,
+          'guest_name': 'In-House Guest',
+          'message': text,
+        });
+      }
       _ctrl.clear();
       await _load();
     } on DioException catch (e) {
@@ -215,6 +231,16 @@ class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
             child: Row(
               children: [
+                IconButton(
+                  tooltip: 'Attach photo',
+                  onPressed: _sending
+                      ? null
+                      : () async {
+                          final file = await ChatAttachment.pick(context);
+                          if (file != null) await _send(image: file);
+                        },
+                  icon: const Icon(Icons.attach_file),
+                ),
                 Expanded(
                   child: AppInput(
                     controller: _ctrl,
@@ -225,7 +251,7 @@ class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
                 const SizedBox(width: 10),
                 AppPrimaryButton(
                   label: 'Send',
-                  onPressed: _sending ? null : _send,
+                  onPressed: _sending ? null : () => _send(),
                   isLoading: _sending,
                 ),
               ],
@@ -252,23 +278,8 @@ class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
       itemBuilder: (context, i) {
         final m = _messages[i] as Map<String, dynamic>;
         final role = (m['sender_role'] ?? '').toString();
-        final isAdmin = role == 'admin';
-        final bubbleColor = isAdmin
-            ? Theme.of(context).colorScheme.primaryContainer
-            : Theme.of(context).colorScheme.surfaceContainerHighest;
-        return Align(
-          alignment: isAdmin ? Alignment.centerRight : Alignment.centerLeft,
-          child: Container(
-            margin: const EdgeInsets.symmetric(vertical: 4),
-            padding: const EdgeInsets.all(12),
-            constraints: const BoxConstraints(maxWidth: 320),
-            decoration: BoxDecoration(
-              color: bubbleColor,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Text((m['message'] ?? '').toString()),
-          ),
-        );
+        final isAdmin = role == 'admin' || role == 'staff';
+        return ChatMessageBubble.fromMap(m, isMine: isAdmin);
       },
     );
   }

@@ -237,6 +237,35 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
       await AuthStorage.setPortalAuth(token: token, role: 'admin');
       await AuthStorage.clearGuestAuth();
       if (!mounted) return;
+      final accounts = res.data?['portal_accounts'] as Map<String, dynamic>?;
+      if (accounts != null) {
+        final superA = accounts['super_admin'] as Map<String, dynamic>?;
+        final adminA = accounts['admin'] as Map<String, dynamic>?;
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Hotel created'),
+            content: SingleChildScrollView(
+              child: Text(
+                'Save these sign-in details:\n\n'
+                'Super admin\n'
+                '  Username: ${superA?['username'] ?? ''}\n'
+                '  Password: ${superA?['password'] ?? ''}\n\n'
+                'Administrator\n'
+                '  Username: ${adminA?['username'] ?? ''}\n'
+                '  Password: ${adminA?['password'] ?? ''}',
+              ),
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Continue'),
+              ),
+            ],
+          ),
+        );
+      }
+      if (!mounted) return;
       Navigator.of(context).pop();
       hotelSessionNotifier.value = HotelSession(hotelId: hid, hotelName: name);
     } on DioException catch (e) {
@@ -289,7 +318,10 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
           const SizedBox(height: 8),
           TextField(
             controller: _username,
-            decoration: const InputDecoration(labelText: 'Admin username (unique)', border: OutlineInputBorder()),
+            decoration: const InputDecoration(
+              labelText: 'Hotel username (property login)',
+              border: OutlineInputBorder(),
+            ),
             autocorrect: false,
             textInputAction: TextInputAction.next,
           ),
@@ -343,7 +375,7 @@ class RoleMenuScreen extends StatelessWidget {
     final token = await AuthStorage.portalToken();
     final role = await AuthStorage.portalRole();
     if (!context.mounted) return;
-    if (token != null && role == 'admin') {
+    if (token != null && (role == 'admin' || role == 'super_admin')) {
       await Navigator.of(context).push<void>(
         MaterialPageRoute<void>(builder: (_) => const AdminDashboardScreen()),
       );
@@ -351,7 +383,29 @@ class RoleMenuScreen extends StatelessWidget {
     }
     final ok = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
-        builder: (_) => PortalLoginScreen(role: 'admin'),
+        builder: (_) => const PortalLoginScreen(role: 'admin'),
+      ),
+    );
+    if (ok == true && context.mounted) {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(builder: (_) => const AdminDashboardScreen()),
+      );
+    }
+  }
+
+  Future<void> _openSuperAdmin(BuildContext context) async {
+    final token = await AuthStorage.portalToken();
+    final role = await AuthStorage.portalRole();
+    if (!context.mounted) return;
+    if (token != null && role == 'super_admin') {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(builder: (_) => const AdminDashboardScreen()),
+      );
+      return;
+    }
+    final ok = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => const PortalLoginScreen(role: 'super_admin'),
       ),
     );
     if (ok == true && context.mounted) {
@@ -430,9 +484,17 @@ class RoleMenuScreen extends StatelessWidget {
           _RoleCard(
             icon: Icons.admin_panel_settings_outlined,
             title: 'Administrator',
-            subtitle: 'Hotel admin dashboard, credits, rooms',
+            subtitle: 'Day-to-day ops — rooms, bookings, reports',
             color: theme.colorScheme.primaryContainer,
             onTap: () => _openAdmin(context),
+          ),
+          const SizedBox(height: 12),
+          _RoleCard(
+            icon: Icons.shield_outlined,
+            title: 'Super admin',
+            subtitle: 'Hotel owner — manage admins & property login',
+            color: theme.colorScheme.errorContainer,
+            onTap: () => _openSuperAdmin(context),
           ),
           const SizedBox(height: 12),
           _RoleCard(
@@ -604,7 +666,11 @@ class _PortalLoginScreenState extends State<PortalLoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final label = widget.role == 'admin' ? 'Administrator' : 'Staff';
+    final label = switch (widget.role) {
+      'super_admin' => 'Super administrator',
+      'admin' => 'Administrator',
+      _ => 'Staff',
+    };
     return AppScaffold(
       appBar: AppBar(title: Text('$label sign-in')),
       body: ListView(

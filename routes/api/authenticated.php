@@ -177,7 +177,7 @@ Route::put('/reservations/{reservation}/assign-room', function (Request $request
         'guest_phone' => $reservation->guest_phone,
         'check_in_date' => optional($reservation->check_in_date)->toDateString(),
         'check_out_date' => optional($reservation->check_out_date)->toDateString(),
-        'payment_method' => $validated['payment_method'] ?? 'cash',
+        'payment_method' => $validated['payment_method'] ?? \App\Enums\PaymentMethod::CASH->value,
         'source' => 'website',
     ], $request->user());
 

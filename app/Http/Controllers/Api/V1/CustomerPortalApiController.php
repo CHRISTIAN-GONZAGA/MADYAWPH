@@ -21,6 +21,7 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class CustomerPortalApiController extends Controller
@@ -35,19 +36,43 @@ class CustomerPortalApiController extends Controller
         }
 
         $hotel = Hotel::withoutGlobalScopes()->select('id', 'name', 'location')->find($hotelId);
+        $availableValue = RoomStatus::AVAILABLE->value;
+
         $categories = RoomCategory::query()
             ->orderBy('name')
-            ->get(['id', 'name', 'description', 'image_url']);
+            ->get(['id', 'name', 'description', 'image_url'])
+            ->map(function (RoomCategory $cat) use ($hotelId, $availableValue) {
+                $available = Room::withoutGlobalScopes()
+                    ->where('hotel_id', $hotelId)
+                    ->where('category_id', (string) $cat->id)
+                    ->where('status', $availableValue)
+                    ->count();
+
+                return [
+                    'id' => (string) $cat->id,
+                    'name' => (string) ($cat->name ?? ''),
+                    'description' => (string) ($cat->description ?? ''),
+                    'image_url' => (string) ($cat->image_url ?? ''),
+                    'available_rooms' => (int) $available,
+                ];
+            });
         if ($categories->isEmpty()) {
             $categories = Room::query()
                 ->get()
                 ->groupBy(fn ($room) => strtolower((string) ($room->room_type?->value ?? $room->room_type)))
-                ->map(function ($roomsByType, $type) {
+                ->map(function ($roomsByType, $type) use ($hotelId, $availableValue) {
+                    $available = $roomsByType->filter(function ($room) use ($availableValue) {
+                        $st = $room->status?->value ?? (string) $room->status;
+
+                        return $st === $availableValue;
+                    })->count();
+
                     return [
                         'id' => $type,
                         'name' => ucfirst((string) $type).' Rooms',
                         'description' => 'Available rooms in this category.',
                         'image_url' => 'https://picsum.photos/seed/category-'.urlencode((string) $type).'/800/500',
+                        'available_rooms' => (int) $available,
                     ];
                 })
                 ->values();
@@ -115,7 +140,13 @@ class CustomerPortalApiController extends Controller
             'guest_phone' => ['required', 'string', 'max:30'],
             'check_in' => ['required', 'date'],
             'check_out' => ['required', 'date', 'after:check_in'],
+            'discount_type' => ['nullable', 'string', 'in:none,pwd,senior,student'],
+            'discount_id_file' => ['nullable', 'image', 'max:5120'],
         ]);
+        $discount = $this->resolveDiscount($request, $validated);
+        $validated['discount_type'] = $discount['type'];
+        $validated['discount_percent'] = $discount['percent'];
+        $validated['discount_id_url'] = $discount['id_url'];
 
         return $this->createFutureReservation($validated);
     }
@@ -130,7 +161,13 @@ class CustomerPortalApiController extends Controller
             'guest_phone' => ['required', 'string', 'max:30'],
             'check_in' => ['required', 'date'],
             'check_out' => ['required', 'date', 'after:check_in'],
+            'discount_type' => ['nullable', 'string', 'in:none,pwd,senior,student'],
+            'discount_id_file' => ['nullable', 'image', 'max:5120'],
         ]);
+        $discount = $this->resolveDiscount($request, $validated);
+        $validated['discount_type'] = $discount['type'];
+        $validated['discount_percent'] = $discount['percent'];
+        $validated['discount_id_url'] = $discount['id_url'];
 
         $hotelId = $validated['hotel_id'];
         $room = Room::query()->findOrFail($validated['room_id']);
@@ -154,7 +191,8 @@ class CustomerPortalApiController extends Controller
         $checkOut = Carbon::parse($validated['check_out']);
         $nights = max(1, $checkIn->diffInDays($checkOut));
         $nightly = $this->roomPricingService->applySurge((string) $hotelId, (float) $room->price_per_night);
-        $total = $nightly * $nights;
+        $gross = $nightly * $nights;
+        $total = $this->applyDiscountToTotal($gross, (float) $validated['discount_percent']);
 
         $booking = Booking::query()->create([
             'hotel_id' => (string) $room->hotel_id,
@@ -172,7 +210,20 @@ class CustomerPortalApiController extends Controller
             'total_amount' => $total,
             'source' => BookingSource::KIOSK->value,
             'status' => BookingStatus::CONFIRMED->value,
+            'discount_type' => $validated['discount_type'] !== 'none' ? $validated['discount_type'] : null,
+            'discount_percent' => (float) $validated['discount_percent'] > 0 ? (float) $validated['discount_percent'] : null,
+            'discount_id_url' => $validated['discount_id_url'],
+            'discount_id_verified' => false,
         ]);
+        $chargeMeta = [
+            'nightly_rate' => $nightly,
+            'nights' => $nights,
+            'gross_total' => $gross,
+        ];
+        if ((float) $validated['discount_percent'] > 0) {
+            $chargeMeta['discount_type'] = $validated['discount_type'];
+            $chargeMeta['discount_percent'] = (float) $validated['discount_percent'];
+        }
         BillingCharge::withoutGlobalScopes()->create([
             'hotel_id' => (string) $room->hotel_id,
             'booking_id' => (string) $booking->id,
@@ -182,11 +233,24 @@ class CustomerPortalApiController extends Controller
             'amount' => $total,
             'quantity' => 1,
             'is_manual' => false,
-            'metadata' => [
-                'nightly_rate' => $nightly,
-                'nights' => $nights,
-            ],
+            'metadata' => $chargeMeta,
         ]);
+        if ($gross > $total) {
+            BillingCharge::withoutGlobalScopes()->create([
+                'hotel_id' => (string) $room->hotel_id,
+                'booking_id' => (string) $booking->id,
+                'room_id' => (string) $room->id,
+                'type' => 'discount',
+                'label' => strtoupper((string) $validated['discount_type']).' discount ('.(float) $validated['discount_percent'].'%)',
+                'amount' => -1 * round($gross - $total, 2),
+                'quantity' => 1,
+                'is_manual' => false,
+                'metadata' => [
+                    'discount_type' => $validated['discount_type'],
+                    'discount_id_url' => $validated['discount_id_url'],
+                ],
+            ]);
+        }
 
         $generatedPassword = $this->generateUniqueRoomPassword();
         $room->update([
@@ -274,6 +338,11 @@ class CustomerPortalApiController extends Controller
             'check_out_date' => $checkOut->toDateString(),
             'assigned_room_id' => (string) $room->id,
             'status' => 'pending_approval',
+            'metadata' => array_filter([
+                'discount_type' => ($validated['discount_type'] ?? 'none') !== 'none' ? $validated['discount_type'] : null,
+                'discount_percent' => (float) ($validated['discount_percent'] ?? 0) > 0 ? (float) $validated['discount_percent'] : null,
+                'discount_id_url' => $validated['discount_id_url'] ?? null,
+            ]),
         ]);
         app(ActivityLogService::class)->log(
             $hotelId,
@@ -310,6 +379,47 @@ class CustomerPortalApiController extends Controller
         }
 
         return $q->exists();
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return array{type: string, percent: float, id_url: ?string}
+     */
+    private function resolveDiscount(Request $request, array $validated): array
+    {
+        $type = strtolower(trim((string) ($validated['discount_type'] ?? 'none')));
+        if ($type === '' || $type === 'none') {
+            return ['type' => 'none', 'percent' => 0.0, 'id_url' => null];
+        }
+
+        if (! $request->hasFile('discount_id_file')) {
+            throw new HttpResponseException(response()->json([
+                'message' => 'Upload a photo of the valid ID for the selected discount.',
+                'errors' => ['discount_id_file' => ['ID photo is required for discounted bookings.']],
+            ], 422));
+        }
+
+        $percent = match ($type) {
+            'pwd' => 20.0,
+            'senior' => 20.0,
+            'student' => 10.0,
+            default => 0.0,
+        };
+
+        $idUrl = Storage::disk('public')->url(
+            $request->file('discount_id_file')->store('bookings/discount-ids', 'public')
+        );
+
+        return ['type' => $type, 'percent' => $percent, 'id_url' => $idUrl];
+    }
+
+    private function applyDiscountToTotal(float $gross, float $percent): float
+    {
+        if ($percent <= 0) {
+            return round($gross, 2);
+        }
+
+        return round(max(0, $gross * (1 - ($percent / 100))), 2);
     }
 
     private function generateUniqueRoomPassword(): string

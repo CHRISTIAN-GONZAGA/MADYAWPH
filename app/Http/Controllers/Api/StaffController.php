@@ -12,7 +12,12 @@ class StaffController extends Controller
 {
     public function index()
     {
-        return response()->json(StaffMember::query()->paginate(20));
+        $rows = StaffMember::query()->orderBy('name')->limit(100)->get();
+
+        return response()->json([
+            'data' => $rows,
+            'meta' => ['total' => $rows->count()],
+        ]);
     }
 
     public function show(StaffMember $staff)

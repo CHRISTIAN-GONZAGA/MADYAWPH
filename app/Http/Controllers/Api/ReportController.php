@@ -48,7 +48,17 @@ class ReportController extends Controller
     public function staffPerformance()
     {
         return response()->json(
-            StaffMember::query()->select('id', 'name', 'role', 'performance_score', 'tasks_completed')->get()
+            StaffMember::query()
+                ->orderBy('name')
+                ->get(['name', 'role', 'performance_score', 'tasks_completed', 'user_id'])
+                ->map(fn (StaffMember $s) => [
+                    'id' => (string) $s->id,
+                    'name' => (string) ($s->name ?? ''),
+                    'role' => $s->role instanceof \BackedEnum ? $s->role->value : (string) ($s->role ?? ''),
+                    'performance_score' => (int) ($s->performance_score ?? 0),
+                    'tasks_completed' => (int) ($s->tasks_completed ?? 0),
+                    'user_id' => (string) ($s->user_id ?? ''),
+                ])
         );
     }
 
