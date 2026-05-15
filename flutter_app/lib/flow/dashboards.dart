@@ -21,6 +21,7 @@ import 'admin_reports.dart';
 import 'admin_staff.dart';
 import 'customer_tools.dart';
 import '../widgets/chat_attachment.dart';
+import '../widgets/payment_redirect.dart';
 import 'guest_list_history.dart';
 // --- Admin ---
 
@@ -81,6 +82,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     setState(() => _busyAction = true);
     try {
       final payload = await action();
+      if (!mounted) return;
+
+      if (!mounted) return;
+      if (PaymentRedirect.responseRequiresRedirect(payload)) {
+        await PaymentRedirect.maybeOpenFromResponse(context, payload);
+      }
+
       if (!mounted) return;
       final msg = payload?['message']?.toString() ?? '$label completed.';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
@@ -230,38 +238,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         '/admin/credits/recharge',
         data: payload,
       );
-      final data = res.data ?? {};
-      final redirectUrl = (data['redirect_url'] ?? '').toString();
-      if (redirectUrl.isNotEmpty && mounted) {
-        await showDialog<void>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Complete payment'),
-            content: SelectableText(
-              'Open this URL in your browser to complete payment:\n\n$redirectUrl',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () async {
-                  await Clipboard.setData(ClipboardData(text: redirectUrl));
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Checkout URL copied.')),
-                  );
-                },
-                child: const Text('Copy URL'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Close'),
-              ),
-            ],
-          ),
-        );
-      }
+      final data = Map<String, dynamic>.from(res.data ?? {});
 
       return {
-        'message': (data['message'] ?? 'Recharge request sent.').toString(),
+        ...data,
+        'message': (data['message'] ??
+                'Complete payment in your browser. Credits update after payment succeeds.')
+            .toString(),
       };
     });
   }
@@ -518,7 +501,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
           AppActionTile(
             title: 'Recharge credits',
-            subtitle: 'Top up hotel credits via PayMongo wallet',
+            subtitle: 'Top up via GCash or PayMaya (opens payment page)',
             icon: Icons.account_balance_wallet_outlined,
             onTap: _showRechargeDialog,
           ),
@@ -1078,6 +1061,13 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     setState(() => _busyAction = true);
     try {
       final payload = await action();
+      if (!mounted) return;
+
+      if (!mounted) return;
+      if (PaymentRedirect.responseRequiresRedirect(payload)) {
+        await PaymentRedirect.maybeOpenFromResponse(context, payload);
+      }
+
       if (!mounted) return;
       final msg = payload?['message']?.toString() ?? '$label completed.';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));

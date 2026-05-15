@@ -96,8 +96,11 @@ Route::middleware('role:admin')->group(function (): void {
         if (($paymentResult['requires_redirect'] ?? false) && ! empty($paymentResult['checkout_url'])) {
             return response()->json([
                 'ok' => true,
+                'requires_redirect' => true,
                 'redirect_url' => $paymentResult['checkout_url'],
-                'message' => 'Complete payment via '.($paymentResult['provider'] ?? 'payment gateway').'. Credits will update after payment succeeds.',
+                'checkout_url' => $paymentResult['checkout_url'],
+                'payment' => $paymentResult,
+                'message' => 'Redirecting to '.($paymentResult['provider'] ?? 'payment gateway').'. Credits will update after payment succeeds.',
             ]);
         }
 
