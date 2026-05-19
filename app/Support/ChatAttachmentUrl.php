@@ -33,7 +33,7 @@ final class ChatAttachmentUrl
             return self::normalizeAppHost($stored);
         }
 
-        if (str_starts_with($stored, 'chat/')) {
+        if (self::isPublicDiskRelativePath($stored)) {
             return self::forPath($stored);
         }
 
@@ -43,6 +43,13 @@ final class ChatAttachmentUrl
         }
 
         return self::normalizeAppHost($stored);
+    }
+
+    private static function isPublicDiskRelativePath(string $path): bool
+    {
+        return str_starts_with($path, 'chat/')
+            || str_starts_with($path, 'categories/')
+            || str_starts_with($path, 'rooms/');
     }
 
     private static function extractPublicDiskPath(string $url): ?string

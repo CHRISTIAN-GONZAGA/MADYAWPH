@@ -2801,7 +2801,8 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
             final m = c as Map<String, dynamic>;
             final id = '${m['id']}';
             final name = '${m['name']}';
-            final imageUrl = '${m['image_url'] ?? ''}';
+            final imageUrl =
+                ChatAttachment.resolveMediaUrl('${m['image_url'] ?? ''}');
             final desc = '${m['description'] ?? ''}'.trim();
             final available = (m['available_rooms'] as num?)?.toInt() ?? 0;
             final availLabel = available == 1
@@ -2841,20 +2842,17 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                             ),
                           )
                         else
-                          ClipRRect(
+                          NetworkMediaImage(
+                            url: imageUrl,
+                            width: 64,
+                            height: 64,
                             borderRadius: BorderRadius.circular(14),
-                            child: Image.network(
-                              imageUrl,
+                            error: SizedBox(
                               width: 64,
                               height: 64,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => SizedBox(
-                                width: 64,
-                                height: 64,
-                                child: Icon(
-                                  Icons.broken_image_outlined,
-                                  color: scheme.outline,
-                                ),
+                              child: Icon(
+                                Icons.broken_image_outlined,
+                                color: scheme.outline,
                               ),
                             ),
                           ),
@@ -3328,12 +3326,11 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                   children: [
                     Stack(
                       children: [
-                        Image.network(
-                          (r['image_url'] ?? '').toString(),
+                        NetworkMediaImage(
+                          url: (r['image_url'] ?? '').toString(),
                           height: 160,
                           width: double.infinity,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
+                          error: Container(
                             height: 160,
                             color: scheme.surfaceContainerHighest,
                             alignment: Alignment.center,

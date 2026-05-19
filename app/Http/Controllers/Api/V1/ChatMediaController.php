@@ -9,12 +9,15 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ChatMediaController extends Controller
 {
+    /** @var list<string> */
+    private const ALLOWED_PREFIXES = ['chat/', 'categories/', 'rooms/'];
+
     public function show(Request $request): Response
     {
         $path = (string) $request->query('f', '');
         $path = ltrim(str_replace('\\', '/', $path), '/');
 
-        if ($path === '' || ! str_starts_with($path, 'chat/') || str_contains($path, '..')) {
+        if ($path === '' || str_contains($path, '..') || ! $this->isAllowedPath($path)) {
             abort(404);
         }
 
@@ -34,5 +37,16 @@ class ChatMediaController extends Controller
             'Content-Type' => $mime,
             'Cache-Control' => 'public, max-age=86400',
         ]);
+    }
+
+    private function isAllowedPath(string $path): bool
+    {
+        foreach (self::ALLOWED_PREFIXES as $prefix) {
+            if (str_starts_with($path, $prefix)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

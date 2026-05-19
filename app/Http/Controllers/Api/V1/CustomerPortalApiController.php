@@ -16,6 +16,7 @@ use App\Models\RoomCategory;
 use App\Services\ActivityLogService;
 use App\Services\RoomPricingService;
 use App\Services\SmsService;
+use App\Support\ChatAttachmentUrl;
 use App\Support\EnumHelper;
 use Carbon\Carbon;
 use Illuminate\Http\Exceptions\HttpResponseException;
@@ -55,7 +56,7 @@ class CustomerPortalApiController extends Controller
                     'id' => (string) $cat->id,
                     'name' => (string) ($cat->name ?? ''),
                     'description' => (string) ($cat->description ?? ''),
-                    'image_url' => (string) ($cat->image_url ?? ''),
+                    'image_url' => (string) (ChatAttachmentUrl::fromStoredUrl($cat->image_url) ?? ''),
                     'available_rooms' => (int) $available,
                 ];
             });
@@ -74,7 +75,7 @@ class CustomerPortalApiController extends Controller
                         'id' => $type,
                         'name' => ucfirst((string) $type).' Rooms',
                         'description' => 'Available rooms in this category.',
-                        'image_url' => 'https://picsum.photos/seed/category-'.urlencode((string) $type).'/800/500',
+                        'image_url' => '',
                         'available_rooms' => (int) $available,
                     ];
                 })
@@ -101,16 +102,13 @@ class CustomerPortalApiController extends Controller
             )
             ->limit(30)
             ->get()
-            ->map(function ($room) use ($hotelId) {
-                $imageCatalog = [
-                    'single' => 'https://picsum.photos/seed/room-single/1200/700',
-                    'double' => 'https://picsum.photos/seed/room-double/1200/700',
-                    'suite' => 'https://picsum.photos/seed/room-suite/1200/700',
-                    'deluxe' => 'https://picsum.photos/seed/room-deluxe/1200/700',
-                ];
-                $roomType = strtolower((string) ($room->room_type?->value ?? $room->room_type));
+            ->map(function ($room) use ($hotelId, $category) {
                 $basePrice = (float) $room->price_per_night;
                 $displayPrice = $this->roomPricingService->applySurge((string) $hotelId, $basePrice);
+                $roomImage = ChatAttachmentUrl::fromStoredUrl($room->image_url);
+                if ($roomImage === null && $category !== null) {
+                    $roomImage = ChatAttachmentUrl::fromStoredUrl($category->image_url);
+                }
 
                 return [
                     'id' => (string) $room->id,
@@ -122,7 +120,7 @@ class CustomerPortalApiController extends Controller
                     'room_type' => $room->room_type?->value ?? (string) $room->room_type,
                     'category_id' => (string) ($room->category_id ?? ''),
                     'category_name' => (string) ($room->category_name ?? ''),
-                    'image_url' => (string) ($room->image_url ?? ($imageCatalog[$roomType] ?? $imageCatalog['suite'])),
+                    'image_url' => (string) ($roomImage ?? ''),
                 ];
             });
 

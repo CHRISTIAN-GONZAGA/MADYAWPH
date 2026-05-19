@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Room;
 use App\Models\RoomCategory;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
+use App\Support\ChatAttachmentUrl;
 
 class RoomCategoryController extends Controller
 {
@@ -20,7 +20,7 @@ class RoomCategoryController extends Controller
                 'name' => (string) $category->name,
                 'description' => (string) ($category->description ?? ''),
                 'default_price' => (float) ($category->default_price ?? 0),
-                'image_url' => (string) ($category->image_url ?? ''),
+                'image_url' => (string) (ChatAttachmentUrl::fromStoredUrl($category->image_url) ?? ''),
             ]);
 
         return response()->json(['data' => $rows]);
@@ -37,8 +37,9 @@ class RoomCategoryController extends Controller
         ]);
 
         if ($request->hasFile('image_file')) {
-            $validated['image_url'] = Storage::disk('public')->url(
-                $request->file('image_file')->store('categories', 'public')
+            $validated['image_url'] = ChatAttachmentUrl::storeUploadedFile(
+                $request->file('image_file'),
+                'categories'
             );
         }
 
@@ -49,7 +50,7 @@ class RoomCategoryController extends Controller
             'name' => (string) $category->name,
             'description' => (string) ($category->description ?? ''),
             'default_price' => (float) ($category->default_price ?? 0),
-            'image_url' => (string) ($category->image_url ?? ''),
+            'image_url' => (string) (ChatAttachmentUrl::fromStoredUrl($category->image_url) ?? ''),
         ], 201);
     }
 

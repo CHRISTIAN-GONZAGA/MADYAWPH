@@ -1,9 +1,14 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../dio_client.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/app_state_views.dart';
+import '../widgets/chat_attachment.dart';
+
 class AdminCategoriesScreen extends StatefulWidget {
   const AdminCategoriesScreen({super.key});
 
@@ -51,76 +56,151 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     }
   }
 
+  Future<void> _postMultipart(
+    String path,
+    Map<String, dynamic> fields,
+    XFile? image,
+  ) async {
+    if (image != null) {
+      final form = await ChatAttachment.formWithImage(
+        fields: fields,
+        file: image,
+      );
+      await portalDio().post(path, data: form);
+    } else {
+      await portalDio().post(path, data: fields);
+    }
+  }
+
+  Widget _galleryPickerTile({
+    required XFile? image,
+    required VoidCallback onPick,
+    required VoidCallback onClear,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (image != null)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.file(
+              File(image.path),
+              height: 140,
+              width: double.infinity,
+              fit: BoxFit.cover,
+            ),
+          )
+        else
+          Container(
+            height: 100,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
+            ),
+            child: Icon(
+              Icons.add_photo_alternate_outlined,
+              size: 40,
+              color: Theme.of(context).colorScheme.outline,
+            ),
+          ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: onPick,
+                icon: const Icon(Icons.photo_library_outlined),
+                label: const Text('Choose from gallery'),
+              ),
+            ),
+            if (image != null) ...[
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: 'Remove photo',
+                onPressed: onClear,
+                icon: const Icon(Icons.close),
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
   Future<void> _create() async {
     final nameCtrl = TextEditingController();
     final descCtrl = TextEditingController();
-    final imgCtrl = TextEditingController();
+    XFile? pickedImage;
     final payload = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 460),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Create category',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 20),
-                  TextField(
-                    controller: nameCtrl,
-                    textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      labelText: 'Name',
-                      prefixIcon: Icon(Icons.label_outline),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocal) => Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Create category',
+                      style: Theme.of(context).textTheme.titleLarge,
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: descCtrl,
-                    maxLines: 4,
-                    decoration: const InputDecoration(
-                      labelText: 'Description',
-                      alignLabelWithHint: true,
-                      prefixIcon: Icon(Icons.notes_outlined),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: imgCtrl,
-                    keyboardType: TextInputType.url,
-                    decoration: const InputDecoration(
-                      labelText: 'Cover image URL',
-                      hintText: 'https://…',
-                      prefixIcon: Icon(Icons.image_outlined),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Cancel'),
+                    const SizedBox(height: 20),
+                    TextField(
+                      controller: nameCtrl,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(
+                        labelText: 'Name',
+                        prefixIcon: Icon(Icons.label_outline),
                       ),
-                      const SizedBox(width: 8),
-                      FilledButton(
-                        onPressed: () => Navigator.of(context).pop({
-                          'name': nameCtrl.text.trim(),
-                          'description': descCtrl.text.trim(),
-                          'image_url': imgCtrl.text.trim(),
-                        }),
-                        child: const Text('Create'),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: descCtrl,
+                      maxLines: 4,
+                      decoration: const InputDecoration(
+                        labelText: 'Description',
+                        alignLabelWithHint: true,
+                        prefixIcon: Icon(Icons.notes_outlined),
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+                    const SizedBox(height: 16),
+                    _galleryPickerTile(
+                      image: pickedImage,
+                      onPick: () async {
+                        final file = await ChatAttachment.pick(context);
+                        if (file != null) setLocal(() => pickedImage = file);
+                      },
+                      onClear: () => setLocal(() => pickedImage = null),
+                    ),
+                    const SizedBox(height: 24),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('Cancel'),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: () => Navigator.of(context).pop({
+                            'name': nameCtrl.text.trim(),
+                            'description': descCtrl.text.trim(),
+                            '__image': pickedImage,
+                          }),
+                          child: const Text('Create'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -128,12 +208,13 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
       ),
     );
     if (payload == null) return;
+    final image = payload.remove('__image') as XFile?;
     if ((payload['name'] ?? '').toString().isEmpty) return;
 
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      await portalDio().post('/room-categories', data: payload);
+      await _postMultipart('/room-categories', payload, image);
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Category created.')));
@@ -154,6 +235,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
         text: '${(category['default_price'] as num?)?.toDouble() ?? 0}');
     String roomType = 'Single';
     String status = 'available';
+    XFile? pickedImage;
     final payload = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -198,10 +280,14 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                         labelText: 'Room type',
                       ),
                       items: const [
-                        DropdownMenuItem(value: 'Single', child: Text('Single')),
-                        DropdownMenuItem(value: 'Double', child: Text('Double')),
-                        DropdownMenuItem(value: 'Suite', child: Text('Suite')),
-                        DropdownMenuItem(value: 'Deluxe', child: Text('Deluxe')),
+                        DropdownMenuItem(
+                            value: 'Single', child: Text('Single')),
+                        DropdownMenuItem(
+                            value: 'Double', child: Text('Double')),
+                        DropdownMenuItem(
+                            value: 'Suite', child: Text('Suite')),
+                        DropdownMenuItem(
+                            value: 'Deluxe', child: Text('Deluxe')),
                       ],
                       onChanged: (v) =>
                           setLocal(() => roomType = v ?? roomType),
@@ -226,7 +312,8 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                       items: const [
                         DropdownMenuItem(
                             value: 'available', child: Text('available')),
-                        DropdownMenuItem(value: 'booked', child: Text('booked')),
+                        DropdownMenuItem(
+                            value: 'booked', child: Text('booked')),
                         DropdownMenuItem(
                             value: 'checked_in', child: Text('checked_in')),
                         DropdownMenuItem(
@@ -237,6 +324,15 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                             value: 'reserved', child: Text('reserved')),
                       ],
                       onChanged: (v) => setLocal(() => status = v ?? status),
+                    ),
+                    const SizedBox(height: 14),
+                    _galleryPickerTile(
+                      image: pickedImage,
+                      onPick: () async {
+                        final file = await ChatAttachment.pick(context);
+                        if (file != null) setLocal(() => pickedImage = file);
+                      },
+                      onClear: () => setLocal(() => pickedImage = null),
                     ),
                     const SizedBox(height: 22),
                     Row(
@@ -256,6 +352,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                             'price_per_night':
                                 double.tryParse(priceCtrl.text.trim()) ?? 0,
                             'status': status,
+                            '__image': pickedImage,
                           }),
                           child: const Text('Create'),
                         ),
@@ -270,8 +367,9 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
       ),
     );
     if (payload == null) return;
+    final image = payload.remove('__image') as XFile?;
     try {
-      await portalDio().post('/rooms', data: payload);
+      await _postMultipart('/rooms', payload, image);
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Room created.')));
@@ -404,16 +502,12 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
             child: ListTile(
               leading: imageUrl.isEmpty
                   ? const Icon(Icons.category_outlined)
-                  : ClipRRect(
+                  : NetworkMediaImage(
+                      url: imageUrl,
+                      width: 42,
+                      height: 42,
                       borderRadius: BorderRadius.circular(8),
-                      child: Image.network(
-                        imageUrl,
-                        width: 42,
-                        height: 42,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) =>
-                            const Icon(Icons.broken_image_outlined),
-                      ),
+                      error: const Icon(Icons.broken_image_outlined),
                     ),
               title: Text(name),
               subtitle: desc.isEmpty ? null : Text(desc),

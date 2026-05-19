@@ -12,7 +12,7 @@ use App\Models\StaffMember;
 use App\Models\Task;
 use App\Services\ActivityLogService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
+use App\Support\ChatAttachmentUrl;
 
 class RoomController extends Controller
 {
@@ -53,12 +53,18 @@ class RoomController extends Controller
         $validated['category_id'] = (string) $category->id;
         $validated['category_name'] = (string) $category->name;
         if ($request->hasFile('image_file')) {
-            $validated['image_url'] = Storage::disk('public')->url(
-                $request->file('image_file')->store('rooms', 'public')
+            $validated['image_url'] = ChatAttachmentUrl::storeUploadedFile(
+                $request->file('image_file'),
+                'rooms'
             );
         }
         $room = Room::create($validated);
-        return response()->json($room, 201);
+        $payload = $room->toArray();
+        if (! empty($payload['image_url'])) {
+            $payload['image_url'] = ChatAttachmentUrl::fromStoredUrl((string) $payload['image_url']);
+        }
+
+        return response()->json($payload, 201);
     }
 
     public function updateStatus(Request $request, Room $room)

@@ -79,6 +79,10 @@ class ChatAttachment {
       }
     }
 
+    if (trimmed.startsWith('categories/') || trimmed.startsWith('rooms/')) {
+      return '$origin/api/v1/chat/media?f=${Uri.encodeComponent(trimmed)}';
+    }
+
     return trimmed;
   }
 
@@ -98,6 +102,49 @@ class ChatAttachment {
       filename: file.name,
     );
     return FormData.fromMap(map);
+  }
+}
+
+/// Network image that resolves API media URLs (chat, categories, rooms).
+class NetworkMediaImage extends StatelessWidget {
+  const NetworkMediaImage({
+    super.key,
+    required this.url,
+    this.width,
+    this.height,
+    this.fit = BoxFit.cover,
+    this.borderRadius,
+    this.error,
+  });
+
+  final String url;
+  final double? width;
+  final double? height;
+  final BoxFit fit;
+  final BorderRadius? borderRadius;
+  final Widget? error;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolved = ChatAttachment.resolveMediaUrl(url);
+    if (resolved.isEmpty) {
+      return error ?? const SizedBox.shrink();
+    }
+
+    Widget image = Image.network(
+      resolved,
+      width: width,
+      height: height,
+      fit: fit,
+      errorBuilder: (_, __, ___) =>
+          error ?? const Icon(Icons.broken_image_outlined),
+    );
+
+    if (borderRadius != null) {
+      image = ClipRRect(borderRadius: borderRadius!, child: image);
+    }
+
+    return image;
   }
 }
 
