@@ -272,40 +272,27 @@ Route::middleware('role:admin')->group(function (): void {
             return response()->json(['message' => 'Room outside hotel scope.'], 403);
         }
 
-        $previousStatus = $room->status?->value ?? (string) $room->status;
+        $previousStatus = $roomCheckoutService->normalizedStatus($room);
         $nextStatus = (string) $validated['status'];
 
-        if ($previousStatus === RoomStatus::CHECKED_IN->value && $nextStatus === RoomStatus::CHECKED_OUT->value) {
-            $room = $roomCheckoutService->checkoutCheckedInGuest($room, $request->user());
-
-            return response()->json([
-                'ok' => true,
-                'room' => $room,
-                'message' => 'Guest checked out. Room is in maintenance; stay moved to guest history; chat cleared.',
-            ]);
-        }
-
-        if ($nextStatus === RoomStatus::MAINTENANCE->value) {
-            $hasGuest = trim((string) ($room->getAttributes()['current_guest_name'] ?? '')) !== ''
-                || $roomCheckoutService->findActiveBooking($hotelId, (string) $room->id) !== null;
-            if ($hasGuest) {
-                $room = $roomCheckoutService->finalizeStay($room, $request->user());
-
-                return response()->json(['ok' => true, 'room' => $room]);
-            }
-        }
-
-        $room->update(['status' => $nextStatus]);
-        $room->refresh();
+        $result = $roomCheckoutService->applyStatusChange($room, $request->user(), $nextStatus);
 
         app(ActivityLogService::class)->log(
             $hotelId,
             $request->user(),
             "Updated room {$room->room_number} status",
-            ['from' => $previousStatus, 'to' => $nextStatus]
+            [
+                'from' => $previousStatus,
+                'to' => $roomCheckoutService->normalizedStatus($result['room']),
+                'checkout' => $nextStatus === RoomStatus::CHECKED_OUT->value,
+            ]
         );
 
-        return response()->json(['ok' => true, 'room' => $room]);
+        return response()->json([
+            'ok' => true,
+            'room' => $result['room'],
+            'message' => $result['message'],
+        ]);
     })->name('api.v1.admin.rooms.status');
 
     Route::post('/admin/theme', function (Request $request) {

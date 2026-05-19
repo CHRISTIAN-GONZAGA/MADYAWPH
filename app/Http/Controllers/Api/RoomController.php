@@ -4,8 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Enums\RoomStatus;
 use App\Http\Controllers\Controller;
-use App\Models\RoomCategory;
 use App\Models\Room;
+use App\Models\RoomCategory;
 use App\Services\RoomCheckoutService;
 use Illuminate\Http\Request;
 use App\Support\ChatAttachmentUrl;
@@ -71,41 +71,22 @@ class RoomController extends Controller
             'status' => ['required', 'in:available,booked,checked_in,checked_out,maintenance,reserved'],
         ]);
 
-        $fromStatus = $room->status instanceof RoomStatus ? $room->status->value : (string) $room->status;
-        $toStatus = (string) $validated['status'];
+        $result = $this->roomCheckoutService->applyStatusChange(
+            $room,
+            $request->user(),
+            (string) $validated['status']
+        );
 
-        if ($fromStatus === RoomStatus::CHECKED_IN->value && $toStatus === RoomStatus::CHECKED_OUT->value) {
-            $room = $this->roomCheckoutService->checkoutCheckedInGuest($room, $request->user());
-
-            return response()->json([
-                'ok' => true,
-                'room' => $room,
-                'message' => 'Guest checked out. Room is in maintenance; stay moved to guest history; chat cleared.',
-            ]);
-        }
-
-        if ($toStatus === RoomStatus::MAINTENANCE->value) {
-            $hasGuest = trim((string) ($room->getAttributes()['current_guest_name'] ?? '')) !== ''
-                || $this->roomCheckoutService->findActiveBooking((string) $room->hotel_id, (string) $room->id) !== null;
-            if ($hasGuest) {
-                $room = $this->roomCheckoutService->finalizeStay($room, $request->user());
-
-                return response()->json([
-                    'ok' => true,
-                    'room' => $room,
-                    'message' => 'Guest cleared and room set to maintenance.',
-                ]);
-            }
-        }
-
-        $room->update(['status' => $toStatus]);
-
-        return response()->json($room);
+        return response()->json([
+            'ok' => true,
+            'room' => $result['room'],
+            'message' => $result['message'],
+        ]);
     }
 
     public function checkout(Request $request, Room $room)
     {
-        $room = $this->roomCheckoutService->checkoutCheckedInGuest($room, $request->user());
+        $room = $this->roomCheckoutService->checkoutGuest($room, $request->user());
 
         return response()->json([
             'ok' => true,
@@ -130,5 +111,4 @@ class RoomController extends Controller
                 ->get()
         );
     }
-
 }

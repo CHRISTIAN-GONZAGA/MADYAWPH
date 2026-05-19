@@ -478,7 +478,10 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     final roomId = (room?['id'] ?? widget.roomId).toString();
     final current = (room?['status'] ?? 'available').toString();
     final paid = (booking?['payment_status'] ?? '').toString() == 'paid';
-    final canCheckout = current != 'checked_in' || paid;
+    final hasStay = current == 'checked_in' ||
+        current == 'booked' ||
+        (room?['current_guest_name'] ?? '').toString().trim().isNotEmpty;
+    final showCheckedOut = hasStay && paid;
     String status = current;
     final chosen = await showDialog<String>(
       context: context,
@@ -490,7 +493,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
             const DropdownMenuItem(value: 'available', child: Text('available')),
             const DropdownMenuItem(value: 'booked', child: Text('booked')),
             const DropdownMenuItem(value: 'checked_in', child: Text('checked_in')),
-            if (canCheckout)
+            if (showCheckedOut)
               const DropdownMenuItem(value: 'checked_out', child: Text('checked_out')),
             const DropdownMenuItem(value: 'maintenance', child: Text('maintenance')),
             const DropdownMenuItem(value: 'reserved', child: Text('reserved')),
@@ -508,13 +511,32 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       ),
     );
     if (chosen == null) return;
+    if (chosen == 'checked_out' && hasStay && !paid) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Mark payment as paid before checking out this guest.'),
+        ),
+      );
+      return;
+    }
     if (_changingStatus) return;
     setState(() => _changingStatus = true);
     try {
-      await portalDio().put('/rooms/$roomId/status', data: {'status': chosen});
+      final Response<Map<String, dynamic>> res;
+      if (chosen == 'checked_out') {
+        res = await portalDio().post<Map<String, dynamic>>(
+          '/rooms/$roomId/checkout',
+        );
+      } else {
+        res = await portalDio().put<Map<String, dynamic>>(
+          '/rooms/$roomId/status',
+          data: {'status': chosen},
+        );
+      }
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Status updated.')));
+      final msg = (res.data?['message'] ?? 'Status updated.').toString();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
@@ -921,7 +943,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
             ),
           ],
         ),
-        if (status == 'checked_in') ...[
+        if (status == 'checked_in' || status == 'booked') ...[
           const SizedBox(height: 10),
           SizedBox(
             width: double.infinity,

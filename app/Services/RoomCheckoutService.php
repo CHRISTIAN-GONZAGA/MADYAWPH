@@ -11,6 +11,7 @@ use App\Models\Room;
 use App\Models\StaffMember;
 use App\Models\Task;
 use App\Models\User;
+use App\Support\SafeModelAttributes;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
@@ -19,27 +20,94 @@ class RoomCheckoutService
     public function __construct(private readonly ActivityLogService $activityLogService) {}
 
     /**
-     * Check out a checked-in guest: complete booking, clear room, maintenance, clear chat.
+     * @return array{room: Room, message: string|null}
      */
-    public function checkoutCheckedInGuest(Room $room, User $actor, bool $requirePaid = true): Room
+    public function applyStatusChange(Room $room, User $actor, string $toStatus): array
     {
-        $fromStatus = $room->status instanceof RoomStatus ? $room->status->value : (string) $room->status;
-        if ($fromStatus !== RoomStatus::CHECKED_IN->value) {
+        $from = $this->normalizedStatus($room);
+        $to = strtolower(trim($toStatus));
+
+        if ($to === RoomStatus::CHECKED_OUT->value) {
+            $room = $this->checkoutGuest($room, $actor);
+
+            return [
+                'room' => $room,
+                'message' => 'Guest checked out. Room is in maintenance; stay moved to guest history; chat cleared.',
+            ];
+        }
+
+        if ($to === RoomStatus::MAINTENANCE->value && $this->roomHasActiveStay($room)) {
+            $room = $this->finalizeStay($room, $actor);
+
+            return [
+                'room' => $room,
+                'message' => 'Guest cleared and room set to maintenance.',
+            ];
+        }
+
+        if ($from === RoomStatus::MAINTENANCE->value && $to === RoomStatus::AVAILABLE->value) {
+            $room = $this->releaseToAvailable($room, $actor);
+
+            return [
+                'room' => $room,
+                'message' => 'Room is available. Previous guest access password has been voided.',
+            ];
+        }
+
+        $room->update(['status' => $to]);
+
+        return ['room' => $room->fresh() ?? $room, 'message' => null];
+    }
+
+    /**
+     * Check out guest (booked or checked-in): complete booking, clear room, maintenance, clear chat.
+     */
+    public function checkoutGuest(Room $room, User $actor, bool $requirePaid = true): Room
+    {
+        if (! $this->roomHasActiveStay($room)) {
             throw ValidationException::withMessages([
-                'status' => ['Only checked-in rooms can be checked out from this action.'],
+                'status' => ['No active guest stay on this room to check out.'],
             ]);
         }
 
         $hotelId = (string) $room->hotel_id;
         $booking = $this->findActiveBooking($hotelId, (string) $room->id);
 
-        if ($requirePaid && (! $booking || (string) ($booking->payment_status ?? 'unpaid') !== 'paid')) {
+        if ($requirePaid && $booking && (string) ($booking->getAttributes()['payment_status'] ?? 'unpaid') !== 'paid') {
             throw ValidationException::withMessages([
                 'payment_status' => ['Mark the stay as paid in room details before checkout.'],
             ]);
         }
 
         return $this->finalizeStay($room, $actor, $booking);
+    }
+
+    /** @deprecated Use {@see checkoutGuest()} */
+    public function checkoutCheckedInGuest(Room $room, User $actor, bool $requirePaid = true): Room
+    {
+        return $this->checkoutGuest($room, $actor, $requirePaid);
+    }
+
+    /**
+     * After maintenance: available room with no guest credentials (old password voided).
+     */
+    public function releaseToAvailable(Room $room, ?User $actor = null): Room
+    {
+        $hotelId = (string) $room->hotel_id;
+        $roomNo = (string) ($room->room_number ?? '');
+
+        $this->clearRoomGuestFields($room, RoomStatus::AVAILABLE->value);
+
+        if ($actor) {
+            $this->activityLogService->log(
+                $hotelId,
+                $actor,
+                "Room {$roomNo} set to available (access password voided)",
+                ['room_id' => (string) $room->id]
+            );
+        }
+
+        return $room->fresh() ?? $room;
     }
 
     /**
@@ -54,24 +122,24 @@ class RoomCheckoutService
         $guestName = (string) ($room->getAttributes()['current_guest_name'] ?? $booking?->guest_name ?? '');
 
         if ($booking) {
-            $booking->update([
+            $paidAt = SafeModelAttributes::carbonFromModel($booking, 'paid_at');
+            $updates = [
                 'status' => BookingStatus::COMPLETED->value,
                 'checked_out_at' => now(),
-            ]);
+            ];
+            if ((string) ($booking->getAttributes()['payment_status'] ?? '') === 'paid' && $paidAt === null) {
+                $updates['paid_at'] = now();
+            }
+            $booking->update($updates);
             $this->clearCheckoutReminders($hotelId, (string) $booking->id);
         }
 
         $chatDeleted = $this->clearGuestChat($hotelId, $roomId);
 
-        $room->update([
-            'status' => RoomStatus::MAINTENANCE->value,
-            'current_guest_name' => null,
-            'current_check_in' => null,
-            'current_check_out' => null,
-            'current_access_code' => null,
-        ]);
+        $this->clearRoomGuestFields($room, RoomStatus::MAINTENANCE->value);
 
-        $this->createAutoMaintenanceTask($actor, $room->fresh() ?? $room);
+        $freshRoom = $room->fresh() ?? $room;
+        $this->createAutoMaintenanceTask($actor, $freshRoom);
 
         $this->activityLogService->log(
             $hotelId,
@@ -85,7 +153,16 @@ class RoomCheckoutService
             ]
         );
 
-        return $room->fresh() ?? $room;
+        return $freshRoom;
+    }
+
+    public function roomHasActiveStay(Room $room): bool
+    {
+        if (trim((string) ($room->getAttributes()['current_guest_name'] ?? '')) !== '') {
+            return true;
+        }
+
+        return $this->findActiveBooking((string) $room->hotel_id, (string) $room->id) !== null;
     }
 
     public function findActiveBooking(string $hotelId, string $roomId): ?Booking
@@ -99,6 +176,33 @@ class RoomCheckoutService
             ])
             ->latest('created_at')
             ->first();
+    }
+
+    public function normalizedStatus(Room $room): string
+    {
+        $raw = SafeModelAttributes::rawString($room, 'status');
+
+        return strtolower(trim($raw));
+    }
+
+    private function clearRoomGuestFields(Room $room, string $status): void
+    {
+        $room->forceFill([
+            'status' => $status,
+            'current_guest_name' => null,
+            'current_check_in' => null,
+            'current_check_out' => null,
+            'current_access_code' => null,
+        ])->save();
+
+        if (method_exists($room, 'unset')) {
+            $room->unset([
+                'current_guest_name',
+                'current_check_in',
+                'current_check_out',
+                'current_access_code',
+            ]);
+        }
     }
 
     private function clearCheckoutReminders(string $hotelId, string $bookingId): void
