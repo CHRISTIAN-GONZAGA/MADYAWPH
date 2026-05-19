@@ -36,6 +36,7 @@ use App\Services\ActivityLogService;
 use App\Services\BookingService;
 use App\Services\FinancialComputationService;
 use App\Services\PaymentGatewayService;
+use App\Services\RoomCheckoutService;
 use App\Services\SmsService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -260,7 +261,7 @@ Route::middleware('role:admin')->group(function (): void {
         return response()->json(['ok' => true]);
     })->name('api.v1.admin.amenity.menu.delete');
 
-    Route::patch('/admin/rooms/{id}/status', function (Request $request, string $id) {
+    Route::patch('/admin/rooms/{id}/status', function (Request $request, string $id, RoomCheckoutService $roomCheckoutService) {
         $validated = $request->validate([
             'status' => ['required', 'in:available,booked,checked_in,checked_out,maintenance,reserved'],
         ]);
@@ -273,72 +274,35 @@ Route::middleware('role:admin')->group(function (): void {
 
         $previousStatus = $room->status?->value ?? (string) $room->status;
         $nextStatus = (string) $validated['status'];
+
         if ($previousStatus === RoomStatus::CHECKED_IN->value && $nextStatus === RoomStatus::CHECKED_OUT->value) {
-            $activeBooking = Booking::withoutGlobalScopes()
-                ->where('hotel_id', $hotelId)
-                ->where('room_id', (string) $room->id)
-                ->whereNotIn('status', [
-                    BookingStatus::COMPLETED->value,
-                    BookingStatus::CANCELLED->value,
-                ])
-                ->latest('created_at')
-                ->first();
-            if (! $activeBooking || (string) ($activeBooking->payment_status ?? 'unpaid') !== 'paid') {
-                return response()->json([
-                    'message' => 'Mark the stay as paid in room details before checkout.',
-                ], 422);
-            }
-            $nextStatus = RoomStatus::MAINTENANCE->value;
-        }
+            $room = $roomCheckoutService->checkoutCheckedInGuest($room, $request->user());
 
-        $archiveGuest = $nextStatus === RoomStatus::MAINTENANCE->value;
-
-        if ($archiveGuest) {
-            $booking = Booking::withoutGlobalScopes()
-                ->where('hotel_id', $hotelId)
-                ->where('room_id', (string) $room->id)
-                ->whereNotIn('status', [
-                    BookingStatus::COMPLETED->value,
-                    BookingStatus::CANCELLED->value,
-                ])
-                ->latest('created_at')
-                ->first();
-            if ($booking) {
-                $booking->update(['status' => BookingStatus::COMPLETED->value]);
-            }
-
-            $room->update([
-                'status' => $nextStatus,
-                'current_guest_name' => null,
-                'current_check_in' => null,
-                'current_check_out' => null,
-                'current_access_code' => null,
+            return response()->json([
+                'ok' => true,
+                'room' => $room,
+                'message' => 'Guest checked out. Room is in maintenance; stay moved to guest history; chat cleared.',
             ]);
-        } else {
-            $room->update(['status' => $nextStatus]);
         }
-
-        $room->refresh();
 
         if ($nextStatus === RoomStatus::MAINTENANCE->value) {
-            $staff = StaffMember::query()->where('hotel_id', $hotelId)->first();
-            if ($staff) {
-                Task::query()->create([
-                    'hotel_id' => $hotelId,
-                    'title' => "Maintenance check for Room {$room->room_number}",
-                    'description' => 'Auto-created from room status change.',
-                    'assigned_to' => (string) $staff->id,
-                    'created_by' => (string) $request->user()->id,
-                    'status' => 'pending',
-                    'priority' => 'high',
-                ]);
+            $hasGuest = trim((string) ($room->getAttributes()['current_guest_name'] ?? '')) !== ''
+                || $roomCheckoutService->findActiveBooking($hotelId, (string) $room->id) !== null;
+            if ($hasGuest) {
+                $room = $roomCheckoutService->finalizeStay($room, $request->user());
+
+                return response()->json(['ok' => true, 'room' => $room]);
             }
         }
+
+        $room->update(['status' => $nextStatus]);
+        $room->refresh();
+
         app(ActivityLogService::class)->log(
             $hotelId,
             $request->user(),
             "Updated room {$room->room_number} status",
-            ['from' => $previousStatus, 'to' => $nextStatus, 'guest_cleared' => $archiveGuest]
+            ['from' => $previousStatus, 'to' => $nextStatus]
         );
 
         return response()->json(['ok' => true, 'room' => $room]);
@@ -668,6 +632,7 @@ Route::get('/rooms/available', [RoomController::class, 'available']);
 Route::get('/rooms/{room}', [RoomController::class, 'show']);
 Route::post('/rooms', [RoomController::class, 'store'])->middleware('role:admin');
 Route::put('/rooms/{room}/status', [RoomController::class, 'updateStatus'])->middleware('role:admin,staff');
+Route::post('/rooms/{room}/checkout', [RoomController::class, 'checkout'])->middleware('role:admin,staff');
 Route::delete('/rooms/{room}', [RoomController::class, 'destroy'])->middleware('role:admin');
 
 // Room categories
@@ -974,9 +939,21 @@ Route::get('/admin/guest-history', function (Request $request) {
     $rows = Booking::withoutGlobalScopes()
         ->where('hotel_id', $hotelId)
         ->where('status', BookingStatus::COMPLETED->value)
+        ->orderByDesc('checked_out_at')
         ->orderByDesc('updated_at')
         ->limit(200)
-        ->get();
+        ->get()
+        ->map(function (Booking $booking) use ($hotelId) {
+            $room = Room::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
+                ->find((string) ($booking->room_id ?? ''));
+
+            return array_merge($booking->toArray(), [
+                'room_number' => (string) ($room?->room_number ?? ''),
+                'checked_out_display' => optional($booking->checked_out_at)->format('M j, Y g:i A')
+                    ?? optional($booking->updated_at)->format('M j, Y g:i A'),
+            ]);
+        });
 
     return response()->json(['data' => $rows]);
 })->middleware('role:admin');

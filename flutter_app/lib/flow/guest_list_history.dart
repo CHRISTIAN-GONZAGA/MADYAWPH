@@ -89,8 +89,10 @@ class _GuestListHistoryScreenState extends State<GuestListHistoryScreen> {
           final m = _rows[i] as Map<String, dynamic>;
           final ref = (m['booking_reference'] ?? '').toString();
           final guest = (m['guest_name'] ?? '').toString();
+          final roomNo = (m['room_number'] ?? '').toString();
           final ci = (m['check_in_date'] ?? '').toString();
           final co = (m['check_out_date'] ?? '').toString();
+          final checkedOutAt = (m['checked_out_display'] ?? '').toString();
           final phone = (m['guest_phone'] ?? '').toString();
           return Card(
             child: ListTile(
@@ -98,9 +100,11 @@ class _GuestListHistoryScreenState extends State<GuestListHistoryScreen> {
               title: Text(guest.isEmpty ? 'Guest' : guest),
               subtitle: Text(
                 [
+                  if (roomNo.isNotEmpty) 'Room $roomNo',
                   if (ref.isNotEmpty) 'Ref: $ref',
                   if (ci.isNotEmpty) 'Check-in: $ci',
-                  if (co.isNotEmpty) 'Check-out: $co',
+                  if (co.isNotEmpty) 'Scheduled departure: $co',
+                  if (checkedOutAt.isNotEmpty) 'Checked out: $checkedOutAt',
                   if (phone.isNotEmpty) phone,
                 ].join('\n'),
               ),

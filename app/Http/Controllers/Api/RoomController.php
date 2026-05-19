@@ -2,20 +2,18 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Enums\BookingStatus;
 use App\Enums\RoomStatus;
 use App\Http\Controllers\Controller;
-use App\Models\Booking;
 use App\Models\RoomCategory;
 use App\Models\Room;
-use App\Models\StaffMember;
-use App\Models\Task;
-use App\Services\ActivityLogService;
+use App\Services\RoomCheckoutService;
 use Illuminate\Http\Request;
 use App\Support\ChatAttachmentUrl;
 
 class RoomController extends Controller
 {
+    public function __construct(private readonly RoomCheckoutService $roomCheckoutService) {}
+
     public function index(Request $request)
     {
         $validated = $request->validate([
@@ -77,36 +75,43 @@ class RoomController extends Controller
         $toStatus = (string) $validated['status'];
 
         if ($fromStatus === RoomStatus::CHECKED_IN->value && $toStatus === RoomStatus::CHECKED_OUT->value) {
-            $activeBooking = Booking::withoutGlobalScopes()
-                ->where('hotel_id', (string) $room->hotel_id)
-                ->where('room_id', (string) $room->id)
-                ->whereNotIn('status', [
-                    BookingStatus::COMPLETED->value,
-                    BookingStatus::CANCELLED->value,
-                ])
-                ->latest('created_at')
-                ->first();
-            if (! $activeBooking || (string) ($activeBooking->payment_status ?? 'unpaid') !== 'paid') {
-                return response()->json([
-                    'message' => 'Mark the stay as paid in room details before checkout.',
-                ], 422);
-            }
-            $this->createAutoMaintenanceTask($request, $room);
-            $activeBooking->update(['status' => BookingStatus::COMPLETED->value]);
-            $room->update([
-                'status' => RoomStatus::MAINTENANCE->value,
-                'current_guest_name' => null,
-                'current_check_in' => null,
-                'current_check_out' => null,
-                'current_access_code' => null,
-            ]);
+            $room = $this->roomCheckoutService->checkoutCheckedInGuest($room, $request->user());
 
-            return response()->json($room);
+            return response()->json([
+                'ok' => true,
+                'room' => $room,
+                'message' => 'Guest checked out. Room is in maintenance; stay moved to guest history; chat cleared.',
+            ]);
+        }
+
+        if ($toStatus === RoomStatus::MAINTENANCE->value) {
+            $hasGuest = trim((string) ($room->getAttributes()['current_guest_name'] ?? '')) !== ''
+                || $this->roomCheckoutService->findActiveBooking((string) $room->hotel_id, (string) $room->id) !== null;
+            if ($hasGuest) {
+                $room = $this->roomCheckoutService->finalizeStay($room, $request->user());
+
+                return response()->json([
+                    'ok' => true,
+                    'room' => $room,
+                    'message' => 'Guest cleared and room set to maintenance.',
+                ]);
+            }
         }
 
         $room->update(['status' => $toStatus]);
 
         return response()->json($room);
+    }
+
+    public function checkout(Request $request, Room $room)
+    {
+        $room = $this->roomCheckoutService->checkoutCheckedInGuest($room, $request->user());
+
+        return response()->json([
+            'ok' => true,
+            'room' => $room,
+            'message' => 'Guest checked out. Room is in maintenance; stay moved to guest history; chat cleared.',
+        ]);
     }
 
     public function destroy(Room $room)
@@ -126,28 +131,4 @@ class RoomController extends Controller
         );
     }
 
-    private function createAutoMaintenanceTask(Request $request, Room $room): void
-    {
-        $staff = StaffMember::query()
-            ->where('hotel_id', (string) $room->hotel_id)
-            ->orderBy('created_at')
-            ->first();
-
-        $task = Task::withoutGlobalScopes()->create([
-            'hotel_id' => (string) $room->hotel_id,
-            'title' => "Post checkout maintenance for room {$room->room_number}",
-            'description' => 'Auto-generated after guest checkout. Please inspect and clean room before setting it to available.',
-            'assigned_to' => (string) ($staff?->id ?? ''),
-            'created_by' => (string) $request->user()->id,
-            'status' => 'pending',
-            'priority' => 'high',
-        ]);
-
-        app(ActivityLogService::class)->log(
-            (string) $room->hotel_id,
-            $request->user(),
-            "Auto-created maintenance task for room {$room->room_number}",
-            ['task_id' => (string) $task->id, 'room_id' => (string) $room->id]
-        );
-    }
 }

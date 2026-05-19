@@ -289,6 +289,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   bool _loading = true;
   bool _busy = false;
   bool _changingStatus = false;
+  bool _checkingOut = false;
   bool _updatingPayment = false;
   bool _issuingRefund = false;
 
@@ -408,6 +409,66 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       );
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _checkoutGuest() async {
+    final room = _data?['room'] as Map<String, dynamic>?;
+    final booking = _data?['active_booking'] as Map<String, dynamic>?;
+    final roomId = (room?['id'] ?? widget.roomId).toString();
+    final guest = (room?['current_guest_name'] ?? booking?['guest_name'] ?? 'Guest').toString();
+    final paid = (booking?['payment_status'] ?? '').toString() == 'paid';
+
+    if (!paid) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Mark payment as paid before checking out this guest.'),
+        ),
+      );
+      return;
+    }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Check out guest'),
+        content: Text(
+          'Check out $guest from this room?\n\n'
+          '• Guest details will be cleared from room management\n'
+          '• Room will move to maintenance for cleaning\n'
+          '• Stay will appear in Guest list history\n'
+          '• Chat history for this room will be cleared',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Check out'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || _checkingOut) return;
+
+    setState(() => _checkingOut = true);
+    try {
+      final res = await portalDio().post<Map<String, dynamic>>(
+        '/rooms/$roomId/checkout',
+      );
+      if (!mounted) return;
+      final msg = (res.data?['message'] ?? 'Guest checked out.').toString();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      await _load();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+    } finally {
+      if (mounted) setState(() => _checkingOut = false);
     }
   }
 
@@ -860,6 +921,23 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
             ),
           ],
         ),
+        if (status == 'checked_in') ...[
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: (_checkingOut || _changingStatus) ? null : _checkoutGuest,
+              icon: _checkingOut
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.logout_outlined),
+              label: Text(_checkingOut ? 'Checking out…' : 'Check out guest'),
+            ),
+          ),
+        ],
         const SizedBox(height: 10),
         Row(
           children: [
