@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Enums\PaymentMethod;
 use App\Enums\RoomStatus;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
@@ -12,7 +11,7 @@ use App\Models\Room;
 use App\Models\RoomTransfer;
 use App\Models\StaffMember;
 use App\Models\Task;
-use App\Support\EnumHelper;
+use App\Support\SafeModelAttributes;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -26,7 +25,7 @@ class ReportController extends Controller
         $rows = Booking::query()
             ->get(['created_at', 'total_amount'])
             ->groupBy(function ($booking) use ($period) {
-                $createdAt = $this->coerceCarbon($booking->created_at);
+                $createdAt = SafeModelAttributes::carbonFromModel($booking, 'created_at');
                 if (! $createdAt) {
                     return 'unknown';
                 }
@@ -57,7 +56,7 @@ class ReportController extends Controller
                 ->map(fn (StaffMember $s) => [
                     'id' => (string) $s->id,
                     'name' => (string) ($s->name ?? ''),
-                    'role' => EnumHelper::toString($s->role),
+                    'role' => SafeModelAttributes::rawString($s, 'role'),
                     'performance_score' => (int) ($s->performance_score ?? 0),
                     'tasks_completed' => (int) ($s->tasks_completed ?? 0),
                     'user_id' => (string) ($s->user_id ?? ''),
@@ -75,7 +74,7 @@ class ReportController extends Controller
         ];
         $total = $rooms->count();
         $booked = $rooms->filter(function ($room) use ($occupiedStatuses) {
-            $status = EnumHelper::toString($room->status);
+            $status = strtolower(SafeModelAttributes::rawString($room, 'status'));
 
             return in_array($status, $occupiedStatuses, true);
         })->count();
@@ -177,7 +176,7 @@ class ReportController extends Controller
             ->whereBetween('created_at', [$from, $to])
             ->get();
         foreach ($refundCharges as $refund) {
-            $label = $this->bucketLabel($this->coerceCarbon($refund->created_at), $granularity);
+            $label = $this->bucketLabel(SafeModelAttributes::carbonFromModel($refund, 'created_at'), $granularity);
             $entry = $rowsByLabel->get($label, [
                 'period_label' => $label,
                 'booking_count' => 0,
@@ -210,7 +209,7 @@ class ReportController extends Controller
             $rowsByLabel->put($label, $entry);
         }
         $rows = $rowsByLabel->values()->map(function ($row) {
-            $row['transactions'] = collect($row['transactions'] ?? [])->values();
+            $row['transactions'] = collect($row['transactions'] ?? [])->values()->all();
 
             return $row;
         })->sortBy('period_label')->values();
@@ -284,7 +283,7 @@ class ReportController extends Controller
         $points = ActivityLog::query()
             ->whereBetween('created_at', [$from, $to])
             ->get(['action', 'created_at'])
-            ->groupBy(fn ($log) => $this->bucketLabel($this->coerceCarbon($log->created_at), $granularity))
+            ->groupBy(fn ($log) => $this->bucketLabel(SafeModelAttributes::carbonFromModel($log, 'created_at'), $granularity))
             ->map(function ($group, $label) {
                 $topActions = $group->groupBy('action')
                     ->map(fn ($g) => (int) $g->count())
@@ -341,7 +340,7 @@ class ReportController extends Controller
                 'to_room_id' => (string) ($t->to_room_id ?? ''),
                 'price_adjustment' => (float) ($t->price_adjustment ?? 0),
                 'reason' => (string) ($t->reason ?? ''),
-                'transferred_at' => $this->coerceCarbon($t->transferred_at)?->toISOString(),
+                'transferred_at' => SafeModelAttributes::carbonFromModel($t, 'transferred_at')?->toISOString(),
             ])->values(),
         ]);
     }
@@ -358,7 +357,7 @@ class ReportController extends Controller
         $tasks = Task::query()
             ->whereBetween('created_at', [$from, $to])
             ->get(['status', 'created_at']);
-        $completed = $tasks->filter(fn ($t) => EnumHelper::toString($t->status) === 'completed')->count();
+        $completed = $tasks->filter(fn ($t) => strtolower(SafeModelAttributes::rawString($t, 'status')) === 'completed')->count();
 
         return response()->json([
             'summary' => [
@@ -366,11 +365,11 @@ class ReportController extends Controller
                 'completed' => (int) $completed,
                 'completion_rate' => $tasks->count() > 0 ? round(($completed / $tasks->count()) * 100, 2) : 0,
             ],
-            'by_day' => $tasks->groupBy(fn ($t) => $this->coerceCarbon($t->created_at)?->format('Y-m-d') ?? 'unknown')
+            'by_day' => $tasks->groupBy(fn ($t) => SafeModelAttributes::carbonFromModel($t, 'created_at')?->format('Y-m-d') ?? 'unknown')
                 ->map(fn ($group, $label) => [
                     'day' => $label,
                     'created' => (int) $group->count(),
-                    'completed' => (int) $group->filter(fn ($t) => EnumHelper::toString($t->status) === 'completed')->count(),
+                    'completed' => (int) $group->filter(fn ($t) => strtolower(SafeModelAttributes::rawString($t, 'status')) === 'completed')->count(),
                 ])
                 ->values(),
         ]);
@@ -390,27 +389,9 @@ class ReportController extends Controller
         };
     }
 
-    private function coerceCarbon(mixed $value): ?Carbon
-    {
-        if ($value === null || $value === '') {
-            return null;
-        }
-        if ($value instanceof Carbon) {
-            return $value;
-        }
-
-        try {
-            return Carbon::parse($value);
-        } catch (\Throwable) {
-            return null;
-        }
-    }
-
     private function paymentDateForBooking(Booking $booking): ?Carbon
     {
-        return $this->coerceCarbon($booking->paid_at)
-            ?? $this->coerceCarbon($booking->updated_at)
-            ?? $this->coerceCarbon($booking->created_at);
+        return SafeModelAttributes::carbonFromModel($booking, 'paid_at', 'updated_at', 'created_at');
     }
 
     /**
@@ -435,6 +416,9 @@ class ReportController extends Controller
     private function recognizedRevenueByBooking($bookings): array
     {
         $bookingIds = $bookings->map(fn ($b) => (string) $b->id)->values();
+        if ($bookingIds->isEmpty()) {
+            return [];
+        }
         $charges = BillingCharge::query()
             ->whereIn('booking_id', $bookingIds->all())
             ->get(['booking_id', 'amount', 'type']);
@@ -460,12 +444,8 @@ class ReportController extends Controller
         if (! $booking) {
             return '';
         }
-        $pm = $booking->payment_method;
-        if ($pm instanceof PaymentMethod) {
-            return $pm->value;
-        }
 
-        return (string) $pm;
+        return SafeModelAttributes::paymentMethodLabel($booking);
     }
 
     private function paymentChannel(?Booking $booking): string

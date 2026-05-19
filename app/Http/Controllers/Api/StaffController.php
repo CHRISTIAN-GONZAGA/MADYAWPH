@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\StaffMember;
 use App\Models\User;
+use App\Support\SafeModelAttributes;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
@@ -15,14 +16,14 @@ class StaffController extends Controller
         $rows = StaffMember::query()->orderBy('name')->limit(100)->get();
 
         return response()->json([
-            'data' => $rows,
+            'data' => $rows->map(fn (StaffMember $s) => $this->staffPayload($s))->values(),
             'meta' => ['total' => $rows->count()],
         ]);
     }
 
     public function show(StaffMember $staff)
     {
-        return response()->json($staff);
+        return response()->json($this->staffPayload($staff));
     }
 
     public function store(Request $request)
@@ -61,7 +62,7 @@ class StaffController extends Controller
             'performance_score' => $validated['performance_score'] ?? null,
             'daily_tasks' => $validated['daily_tasks'] ?? [],
         ]);
-        return response()->json($staff, 201);
+        return response()->json($this->staffPayload($staff), 201);
     }
 
     public function update(Request $request, StaffMember $staff)
@@ -74,6 +75,23 @@ class StaffController extends Controller
         ]);
 
         $staff->update($validated);
-        return response()->json($staff);
+        return response()->json($this->staffPayload($staff->fresh() ?? $staff));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function staffPayload(StaffMember $staff): array
+    {
+        return [
+            'id' => (string) $staff->id,
+            'user_id' => (string) ($staff->getAttributes()['user_id'] ?? ''),
+            'hotel_id' => (string) ($staff->getAttributes()['hotel_id'] ?? ''),
+            'name' => (string) ($staff->getAttributes()['name'] ?? ''),
+            'role' => SafeModelAttributes::rawString($staff, 'role'),
+            'performance_score' => (int) ($staff->getAttributes()['performance_score'] ?? 0),
+            'tasks_completed' => (int) ($staff->getAttributes()['tasks_completed'] ?? 0),
+            'daily_tasks' => $staff->getAttributes()['daily_tasks'] ?? [],
+        ];
     }
 }
