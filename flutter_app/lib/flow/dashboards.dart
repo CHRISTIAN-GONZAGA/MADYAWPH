@@ -3034,7 +3034,6 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
           final discountPct = switch (discountType) {
             'pwd' => 20.0,
             'senior' => 20.0,
-            'student' => 10.0,
             _ => 0.0,
           };
           final estAfterDiscount =
@@ -3123,10 +3122,6 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                       DropdownMenuItem(
                         value: 'senior',
                         child: Text('Senior citizen (20% off)'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'student',
-                        child: Text('Student (10% off)'),
                       ),
                     ],
                     onChanged: (v) => setLocal(() {

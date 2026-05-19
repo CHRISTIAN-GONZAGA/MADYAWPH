@@ -22,6 +22,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -138,7 +139,7 @@ class CustomerPortalApiController extends Controller
             $validated = $this->mergeDiscountIntoValidated($request, $validated);
 
             return $this->createFutureReservation($validated);
-        } catch (HttpResponseException $e) {
+        } catch (HttpResponseException|ValidationException $e) {
             throw $e;
         } catch (Throwable $e) {
             return $this->customerErrorResponse($e, 'Could not submit your reservation request.');
@@ -194,28 +195,15 @@ class CustomerPortalApiController extends Controller
                 'booking_id' => (string) $booking->id,
                 'room_id' => (string) $room->id,
                 'type' => 'room',
-                'label' => "Room charge ({$nights} night".($nights > 1 ? 's' : '').')',
+                'label' => $discountPercent > 0
+                    ? "Room charge ({$nights} night".($nights > 1 ? 's' : '').') — '
+                        .strtoupper((string) $validated['discount_type'])." {$discountPercent}% off applied"
+                    : "Room charge ({$nights} night".($nights > 1 ? 's' : '').')',
                 'amount' => $total,
                 'quantity' => 1,
                 'is_manual' => false,
                 'metadata' => $chargeMeta,
             ]);
-            if ($gross > $total && $discountPercent > 0) {
-                BillingCharge::withoutGlobalScopes()->create([
-                    'hotel_id' => (string) $room->hotel_id,
-                    'booking_id' => (string) $booking->id,
-                    'room_id' => (string) $room->id,
-                    'type' => 'discount',
-                    'label' => strtoupper((string) $validated['discount_type'])." discount ({$discountPercent}%)",
-                    'amount' => -1 * round($gross - $total, 2),
-                    'quantity' => 1,
-                    'is_manual' => false,
-                    'metadata' => [
-                        'discount_type' => $validated['discount_type'],
-                        'discount_id_url' => $validated['discount_id_url'] ?? null,
-                    ],
-                ]);
-            }
 
             $generatedPassword = $this->generateUniqueRoomPassword();
             $room->update([
@@ -248,7 +236,7 @@ class CustomerPortalApiController extends Controller
                 'ok' => true,
                 'booking' => $this->serializeBooking($booking),
             ]);
-        } catch (HttpResponseException $e) {
+        } catch (HttpResponseException|ValidationException $e) {
             throw $e;
         } catch (Throwable $e) {
             return $this->customerErrorResponse($e, 'Could not complete your booking.');
@@ -374,9 +362,15 @@ class CustomerPortalApiController extends Controller
         $percent = match ($type) {
             'pwd' => 20.0,
             'senior' => 20.0,
-            'student' => 10.0,
             default => 0.0,
         };
+
+        if ($percent <= 0) {
+            throw new HttpResponseException(response()->json([
+                'message' => 'Unsupported discount type.',
+                'errors' => ['discount_type' => ['Choose PWD or senior citizen, or select no discount.']],
+            ], 422));
+        }
 
         try {
             $path = $request->file('discount_id_file')->store('bookings/discount-ids', 'public');
@@ -404,7 +398,7 @@ class CustomerPortalApiController extends Controller
             'guest_phone' => ['required', 'string', 'max:30'],
             'check_in' => ['required', 'date'],
             'check_out' => ['required', 'date', 'after:check_in'],
-            'discount_type' => ['nullable', 'string', 'in:none,pwd,senior,student'],
+            'discount_type' => ['nullable', 'string', 'in:none,pwd,senior'],
             'discount_id_file' => ['nullable', 'image', 'max:5120'],
         ]);
     }

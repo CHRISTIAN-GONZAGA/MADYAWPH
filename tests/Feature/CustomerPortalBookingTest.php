@@ -3,9 +3,12 @@
 namespace Tests\Feature;
 
 use App\Enums\RoomStatus;
+use App\Models\BillingCharge;
+use App\Models\Booking;
 use App\Models\Hotel;
 use App\Models\Room;
 use Carbon\Carbon;
+use Illuminate\Http\UploadedFile;
 use Tests\TestCase;
 
 class CustomerPortalBookingTest extends TestCase
@@ -67,6 +70,69 @@ class CustomerPortalBookingTest extends TestCase
 
         $response->assertStatus(422);
         $response->assertJsonValidationErrors(['discount_id_file']);
+    }
+
+    public function test_pwd_discount_applied_once_on_booking_total_and_charges(): void
+    {
+        $hotel = Hotel::create(['name' => 'PWD Once Hotel', 'location' => 'Loc']);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '204',
+            'room_type' => 'Single',
+            'price_per_night' => 1000,
+            'status' => RoomStatus::AVAILABLE->value,
+        ]);
+
+        $response = $this->post('/api/v1/customer/bookings', [
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'guest_name' => 'PWD Guest',
+            'guest_email' => 'pwd-once@example.com',
+            'guest_phone' => '09173334444',
+            'check_in' => Carbon::today()->toDateString(),
+            'check_out' => Carbon::today()->addDay()->toDateString(),
+            'discount_type' => 'pwd',
+            'discount_id_file' => UploadedFile::fake()->create('pwd-id.jpg', 100, 'image/jpeg'),
+        ], ['Accept' => 'application/json']);
+
+        $response->assertOk();
+        $bookingId = (string) $response->json('booking.id');
+        $booking = Booking::withoutGlobalScopes()->find($bookingId);
+        $this->assertNotNull($booking);
+        $this->assertEqualsWithDelta(800.0, (float) $booking->total_amount, 0.01);
+
+        $charges = BillingCharge::withoutGlobalScopes()
+            ->where('booking_id', $bookingId)
+            ->get();
+        $this->assertCount(1, $charges);
+        $this->assertSame('room', (string) $charges->first()->type);
+        $this->assertEqualsWithDelta(800.0, (float) $charges->sum('amount'), 0.01);
+    }
+
+    public function test_student_discount_type_is_rejected(): void
+    {
+        $hotel = Hotel::create(['name' => 'No Student Hotel', 'location' => 'Loc']);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '205',
+            'room_type' => 'Single',
+            'price_per_night' => 1000,
+            'status' => RoomStatus::AVAILABLE->value,
+        ]);
+
+        $response = $this->postJson('/api/v1/customer/bookings', [
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'guest_name' => 'Student Guest',
+            'guest_email' => 'student@example.com',
+            'guest_phone' => '09175556666',
+            'check_in' => Carbon::today()->toDateString(),
+            'check_out' => Carbon::today()->addDay()->toDateString(),
+            'discount_type' => 'student',
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['discount_type']);
     }
 
     public function test_customer_future_reservation_succeeds(): void

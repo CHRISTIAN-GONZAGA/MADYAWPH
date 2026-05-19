@@ -85,7 +85,7 @@ class _HowToSheet extends StatelessWidget {
                       '• Username: `{hotel_username}_admin`.\n'
                       '• Default password: `{hotel_username}123`.\n\n'
                       '**Staff** — Tasks, room status, maintenance reports, chat with admin.\n\n'
-                      '**Public customer** — Browse categories, see availability, book or reserve with optional PWD/senior/student discount (ID photo).\n\n'
+                      '**Public customer** — Browse categories, see availability, book or reserve with optional PWD or senior citizen discount (ID photo).\n\n'
                       '**Guest (in-house)** — Checked-in guests use room number + room password for amenities, chat, billing, and checkout reminders.',
                 ),
                 _Section(
