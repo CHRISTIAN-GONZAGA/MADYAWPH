@@ -20,7 +20,10 @@ import 'admin/admin_dashboard_shell.dart';
 // --- Admin ---
 
 class AdminDashboardScreen extends StatefulWidget {
-  const AdminDashboardScreen({super.key});
+  const AdminDashboardScreen({super.key, this.isSuperAdmin = false});
+
+  /// When true, shows the same dashboard plus the admin control panel tab.
+  final bool isSuperAdmin;
 
   @override
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
@@ -359,8 +362,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ),
       );
     }
+    var isSuper = widget.isSuperAdmin;
+    final auth = _data!['auth'] as Map<String, dynamic>?;
+    final user = auth?['user'] as Map<String, dynamic>?;
+    if ((user?['role'] ?? '').toString() == 'super_admin') {
+      isSuper = true;
+    }
+
     return AdminDashboardShell(
       data: _data!,
+      isSuperAdmin: isSuper,
       onRefresh: _load,
       onSignOut: _signOut,
       busyAction: _busyAction,

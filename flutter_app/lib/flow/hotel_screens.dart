@@ -383,7 +383,11 @@ class RoleMenuScreen extends StatelessWidget {
     if (!context.mounted) return;
     if (token != null && (role == 'admin' || role == 'super_admin')) {
       await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(builder: (_) => const AdminDashboardScreen()),
+        MaterialPageRoute<void>(
+          builder: (_) => AdminDashboardScreen(
+            isSuperAdmin: role == 'super_admin',
+          ),
+        ),
       );
       return;
     }
@@ -405,7 +409,9 @@ class RoleMenuScreen extends StatelessWidget {
     if (!context.mounted) return;
     if (token != null && role == 'super_admin') {
       await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(builder: (_) => const AdminDashboardScreen()),
+        MaterialPageRoute<void>(
+          builder: (_) => const AdminDashboardScreen(isSuperAdmin: true),
+        ),
       );
       return;
     }
@@ -416,7 +422,9 @@ class RoleMenuScreen extends StatelessWidget {
     );
     if (ok == true && context.mounted) {
       await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(builder: (_) => const AdminDashboardScreen()),
+        MaterialPageRoute<void>(
+          builder: (_) => const AdminDashboardScreen(isSuperAdmin: true),
+        ),
       );
     }
   }

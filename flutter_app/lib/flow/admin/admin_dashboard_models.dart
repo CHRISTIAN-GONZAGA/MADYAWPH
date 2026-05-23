@@ -45,37 +45,6 @@ class AdminDashboardModels {
     };
   }
 
-  static Map<String, dynamic> categoryStats(
-    String label,
-    List<Map<String, dynamic>> rooms,
-  ) {
-    var vacant = 0;
-    var checkedIn = 0;
-    var reserved = 0;
-    var booked = 0;
-    var maintenance = 0;
-    for (final r in rooms) {
-      final s = statusOf(r);
-      if (s == 'available') vacant++;
-      if (s == 'checked_in') checkedIn++;
-      if (s == 'reserved') reserved++;
-      if (s == 'booked') booked++;
-      if (s == 'maintenance') maintenance++;
-    }
-    final total = rooms.length;
-    final occ = total > 0 ? ((total - vacant) / total * 100).round() : 0;
-    return {
-      'label': label,
-      'total': total,
-      'vacant': vacant,
-      'checked_in': checkedIn,
-      'reserved': reserved,
-      'booked': booked,
-      'maintenance': maintenance,
-      'occupancy': occ,
-    };
-  }
-
   /// Default hotel checkout time 11:00 AM on check-out date.
   static DateTime? checkoutDateTime(Map<String, dynamic> room) {
     final raw = (room['current_check_out'] ?? '').toString();
@@ -95,6 +64,94 @@ class AdminDashboardModels {
     final mins = minutesUntilCheckout(room);
     if (mins == null) return false;
     return mins >= 0 && mins <= 30;
+  }
+
+  static DateTime? parseDate(dynamic raw) {
+    final s = raw?.toString() ?? '';
+    if (s.isEmpty) return null;
+    return DateTime.tryParse(s.split('T').first);
+  }
+
+  static DateTime? stayEndDate(Map<String, dynamic> room) {
+    final raw = room['current_check_out'] ??
+        (room['latest_booking'] as Map?)?['check_out_date'];
+    return parseDate(raw);
+  }
+
+  static DateTime? stayStartDate(Map<String, dynamic> room) {
+    final raw = room['current_check_in'] ??
+        (room['latest_booking'] as Map?)?['check_in_date'];
+    return parseDate(raw);
+  }
+
+  /// Reserved/booked stays ending within [withinDays] (default 2).
+  static bool isStayEndingSoon(Map<String, dynamic> room, {int withinDays = 2}) {
+    final end = stayEndDate(room);
+    if (end == null) return false;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final endDay = DateTime(end.year, end.month, end.day);
+    final days = endDay.difference(today).inDays;
+    return days >= 0 && days <= withinDays;
+  }
+
+  static String guestName(Map<String, dynamic> room) {
+    final n = (room['current_guest_name'] ?? '').toString();
+    if (n.isNotEmpty) return n;
+    final b = room['latest_booking'] as Map<String, dynamic>?;
+    return (b?['guest_name'] ?? '—').toString();
+  }
+
+  static String formatStayRange(Map<String, dynamic> room) {
+    final inD = stayStartDate(room);
+    final outD = stayEndDate(room);
+    if (inD == null && outD == null) return '—';
+    String fmt(DateTime? d) =>
+        d == null ? '—' : '${d.month}/${d.day}/${d.year}';
+    return '${fmt(inD)} → ${fmt(outD)}';
+  }
+
+  static int reservedClosingSoonCount(List<Map<String, dynamic>> rooms) {
+    return rooms
+        .where((r) {
+          final s = statusOf(r);
+          if (s != 'reserved' && s != 'booked') return false;
+          return isStayEndingSoon(r);
+        })
+        .length;
+  }
+
+  static Map<String, dynamic> categoryStats(
+    String label,
+    List<Map<String, dynamic>> rooms,
+  ) {
+    var vacant = 0;
+    var checkedIn = 0;
+    var reserved = 0;
+    var booked = 0;
+    var maintenance = 0;
+    for (final r in rooms) {
+      final s = statusOf(r);
+      if (s == 'available') vacant++;
+      if (s == 'checked_in') checkedIn++;
+      if (s == 'reserved') reserved++;
+      if (s == 'booked') booked++;
+      if (s == 'maintenance') maintenance++;
+    }
+    final reservedSoon = reservedClosingSoonCount(rooms);
+    final total = rooms.length;
+    final occ = total > 0 ? ((total - vacant) / total * 100).round() : 0;
+    return {
+      'label': label,
+      'total': total,
+      'vacant': vacant,
+      'checked_in': checkedIn,
+      'reserved': reserved,
+      'reserved_soon': reservedSoon,
+      'booked': booked,
+      'maintenance': maintenance,
+      'occupancy': occ,
+    };
   }
 
   static double collectiblesForRooms(List<Map<String, dynamic>> rooms) {

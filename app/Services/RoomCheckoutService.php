@@ -12,6 +12,7 @@ use App\Models\StaffMember;
 use App\Models\Task;
 use App\Models\User;
 use App\Support\SafeModelAttributes;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
@@ -54,9 +55,66 @@ class RoomCheckoutService
             ];
         }
 
+        if ($to === RoomStatus::CHECKED_IN->value) {
+            $room = $this->checkInRoom($room, $actor);
+
+            return [
+                'room' => $room,
+                'message' => 'Guest checked in.',
+            ];
+        }
+
         $room->update(['status' => $to]);
 
         return ['room' => $room->fresh() ?? $room, 'message' => null];
+    }
+
+    /**
+     * Check in a booked room; optional schedule overrides booking/room stay dates.
+     */
+    public function checkInRoom(
+        Room $room,
+        User $actor,
+        ?Carbon $checkInAt = null,
+        ?Carbon $checkOutAt = null,
+    ): Room {
+        $hotelId = (string) $room->hotel_id;
+        $booking = $this->findActiveBooking($hotelId, (string) $room->id);
+
+        if ($checkInAt) {
+            $inDate = $checkInAt->copy()->startOfDay();
+            if ($booking) {
+                $booking->update(['check_in_date' => $inDate->toDateString()]);
+            }
+            $room->forceFill(['current_check_in' => $inDate->toDateString()]);
+        }
+
+        if ($checkOutAt) {
+            $outDate = $checkOutAt->copy()->startOfDay();
+            if ($booking) {
+                $booking->update(['check_out_date' => $outDate->toDateString()]);
+            }
+            $room->forceFill(['current_check_out' => $outDate->toDateString()]);
+        }
+
+        if ($booking && ($checkInAt || $checkOutAt)) {
+            $booking->forceFill(array_filter([
+                'check_in_time' => $checkInAt?->format('H:i'),
+                'check_out_time' => $checkOutAt?->format('H:i'),
+            ]))->save();
+        }
+
+        $room->forceFill(['status' => RoomStatus::CHECKED_IN->value])->save();
+
+        $fresh = $room->fresh() ?? $room;
+        $this->activityLogService->log(
+            $hotelId,
+            $actor,
+            "Checked in room {$fresh->room_number}",
+            ['room_id' => (string) $fresh->id, 'booking_id' => $booking ? (string) $booking->id : null]
+        );
+
+        return $fresh;
     }
 
     /**

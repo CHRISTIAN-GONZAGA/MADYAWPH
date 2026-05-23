@@ -1,0 +1,306 @@
+import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
+
+import '../../../dio_client.dart';
+
+/// Super-admin control panel: manage lower-level admin accounts.
+class SuperAdminControlSection extends StatefulWidget {
+  const SuperAdminControlSection({
+    super.key,
+    required this.onOpenAccountSettings,
+  });
+
+  final VoidCallback onOpenAccountSettings;
+
+  @override
+  State<SuperAdminControlSection> createState() =>
+      _SuperAdminControlSectionState();
+}
+
+class _SuperAdminControlSectionState extends State<SuperAdminControlSection> {
+  List<dynamic> _users = const [];
+  bool _loading = true;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final res =
+          await portalDio().get<Map<String, dynamic>>('/admin/portal-users');
+      if (!mounted) return;
+      setState(() {
+        _users = (res.data?['data'] as List?) ?? const [];
+        _loading = false;
+      });
+    } on DioException catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+    }
+  }
+
+  Future<void> _addAdmin() async {
+    final nameCtrl = TextEditingController();
+    final emailCtrl = TextEditingController();
+    final passCtrl = TextEditingController();
+    final confirmCtrl = TextEditingController();
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add administrator'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Username (login name)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: emailCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Email (optional)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: passCtrl,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Password',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: confirmCtrl,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Confirm password',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    if (passCtrl.text != confirmCtrl.text) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Passwords do not match.')),
+      );
+      return;
+    }
+
+    setState(() => _busy = true);
+    try {
+      await portalDio().post('/admin/portal-users', data: {
+        'name': nameCtrl.text.trim(),
+        if (emailCtrl.text.trim().isNotEmpty) 'email': emailCtrl.text.trim(),
+        'password': passCtrl.text,
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Administrator account created.')),
+      );
+      await _load();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _deleteAdmin(String id, String name) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove administrator?'),
+        content: Text(
+          'Delete "$name"? They will lose access immediately.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() => _busy = true);
+    try {
+      await portalDio().delete('/admin/portal-users/$id');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Administrator removed.')),
+      );
+      await _load();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final admins = _users.whereType<Map<String, dynamic>>().toList();
+
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+      children: [
+        Row(
+          children: [
+            Icon(Icons.admin_panel_settings, color: scheme.primary, size: 28),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Admin control panel',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Manage lower-level administrators for this hotel. Staff accounts stay under Staff management.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 16),
+        Card(
+          color: scheme.primaryContainer.withValues(alpha: 0.35),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Hotel gate & your account',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Update property login credentials or your super-admin password.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: widget.onOpenAccountSettings,
+                  icon: const Icon(Icons.lock_outline),
+                  label: const Text('Account & hotel login'),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Portal administrators (${admins.length})',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+            ),
+            FilledButton.icon(
+              onPressed: _busy ? null : _addAdmin,
+              icon: const Icon(Icons.person_add_alt_1, size: 18),
+              label: const Text('Add admin'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (_loading)
+          const Center(child: Padding(
+            padding: EdgeInsets.all(24),
+            child: CircularProgressIndicator(),
+          ))
+        else if (admins.isEmpty)
+          const Text('No administrator accounts found.')
+        else
+          ...admins.map((u) {
+            final role = (u['role'] ?? '').toString();
+            final id = (u['id'] ?? '').toString();
+            final name = (u['name'] ?? '').toString();
+            final email = (u['email'] ?? '').toString();
+            final isSuper = role == 'super_admin';
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: isSuper
+                      ? scheme.tertiaryContainer
+                      : scheme.secondaryContainer,
+                  child: Icon(
+                    isSuper ? Icons.shield_outlined : Icons.badge_outlined,
+                    color: isSuper
+                        ? scheme.onTertiaryContainer
+                        : scheme.onSecondaryContainer,
+                  ),
+                ),
+                title: Text(name),
+                subtitle: Text(
+                  [
+                    role.replaceAll('_', ' ').toUpperCase(),
+                    if (email.isNotEmpty) email,
+                  ].join('\n'),
+                ),
+                isThreeLine: true,
+                trailing: isSuper
+                    ? Chip(
+                        label: const Text('You'),
+                        backgroundColor: scheme.tertiaryContainer,
+                      )
+                    : IconButton(
+                        tooltip: 'Remove admin',
+                        onPressed:
+                            _busy ? null : () => _deleteAdmin(id, name),
+                        icon: const Icon(Icons.delete_outline),
+                      ),
+              ),
+            );
+          }),
+      ],
+    );
+  }
+}

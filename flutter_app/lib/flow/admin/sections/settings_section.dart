@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../admin_bookings.dart';
 import '../../admin_categories.dart';
 import '../../admin_chat.dart';
 import '../../admin_reports.dart';
@@ -41,19 +40,6 @@ class SettingsSection extends StatelessWidget {
         _SettingsGroup(
           title: 'Operations',
           tiles: [
-            _SettingsTile(
-              icon: Icons.event_note_outlined,
-              title: 'Reservation requests',
-              subtitle: 'Full approve/reject workflow',
-              onTap: () async {
-                await Navigator.of(context).push<void>(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const AdminBookingsScreen(),
-                  ),
-                );
-                await onRefreshAfterNav();
-              },
-            ),
             _SettingsTile(
               icon: Icons.forum_outlined,
               title: 'Chatroom',

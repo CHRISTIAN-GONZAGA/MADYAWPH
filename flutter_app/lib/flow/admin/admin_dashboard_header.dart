@@ -99,10 +99,12 @@ class AdminDashboardHeader extends StatelessWidget {
     required this.onOpenChat,
     required this.onRefresh,
     this.onSignOut,
+    this.isSuperAdmin = false,
   });
 
   final String hotelName;
   final String adminName;
+  final bool isSuperAdmin;
   final AdminChatBadgeInfo chatBadge;
   final VoidCallback onOpenChat;
   final VoidCallback onRefresh;
@@ -148,11 +150,27 @@ class AdminDashboardHeader extends StatelessWidget {
                       ),
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  'Admin: $adminName',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: scheme.onSurfaceVariant,
+                Row(
+                  children: [
+                    if (isSuperAdmin) ...[
+                      Icon(Icons.shield_outlined,
+                          size: 16, color: scheme.tertiary),
+                      const SizedBox(width: 4),
+                    ],
+                    Flexible(
+                      child: Text(
+                        isSuperAdmin
+                            ? 'Super admin: $adminName'
+                            : 'Admin: $adminName',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                              fontWeight: isSuperAdmin
+                                  ? FontWeight.w600
+                                  : FontWeight.normal,
+                            ),
                       ),
+                    ),
+                  ],
                 ),
               ],
             ),

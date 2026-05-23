@@ -36,6 +36,7 @@ use App\Services\ActivityLogService;
 use App\Services\BookingService;
 use App\Services\FinancialComputationService;
 use App\Services\PaymentGatewayService;
+use App\Services\ReservationActivationService;
 use App\Services\RoomCheckoutService;
 use App\Services\SmsService;
 use Carbon\Carbon;
@@ -45,7 +46,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Laravel\Sanctum\PersonalAccessToken;
+use App\Models\PersonalAccessToken;
 
 Route::middleware('role:admin')->group(function (): void {
     Route::get('/admin/dashboard', AdminDashboardApiController::class)->name('api.v1.admin.dashboard');
@@ -264,6 +265,8 @@ Route::middleware('role:admin')->group(function (): void {
     Route::patch('/admin/rooms/{id}/status', function (Request $request, string $id, RoomCheckoutService $roomCheckoutService) {
         $validated = $request->validate([
             'status' => ['required', 'in:available,booked,checked_in,checked_out,maintenance,reserved'],
+            'check_in_at' => ['nullable', 'date'],
+            'check_out_at' => ['nullable', 'date', 'after_or_equal:check_in_at'],
         ]);
 
         $room = Room::query()->findOrFail($id);
@@ -275,7 +278,18 @@ Route::middleware('role:admin')->group(function (): void {
         $previousStatus = $roomCheckoutService->normalizedStatus($room);
         $nextStatus = (string) $validated['status'];
 
-        $result = $roomCheckoutService->applyStatusChange($room, $request->user(), $nextStatus);
+        if ($nextStatus === RoomStatus::CHECKED_IN->value) {
+            $checkIn = isset($validated['check_in_at'])
+                ? Carbon::parse($validated['check_in_at'])
+                : null;
+            $checkOut = isset($validated['check_out_at'])
+                ? Carbon::parse($validated['check_out_at'])
+                : null;
+            $room = $roomCheckoutService->checkInRoom($room, $request->user(), $checkIn, $checkOut);
+            $result = ['room' => $room, 'message' => 'Guest checked in.'];
+        } else {
+            $result = $roomCheckoutService->applyStatusChange($room, $request->user(), $nextStatus);
+        }
 
         app(ActivityLogService::class)->log(
             $hotelId,
@@ -985,7 +999,18 @@ Route::post('/admin/reservations/{id}/approve', function (Request $request, stri
         ['reservation_id' => (string) $res->id, 'room_id' => (string) $room->id]
     );
 
-    return response()->json(['ok' => true, 'reservation' => $res->fresh()]);
+    $booking = null;
+    $checkInDay = Carbon::parse($res->check_in_date)->startOfDay();
+    if ($checkInDay->lte(now()->startOfDay()->addDay())) {
+        $booking = app(ReservationActivationService::class)->activate($res->fresh());
+    }
+
+    return response()->json([
+        'ok' => true,
+        'reservation' => $res->fresh(),
+        'booking' => $booking,
+        'activated' => $booking !== null,
+    ]);
 })->middleware('role:admin')->name('api.v1.admin.reservations.approve');
 
 Route::post('/admin/reservations/{id}/reject', function (Request $request, string $id) {
@@ -1062,6 +1087,47 @@ Route::put('/admin/hotel/access', function (Request $request) {
         'session_revoked' => true,
     ]);
 })->middleware('role:super_admin')->name('api.v1.admin.hotel.access');
+
+Route::post('/admin/portal-users', function (Request $request) {
+    $actor = $request->user();
+    if ($actor->roleValue() !== 'super_admin') {
+        return response()->json(['message' => 'Only the super admin can create admin accounts.'], 403);
+    }
+    $validated = $request->validate([
+        'name' => ['required', 'string', 'max:255'],
+        'email' => ['nullable', 'email', 'max:255'],
+        'password' => ['required', 'string', 'min:6'],
+    ]);
+    $hotelId = (string) $actor->hotel_id;
+    $name = $validated['name'];
+    $email = $validated['email'] ?? $name.'@hotel.local';
+    if (User::withoutGlobalScopes()->where('hotel_id', $hotelId)->where('name', $name)->exists()) {
+        return response()->json(['message' => 'An account with this username already exists.'], 422);
+    }
+    $admin = User::withoutGlobalScopes()->create([
+        'hotel_id' => $hotelId,
+        'name' => $name,
+        'email' => $email,
+        'password' => Hash::make($validated['password']),
+        'role' => UserRole::ADMIN,
+    ]);
+    app(ActivityLogService::class)->log(
+        $hotelId,
+        $actor,
+        "Created administrator account {$name}",
+        ['user_id' => (string) $admin->id]
+    );
+
+    return response()->json([
+        'ok' => true,
+        'user' => [
+            'id' => (string) $admin->id,
+            'name' => (string) $admin->name,
+            'email' => (string) $admin->email,
+            'role' => $admin->roleValue(),
+        ],
+    ], 201);
+})->middleware('role:super_admin')->name('api.v1.admin.portal-users.store');
 
 Route::get('/admin/portal-users', function (Request $request) {
     $hotelId = (string) $request->user()->hotel_id;

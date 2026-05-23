@@ -118,7 +118,7 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
                           'Tap anywhere to continue',
                           style: TextStyle(
                             fontSize: 13,
-                            color: _navy.withOpacity(0.55),
+                            color: _navy.withValues(alpha: 0.55),
                           ),
                         ),
                       ],
@@ -150,7 +150,7 @@ class _SoftGlowPainter extends CustomPainter {
             Colors.white,
             0.65,
           )!
-          .withOpacity(0.14 * (0.5 + 0.5 * math.sin(progress * math.pi * 2)));
+          .withValues(alpha: 0.14 * (0.5 + 0.5 * math.sin(progress * math.pi * 2)));
     canvas.drawCircle(Offset(cx, cy), 120 + 30 * math.sin(progress * math.pi * 2), paint);
   }
 

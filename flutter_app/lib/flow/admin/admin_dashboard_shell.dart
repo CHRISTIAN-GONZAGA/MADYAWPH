@@ -5,14 +5,16 @@ import 'package:flutter/material.dart';
 
 import '../../dio_client.dart';
 import '../../widgets/admin_curved_nav_bar.dart';
+import '../../widgets/theme_fab.dart';
 import '../admin_chat.dart';
 import 'admin_dashboard_header.dart';
 import 'sections/amenities_section.dart';
+import 'sections/bookings_section.dart';
 import 'sections/checkout_section.dart';
 import 'sections/guest_portfolio_section.dart';
-import 'sections/reservation_section.dart';
 import 'sections/room_summary_section.dart';
 import 'sections/settings_section.dart';
+import 'sections/super_admin_control_section.dart';
 
 class AdminDashboardShell extends StatefulWidget {
   const AdminDashboardShell({
@@ -21,6 +23,7 @@ class AdminDashboardShell extends StatefulWidget {
     required this.onRefresh,
     required this.onSignOut,
     required this.busyAction,
+    required this.isSuperAdmin,
     required this.onRecharge,
     required this.onSurgePricing,
     required this.onThemeReset,
@@ -34,6 +37,7 @@ class AdminDashboardShell extends StatefulWidget {
   final Future<void> Function() onRefresh;
   final VoidCallback onSignOut;
   final bool busyAction;
+  final bool isSuperAdmin;
   final VoidCallback onRecharge;
   final VoidCallback onSurgePricing;
   final Future<void> Function() onThemeReset;
@@ -51,14 +55,50 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
   Map<String, dynamic>? _inbox;
   Timer? _chatPoll;
 
-  static const _navItems = [
-    AdminNavItem(label: 'Summary', icon: Icons.dashboard_outlined),
-    AdminNavItem(label: 'Checkout', icon: Icons.logout_outlined),
-    AdminNavItem(label: 'Guests', icon: Icons.people_outline),
-    AdminNavItem(label: 'Bookings', icon: Icons.event_note_outlined),
-    AdminNavItem(label: 'Amenities', icon: Icons.storefront_outlined),
-    AdminNavItem(label: 'Settings', icon: Icons.settings_outlined),
-  ];
+  List<AdminNavItem> get _navItems {
+    final items = <AdminNavItem>[
+      const AdminNavItem(
+        label: 'Summary',
+        shortLabel: 'Rooms',
+        icon: Icons.dashboard_outlined,
+      ),
+      const AdminNavItem(
+        label: 'Checkout',
+        shortLabel: 'Out',
+        icon: Icons.logout_outlined,
+      ),
+      const AdminNavItem(
+        label: 'Guests',
+        shortLabel: 'Guests',
+        icon: Icons.people_outline,
+      ),
+      const AdminNavItem(
+        label: 'Bookings',
+        shortLabel: 'Book',
+        icon: Icons.event_note_outlined,
+      ),
+      const AdminNavItem(
+        label: 'Amenities',
+        shortLabel: 'Store',
+        icon: Icons.storefront_outlined,
+      ),
+      const AdminNavItem(
+        label: 'Settings',
+        shortLabel: 'Setup',
+        icon: Icons.settings_outlined,
+      ),
+    ];
+    if (widget.isSuperAdmin) {
+      items.add(
+        const AdminNavItem(
+          label: 'Control',
+          shortLabel: 'Admins',
+          icon: Icons.admin_panel_settings_outlined,
+        ),
+      );
+    }
+    return items;
+  }
 
   @override
   void initState() {
@@ -108,51 +148,60 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
       guestMessages: chats,
     );
 
+    final navItems = _navItems;
+    final safeTab = _tab.clamp(0, navItems.length - 1);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F2FF),
-      body: SafeArea(
-        child: Column(
-          children: [
-            AdminDashboardHeader(
-              hotelName: hotelName,
-              adminName: adminName,
-              chatBadge: badge,
-              onOpenChat: () async {
-                await Navigator.of(context).push<void>(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const AdminChatHubScreen(),
-                  ),
-                );
-                await widget.onRefresh();
-                await _pollInbox();
-              },
-              onRefresh: () async {
-                await widget.onRefresh();
-                await _pollInbox();
-              },
-              onSignOut: widget.onSignOut,
-            ),
-            if (widget.busyAction)
-              const LinearProgressIndicator(minHeight: 2),
-            Expanded(
-              child: RefreshIndicator(
-                onRefresh: () async {
-                  await widget.onRefresh();
-                  await _pollInbox();
-                },
-                child: IndexedStack(
-                  index: _tab,
-                  children: _allSections(d, balance),
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Column(
+              children: [
+                AdminDashboardHeader(
+                  hotelName: hotelName,
+                  adminName: adminName,
+                  isSuperAdmin: widget.isSuperAdmin,
+                  chatBadge: badge,
+                  onOpenChat: () async {
+                    await Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AdminChatHubScreen(),
+                      ),
+                    );
+                    await widget.onRefresh();
+                    await _pollInbox();
+                  },
+                  onRefresh: () async {
+                    await widget.onRefresh();
+                    await _pollInbox();
+                  },
+                  onSignOut: widget.onSignOut,
                 ),
-              ),
+                if (widget.busyAction)
+                  const LinearProgressIndicator(minHeight: 2),
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: () async {
+                      await widget.onRefresh();
+                      await _pollInbox();
+                    },
+                    child: IndexedStack(
+                      index: safeTab,
+                      children: _allSections(d, balance),
+                    ),
+                  ),
+                ),
+                AdminCurvedNavBar(
+                  items: navItems,
+                  currentIndex: safeTab,
+                  onTap: (i) => setState(() => _tab = i),
+                ),
+              ],
             ),
-            AdminCurvedNavBar(
-              items: _navItems,
-              currentIndex: _tab,
-              onTap: (i) => setState(() => _tab = i),
-            ),
-          ],
-        ),
+          ),
+          const ThemeFab(),
+        ],
       ),
     );
   }
@@ -163,15 +212,16 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     final claims = d['amenityClaims'] as List<dynamic>? ?? [];
 
     final refreshKey = ValueKey(
-      '${_rooms.length}-${reservations.length}-${claims.length}-${tasks.length}',
+      '${_rooms.length}-${reservations.length}-${claims.length}-${tasks.length}-${widget.isSuperAdmin}',
     );
 
-    return [
+    final sections = <Widget>[
       RoomSummarySection(key: refreshKey, rooms: _rooms, tasks: tasks),
       CheckoutSection(key: refreshKey, rooms: _rooms),
       GuestPortfolioSection(key: refreshKey, rooms: _rooms),
-      ReservationSection(
+      BookingsSection(
         key: refreshKey,
+        rooms: _rooms,
         reservations: reservations,
         onChanged: widget.onRefresh,
       ),
@@ -192,5 +242,16 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         onRefreshAfterNav: widget.onRefresh,
       ),
     ];
+
+    if (widget.isSuperAdmin) {
+      sections.add(
+        SuperAdminControlSection(
+          key: refreshKey,
+          onOpenAccountSettings: widget.onOpenAccountSettings,
+        ),
+      );
+    }
+
+    return sections;
   }
 }

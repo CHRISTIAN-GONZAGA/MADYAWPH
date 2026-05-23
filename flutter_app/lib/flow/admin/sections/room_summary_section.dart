@@ -33,6 +33,94 @@ class RoomSummarySection extends StatelessWidget {
     return out;
   }
 
+  void _showCategoryRooms(BuildContext context, String label, List<Map<String, dynamic>> list) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) {
+        final reservedSoon = list.where((r) {
+          final s = AdminDashboardModels.statusOf(r);
+          if (s != 'reserved' && s != 'booked') return false;
+          return AdminDashboardModels.isStayEndingSoon(r);
+        }).toList();
+        final others = list.where((r) => !reservedSoon.contains(r)).toList();
+
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.65,
+          maxChildSize: 0.92,
+          minChildSize: 0.4,
+          builder: (_, scroll) => SafeArea(
+            child: ListView(
+              controller: scroll,
+              padding: const EdgeInsets.all(16),
+              children: [
+                Text(label, style: Theme.of(ctx).textTheme.headlineSmall),
+                Text(
+                  '${list.length} room(s) in this category',
+                  style: Theme.of(ctx).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 16),
+                if (reservedSoon.isNotEmpty) ...[
+                  Text(
+                    'Departing within 1–2 days',
+                    style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...reservedSoon.map((r) => _roomTile(context, r, highlight: true)),
+                  const SizedBox(height: 16),
+                ],
+                Text(
+                  'All rooms',
+                  style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                ...others.map((r) => _roomTile(context, r)),
+                if (list.isEmpty) const Text('No rooms in this category.'),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _roomTile(BuildContext context, Map<String, dynamic> r, {bool highlight = false}) {
+    final status = AdminDashboardModels.statusOf(r);
+    final guest = AdminDashboardModels.guestName(r);
+    final range = AdminDashboardModels.formatStayRange(r);
+    return Card(
+      color: highlight ? Colors.orange.shade50 : null,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: Icon(
+          Icons.hotel_outlined,
+          color: highlight ? Colors.orange.shade800 : null,
+        ),
+        title: Text('Room ${r['room_number']} · $status'),
+        subtitle: Text(
+          guest == '—' ? 'No guest' : 'Guest: $guest\nCheck-in → out: $range',
+        ),
+        isThreeLine: true,
+        onTap: () {
+          Navigator.of(context).pop();
+          Navigator.of(context).push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => AdminRoomDetailScreen(
+                roomId: (r['id'] ?? '').toString(),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   void _showRoomList(
     BuildContext context, {
     required String title,
@@ -117,7 +205,10 @@ class RoomSummarySection extends StatelessWidget {
               final label = keys[i];
               final list = grouped[label]!;
               final stats = AdminDashboardModels.categoryStats(label, list);
-              return _CategoryCard(stats: stats);
+              return _CategoryCard(
+                stats: stats,
+                onTap: () => _showCategoryRooms(context, label, list),
+              );
             },
           ),
           const SizedBox(height: 20),
@@ -173,8 +264,9 @@ class _IssueRoom {
 }
 
 class _CategoryCard extends StatelessWidget {
-  const _CategoryCard({required this.stats});
+  const _CategoryCard({required this.stats, required this.onTap});
   final Map<String, dynamic> stats;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -182,44 +274,57 @@ class _CategoryCard extends StatelessWidget {
     return Card(
       elevation: 0,
       color: scheme.surfaceContainerLow,
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 18,
-                  backgroundColor: scheme.primaryContainer,
-                  child: Icon(Icons.king_bed_outlined,
-                      color: scheme.onPrimaryContainer, size: 20),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '${stats['label']}',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundColor: scheme.primaryContainer,
+                    child: Icon(Icons.king_bed_outlined,
+                        color: scheme.onPrimaryContainer, size: 20),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text('Total: ${stats['total']}'),
-            Text('Vacant: ${stats['vacant']}'),
-            Text('Checked in: ${stats['checked_in']}'),
-            Text('Reserved: ${stats['reserved']}'),
-            const Spacer(),
-            Text(
-              '${stats['occupancy']}% occupancy',
-              style: TextStyle(
-                color: scheme.primary,
-                fontWeight: FontWeight.w600,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${stats['label']}',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ),
+                  Icon(Icons.chevron_right, color: scheme.primary),
+                ],
               ),
-            ),
-          ],
+              const SizedBox(height: 10),
+              Text('Total: ${stats['total']}'),
+              Text('Vacant: ${stats['vacant']}'),
+              Text('Checked in: ${stats['checked_in']}'),
+              Text(
+                'Reserved (1–2 days): ${stats['reserved_soon']}',
+                style: TextStyle(
+                  color: (stats['reserved_soon'] as int) > 0
+                      ? Colors.orange.shade800
+                      : null,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${stats['occupancy']}% occupancy',
+                style: TextStyle(
+                  color: scheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

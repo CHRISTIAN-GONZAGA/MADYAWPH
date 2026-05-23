@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
+import '../widgets/admin_sales_panel.dart';
 
 class AmenitiesSection extends StatefulWidget {
   const AmenitiesSection({
@@ -367,11 +368,19 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               header,
+              const Expanded(
+                flex: 2,
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                  child: AdminSalesPanel(),
+                ),
+              ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: _categoryChips(),
               ),
               Expanded(
+                flex: 3,
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -401,16 +410,13 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
         }
 
         return DefaultTabController(
-          length: 2,
+          length: 3,
           child: Column(
             children: [
               header,
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: _categoryChips(),
-              ),
               const TabBar(
                 tabs: [
+                  Tab(text: 'Sales'),
                   Tab(text: 'Products'),
                   Tab(text: 'Requests'),
                 ],
@@ -418,7 +424,20 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
               Expanded(
                 child: TabBarView(
                   children: [
-                    _productGrid(),
+                    ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(12),
+                      children: const [AdminSalesPanel()],
+                    ),
+                    Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: _categoryChips(),
+                        ),
+                        Expanded(child: _productGrid()),
+                      ],
+                    ),
                     _claimsList(),
                   ],
                 ),
