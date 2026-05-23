@@ -8,6 +8,7 @@ class AdminMonthCalendar extends StatefulWidget {
     required this.selectedDay,
     required this.onDaySelected,
     required this.hasEvent,
+    this.eventCount,
     this.onMonthChanged,
   });
 
@@ -15,6 +16,7 @@ class AdminMonthCalendar extends StatefulWidget {
   final DateTime selectedDay;
   final ValueChanged<DateTime> onDaySelected;
   final bool Function(DateTime day) hasEvent;
+  final int Function(DateTime day)? eventCount;
   final ValueChanged<DateTime>? onMonthChanged;
 
   @override
@@ -109,6 +111,7 @@ class _AdminMonthCalendarState extends State<AdminMonthCalendar> {
                 final selected = DateUtils.isSameDay(date, widget.selectedDay);
                 final isToday = DateUtils.isSameDay(date, today);
                 final marker = widget.hasEvent(date);
+                final count = widget.eventCount?.call(date) ?? 0;
 
                 return Material(
                   color: selected
@@ -131,9 +134,34 @@ class _AdminMonthCalendarState extends State<AdminMonthCalendar> {
                             color: selected
                                 ? scheme.onPrimary
                                 : scheme.onSurface,
+                            fontSize: count > 0 ? 13 : null,
                           ),
                         ),
-                        if (marker)
+                        if (count > 0)
+                          Container(
+                            margin: const EdgeInsets.only(top: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 1,
+                            ),
+                            decoration: BoxDecoration(
+                              color: selected
+                                  ? scheme.onPrimary.withValues(alpha: 0.25)
+                                  : scheme.primaryContainer,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '$count',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: selected
+                                    ? scheme.onPrimary
+                                    : scheme.primary,
+                              ),
+                            ),
+                          )
+                        else if (marker)
                           Container(
                             width: 5,
                             height: 5,

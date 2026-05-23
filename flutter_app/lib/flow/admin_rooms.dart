@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../dio_client.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/app_state_views.dart';
+import 'admin/widgets/stay_receipt_dialog.dart';
 import 'admin_categories.dart';
 
 class AdminRoomsScreen extends StatefulWidget {
@@ -537,6 +538,12 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       if (!mounted) return;
       final msg = (res.data?['message'] ?? 'Status updated.').toString();
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      if (chosen == 'checked_out') {
+        final receipt = res.data?['receipt'] as Map<String, dynamic>?;
+        if (context.mounted) {
+          await showStayReceiptDialog(context, receipt: receipt);
+        }
+      }
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;

@@ -68,6 +68,15 @@ Route::middleware('role:admin')->group(function (): void {
         ]);
     })->name('api.v1.admin.booking.room-password');
 
+    Route::get('/admin/bookings/{booking}/receipt', function (Request $request, Booking $booking) {
+        if ((string) $booking->hotel_id !== (string) $request->user()->hotel_id) {
+            return response()->json(['message' => 'Booking is outside your hotel scope.'], 403);
+        }
+        $built = app(\App\Services\StayReceiptService::class)->build($booking);
+
+        return $built['pdf']->download($built['filename']);
+    })->middleware('role:admin,staff')->name('api.v1.admin.booking.receipt');
+
     Route::post('/admin/credits/recharge', function (Request $request) {
         $gateway = app(PaymentGatewayService::class);
         $minRecharge = $gateway->minimumRechargeAmount();
@@ -277,6 +286,7 @@ Route::middleware('role:admin')->group(function (): void {
 
         $previousStatus = $roomCheckoutService->normalizedStatus($room);
         $nextStatus = (string) $validated['status'];
+        $activeBooking = $roomCheckoutService->findActiveBooking($hotelId, (string) $room->id);
 
         if ($nextStatus === RoomStatus::CHECKED_IN->value) {
             $checkIn = isset($validated['check_in_at'])
@@ -302,10 +312,22 @@ Route::middleware('role:admin')->group(function (): void {
             ]
         );
 
+        $bookingId = $activeBooking ? (string) $activeBooking->id : null;
+        $completedBooking = $bookingId && $nextStatus === RoomStatus::CHECKED_OUT->value
+            ? Booking::withoutGlobalScopes()->find($bookingId)
+            : null;
+        $receipt = $completedBooking
+            ? app(\App\Services\StayReceiptService::class)->summaryFor($completedBooking)
+            : null;
+
         return response()->json([
             'ok' => true,
             'room' => $result['room'],
             'message' => $result['message'],
+            'booking_id' => $bookingId,
+            'booking_reference' => $completedBooking?->booking_reference,
+            'receipt_url' => $receipt['receipt_url'] ?? null,
+            'receipt' => $receipt,
         ]);
     })->name('api.v1.admin.rooms.status');
 
@@ -925,6 +947,8 @@ Route::get('/tasks/assigned-to-me', [TaskController::class, 'assignedToMe'])->mi
 // Reports
 Route::get('/reports/sales', [ReportController::class, 'sales'])->middleware('role:admin');
 Route::get('/reports/sales/timeseries', [ReportController::class, 'salesTimeseries'])->middleware('role:admin');
+Route::get('/reports/amenity-sales/timeseries', [ReportController::class, 'amenitySalesTimeseries'])->middleware('role:admin');
+Route::get('/reports/amenity-sales/overview', [ReportController::class, 'amenityProfitOverview'])->middleware('role:admin');
 Route::get('/reports/profit-overview', [ReportController::class, 'profitOverview'])->middleware('role:admin');
 Route::get('/reports/sales-csv', [ReportController::class, 'salesCsv'])->middleware('role:admin');
 Route::get('/reports/sales-pdf', [ReportController::class, 'salesPdf'])->middleware('role:admin');

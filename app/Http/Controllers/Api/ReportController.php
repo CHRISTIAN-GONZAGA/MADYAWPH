@@ -232,6 +232,92 @@ class ReportController extends Controller
         ]);
     }
 
+    /**
+     * Amenity product sales only (in-room menu purchases), for the Amenities tab — not room bookings.
+     */
+    public function amenitySalesTimeseries(Request $request)
+    {
+        $validated = $request->validate([
+            'granularity' => ['nullable', 'in:day,week,month,year'],
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date'],
+        ]);
+
+        $granularity = $validated['granularity'] ?? 'day';
+        $from = isset($validated['from']) ? Carbon::parse($validated['from'])->startOfDay() : now()->subDays(14)->startOfDay();
+        $to = isset($validated['to']) ? Carbon::parse($validated['to'])->endOfDay() : now()->endOfDay();
+
+        $charges = BillingCharge::query()
+            ->where('type', 'amenity')
+            ->whereBetween('created_at', [$from, $to])
+            ->get();
+
+        $points = $charges
+            ->groupBy(fn ($c) => $this->bucketLabel(SafeModelAttributes::carbonFromModel($c, 'created_at'), $granularity))
+            ->map(function ($group, $label) {
+                $transactions = $group->map(function ($charge) {
+                    $amount = (float) ($charge->amount ?? 0);
+
+                    return [
+                        'charge_id' => (string) $charge->id,
+                        'room_id' => (string) ($charge->room_id ?? ''),
+                        'label' => (string) ($charge->label ?? 'Amenity'),
+                        'amount' => $amount,
+                        'line' => sprintf('%s — ₱%.2f', (string) ($charge->label ?? 'Amenity'), $amount),
+                    ];
+                })->values();
+
+                return [
+                    'period_label' => (string) $label,
+                    'order_count' => (int) $group->count(),
+                    'gross_sales' => (float) $transactions->sum('amount'),
+                    'transactions' => $transactions,
+                ];
+            })
+            ->sortBy('period_label')
+            ->values();
+
+        return response()->json([
+            'granularity' => $granularity,
+            'from' => $from->toDateString(),
+            'to' => $to->toDateString(),
+            'points' => $points,
+            'totals' => [
+                'orders' => (int) $points->sum('order_count'),
+                'sales' => (float) $points->sum('gross_sales'),
+            ],
+        ]);
+    }
+
+    public function amenityProfitOverview(Request $request)
+    {
+        $validated = $request->validate([
+            'anchor_date' => ['nullable', 'date'],
+        ]);
+        $anchor = isset($validated['anchor_date'])
+            ? Carbon::parse($validated['anchor_date'])
+            : now();
+
+        return response()->json([
+            'daily' => $this->amenityFinancialSummary(
+                $anchor->copy()->startOfDay(),
+                $anchor->copy()->endOfDay()
+            ),
+            'weekly' => $this->amenityFinancialSummary(
+                $anchor->copy()->startOfWeek(),
+                $anchor->copy()->endOfWeek()
+            ),
+            'monthly' => $this->amenityFinancialSummary(
+                $anchor->copy()->startOfMonth(),
+                $anchor->copy()->endOfMonth()
+            ),
+            'annual' => $this->amenityFinancialSummary(
+                $anchor->copy()->startOfYear(),
+                $anchor->copy()->endOfYear()
+            ),
+        ]);
+    }
+
     public function profitOverview(Request $request)
     {
         $validated = $request->validate([
@@ -482,6 +568,27 @@ class ReportController extends Controller
     /**
      * @return array<string, mixed>
      */
+    private function amenityFinancialSummary(Carbon $from, Carbon $to): array
+    {
+        $charges = BillingCharge::query()
+            ->where('type', 'amenity')
+            ->whereBetween('created_at', [$from, $to])
+            ->get();
+
+        $sales = (float) $charges->sum(fn ($c) => max(0, (float) ($c->amount ?? 0)));
+
+        return [
+            'from' => $from->toDateString(),
+            'to' => $to->toDateString(),
+            'orders' => (int) $charges->count(),
+            'gross_revenue' => round($sales, 2),
+            'net_revenue' => round($sales, 2),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     private function financialSummary(Carbon $from, Carbon $to): array
     {
         $bookings = $this->paidBookingsInRange($from, $to);
@@ -501,7 +608,7 @@ class ReportController extends Controller
             ->sum(fn ($c) => max(0, (float) ($c->amount ?? 0)));
 
         $roomRevenue = (float) $charges
-            ->filter(fn ($c) => in_array((string) ($c->type ?? ''), ['room', 'extend-stay'], true))
+            ->filter(fn ($c) => in_array((string) ($c->type ?? ''), ['room', 'extend-stay', 'early-check-in', 'late-checkout'], true))
             ->sum(fn ($c) => max(0, (float) ($c->amount ?? 0)));
 
         $transferAdjustments = (float) RoomTransfer::query()

@@ -5,10 +5,13 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Room;
 use App\Models\RoomCategory;
-use Illuminate\Http\Request;
 use App\Support\ChatAttachmentUrl;
 use App\Support\PriceRounding;
 use App\Support\RoomImageUploadRules;
+use App\Support\RoomMediaStorage;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class RoomCategoryController extends Controller
 {
@@ -28,8 +31,10 @@ class RoomCategoryController extends Controller
         return response()->json(['data' => $rows]);
     }
 
-    public function store(Request $request)
+    public function store(Request $request): JsonResponse
     {
+        $this->requireHotelId($request);
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string', 'max:300'],
@@ -37,18 +42,20 @@ class RoomCategoryController extends Controller
             'image_file' => RoomImageUploadRules::fileRules(),
         ]);
 
-        if (isset($validated['default_price'])) {
-            $validated['default_price'] = PriceRounding::nearest50((float) $validated['default_price']);
+        $payload = RoomMediaStorage::stripUploadField($validated);
+
+        if (isset($payload['default_price'])) {
+            $payload['default_price'] = PriceRounding::nearest50((float) $payload['default_price']);
         }
 
         if ($request->hasFile('image_file')) {
-            $validated['image_url'] = ChatAttachmentUrl::storeUploadedFile(
+            $payload['image_url'] = RoomMediaStorage::store(
                 $request->file('image_file'),
                 'categories'
             );
         }
 
-        $category = RoomCategory::create($validated);
+        $category = RoomCategory::create($payload);
 
         return response()->json([
             'id' => (string) $category->id,
@@ -65,5 +72,17 @@ class RoomCategoryController extends Controller
         $roomCategory->delete();
 
         return response()->json(['ok' => true]);
+    }
+
+    private function requireHotelId(Request $request): string
+    {
+        $hotelId = (string) ($request->user()?->hotel_id ?? '');
+        if ($hotelId === '') {
+            throw ValidationException::withMessages([
+                'hotel_id' => ['Your account is not linked to a hotel. Sign in as hotel admin.'],
+            ]);
+        }
+
+        return $hotelId;
     }
 }

@@ -25,6 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withSchedule(function (Schedule $schedule): void {
         $schedule->command('hotel:activate-reservations')->hourly();
         $schedule->command('hotel:activate-reservations')->dailyAt('00:05');
+        $schedule->command('hotel:purge-old-bookings')->dailyAt('02:00');
     })
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->redirectGuestsTo(fn () => route('welcome'));

@@ -68,7 +68,13 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
       );
       await portalDio().post(path, data: form);
     } else {
-      await portalDio().post(path, data: fields);
+      final body = <String, dynamic>{};
+      for (final entry in fields.entries) {
+        final v = entry.value;
+        if (v == null) continue;
+        body[entry.key] = v is num || v is bool ? v.toString() : v;
+      }
+      await portalDio().post(path, data: body);
     }
   }
 

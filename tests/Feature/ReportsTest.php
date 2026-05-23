@@ -63,6 +63,8 @@ class ReportsTest extends TestCase
         $this->actingAs($admin);
 
         $this->getJson('/api/v1/reports/sales/timeseries?granularity=week')->assertOk();
+        $this->getJson('/api/v1/reports/amenity-sales/timeseries?granularity=week')->assertOk();
+        $this->getJson('/api/v1/reports/amenity-sales/overview')->assertOk();
         $this->getJson('/api/v1/reports/profit-overview')->assertOk();
         $this->getJson('/api/v1/reports/activity/timeline?granularity=day')->assertOk();
         $this->getJson('/api/v1/reports/transfers')->assertOk();

@@ -18,7 +18,10 @@ use Illuminate\Validation\ValidationException;
 
 class RoomCheckoutService
 {
-    public function __construct(private readonly ActivityLogService $activityLogService) {}
+    public function __construct(
+        private readonly ActivityLogService $activityLogService,
+        private readonly StayTimingFeeService $stayTimingFeeService,
+    ) {}
 
     /**
      * @return array{room: Room, message: string|null}
@@ -104,6 +107,11 @@ class RoomCheckoutService
             ]))->save();
         }
 
+        if ($booking && $checkInAt) {
+            $this->stayTimingFeeService->applyEarlyCheckInFeeIfNeeded($booking, $room, $checkInAt, $actor);
+            $booking->refresh();
+        }
+
         $room->forceFill(['status' => RoomStatus::CHECKED_IN->value])->save();
 
         $fresh = $room->fresh() ?? $room;
@@ -180,6 +188,9 @@ class RoomCheckoutService
         $guestName = (string) ($room->getAttributes()['current_guest_name'] ?? $booking?->guest_name ?? '');
 
         if ($booking) {
+            $this->stayTimingFeeService->applyLateCheckoutFeeIfNeeded($booking, $room, now(), $actor);
+            $booking->refresh();
+
             $paidAt = SafeModelAttributes::carbonFromModel($booking, 'paid_at');
             $updates = [
                 'status' => BookingStatus::COMPLETED->value,

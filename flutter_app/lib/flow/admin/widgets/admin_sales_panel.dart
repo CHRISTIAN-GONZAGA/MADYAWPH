@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../dio_client.dart';
 import '../../../widgets/admin_month_calendar.dart';
 
-/// Sales calendar + daily/weekly/monthly/annual summary for admin tabs.
+/// Amenity product sales only (menu purchases / requests) — not room bookings.
 class AdminSalesPanel extends StatefulWidget {
   const AdminSalesPanel({super.key});
 
@@ -17,7 +17,7 @@ class _AdminSalesPanelState extends State<AdminSalesPanel> {
   DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
   Map<String, dynamic>? _daySales;
   Map<String, dynamic>? _overview;
-  Set<String> _eventDays = {};
+  Map<String, int> _countsByDay = {};
   bool _loading = false;
 
   @override
@@ -32,7 +32,7 @@ class _AdminSalesPanelState extends State<AdminSalesPanel> {
       final from = DateTime(_month.year, _month.month, 1);
       final to = DateTime(_month.year, _month.month + 1, 0);
       final sales = await portalDio().get<Map<String, dynamic>>(
-        '/reports/sales/timeseries',
+        '/reports/amenity-sales/timeseries',
         queryParameters: {
           'granularity': 'day',
           'from': _fmt(from),
@@ -40,27 +40,25 @@ class _AdminSalesPanelState extends State<AdminSalesPanel> {
         },
       );
       final overview = await portalDio().get<Map<String, dynamic>>(
-        '/reports/profit-overview',
+        '/reports/amenity-sales/overview',
         queryParameters: {'anchor_date': _fmt(_selected)},
       );
       final points = (sales.data?['points'] as List?) ?? [];
-      final markers = <String>{};
-      for (final p in points) {
-        if (p is! Map) continue;
-        final label = (p['period_label'] ?? '').toString();
-        if (label.isNotEmpty) markers.add(label);
-      }
+      final counts = <String, int>{};
       Map<String, dynamic>? dayPoint;
       final sel = _fmt(_selected);
       for (final p in points) {
-        if (p is Map && (p['period_label'] ?? '').toString() == sel) {
+        if (p is! Map) continue;
+        final label = (p['period_label'] ?? '').toString();
+        if (label.isEmpty) continue;
+        counts[label] = (p['order_count'] as num?)?.toInt() ?? 0;
+        if (label == sel) {
           dayPoint = Map<String, dynamic>.from(p);
-          break;
         }
       }
       if (!mounted) return;
       setState(() {
-        _eventDays = markers;
+        _countsByDay = counts;
         _daySales = dayPoint;
         _overview = overview.data;
         _loading = false;
@@ -83,10 +81,18 @@ class _AdminSalesPanelState extends State<AdminSalesPanel> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (_loading) const LinearProgressIndicator(minHeight: 2),
+        Text(
+          'Product sales (amenities only)',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontStyle: FontStyle.italic,
+              ),
+        ),
+        const SizedBox(height: 8),
         AdminMonthCalendar(
           focusedMonth: _month,
           selectedDay: _selected,
-          hasEvent: (d) => _eventDays.contains(_fmt(d)),
+          hasEvent: (d) => (_countsByDay[_fmt(d)] ?? 0) > 0,
+          eventCount: (d) => _countsByDay[_fmt(d)] ?? 0,
           onDaySelected: (d) {
             setState(() => _selected = d);
             _loadAll();
@@ -104,7 +110,7 @@ class _AdminSalesPanelState extends State<AdminSalesPanel> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Sales on ${_fmt(_selected)}',
+                  'Amenity sales on ${_fmt(_selected)}',
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
@@ -118,16 +124,30 @@ class _AdminSalesPanelState extends State<AdminSalesPanel> {
                       ),
                 ),
                 Text(
-                  '${_daySales?['booking_count'] ?? 0} paid booking(s)',
+                  '${_daySales?['order_count'] ?? 0} product order(s)',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
+                if ((_daySales?['transactions'] as List?)?.isNotEmpty == true) ...[
+                  const SizedBox(height: 10),
+                  ...(((_daySales!['transactions'] as List?) ?? const [])
+                      .whereType<Map>()
+                      .map(
+                        (t) => Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(
+                            (t['line'] ?? t['label'] ?? '').toString(),
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                      )),
+                ],
               ],
             ),
           ),
         ),
         const SizedBox(height: 12),
         Text(
-          'Sales summary',
+          'Amenity sales summary',
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.w700,
               ),
@@ -162,12 +182,12 @@ class _SummaryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final net = (data?['net_revenue'] ?? data?['gross_revenue'] ?? 0).toString();
-    final bookings = '${data?['bookings'] ?? 0}';
+    final orders = '${data?['orders'] ?? 0}';
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
         title: Text(label),
-        subtitle: Text('$bookings booking(s)'),
+        subtitle: Text('$orders product order(s)'),
         trailing: Text(
           '₱$net',
           style: const TextStyle(fontWeight: FontWeight.w700),

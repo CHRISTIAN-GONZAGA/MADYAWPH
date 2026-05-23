@@ -116,32 +116,57 @@ class _BookingsSectionState extends State<BookingsSection>
     return d.year == day.year && d.month == day.month && d.day == day.day;
   }
 
-  bool _hasCalendarEvent(DateTime day) {
-    for (final r in _bookedRooms) {
-      if (_onDay(day, (r['current_check_in'] ?? '').toString()) ||
-          _onDay(day, (r['current_check_out'] ?? '').toString())) {
-        return true;
+  /// Current and upcoming stays from dashboard booking records.
+  List<Map<String, dynamic>> get _calendarBookings {
+    final today = DateUtils.dateOnly(DateTime.now());
+    return widget.bookings.where((b) {
+      final status = (b['status'] ?? '').toString().toLowerCase();
+      if (status == 'cancelled' || status == 'completed') {
+        return false;
       }
-    }
-    for (final res in _resList) {
-      if (_onDay(day, res['check_in_date']?.toString()) ||
-          _onDay(day, res['check_out_date']?.toString())) {
-        return true;
+      final checkOut = AdminDashboardModels.parseDate(
+        (b['check_out_date'] ?? '').toString(),
+      );
+      if (checkOut != null && checkOut.isBefore(today)) {
+        return false;
       }
-    }
-    return false;
+      return true;
+    }).toList();
   }
+
+  bool _bookingActiveOnDay(Map<String, dynamic> b, DateTime day) {
+    final checkIn = AdminDashboardModels.parseDate(
+      (b['check_in_date'] ?? '').toString(),
+    );
+    final checkOut = AdminDashboardModels.parseDate(
+      (b['check_out_date'] ?? '').toString(),
+    );
+    if (checkIn == null || checkOut == null) {
+      return false;
+    }
+    final d = DateUtils.dateOnly(day);
+    if (DateUtils.isSameDay(d, checkIn)) {
+      return true;
+    }
+    return d.isAfter(checkIn) && d.isBefore(checkOut);
+  }
+
+  int _bookingCountOnDay(DateTime day) =>
+      _calendarBookings.where((b) => _bookingActiveOnDay(b, day)).length;
+
+  bool _hasCalendarEvent(DateTime day) => _bookingCountOnDay(day) > 0;
 
   List<Map<String, dynamic>> _eventsOnDay(DateTime day) {
     final out = <Map<String, dynamic>>[];
-    for (final r in _bookedRooms) {
-      if (_onDay(day, (r['current_check_in'] ?? '').toString()) ||
-          _onDay(day, (r['current_check_out'] ?? '').toString())) {
+    for (final b in _calendarBookings) {
+      if (_bookingActiveOnDay(b, day)) {
         out.add({
-          'type': 'booking',
-          'title': 'Room ${r['room_number']} · ${AdminDashboardModels.guestName(r)}',
-          'subtitle': AdminDashboardModels.formatStayRange(r),
-          'room': r,
+          'type': 'booking_record',
+          'booking': b,
+          'title':
+              '${b['guest_name']} · Room ${b['room_number'] ?? '—'}',
+          'subtitle':
+              '${b['check_in_date']} → ${b['check_out_date']} · ${b['status']}',
         });
       }
     }
@@ -158,6 +183,38 @@ class _BookingsSectionState extends State<BookingsSection>
       }
     }
     return out;
+  }
+
+  void _showBookingDetails(Map<String, dynamic> b) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text(
+              'Booking ${b['booking_reference'] ?? b['id']}',
+              style: Theme.of(ctx).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 12),
+            _detailRow('Guest', '${b['guest_name']}'),
+            _detailRow('Phone', '${b['guest_phone'] ?? '—'}'),
+            _detailRow('Email', '${b['guest_email'] ?? '—'}'),
+            _detailRow('Room', '${b['room_number']} · ${b['room_display_name'] ?? ''}'),
+            _detailRow('Category', '${b['category_name'] ?? '—'}'),
+            _detailRow('Check-in', '${b['check_in_date']}'),
+            _detailRow('Check-out', '${b['check_out_date']}'),
+            _detailRow('Nights', '${b['nights'] ?? '—'}'),
+            _detailRow('Type', '${b['booking_type'] ?? 'local'}'),
+            _detailRow('Status', '${b['status']} / ${b['payment_status'] ?? ''}'),
+            _detailRow('Total', '₱${(b['total_amount'] as num?) ?? 0}'),
+            _detailRow('Booked on', '${b['date_booked'] ?? b['created_at'] ?? '—'}'),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _approveReservation(String id) async {
@@ -588,36 +645,34 @@ class _BookingsSectionState extends State<BookingsSection>
           focusedMonth: _month,
           selectedDay: _selectedDay,
           hasEvent: _hasCalendarEvent,
+          eventCount: _bookingCountOnDay,
           onDaySelected: (d) => setState(() => _selectedDay = d),
           onMonthChanged: (m) => setState(() => _month = m),
         ),
         const SizedBox(height: 12),
         Text(
-          'Events on ${_fmt(_selectedDay)}',
-          style: Theme.of(context).textTheme.titleSmall,
+          '${_bookingCountOnDay(_selectedDay)} booking(s) on ${_fmt(_selectedDay)}',
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
         ),
         const SizedBox(height: 8),
         if (events.isEmpty)
-          const Text('No bookings or reservations on this day.')
+          const Text('No current or upcoming bookings on this day.')
         else
           ...events.map((e) {
-            final isBooking = e['type'] == 'booking';
+            final isRecord = e['type'] == 'booking_record';
             return Card(
               child: ListTile(
                 leading: Icon(
-                  isBooking ? Icons.hotel : Icons.event_available,
+                  isRecord ? Icons.hotel : Icons.event_available,
                 ),
                 title: Text(e['title'].toString()),
                 subtitle: Text(e['subtitle'].toString()),
                 onTap: () {
-                  if (isBooking) {
-                    final room = e['room'] as Map<String, dynamic>;
-                    Navigator.of(context).push<void>(
-                      MaterialPageRoute<void>(
-                        builder: (_) => AdminRoomDetailScreen(
-                          roomId: (room['id'] ?? '').toString(),
-                        ),
-                      ),
+                  if (isRecord) {
+                    _showBookingDetails(
+                      e['booking'] as Map<String, dynamic>,
                     );
                   }
                 },

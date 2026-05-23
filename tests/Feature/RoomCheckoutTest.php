@@ -61,7 +61,9 @@ class RoomCheckoutTest extends TestCase
         $this->actingAs($admin)
             ->postJson('/api/v1/rooms/'.$room->id.'/checkout')
             ->assertOk()
-            ->assertJsonPath('room.status', RoomStatus::MAINTENANCE->value);
+            ->assertJsonPath('room.status', RoomStatus::MAINTENANCE->value)
+            ->assertJsonPath('receipt.booking_reference', 'BK-CO-1')
+            ->assertJsonStructure(['receipt' => ['lines', 'subtotal', 'receipt_url']]);
 
         $room->refresh();
         $booking->refresh();

@@ -126,10 +126,17 @@ class ChatAttachment {
     required XFile file,
     String fileField = 'image_file',
   }) async {
-    final map = <String, dynamic>{...fields};
+    final map = <String, dynamic>{};
+    for (final entry in fields.entries) {
+      final v = entry.value;
+      if (v == null) {
+        continue;
+      }
+      map[entry.key] = v is num || v is bool ? v.toString() : v;
+    }
     map[fileField] = await MultipartFile.fromFile(
       file.path,
-      filename: file.name,
+      filename: file.name.isNotEmpty ? file.name : 'upload.jpg',
     );
     return FormData.fromMap(map);
   }

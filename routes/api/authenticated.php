@@ -398,6 +398,8 @@ Route::get('/tasks/assigned-to-me', [TaskController::class, 'assignedToMe'])->mi
 
 Route::get('/reports/sales', [ReportController::class, 'sales'])->middleware('role:admin');
 Route::get('/reports/sales/timeseries', [ReportController::class, 'salesTimeseries'])->middleware('role:admin');
+Route::get('/reports/amenity-sales/timeseries', [ReportController::class, 'amenitySalesTimeseries'])->middleware('role:admin');
+Route::get('/reports/amenity-sales/overview', [ReportController::class, 'amenityProfitOverview'])->middleware('role:admin');
 Route::get('/reports/profit-overview', [ReportController::class, 'profitOverview'])->middleware('role:admin');
 Route::get('/reports/sales-csv', [ReportController::class, 'salesCsv'])->middleware('role:admin');
 Route::get('/reports/sales-pdf', [ReportController::class, 'salesPdf'])->middleware('role:admin');
