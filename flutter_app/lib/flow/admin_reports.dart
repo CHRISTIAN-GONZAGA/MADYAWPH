@@ -379,7 +379,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         drawVerticalLine: false,
         horizontalInterval: maxY > 0 ? maxY / 4 : 1,
         getDrawingHorizontalLine: (_) => FlLine(
-          color: scheme.outlineVariant.withOpacity(0.5),
+          color: scheme.outlineVariant.withValues(alpha: 0.5),
           strokeWidth: 1,
         ),
       ),
@@ -441,7 +441,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         show: true,
         drawVerticalLine: false,
         getDrawingHorizontalLine: (_) => FlLine(
-          color: scheme.outlineVariant.withOpacity(0.45),
+          color: scheme.outlineVariant.withValues(alpha: 0.45),
           strokeWidth: 1,
         ),
       ),
@@ -483,7 +483,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           dotData: const FlDotData(show: true),
           belowBarData: BarAreaData(
             show: true,
-            color: scheme.tertiary.withOpacity(0.12),
+            color: scheme.tertiary.withValues(alpha: 0.12),
           ),
         ),
       ],
@@ -519,7 +519,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         show: true,
         drawVerticalLine: false,
         getDrawingHorizontalLine: (_) => FlLine(
-          color: scheme.outlineVariant.withOpacity(0.45),
+          color: scheme.outlineVariant.withValues(alpha: 0.45),
           strokeWidth: 1,
         ),
       ),

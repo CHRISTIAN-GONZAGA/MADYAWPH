@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../auth_storage.dart';
@@ -14,15 +13,10 @@ import '../widgets/app_scaffold.dart';
 import '../widgets/app_state_views.dart';
 import '../widgets/dashboard_clock.dart';
 import 'admin_rooms.dart';
-import 'admin_categories.dart';
-import 'admin_chat.dart';
-import 'admin_bookings.dart';
-import 'admin_reports.dart';
-import 'admin_staff.dart';
 import 'customer_tools.dart';
 import '../widgets/chat_attachment.dart';
 import '../widgets/payment_redirect.dart';
-import 'guest_list_history.dart';
+import 'admin/admin_dashboard_shell.dart';
 // --- Admin ---
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -118,6 +112,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       final markupCtrl = TextEditingController(
           text: '${current.data?['markup_percent'] ?? 20}');
 
+      if (!mounted) return;
       final payload = await showDialog<Map<String, dynamic>>(
         context: context,
         builder: (context) => StatefulBuilder(
@@ -342,22 +337,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return AppScaffold(
-      appBar: AppBar(
-        title: const Text('Admin dashboard'),
-        actions: [
-          const DashboardClockAction(),
-          IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
-          PopupMenuButton<String>(
-            onSelected: (v) {
-              if (v == 'out') _signOut();
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'out', child: Text('Sign out')),
-            ],
-          ),
-        ],
-      ),
+    return Scaffold(
       body: _buildBody(context),
     );
   }
@@ -379,230 +359,39 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ),
       );
     }
-    final d = _data!;
-    final auth = d['auth'] as Map<String, dynamic>?;
-    final user = auth?['user'] as Map<String, dynamic>?;
-    final hotelName = user?['hotelName'] ?? user?['hotel_name'] ?? 'Hotel';
-    final rooms = d['rooms'] as List<dynamic>? ?? [];
-    final tasks = d['tasks'] as List<dynamic>? ?? [];
-    final staff = d['staff'] as List<dynamic>? ?? [];
-    final reservations = d['reservations'] as List<dynamic>? ?? [];
-    final claims = d['amenityClaims'] as List<dynamic>? ?? [];
-    final activity = d['activityLogs'] as List<dynamic>? ?? [];
-    final chats = d['guestMessages'] as List<dynamic>? ?? [];
-    final credits = d['credits'] as Map<String, dynamic>?;
-    final balance =
-        credits != null ? '${credits['currentCredits'] ?? ''}' : '—';
-
-    return RefreshIndicator(
+    return AdminDashboardShell(
+      data: _data!,
       onRefresh: _load,
-      child: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          Text(hotelName, style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 8),
-          GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-            physics: const NeverScrollableScrollPhysics(),
-            childAspectRatio: 1.7,
-            children: [
-              AppMetricCard(
-                  label: 'Rooms',
-                  value: '${rooms.length}',
-                  icon: Icons.meeting_room_outlined),
-              AppMetricCard(
-                  label: 'Tasks',
-                  value: '${tasks.length}',
-                  icon: Icons.task_alt_outlined),
-              AppMetricCard(
-                  label: 'Staff',
-                  value: '${staff.length}',
-                  icon: Icons.groups_outlined),
-              AppMetricCard(
-                  label: 'Credit',
-                  value: balance,
-                  icon: Icons.account_balance_wallet_outlined),
-              AppMetricCard(
-                  label: 'Reservations',
-                  value: '${reservations.length}',
-                  icon: Icons.event_note_outlined),
-              AppMetricCard(
-                  label: 'Logged events',
-                  value: '${activity.length}',
-                  icon: Icons.timeline_outlined),
-            ],
+      onSignOut: _signOut,
+      busyAction: _busyAction,
+      onRecharge: _showRechargeDialog,
+      onSurgePricing: _showSurgePricingDialog,
+      onThemeReset: () => _runAction('Reset personal theme', () async {
+        await portalDio().delete('/admin/theme/reset');
+        return {'message': 'Personal theme reset.'};
+      }),
+      onProcessReminders: () => _runAction('Process reminders', () async {
+        final res = await portalDio()
+            .post<Map<String, dynamic>>('/checkouts/process-reminders');
+        return {
+          'message': 'Processed ${res.data?['processed'] ?? 0} reminders.',
+        };
+      }),
+      onAmenityAddProduct: _manageAmenityMenu,
+      onOpenActivityLogs: () {
+        Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => const AdminActivityLogsScreen(),
           ),
-          const SizedBox(height: 20),
-          Text('Management', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          AppActionTile(
-            title: 'Room summary',
-            subtitle:
-                'Booked, available, maintenance, checked-in with guest names',
-            icon: Icons.summarize_outlined,
-            onTap: () => Navigator.of(context).push<void>(
-              MaterialPageRoute<void>(
-                builder: (_) => AdminRoomSummaryScreen(
-                  rooms: rooms.cast<Map<String, dynamic>>(),
-                ),
-              ),
-            ),
+        );
+      },
+      onOpenAccountSettings: () {
+        Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => const AdminAccountSettingsScreen(),
           ),
-          AppActionTile(
-            title: 'Rooms & status management',
-            subtitle: 'Passwords, booking details, add fees',
-            icon: Icons.hotel_outlined,
-            onTap: () async {
-              await Navigator.of(context).push<void>(
-                MaterialPageRoute<void>(
-                    builder: (_) => const AdminRoomsScreen()),
-              );
-              await _load();
-            },
-          ),
-          AppActionTile(
-            title: 'Reservation requests',
-            subtitle: 'Approve or reject customer holds; auto-books on arrival date',
-            icon: Icons.book_online_outlined,
-            onTap: () async {
-              await Navigator.of(context).push<void>(
-                MaterialPageRoute<void>(
-                    builder: (_) => const AdminBookingsScreen()),
-              );
-              await _load();
-            },
-          ),
-          AppActionTile(
-            title: 'Guest list history',
-            subtitle: 'Completed stays after checkout clears the room',
-            icon: Icons.history_edu_outlined,
-            onTap: () async {
-              await Navigator.of(context).push<void>(
-                MaterialPageRoute<void>(
-                  builder: (_) => const GuestListHistoryScreen(),
-                ),
-              );
-            },
-          ),
-          AppActionTile(
-            title: 'Billing and checkout reminders',
-            subtitle: 'Process due reminders and billing visibility',
-            icon: Icons.receipt_long_outlined,
-            onTap: () => _runAction('Process reminders', () async {
-              final res = await portalDio()
-                  .post<Map<String, dynamic>>('/checkouts/process-reminders');
-              return {
-                'message': 'Processed ${res.data?['processed'] ?? 0} reminders.'
-              };
-            }),
-          ),
-          AppActionTile(
-            title: 'Recharge credits',
-            subtitle: 'Top up via GCash or PayMaya (opens payment page)',
-            icon: Icons.account_balance_wallet_outlined,
-            onTap: _showRechargeDialog,
-          ),
-          AppActionTile(
-            title: 'Reports & analytics',
-            subtitle: 'Revenue, bookings, occupancy by day / week / month / year',
-            icon: Icons.insights_outlined,
-            onTap: () => Navigator.of(context).push<void>(
-              MaterialPageRoute<void>(
-                builder: (_) => const AdminReportsScreen(),
-              ),
-            ),
-          ),
-          AppActionTile(
-            title: 'Theme and personalization',
-            subtitle: 'View/reset theme and tune pricing',
-            icon: Icons.palette_outlined,
-            onTap: () => _runAction('Reset personal theme', () async {
-              await portalDio().delete('/admin/theme/reset');
-              return {'message': 'Personal theme reset.'};
-            }),
-          ),
-          AppActionTile(
-            title: 'Surge pricing settings',
-            subtitle: 'Auto-markup when occupancy exceeds threshold',
-            icon: Icons.trending_up_outlined,
-            onTap: _showSurgePricingDialog,
-          ),
-          AppActionTile(
-            title: 'Staff management',
-            subtitle: 'Add staff accounts and view performance',
-            icon: Icons.groups_outlined,
-            onTap: () async {
-              await Navigator.of(context).push<void>(
-                MaterialPageRoute<void>(
-                    builder: (_) => const AdminStaffScreen()),
-              );
-              await _load();
-            },
-          ),
-          AppActionTile(
-            title: 'Room categories',
-            subtitle: 'Create categories and organize rooms',
-            icon: Icons.category_outlined,
-            onTap: () async {
-              await Navigator.of(context).push<void>(
-                MaterialPageRoute<void>(
-                    builder: (_) => const AdminCategoriesScreen()),
-              );
-              await _load();
-            },
-          ),
-          AppActionTile(
-            title: 'Chat',
-            subtitle: 'Guest and staff messages in separate inboxes',
-            icon: Icons.forum_outlined,
-            onTap: () async {
-              await Navigator.of(context).push<void>(
-                MaterialPageRoute<void>(
-                    builder: (_) => const AdminChatHubScreen()),
-              );
-              await _load();
-            },
-          ),
-          AppActionTile(
-            title: 'Amenity menu',
-            subtitle: 'Add paid amenity and breakfast options',
-            icon: Icons.restaurant_menu_outlined,
-            onTap: _manageAmenityMenu,
-          ),
-          AppActionTile(
-            title: 'Activity logs',
-            subtitle: 'View all tracked admin/staff activities',
-            icon: Icons.list_alt_outlined,
-            onTap: () => Navigator.of(context).push<void>(
-              MaterialPageRoute<void>(
-                builder: (_) => const AdminActivityLogsScreen(),
-              ),
-            ),
-          ),
-          AppActionTile(
-            title: 'Account & hotel login',
-            subtitle: 'Change admin username/password; update hotel gate (signs everyone out)',
-            icon: Icons.lock_outline,
-            onTap: () => Navigator.of(context).push<void>(
-              MaterialPageRoute<void>(
-                builder: (_) => const AdminAccountSettingsScreen(),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Live feed: ${claims.length} amenity claims, ${chats.length} guest messages, ${tasks.length} tasks.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          if (_busyAction) ...[
-            const SizedBox(height: 10),
-            const LinearProgressIndicator(),
-          ],
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -937,7 +726,6 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
   Map<String, dynamic>? _data;
   String? _error;
   bool _loading = true;
-  bool _busyAction = false;
 
   @override
   void initState() {
@@ -1051,40 +839,6 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
   Future<void> _signOut() async {
     await AuthStorage.clearPortalAuth();
     if (mounted) Navigator.of(context).pop();
-  }
-
-  Future<void> _runAction(
-    String label,
-    Future<Map<String, dynamic>?> Function() action,
-  ) async {
-    if (_busyAction) return;
-    setState(() => _busyAction = true);
-    try {
-      final payload = await action();
-      if (!mounted) return;
-
-      if (!mounted) return;
-      if (PaymentRedirect.responseRequiresRedirect(payload)) {
-        await PaymentRedirect.maybeOpenFromResponse(context, payload);
-      }
-
-      if (!mounted) return;
-      final msg = payload?['message']?.toString() ?? '$label completed.';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-      await _load();
-    } on DioException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$label failed: ${dioErrorMessage(e)}')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$label failed: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _busyAction = false);
-    }
   }
 
   @override
@@ -1218,10 +972,6 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
               ),
             );
           }),
-          if (_busyAction) ...[
-            const SizedBox(height: 10),
-            const LinearProgressIndicator(),
-          ],
         ],
       ),
     );
@@ -1735,17 +1485,6 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
         SnackBar(content: Text(dioErrorMessage(e))),
       );
     }
-  }
-
-  String _formatSentAt(Object? raw) {
-    final s = raw?.toString() ?? '';
-    if (s.isEmpty) return '';
-    final dt = DateTime.tryParse(s);
-    if (dt != null) {
-      final l = dt.toLocal();
-      return '${l.month}/${l.day} ${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}';
-    }
-    return s.length > 24 ? '${s.substring(0, 22)}…' : s;
   }
 
   bool _isGuestMessage(Map<String, dynamic> m) {
