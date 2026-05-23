@@ -7,6 +7,8 @@ use App\Http\Requests\CancelBookingRequest;
 use App\Http\Requests\StoreBookingRequest;
 use App\Models\Booking;
 use App\Services\BookingService;
+use App\Support\AdminBookingPresenter;
+use App\Support\BookingTypeResolver;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 
@@ -18,9 +20,19 @@ class BookingController extends Controller
 
     public function index(Request $request)
     {
-        return response()->json(
-            Booking::query()->latest()->paginate(20)
-        );
+        $validated = $request->validate([
+            'booking_type' => ['nullable', 'string', 'in:all,local,online'],
+        ]);
+
+        $query = Booking::query()->with('room')->latest();
+        BookingTypeResolver::applyFilter($query, $validated['booking_type'] ?? 'all');
+
+        $paginated = $query->paginate(50);
+        $paginated->getCollection()->transform(function (Booking $booking) {
+            return AdminBookingPresenter::present($booking, $booking->room);
+        });
+
+        return response()->json($paginated);
     }
 
     public function store(StoreBookingRequest $request)

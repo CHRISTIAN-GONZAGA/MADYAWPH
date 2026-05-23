@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\PriceRounding;
 use Carbon\CarbonInterface;
 use Illuminate\Validation\ValidationException;
 
@@ -27,7 +28,9 @@ class FinancialComputationService
             ]);
         }
 
-        return round($pricePerNight * $nights, 2);
+        $nightly = PriceRounding::nearest50($pricePerNight);
+
+        return PriceRounding::nearest50($nightly * $nights);
     }
 
     public function computeTotal(float $baseAmount, float $extraCharges = 0.0): float
@@ -38,6 +41,6 @@ class FinancialComputationService
             ]);
         }
 
-        return round($baseAmount + $extraCharges, 2);
+        return PriceRounding::nearest50($baseAmount + $extraCharges);
     }
 }

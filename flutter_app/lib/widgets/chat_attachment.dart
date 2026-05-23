@@ -10,6 +10,36 @@ class ChatAttachment {
 
   static final _picker = ImagePicker();
 
+  static const _allowedRoomExtensions = {'.jpg', '.jpeg', '.png', '.webp'};
+
+  /// Gallery-only picker for room/category images (JPG, PNG, WEBP).
+  static Future<XFile?> pickRoomImageFromGallery(BuildContext context) async {
+    final file = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 88,
+      maxWidth: 1920,
+    );
+    if (file == null) return null;
+    final ext = _extensionOf(file.path);
+    if (!_allowedRoomExtensions.contains(ext)) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Only JPG, JPEG, PNG, or WEBP images are allowed.'),
+          ),
+        );
+      }
+      return null;
+    }
+    return file;
+  }
+
+  static String _extensionOf(String path) {
+    final dot = path.lastIndexOf('.');
+    if (dot < 0) return '';
+    return path.substring(dot).toLowerCase();
+  }
+
   static Future<XFile?> pick(BuildContext context) async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,

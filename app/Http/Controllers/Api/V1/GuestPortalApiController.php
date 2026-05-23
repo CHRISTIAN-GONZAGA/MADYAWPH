@@ -18,6 +18,7 @@ use App\Services\FinancialComputationService;
 use App\Support\GuestPortalStore;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use App\Services\GuestRoomAccessCodeService;
 use App\Support\ChatAttachmentUrl;
 use App\Support\GuestMessageResource;
 use Illuminate\Support\Facades\Storage;
@@ -29,7 +30,7 @@ class GuestPortalApiController extends Controller
         $validated = $request->validate([
             'hotel_id' => ['required', 'string'],
             'room' => ['required', 'string'],
-            'password' => ['required', 'string', 'min:6', 'max:32'],
+            'password' => GuestRoomAccessCodeService::validationRules(),
         ]);
 
         $room = Room::withoutGlobalScopes()

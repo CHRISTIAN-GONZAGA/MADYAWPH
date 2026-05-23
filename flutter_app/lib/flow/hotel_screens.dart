@@ -754,6 +754,11 @@ class _GuestRoomLoginScreenState extends State<GuestRoomLoginScreen> {
   }
 
   Future<void> _submit() async {
+    final pwd = _password.text.trim();
+    if (pwd.length != 4) {
+      setState(() => _error = 'Room password must be exactly 4 characters.');
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
@@ -764,7 +769,7 @@ class _GuestRoomLoginScreenState extends State<GuestRoomLoginScreen> {
         data: {
           'hotel_id': widget.hotelId,
           'room': _room.text.trim(),
-          'password': _password.text,
+          'password': pwd,
         },
       );
       final token = res.data?['guest_token'] as String?;
@@ -805,8 +810,15 @@ class _GuestRoomLoginScreenState extends State<GuestRoomLoginScreen> {
           const SizedBox(height: 12),
           TextField(
             controller: _password,
-            decoration: const InputDecoration(labelText: 'Room password', border: OutlineInputBorder()),
+            maxLength: 4,
+            decoration: const InputDecoration(
+              labelText: 'Room password (4 characters)',
+              border: OutlineInputBorder(),
+              counterText: '',
+              helperText: 'Exactly 4 letters or numbers (e.g. 1234, a1b2)',
+            ),
             obscureText: true,
+            autocorrect: false,
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),

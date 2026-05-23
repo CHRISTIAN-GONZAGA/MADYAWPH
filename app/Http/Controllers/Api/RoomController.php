@@ -7,8 +7,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Room;
 use App\Models\RoomCategory;
 use App\Services\RoomCheckoutService;
-use Illuminate\Http\Request;
 use App\Support\ChatAttachmentUrl;
+use App\Support\PriceRounding;
+use App\Support\RoomImageUploadRules;
+use Illuminate\Http\Request;
 
 class RoomController extends Controller
 {
@@ -30,7 +32,12 @@ class RoomController extends Controller
 
     public function show(Room $room)
     {
-        return response()->json($room);
+        $payload = $room->toArray();
+        if (! empty($payload['image_url'])) {
+            $payload['image_url'] = ChatAttachmentUrl::fromStoredUrl((string) $payload['image_url']);
+        }
+
+        return response()->json($payload);
     }
 
     public function store(Request $request)
@@ -43,26 +50,57 @@ class RoomController extends Controller
             'price_per_night' => ['required', 'numeric', 'min:0'],
             'status' => ['nullable', 'in:available,booked,checked_in,checked_out,maintenance,reserved'],
             'amenities' => ['nullable', 'array'],
-            'image_url' => ['nullable', 'url'],
-            'image_file' => ['nullable', 'image', 'max:4096'],
+            'image_file' => RoomImageUploadRules::fileRules(),
         ]);
 
         $category = RoomCategory::query()->findOrFail($validated['category_id']);
         $validated['category_id'] = (string) $category->id;
         $validated['category_name'] = (string) $category->name;
+        $validated['price_per_night'] = PriceRounding::nearest50((float) $validated['price_per_night']);
+
         if ($request->hasFile('image_file')) {
             $validated['image_url'] = ChatAttachmentUrl::storeUploadedFile(
                 $request->file('image_file'),
                 'rooms'
             );
         }
+
         $room = Room::create($validated);
-        $payload = $room->toArray();
-        if (! empty($payload['image_url'])) {
-            $payload['image_url'] = ChatAttachmentUrl::fromStoredUrl((string) $payload['image_url']);
+
+        return response()->json($this->serializeRoom($room), 201);
+    }
+
+    public function update(Request $request, Room $room)
+    {
+        $validated = $request->validate([
+            'display_name' => ['sometimes', 'string', 'max:100'],
+            'room_number' => ['sometimes', 'string', 'max:50'],
+            'room_type' => ['sometimes', 'in:Single,Double,Suite,Deluxe'],
+            'price_per_night' => ['sometimes', 'numeric', 'min:0'],
+            'status' => ['sometimes', 'in:available,booked,checked_in,checked_out,maintenance,reserved'],
+            'amenities' => ['nullable', 'array'],
+            'image_file' => RoomImageUploadRules::fileRules(),
+            'remove_image' => ['sometimes', 'boolean'],
+        ]);
+
+        if (array_key_exists('price_per_night', $validated)) {
+            $validated['price_per_night'] = PriceRounding::nearest50((float) $validated['price_per_night']);
         }
 
-        return response()->json($payload, 201);
+        if ($request->boolean('remove_image')) {
+            $validated['image_url'] = null;
+        }
+
+        if ($request->hasFile('image_file')) {
+            $validated['image_url'] = ChatAttachmentUrl::storeUploadedFile(
+                $request->file('image_file'),
+                'rooms'
+            );
+        }
+
+        $room->update($validated);
+
+        return response()->json($this->serializeRoom($room->fresh()));
     }
 
     public function updateStatus(Request $request, Room $room)
@@ -109,6 +147,20 @@ class RoomController extends Controller
                 ->where('status', RoomStatus::AVAILABLE)
                 ->orderBy('room_number')
                 ->get()
+                ->map(fn (Room $room) => $this->serializeRoom($room))
         );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeRoom(Room $room): array
+    {
+        $payload = $room->toArray();
+        if (! empty($payload['image_url'])) {
+            $payload['image_url'] = ChatAttachmentUrl::fromStoredUrl((string) $payload['image_url']);
+        }
+
+        return $payload;
     }
 }

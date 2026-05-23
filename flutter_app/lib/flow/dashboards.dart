@@ -3044,7 +3044,12 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
         ),
       );
     }
-    final rooms = (_data!['rooms'] as List<dynamic>?) ?? [];
+    final allRooms = (_data!['rooms'] as List<dynamic>?) ?? [];
+    final rooms = allRooms.where((raw) {
+      final r = raw as Map<String, dynamic>;
+      final status = '${r['status'] ?? ''}'.toLowerCase();
+      return status == 'available' || status.isEmpty;
+    }).toList();
     final scheme = Theme.of(context).colorScheme;
     return RefreshIndicator(
       onRefresh: _load,
@@ -3055,11 +3060,9 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
           final r = rooms[i] as Map<String, dynamic>;
           final roomNo = '${r['room_number'] ?? ''}';
           final title = '${r['display_name'] ?? r['room_number']}';
-          final status = '${r['status'] ?? ''}'.toLowerCase();
           final price = (r['price_per_night'] as num?)?.toDouble() ?? 0;
           final surge = r['base_price_per_night'] != null &&
               r['base_price_per_night'] != r['price_per_night'];
-          final statusOpen = status == 'available' || status.isEmpty;
           return Padding(
             padding: const EdgeInsets.only(bottom: 14),
             child: Material(
@@ -3129,18 +3132,15 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                                       ?.copyWith(fontWeight: FontWeight.w800),
                                 ),
                               ),
-                              if (status.isNotEmpty)
-                                Chip(
-                                  visualDensity: VisualDensity.compact,
-                                  padding: EdgeInsets.zero,
-                                  label: Text(
-                                    statusOpen ? 'Open' : status.replaceAll('_', ' '),
-                                    style: const TextStyle(fontSize: 12),
-                                  ),
-                                  backgroundColor: statusOpen
-                                      ? scheme.primaryContainer
-                                      : scheme.secondaryContainer,
+                              Chip(
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                label: const Text(
+                                  'Available',
+                                  style: TextStyle(fontSize: 12),
                                 ),
+                                backgroundColor: scheme.primaryContainer,
+                              ),
                             ],
                           ),
                           const SizedBox(height: 6),

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\BookingStatus;
 use App\Enums\RoomStatus;
+use App\Support\BookingTypeResolver;
 use App\Models\BillingCharge;
 use App\Models\Booking;
 use App\Models\Room;
@@ -19,9 +20,21 @@ class BookingService
         private readonly FinancialComputationService $financialComputationService,
         private readonly DomainGuardService $domainGuardService,
         private readonly SmsService $smsService,
-        private readonly RoomPricingService $roomPricingService
-    )
+        private readonly RoomPricingService $roomPricingService,
+        private readonly GuestRoomAccessCodeService $guestRoomAccessCodeService,
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function withBookingChannel(array $data): array
     {
+        $source = $data['source'] ?? null;
+        $type = BookingTypeResolver::fromSource($source);
+        $data['booking_type'] = $data['booking_type'] ?? $type;
+        $data['booking_source'] = $data['booking_source'] ?? (is_string($source) ? $source : null);
+
+        return $data;
     }
 
     public function create(array $data, ?User $actor = null): Booking
@@ -43,7 +56,8 @@ class BookingService
             $extraCharges = isset($data['extra_charges']) ? (float) $data['extra_charges'] : 0.0;
             $totalAmount = $this->financialComputationService->computeTotal($baseRoomCharge, $extraCharges);
 
-            $booking = Booking::withoutGlobalScopes()->create([
+            $booking = Booking::withoutGlobalScopes()->create(
+                $this->withBookingChannel([
                 ...$data,
                 'hotel_id' => $room->hotel_id,
                 'booking_reference' => 'BK'.now()->format('YmdHis').random_int(100, 999),
@@ -52,7 +66,7 @@ class BookingService
                 'paid_at' => null,
                 'total_amount' => $totalAmount,
                 'status' => BookingStatus::BOOKED->value,
-            ]);
+            ]));
             BillingCharge::withoutGlobalScopes()->create([
                 'hotel_id' => (string) $room->hotel_id,
                 'booking_id' => (string) $booking->id,
@@ -68,7 +82,7 @@ class BookingService
                     'nights' => $nights,
                 ],
             ]);
-            $generatedPassword = $this->generateUniqueRoomPassword();
+            $generatedPassword = $this->guestRoomAccessCodeService->generateUnique();
 
             $room->update([
                 'status' => RoomStatus::BOOKED->value,
@@ -185,22 +199,4 @@ class BookingService
         });
     }
 
-    private function generateUniqueRoomPassword(): string
-    {
-        // Restrict to uppercase+digits for front-desk readability while keeping high entropy.
-        $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-        $size = 12;
-
-        do {
-            $candidate = '';
-            for ($i = 0; $i < $size; $i++) {
-                $candidate .= $alphabet[random_int(0, strlen($alphabet) - 1)];
-            }
-            $exists = Room::withoutGlobalScopes()
-                ->where('current_access_code', $candidate)
-                ->exists();
-        } while ($exists);
-
-        return $candidate;
-    }
 }

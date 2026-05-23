@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../admin_dashboard_models.dart';
+import '../widgets/booking_overview_cards.dart';
 import '../../admin_rooms.dart';
 
 class RoomSummarySection extends StatelessWidget {
@@ -8,10 +9,18 @@ class RoomSummarySection extends StatelessWidget {
     super.key,
     required this.rooms,
     required this.tasks,
+    required this.localBookingsTotal,
+    required this.onlineBookingsTotal,
+    required this.onOpenLocalBookings,
+    required this.onOpenOnlineBookings,
   });
 
   final List<Map<String, dynamic>> rooms;
   final List<dynamic> tasks;
+  final int localBookingsTotal;
+  final int onlineBookingsTotal;
+  final VoidCallback onOpenLocalBookings;
+  final VoidCallback onOpenOnlineBookings;
 
   List<Map<String, dynamic>> _maintenanceRooms() {
     return rooms
@@ -186,6 +195,13 @@ class RoomSummarySection extends StatelessWidget {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
         children: [
+          BookingOverviewCards(
+            localTotal: localBookingsTotal,
+            onlineTotal: onlineBookingsTotal,
+            onLocalTap: onOpenLocalBookings,
+            onOnlineTap: onOpenOnlineBookings,
+          ),
+          const SizedBox(height: 20),
           Text(
             'Room summary by category',
             style: Theme.of(context).textTheme.titleMedium,

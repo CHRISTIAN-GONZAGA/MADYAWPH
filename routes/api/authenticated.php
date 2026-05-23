@@ -37,6 +37,7 @@ Route::get('/rooms', [RoomController::class, 'index']);
 Route::get('/rooms/{room}', [RoomController::class, 'show']);
 Route::get('/rooms/available', [RoomController::class, 'available']);
 Route::post('/rooms', [RoomController::class, 'store'])->middleware('role:admin');
+Route::put('/rooms/{room}', [RoomController::class, 'update'])->middleware('role:admin');
 Route::put('/rooms/{room}/status', [RoomController::class, 'updateStatus'])->middleware('role:admin,staff');
 Route::delete('/rooms/{room}', [RoomController::class, 'destroy'])->middleware('role:admin');
 Route::get('/room-categories', [RoomCategoryController::class, 'index'])->middleware('role:admin,staff');
@@ -178,7 +179,9 @@ Route::put('/reservations/{reservation}/assign-room', function (Request $request
         'check_in_date' => optional($reservation->check_in_date)->toDateString(),
         'check_out_date' => optional($reservation->check_out_date)->toDateString(),
         'payment_method' => $validated['payment_method'] ?? \App\Enums\PaymentMethod::CASH->value,
-        'source' => 'website',
+        'source' => \App\Enums\BookingSource::WEB->value,
+        'booking_type' => \App\Enums\BookingType::ONLINE->value,
+        'booking_source' => 'website',
     ], $request->user());
 
     $reservation->update([
@@ -327,7 +330,7 @@ Route::post('/room-transfers', function (Request $request, FinancialComputationS
         'current_guest_name' => $booking->guest_name,
         'current_check_in' => $booking->check_in_date,
         'current_check_out' => $booking->check_out_date,
-        'current_access_code' => $existingAccessCode !== '' ? $existingAccessCode : strtoupper(\Illuminate\Support\Str::random(8)),
+        'current_access_code' => $existingAccessCode !== '' ? $existingAccessCode : app(\App\Services\GuestRoomAccessCodeService::class)->generateUnique(),
     ]);
 
     $transfer = RoomTransfer::withoutGlobalScopes()->create([

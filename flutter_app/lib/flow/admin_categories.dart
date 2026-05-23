@@ -175,7 +175,8 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                     _galleryPickerTile(
                       image: pickedImage,
                       onPick: () async {
-                        final file = await ChatAttachment.pick(context);
+                        final file =
+                            await ChatAttachment.pickRoomImageFromGallery(context);
                         if (file != null) setLocal(() => pickedImage = file);
                       },
                       onClear: () => setLocal(() => pickedImage = null),
@@ -329,7 +330,8 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                     _galleryPickerTile(
                       image: pickedImage,
                       onPick: () async {
-                        final file = await ChatAttachment.pick(context);
+                        final file =
+                            await ChatAttachment.pickRoomImageFromGallery(context);
                         if (file != null) setLocal(() => pickedImage = file);
                       },
                       onClear: () => setLocal(() => pickedImage = null),

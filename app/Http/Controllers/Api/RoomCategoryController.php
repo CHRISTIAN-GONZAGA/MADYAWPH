@@ -7,6 +7,8 @@ use App\Models\Room;
 use App\Models\RoomCategory;
 use Illuminate\Http\Request;
 use App\Support\ChatAttachmentUrl;
+use App\Support\PriceRounding;
+use App\Support\RoomImageUploadRules;
 
 class RoomCategoryController extends Controller
 {
@@ -32,9 +34,12 @@ class RoomCategoryController extends Controller
             'name' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string', 'max:300'],
             'default_price' => ['nullable', 'numeric', 'min:0'],
-            'image_url' => ['nullable', 'url'],
-            'image_file' => ['nullable', 'image', 'max:4096'],
+            'image_file' => RoomImageUploadRules::fileRules(),
         ]);
+
+        if (isset($validated['default_price'])) {
+            $validated['default_price'] = PriceRounding::nearest50((float) $validated['default_price']);
+        }
 
         if ($request->hasFile('image_file')) {
             $validated['image_url'] = ChatAttachmentUrl::storeUploadedFile(

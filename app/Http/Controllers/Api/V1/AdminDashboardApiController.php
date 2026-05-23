@@ -20,6 +20,8 @@ use App\Models\StayReview;
 use App\Models\SystemSetting;
 use App\Models\Task;
 use App\Models\UserSetting;
+use App\Support\AdminBookingPresenter;
+use App\Support\BookingTypeResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -40,7 +42,25 @@ class AdminDashboardApiController extends Controller
                 return response()->json(['message' => 'Unauthenticated.'], 401);
             }
             $hotel = Hotel::withoutGlobalScopes()->find($user?->hotel_id);
+            $hotelId = (string) $user->hotel_id;
             $rooms = Room::query()->get();
+        $bookingBase = Booking::withoutGlobalScopes()->where('hotel_id', $hotelId);
+        $localTotal = BookingTypeResolver::applyFilter(
+            Booking::withoutGlobalScopes()->where('hotel_id', $hotelId),
+            'local'
+        )->count();
+        $onlineTotal = BookingTypeResolver::applyFilter(
+            Booking::withoutGlobalScopes()->where('hotel_id', $hotelId),
+            'online'
+        )->count();
+        $bookingsList = Booking::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->with('room')
+            ->latest('created_at')
+            ->limit(120)
+            ->get()
+            ->map(fn (Booking $b) => AdminBookingPresenter::present($b, $b->room));
+
         $latestBookingsByRoom = Booking::withoutGlobalScopes()
             ->where('hotel_id', (string) $user->hotel_id)
             ->latest('created_at')
@@ -127,6 +147,12 @@ class AdminDashboardApiController extends Controller
                 ->map(fn ($message) => array_merge($message->toArray(), [
                 'is_read' => (bool) ($message->is_read ?? false),
             ])),
+            'booking_stats' => [
+                'local_total' => $localTotal,
+                'online_total' => $onlineTotal,
+                'all_total' => $localTotal + $onlineTotal,
+            ],
+            'bookings' => $bookingsList,
             'reservations' => ExternalReservation::query()
                 ->latest()
                 ->limit(80)

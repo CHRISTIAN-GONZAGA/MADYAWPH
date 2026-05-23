@@ -65,6 +65,8 @@ class AdminDashboardTest extends TestCase
             'staff',
             'guestMessages',
             'credits',
+            'booking_stats' => ['local_total', 'online_total', 'all_total'],
+            'bookings',
         ]);
         $this->assertNotEmpty($response->json('rooms'));
         $this->assertNotEmpty($response->json('reservations'));

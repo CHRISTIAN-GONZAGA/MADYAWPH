@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Enums\BookingSource;
 use App\Enums\BookingStatus;
+use App\Enums\BookingType;
 use App\Enums\PaymentMethod;
 use App\Enums\RoomStatus;
 use App\Http\Controllers\Controller;
@@ -14,7 +15,10 @@ use App\Models\Hotel;
 use App\Models\Room;
 use App\Models\RoomCategory;
 use App\Services\ActivityLogService;
+use App\Services\FinancialComputationService;
+use App\Services\GuestRoomAccessCodeService;
 use App\Services\RoomPricingService;
+use App\Support\PriceRounding;
 use App\Services\SmsService;
 use App\Support\ChatAttachmentUrl;
 use App\Support\EnumHelper;
@@ -31,7 +35,11 @@ use Throwable;
 
 class CustomerPortalApiController extends Controller
 {
-    public function __construct(private readonly RoomPricingService $roomPricingService) {}
+    public function __construct(
+        private readonly RoomPricingService $roomPricingService,
+        private readonly GuestRoomAccessCodeService $guestRoomAccessCodeService,
+        private readonly FinancialComputationService $financialComputationService,
+    ) {}
 
     public function categories(Request $request): JsonResponse
     {
@@ -95,7 +103,9 @@ class CustomerPortalApiController extends Controller
 
         $hotel = Hotel::withoutGlobalScopes()->select('id', 'name', 'location')->find($hotelId);
         $category = RoomCategory::query()->find($categoryId);
+        $availableValue = RoomStatus::AVAILABLE->value;
         $rooms = Room::query()
+            ->where('status', $availableValue)
             ->when(
                 $category,
                 fn ($query) => $query->where('category_id', $categoryId),
@@ -103,7 +113,7 @@ class CustomerPortalApiController extends Controller
             )
             ->limit(30)
             ->get()
-            ->map(function ($room) use ($hotelId, $category) {
+            ->map(function ($room) use ($hotelId, $category, $availableValue) {
                 $basePrice = (float) $room->price_per_night;
                 $displayPrice = $this->roomPricingService->applySurge((string) $hotelId, $basePrice);
                 $roomImage = ChatAttachmentUrl::fromStoredUrl($room->image_url);
@@ -115,7 +125,7 @@ class CustomerPortalApiController extends Controller
                     'id' => (string) $room->id,
                     'display_name' => (string) ($room->display_name ?? ''),
                     'room_number' => $room->room_number,
-                    'status' => $room->status?->value ?? (string) $room->status,
+                    'status' => $availableValue,
                     'price_per_night' => $displayPrice,
                     'base_price_per_night' => $basePrice,
                     'room_type' => $room->room_type?->value ?? (string) $room->room_type,
@@ -173,7 +183,7 @@ class CustomerPortalApiController extends Controller
             $checkOut = Carbon::parse($validated['check_out']);
             $nights = max(1, $checkIn->diffInDays($checkOut));
             $nightly = $this->roomPricingService->applySurge((string) $hotelId, (float) $room->price_per_night);
-            $gross = round($nightly * $nights, 2);
+            $gross = $this->financialComputationService->computeRoomCharge($nightly, $nights);
             $discountPercent = (float) ($validated['discount_percent'] ?? 0);
             $total = $this->applyDiscountToTotal($gross, $discountPercent);
 
@@ -205,7 +215,7 @@ class CustomerPortalApiController extends Controller
                 'metadata' => $chargeMeta,
             ]);
 
-            $generatedPassword = $this->generateUniqueRoomPassword();
+            $generatedPassword = $this->guestRoomAccessCodeService->generateUnique();
             $room->update([
                 'status' => RoomStatus::BOOKED->value,
                 'current_guest_name' => $validated['guest_name'],
@@ -441,8 +451,10 @@ class CustomerPortalApiController extends Controller
             'nights' => $nights,
             'payment_method' => PaymentMethod::CASH->value,
             'payment_status' => 'unpaid',
-            'total_amount' => round($total, 2),
+            'total_amount' => PriceRounding::nearest50($total),
             'source' => BookingSource::KIOSK->value,
+            'booking_type' => BookingType::LOCAL->value,
+            'booking_source' => 'app-customer',
             'status' => BookingStatus::CONFIRMED->value,
         ];
 
@@ -462,6 +474,7 @@ class CustomerPortalApiController extends Controller
         return array_merge($booking->fresh()->toArray(), [
             'status' => EnumHelper::toString($booking->status),
             'source' => EnumHelper::toString($booking->source),
+            'booking_type' => EnumHelper::toString($booking->booking_type) ?: 'local',
             'payment_method' => EnumHelper::toString($booking->payment_method),
         ]);
     }
@@ -488,27 +501,9 @@ class CustomerPortalApiController extends Controller
     private function applyDiscountToTotal(float $gross, float $percent): float
     {
         if ($percent <= 0) {
-            return round($gross, 2);
+            return PriceRounding::nearest50($gross);
         }
 
-        return round(max(0, $gross * (1 - ($percent / 100))), 2);
-    }
-
-    private function generateUniqueRoomPassword(): string
-    {
-        $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-        $size = 12;
-
-        do {
-            $candidate = '';
-            for ($i = 0; $i < $size; $i++) {
-                $candidate .= $alphabet[random_int(0, strlen($alphabet) - 1)];
-            }
-            $exists = Room::withoutGlobalScopes()
-                ->where('current_access_code', $candidate)
-                ->exists();
-        } while ($exists);
-
-        return $candidate;
+        return PriceRounding::nearest50(max(0, $gross * (1 - ($percent / 100))));
     }
 }

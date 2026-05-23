@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\BookingSource;
 use App\Enums\BookingStatus;
+use App\Enums\BookingType;
 use App\Enums\PaymentMethod;
 use App\Enums\RoomStatus;
 use App\Models\BillingCharge;
@@ -17,6 +18,8 @@ class ReservationActivationService
 {
     public function __construct(
         private readonly RoomPricingService $roomPricingService,
+        private readonly FinancialComputationService $financialComputationService,
+        private readonly GuestRoomAccessCodeService $guestRoomAccessCodeService,
         private readonly SmsService $smsService,
         private readonly ActivityLogService $activityLogService,
     ) {}
@@ -50,7 +53,7 @@ class ReservationActivationService
         $nights = max(1, $checkIn->diffInDays($checkOut));
         $hotelId = (string) $room->hotel_id;
         $nightly = $this->roomPricingService->applySurge($hotelId, (float) $room->price_per_night);
-        $total = $nightly * $nights;
+        $total = $this->financialComputationService->computeRoomCharge($nightly, $nights);
 
         $booking = Booking::withoutGlobalScopes()->create([
             'hotel_id' => $hotelId,
@@ -66,6 +69,8 @@ class ReservationActivationService
             'payment_status' => 'unpaid',
             'total_amount' => $total,
             'source' => BookingSource::KIOSK->value,
+            'booking_type' => BookingType::LOCAL->value,
+            'booking_source' => 'app-customer',
             'status' => BookingStatus::CONFIRMED->value,
         ]);
 
@@ -85,7 +90,7 @@ class ReservationActivationService
             ],
         ]);
 
-        $generatedPassword = strtoupper(Str::random(8));
+        $generatedPassword = $this->guestRoomAccessCodeService->generateUnique();
         $room->update([
             'status' => RoomStatus::BOOKED->value,
             'current_guest_name' => $res->guest_name,

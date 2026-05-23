@@ -52,6 +52,7 @@ class AdminDashboardShell extends StatefulWidget {
 
 class _AdminDashboardShellState extends State<AdminDashboardShell> {
   int _tab = 0;
+  String _bookingListFilter = 'all';
   Map<String, dynamic>? _inbox;
   Timer? _chatPoll;
 
@@ -206,23 +207,47 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     );
   }
 
+  void _openBookingsTab(String filter) {
+    setState(() {
+      _bookingListFilter = filter;
+      _tab = 3;
+    });
+  }
+
   List<Widget> _allSections(Map<String, dynamic> d, String balance) {
     final tasks = d['tasks'] as List<dynamic>? ?? [];
     final reservations = d['reservations'] as List<dynamic>? ?? [];
     final claims = d['amenityClaims'] as List<dynamic>? ?? [];
+    final bookingStats =
+        d['booking_stats'] as Map<String, dynamic>? ?? const {};
+    final bookings = (d['bookings'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    final localTotal = (bookingStats['local_total'] as num?)?.toInt() ?? 0;
+    final onlineTotal = (bookingStats['online_total'] as num?)?.toInt() ?? 0;
 
     final refreshKey = ValueKey(
-      '${_rooms.length}-${reservations.length}-${claims.length}-${tasks.length}-${widget.isSuperAdmin}',
+      '${_rooms.length}-${reservations.length}-${claims.length}-${tasks.length}-${bookings.length}-${widget.isSuperAdmin}',
     );
 
     final sections = <Widget>[
-      RoomSummarySection(key: refreshKey, rooms: _rooms, tasks: tasks),
+      RoomSummarySection(
+        key: refreshKey,
+        rooms: _rooms,
+        tasks: tasks,
+        localBookingsTotal: localTotal,
+        onlineBookingsTotal: onlineTotal,
+        onOpenLocalBookings: () => _openBookingsTab('local'),
+        onOpenOnlineBookings: () => _openBookingsTab('online'),
+      ),
       CheckoutSection(key: refreshKey, rooms: _rooms),
       GuestPortfolioSection(key: refreshKey, rooms: _rooms),
       BookingsSection(
-        key: refreshKey,
+        key: ValueKey('bookings-$_bookingListFilter-${bookings.length}'),
         rooms: _rooms,
         reservations: reservations,
+        bookings: bookings,
+        bookingFilter: _bookingListFilter,
         onChanged: widget.onRefresh,
       ),
       AmenitiesSection(

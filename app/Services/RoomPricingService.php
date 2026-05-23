@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\PriceRounding;
 use App\Models\Room;
 use App\Models\SystemSetting;
 
@@ -13,8 +14,10 @@ class RoomPricingService
     public function applySurge(string $hotelId, float $basePrice): float
     {
         $totalRooms = Room::withoutGlobalScopes()->where('hotel_id', $hotelId)->count();
+        $basePrice = PriceRounding::nearest50($basePrice);
+
         if ($totalRooms <= 0) {
-            return round($basePrice, 2);
+            return $basePrice;
         }
 
         $bookedRooms = Room::withoutGlobalScopes()
@@ -29,10 +32,10 @@ class RoomPricingService
         $markup = (float) ($settings?->surge_markup_percent ?? 20.0);
 
         if (! $enabled || $occupancyPercent <= $threshold || $markup <= 0) {
-            return round($basePrice, 2);
+            return $basePrice;
         }
 
-        return round($basePrice * (1 + ($markup / 100.0)), 2);
+        return PriceRounding::nearest50($basePrice * (1 + ($markup / 100.0)));
     }
 }
 

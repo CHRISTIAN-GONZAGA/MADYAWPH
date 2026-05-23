@@ -13,11 +13,16 @@ class BookingsSection extends StatefulWidget {
     super.key,
     required this.rooms,
     required this.reservations,
+    required this.bookings,
+    required this.bookingFilter,
     required this.onChanged,
   });
 
   final List<Map<String, dynamic>> rooms;
   final List<dynamic> reservations;
+  final List<Map<String, dynamic>> bookings;
+  /// `all`, `local`, or `online`
+  final String bookingFilter;
   final Future<void> Function() onChanged;
 
   @override
@@ -27,6 +32,8 @@ class BookingsSection extends StatefulWidget {
 class _BookingsSectionState extends State<BookingsSection>
     with SingleTickerProviderStateMixin {
   late final TabController _viewTabs;
+  late String _recordFilter;
+  final _searchCtrl = TextEditingController();
   DateTime _selectedDay = DateTime.now();
   DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
   bool _busy = false;
@@ -34,11 +41,46 @@ class _BookingsSectionState extends State<BookingsSection>
   @override
   void initState() {
     super.initState();
+    _recordFilter = widget.bookingFilter;
     _viewTabs = TabController(length: 2, vsync: this);
   }
 
   @override
+  void didUpdateWidget(covariant BookingsSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.bookingFilter != widget.bookingFilter) {
+      _recordFilter = widget.bookingFilter;
+    }
+  }
+
+  List<Map<String, dynamic>> get _filteredBookings {
+    var list = widget.bookings;
+    if (_recordFilter == 'local') {
+      list = list
+          .where((b) => (b['booking_type'] ?? 'local').toString() == 'local')
+          .toList();
+    } else if (_recordFilter == 'online') {
+      list = list
+          .where((b) => (b['booking_type'] ?? '').toString() == 'online')
+          .toList();
+    }
+    final q = _searchCtrl.text.trim().toLowerCase();
+    if (q.isEmpty) return list;
+    return list.where((b) {
+      final hay = [
+        b['guest_name'],
+        b['guest_email'],
+        b['guest_phone'],
+        b['booking_reference'],
+        b['room_number'],
+      ].join(' ').toLowerCase();
+      return hay.contains(q);
+    }).toList();
+  }
+
+  @override
   void dispose() {
+    _searchCtrl.dispose();
     _viewTabs.dispose();
     super.dispose();
   }
@@ -314,7 +356,91 @@ class _BookingsSectionState extends State<BookingsSection>
     );
   }
 
+  Widget _bookingTypeChips() {
+    return SegmentedButton<String>(
+      segments: const [
+        ButtonSegment(value: 'all', label: Text('All')),
+        ButtonSegment(value: 'local', label: Text('Local')),
+        ButtonSegment(value: 'online', label: Text('Online')),
+      ],
+      selected: {_recordFilter},
+      onSelectionChanged: (s) => setState(() => _recordFilter = s.first),
+    );
+  }
+
+  Widget _bookingRecordCard(Map<String, dynamic> b) {
+    final ref = (b['booking_reference'] ?? b['id'] ?? '').toString();
+    final type = (b['booking_type'] ?? 'local').toString();
+    final roomLabel = [
+      if ((b['room_number'] ?? '').toString().isNotEmpty)
+        'Room ${b['room_number']}',
+      if ((b['category_name'] ?? '').toString().isNotEmpty)
+        b['category_name'],
+      if ((b['room_display_name'] ?? '').toString().isNotEmpty)
+        b['room_display_name'],
+    ].where((s) => s.toString().isNotEmpty).join(' · ');
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: ExpansionTile(
+        leading: Icon(
+          type == 'online' ? Icons.language : Icons.smartphone,
+          color: type == 'online'
+              ? Theme.of(context).colorScheme.tertiary
+              : Theme.of(context).colorScheme.primary,
+        ),
+        title: Text((b['guest_name'] ?? 'Guest').toString()),
+        subtitle: Text('$ref · ${(b['status'] ?? '').toString()}'),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _detailRow('Booking ID', ref),
+                _detailRow('Type', type == 'online' ? 'Online' : 'Local'),
+                _detailRow('Contact', '${b['guest_phone'] ?? ''} · ${b['guest_email'] ?? ''}'),
+                _detailRow('Check-in', '${b['check_in_date'] ?? '—'}'),
+                _detailRow('Check-out', '${b['check_out_date'] ?? '—'}'),
+                _detailRow('Rooms', '${b['rooms_booked'] ?? 1}'),
+                _detailRow('Room', roomLabel.isEmpty ? '—' : roomLabel),
+                _detailRow('Status', '${b['status'] ?? ''} / ${b['payment_status'] ?? ''}'),
+                _detailRow('Date booked', '${b['date_booked'] ?? b['created_at'] ?? '—'}'),
+                _detailRow(
+                  'Total',
+                  '₱${((b['total_amount'] as num?) ?? 0).toStringAsFixed(0)}',
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+          ),
+          Expanded(child: Text(value)),
+        ],
+      ),
+    );
+  }
+
   Widget _listView() {
+    final records = _filteredBookings;
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
@@ -328,7 +454,29 @@ class _BookingsSectionState extends State<BookingsSection>
           'Customer portal bookings appear as booked rooms. Approve reservations to hold or activate stays.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
+        _bookingTypeChips(),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _searchCtrl,
+          decoration: const InputDecoration(
+            labelText: 'Search bookings',
+            prefixIcon: Icon(Icons.search),
+            isDense: true,
+          ),
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Booking records (${records.length})',
+          style: Theme.of(context).textTheme.titleSmall,
+        ),
+        const SizedBox(height: 8),
+        if (records.isEmpty)
+          const Text('No bookings match this filter.')
+        else
+          ...records.map(_bookingRecordCard),
+        const SizedBox(height: 20),
         Text('Check-in queue (booked)',
             style: Theme.of(context).textTheme.titleSmall),
         const SizedBox(height: 8),
