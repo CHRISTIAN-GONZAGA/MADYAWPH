@@ -229,12 +229,18 @@ class RoomController extends Controller
             return null;
         }
 
+        $category = RoomCategory::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where('id', $categoryId)
+            ->first();
+
+        if ($category) {
+            return $category;
+        }
+
         return RoomCategory::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
-            ->where(function ($query) use ($categoryId): void {
-                $query->where('id', $categoryId)
-                    ->orWhere('_id', $categoryId);
-            })
+            ->where('_id', $categoryId)
             ->first();
     }
 
