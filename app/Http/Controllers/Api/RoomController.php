@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Enums\RoomStatus;
+use App\Enums\RoomType;
 use App\Http\Controllers\Controller;
 use App\Models\Room;
 use App\Models\RoomCategory;
@@ -48,7 +49,7 @@ class RoomController extends Controller
         $hotelId = $this->requireHotelId($request);
 
         $validated = $request->validate([
-            'category_id' => ['required', 'string'],
+            'category_id' => ['required', 'string', 'max:64'],
             'display_name' => ['required', 'string', 'max:100'],
             'room_number' => ['required', 'string', 'max:50'],
             'room_type' => ['required', 'in:Single,Double,Suite,Deluxe'],
@@ -58,10 +59,7 @@ class RoomController extends Controller
             'image_file' => RoomImageUploadRules::fileRules(),
         ]);
 
-        $category = RoomCategory::query()
-            ->where('hotel_id', $hotelId)
-            ->where('id', $validated['category_id'])
-            ->first();
+        $category = $this->findCategoryForHotel($hotelId, (string) $validated['category_id']);
 
         if (! $category) {
             throw ValidationException::withMessages([
@@ -70,9 +68,7 @@ class RoomController extends Controller
         }
 
         $payload = RoomMediaStorage::stripUploadField($validated);
-        $payload['category_id'] = (string) $category->id;
-        $payload['category_name'] = (string) $category->name;
-        $payload['price_per_night'] = PriceRounding::nearest50((float) $payload['price_per_night']);
+        $payload = $this->roomAttributesFromValidated($payload, $hotelId, $category);
         $payload['status'] = $payload['status'] ?? RoomStatus::AVAILABLE->value;
 
         if ($request->hasFile('image_file')) {
@@ -84,7 +80,7 @@ class RoomController extends Controller
 
         $room = Room::create($payload);
 
-        return response()->json($this->serializeRoom($room), 201);
+        return response()->json($this->serializeRoom($room->fresh() ?? $room), 201);
     }
 
     public function update(Request $request, Room $room): JsonResponse
@@ -224,5 +220,43 @@ class RoomController extends Controller
         }
 
         return $hotelId;
+    }
+
+    private function findCategoryForHotel(string $hotelId, string $categoryId): ?RoomCategory
+    {
+        $categoryId = trim($categoryId);
+        if ($categoryId === '') {
+            return null;
+        }
+
+        return RoomCategory::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where(function ($query) use ($categoryId): void {
+                $query->where('id', $categoryId)
+                    ->orWhere('_id', $categoryId);
+            })
+            ->first();
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return array<string, mixed>
+     */
+    private function roomAttributesFromValidated(
+        array $validated,
+        string $hotelId,
+        RoomCategory $category,
+    ): array {
+        $fillable = array_flip((new Room)->getFillable());
+        $payload = array_intersect_key($validated, $fillable);
+        $payload['hotel_id'] = $hotelId;
+        $payload['category_id'] = (string) $category->id;
+        $payload['category_name'] = (string) $category->name;
+        $payload['display_name'] = trim((string) ($payload['display_name'] ?? ''));
+        $payload['room_number'] = trim((string) ($payload['room_number'] ?? ''));
+        $payload['room_type'] = trim((string) ($payload['room_type'] ?? RoomType::SINGLE->value));
+        $payload['price_per_night'] = PriceRounding::nearest50((float) ($payload['price_per_night'] ?? 0));
+
+        return $payload;
     }
 }

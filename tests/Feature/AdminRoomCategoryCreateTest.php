@@ -97,6 +97,47 @@ class AdminRoomCategoryCreateTest extends TestCase
             ])
             ->assertCreated()
             ->assertJsonPath('price_per_night', '1250.00')
-            ->assertJsonPath('room_number', '101');
+            ->assertJsonPath('room_number', '101')
+            ->assertJsonPath('hotel_id', (string) $hotel->id);
+    }
+
+    public function test_admin_can_create_room_with_gallery_image_upload(): void
+    {
+        Storage::fake('public');
+
+        $hotel = Hotel::create(['name' => 'Img Room Hotel', 'location' => 'City']);
+        $admin = User::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'Admin',
+            'email' => 'room-img@test.local',
+            'password' => bcrypt('secret'),
+            'role' => 'admin',
+        ]);
+        $category = RoomCategory::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'Standard',
+        ]);
+
+        $png = base64_decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+        );
+        $file = UploadedFile::fake()->createWithContent('room.png', $png);
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->post('/api/v1/rooms', [
+                'category_id' => (string) $category->id,
+                'display_name' => 'Room Photo',
+                'room_number' => '202',
+                'room_type' => 'Deluxe',
+                'price_per_night' => '2000',
+                'status' => 'available',
+                'image_file' => $file,
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('room_number', '202')
+            ->assertJsonStructure(['image_url']);
+
+        $this->assertNotEmpty(Storage::disk('public')->files('rooms'));
     }
 }

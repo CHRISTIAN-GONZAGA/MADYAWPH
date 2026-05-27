@@ -56,6 +56,9 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     }
   }
 
+  String _categoryId(Map<String, dynamic> category) =>
+      (category['id'] ?? category['_id'] ?? '').toString().trim();
+
   Future<void> _postMultipart(
     String path,
     Map<String, dynamic> fields,
@@ -66,7 +69,14 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
         fields: fields,
         file: image,
       );
-      await portalDio().post(path, data: form);
+      await portalDio().post(
+        path,
+        data: form,
+        options: Options(
+          contentType: 'multipart/form-data',
+          headers: {Headers.acceptHeader: 'application/json'},
+        ),
+      );
     } else {
       final body = <String, dynamic>{};
       for (final entry in fields.entries) {
@@ -236,6 +246,17 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
   }
 
   Future<void> _createRoomInCategory(Map<String, dynamic> category) async {
+    final categoryId = _categoryId(category);
+    if (categoryId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Category id missing. Pull to refresh and try again.'),
+        ),
+      );
+      return;
+    }
+
     final nameCtrl = TextEditingController();
     final roomNoCtrl = TextEditingController();
     final priceCtrl = TextEditingController(
@@ -333,6 +354,20 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                       onChanged: (v) => setLocal(() => status = v ?? status),
                     ),
                     const SizedBox(height: 14),
+                    Text(
+                      'Room display photo',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Choose a photo from your gallery — this is shown to guests browsing rooms.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                    const SizedBox(height: 10),
                     _galleryPickerTile(
                       image: pickedImage,
                       onPick: () async {
@@ -352,16 +387,39 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                         ),
                         const SizedBox(width: 8),
                         FilledButton(
-                          onPressed: () => Navigator.of(context).pop({
-                            'category_id': (category['id'] ?? '').toString(),
-                            'display_name': nameCtrl.text.trim(),
-                            'room_number': roomNoCtrl.text.trim(),
-                            'room_type': roomType,
-                            'price_per_night':
-                                double.tryParse(priceCtrl.text.trim()) ?? 0,
-                            'status': status,
-                            '__image': pickedImage,
-                          }),
+                          onPressed: () {
+                            if (nameCtrl.text.trim().isEmpty ||
+                                roomNoCtrl.text.trim().isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Enter display name and room number.',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+                            if (pickedImage == null) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Pick a room photo from your gallery first.',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+                            Navigator.of(context).pop({
+                              'category_id': categoryId,
+                              'display_name': nameCtrl.text.trim(),
+                              'room_number': roomNoCtrl.text.trim(),
+                              'room_type': roomType,
+                              'price_per_night':
+                                  double.tryParse(priceCtrl.text.trim()) ?? 0,
+                              'status': status,
+                              '__image': pickedImage,
+                            });
+                          },
                           child: const Text('Create'),
                         ),
                       ],
@@ -374,8 +432,24 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
         ),
       ),
     );
+    nameCtrl.dispose();
+    roomNoCtrl.dispose();
+    priceCtrl.dispose();
     if (payload == null) return;
+
     final image = payload.remove('__image') as XFile?;
+    if (image == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Room photo is required. Pick an image from the gallery.'),
+        ),
+      );
+      return;
+    }
+
+    if (_busy) return;
+    setState(() => _busy = true);
     try {
       await _postMultipart('/rooms', payload, image);
       if (!mounted) return;
@@ -385,6 +459,8 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
