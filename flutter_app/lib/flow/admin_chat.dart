@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../dio_client.dart';
+import '../widgets/admin_notification_badge.dart';
+import 'admin/admin_dashboard_header.dart';
 import '../widgets/chat_attachment.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/app_button.dart';
@@ -10,8 +12,53 @@ import '../widgets/app_input.dart';
 import '../widgets/app_state_views.dart';
 
 /// Hub with separate guest and staff chat inboxes.
-class AdminChatHubScreen extends StatelessWidget {
+class AdminChatHubScreen extends StatefulWidget {
   const AdminChatHubScreen({super.key});
+
+  @override
+  State<AdminChatHubScreen> createState() => _AdminChatHubScreenState();
+}
+
+class _AdminChatHubScreenState extends State<AdminChatHubScreen> {
+  AdminChatBadgeInfo _badge = const AdminChatBadgeInfo(
+    totalUnread: 0,
+    guestUnread: 0,
+    staffUnread: 0,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBadge();
+  }
+
+  Future<void> _loadBadge() async {
+    try {
+      final res =
+          await portalDio().get<Map<String, dynamic>>('/admin/chat/inbox');
+      if (!mounted) return;
+      setState(() {
+        _badge = adminChatBadgeFromData(inbox: res.data, guestMessages: const []);
+      });
+    } on DioException {
+      // Keep previous counts.
+    }
+  }
+
+  Widget _tabLabel(String text, int count, Color color) {
+    return Tab(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(text),
+          if (count > 0) ...[
+            const SizedBox(width: 6),
+            AdminNotificationBadge(count: count, color: color, size: 16),
+          ],
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -20,17 +67,30 @@ class AdminChatHubScreen extends StatelessWidget {
       child: AppScaffold(
         appBar: AppBar(
           title: const Text('Chat'),
-          bottom: const TabBar(
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: _loadBadge,
+              tooltip: 'Refresh unread counts',
+            ),
+          ],
+          bottom: TabBar(
             tabs: [
-              Tab(text: 'Guests', icon: Icon(Icons.hotel_outlined)),
-              Tab(text: 'Staff', icon: Icon(Icons.badge_outlined)),
+              _tabLabel('Guests', _badge.guestUnread, AdminChatColors.guest),
+              _tabLabel('Staff', _badge.staffUnread, AdminChatColors.staff),
             ],
           ),
         ),
-        body: const TabBarView(
+        body: TabBarView(
           children: [
-            AdminChatInboxScreen(staffOnly: false),
-            AdminChatInboxScreen(staffOnly: true),
+            AdminChatInboxScreen(
+              staffOnly: false,
+              onThreadsLoaded: _loadBadge,
+            ),
+            AdminChatInboxScreen(
+              staffOnly: true,
+              onThreadsLoaded: _loadBadge,
+            ),
           ],
         ),
       ),
@@ -39,9 +99,14 @@ class AdminChatHubScreen extends StatelessWidget {
 }
 
 class AdminChatInboxScreen extends StatefulWidget {
-  const AdminChatInboxScreen({super.key, required this.staffOnly});
+  const AdminChatInboxScreen({
+    super.key,
+    required this.staffOnly,
+    this.onThreadsLoaded,
+  });
 
   final bool staffOnly;
+  final VoidCallback? onThreadsLoaded;
 
   @override
   State<AdminChatInboxScreen> createState() => _AdminChatInboxScreenState();
@@ -75,6 +140,7 @@ class _AdminChatInboxScreenState extends State<AdminChatInboxScreen> {
         _threads = threads;
         _loading = false;
       });
+      widget.onThreadsLoaded?.call();
     } on DioException catch (e) {
       setState(() {
         _error = dioErrorMessage(e);
@@ -122,10 +188,12 @@ class _AdminChatInboxScreenState extends State<AdminChatInboxScreen> {
           final roomNo = (t['room_number'] ?? '').toString();
           final staffName = (t['staff_name'] ?? '').toString();
           final latest = (t['latest_message'] ?? '').toString();
-          final unread = (t['unread_count'] ?? 0).toString();
+          final unreadCount = (t['unread_count'] as num?)?.toInt() ?? 0;
           final isStaff = widget.staffOnly ||
               roomId.startsWith('STAFF-ADMIN:') ||
               (t['is_staff_thread'] == true);
+          final badgeColor =
+              isStaff ? AdminChatColors.staff : AdminChatColors.guest;
           final title =
               isStaff ? (staffName.isNotEmpty ? staffName : 'Staff') : 'Room $roomNo';
           final subtitlePrefix =
@@ -141,20 +209,14 @@ class _AdminChatInboxScreenState extends State<AdminChatInboxScreen> {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
-              trailing: unread == '0'
+              trailing: unreadCount == 0
                   ? const Icon(Icons.chevron_right)
                   : Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color:
-                                Theme.of(context).colorScheme.primaryContainer,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(unread),
+                        AdminNotificationBadge(
+                          count: unreadCount,
+                          color: badgeColor,
                         ),
                         const SizedBox(width: 8),
                         const Icon(Icons.chevron_right),

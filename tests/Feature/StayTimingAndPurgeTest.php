@@ -133,4 +133,30 @@ class StayTimingAndPurgeTest extends TestCase
 
         $this->assertSame(0, Booking::withoutGlobalScopes()->count());
     }
+
+    public function test_purge_dry_run_does_not_delete(): void
+    {
+        $hotel = Hotel::create(['name' => 'Dry Hotel', 'location' => 'X']);
+        Booking::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => 'r1',
+            'booking_reference' => 'DRY1',
+            'guest_name' => 'Old',
+            'guest_email' => 'o@test.local',
+            'guest_phone' => '0917',
+            'check_in_date' => now()->subDays(10)->toDateString(),
+            'check_out_date' => now()->subDays(9)->toDateString(),
+            'nights' => 1,
+            'payment_method' => 'Cash',
+            'payment_status' => 'paid',
+            'total_amount' => 500,
+            'status' => 'completed',
+            'checked_out_at' => now()->subDays(8),
+        ]);
+
+        $this->artisan('hotel:purge-old-bookings', ['--days' => 3, '--dry-run' => true])
+            ->assertSuccessful();
+
+        $this->assertSame(1, Booking::withoutGlobalScopes()->count());
+    }
 }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../widgets/admin_live_clock.dart';
+import '../../widgets/admin_notification_badge.dart';
+import 'widgets/admin_chat_header_button.dart';
 
 /// Unread counts from chat inbox (preferred) or dashboard guestMessages fallback.
 AdminChatBadgeInfo adminChatBadgeFromData({
@@ -110,19 +112,21 @@ class AdminDashboardHeader extends StatelessWidget {
   final VoidCallback onRefresh;
   final VoidCallback? onSignOut;
 
-  Color _badgeColor() {
-    if (chatBadge.latestKind == 'urgent') return Colors.red;
-    if (chatBadge.latestKind == 'staff') return Colors.green.shade700;
-    return Colors.blue.shade700;
+  String _displayHotelName(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return 'Hotel';
+    // Normalize spacing; keep casing from API.
+    return trimmed.replaceAll(RegExp(r'\s+'), ' ');
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final displayName = _displayHotelName(hotelName);
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 12, 12, 14),
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
@@ -136,21 +140,25 @@ class AdminDashboardHeader extends StatelessWidget {
           bottom: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
         ),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  hotelName,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
+          Text(
+            displayName,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  height: 1.2,
+                  letterSpacing: -0.2,
                 ),
-                const SizedBox(height: 4),
-                Row(
+          ),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Row(
                   children: [
                     if (isSuperAdmin) ...[
                       Icon(Icons.shield_outlined,
@@ -160,77 +168,89 @@ class AdminDashboardHeader extends StatelessWidget {
                     Flexible(
                       child: Text(
                         isSuperAdmin
-                            ? 'Super admin: $adminName'
-                            : 'Admin: $adminName',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            ? 'Super admin · $adminName'
+                            : 'Admin · $adminName',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: scheme.onSurfaceVariant,
                               fontWeight: isSuperAdmin
                                   ? FontWeight.w600
-                                  : FontWeight.normal,
+                                  : FontWeight.w500,
                             ),
                       ),
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
-          const AdminLiveClock(align: TextAlign.end),
-          const SizedBox(width: 8),
-          IconButton(
-            tooltip: 'Refresh dashboard',
-            onPressed: onRefresh,
-            icon: const Icon(Icons.refresh),
-          ),
-          if (onSignOut != null)
-            IconButton(
-              tooltip: 'Sign out',
-              onPressed: onSignOut,
-              icon: const Icon(Icons.logout),
-            ),
-          Tooltip(
-            message: chatBadge.latestPreview.isEmpty
-                ? 'Open chatroom'
-                : chatBadge.latestPreview,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                IconButton.filledTonal(
-                  tooltip: 'Chatroom',
-                  onPressed: onOpenChat,
-                  icon: const Icon(Icons.forum_outlined),
+              ),
+              const AdminLiveClock(align: TextAlign.end, compact: true),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Refresh dashboard',
+                onPressed: onRefresh,
+                icon: const Icon(Icons.refresh),
+              ),
+              if (onSignOut != null)
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'Sign out',
+                  onPressed: onSignOut,
+                  icon: const Icon(Icons.logout),
                 ),
-                if (chatBadge.totalUnread > 0)
-                  Positioned(
-                    right: 4,
-                    top: 4,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _badgeColor(),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white, width: 1.5),
-                      ),
-                      child: Text(
-                        chatBadge.totalUnread > 99
-                            ? '99+'
-                            : '${chatBadge.totalUnread}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
+              AdminChatHeaderButton(
+                badge: chatBadge,
+                onPressed: onOpenChat,
+              ),
+            ],
+          ),
+          if (chatBadge.totalUnread > 0) ...[
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 10,
+              runSpacing: 4,
+              children: [
+                if (chatBadge.guestUnread > 0)
+                  _chatLegendChip(
+                    context,
+                    color: AdminChatColors.guest,
+                    label: '${chatBadge.guestUnread} guest',
+                  ),
+                if (chatBadge.staffUnread > 0)
+                  _chatLegendChip(
+                    context,
+                    color: AdminChatColors.staff,
+                    label: '${chatBadge.staffUnread} staff',
                   ),
               ],
             ),
-          ),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _chatLegendChip(
+    BuildContext context, {
+    required Color color,
+    required String label,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+        ),
+      ],
     );
   }
 }

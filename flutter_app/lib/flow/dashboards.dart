@@ -777,6 +777,7 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     final auth = (_data?['auth'] as Map<String, dynamic>?)?['user']
         as Map<String, dynamic>?;
     nameCtrl.text = (auth?['name'] ?? '').toString();
+    final messenger = ScaffoldMessenger.of(context);
 
     final ok = await showDialog<bool>(
       context: context,
@@ -821,9 +822,9 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
       ),
     );
     if (ok != true) return;
+    if (!mounted) return;
     if (newCtrl.text.isNotEmpty && newCtrl.text != confirmCtrl.text) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(content: Text('New passwords do not match.')),
       );
       return;
@@ -836,12 +837,12 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
         if (newCtrl.text.isNotEmpty) 'password_confirmation': confirmCtrl.text,
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(content: Text('Staff profile updated.')),
       );
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(content: Text(dioErrorMessage(e))),
       );
     }
@@ -921,7 +922,7 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
                   label: 'Rooms',
                   value: '${rooms.length}',
                   icon: Icons.meeting_room_outlined),
-              AppMetricCard(
+              const AppMetricCard(
                   label: 'Role', value: 'Staff', icon: Icons.badge_outlined),
             ],
           ),

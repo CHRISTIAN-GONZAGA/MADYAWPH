@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../dio_client.dart';
 import '../../widgets/admin_curved_nav_bar.dart';
+import 'admin_dashboard_models.dart';
 import '../../widgets/theme_fab.dart';
 import '../admin_chat.dart';
 import 'admin_dashboard_header.dart';
@@ -56,32 +57,44 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
   Map<String, dynamic>? _inbox;
   Timer? _chatPoll;
 
-  List<AdminNavItem> get _navItems {
+  List<AdminNavItem> _navItemsFor(Map<String, dynamic> d) {
+    final reservations = d['reservations'] as List<dynamic>? ?? const [];
+    final claims = d['amenityClaims'] as List<dynamic>? ?? const [];
+    final pendingRes = AdminDashboardModels.pendingReservationCount(reservations);
+    final checkoutSoon = AdminDashboardModels.checkoutSoonCount(_rooms);
+    final pendingClaims = AdminDashboardModels.pendingAmenityClaimCount(claims);
+
     final items = <AdminNavItem>[
       const AdminNavItem(
         label: 'Summary',
         shortLabel: 'Rooms',
         icon: Icons.dashboard_outlined,
       ),
-      const AdminNavItem(
+      AdminNavItem(
         label: 'Checkout',
         shortLabel: 'Out',
         icon: Icons.logout_outlined,
+        badgeCount: checkoutSoon,
+        badgeColor: const Color(0xFF1565C0),
       ),
       const AdminNavItem(
         label: 'Guests',
         shortLabel: 'Guests',
         icon: Icons.people_outline,
       ),
-      const AdminNavItem(
+      AdminNavItem(
         label: 'Bookings',
         shortLabel: 'Book',
         icon: Icons.event_note_outlined,
+        badgeCount: pendingRes,
+        badgeColor: const Color(0xFF6A1B9A),
       ),
-      const AdminNavItem(
+      AdminNavItem(
         label: 'Amenities',
         shortLabel: 'Store',
         icon: Icons.storefront_outlined,
+        badgeCount: pendingClaims,
+        badgeColor: const Color(0xFF2E7D32),
       ),
       const AdminNavItem(
         label: 'Settings',
@@ -106,6 +119,14 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     super.initState();
     _pollInbox();
     _chatPoll = Timer.periodic(const Duration(seconds: 15), (_) => _pollInbox());
+  }
+
+  @override
+  void didUpdateWidget(AdminDashboardShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.data != widget.data) {
+      _pollInbox();
+    }
   }
 
   @override
@@ -149,7 +170,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
       guestMessages: chats,
     );
 
-    final navItems = _navItems;
+    final navItems = _navItemsFor(d);
     final safeTab = _tab.clamp(0, navItems.length - 1);
 
     return Scaffold(

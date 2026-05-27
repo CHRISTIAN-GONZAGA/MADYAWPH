@@ -340,7 +340,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     final amountCtrl = TextEditingController();
     final payload = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: const Text('Add fee'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -373,20 +373,22 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         ],
       ),
     );
+    reasonCtrl.dispose();
+    amountCtrl.dispose();
 
     if (payload == null) return;
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
     final label = (payload['label'] ?? '').toString();
     final amount = (payload['amount'] as num?)?.toDouble() ?? 0;
     if (label.isEmpty || amount <= 0) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(content: Text('Enter a reason and amount > 0.')),
       );
       return;
     }
 
     if (_busy) return;
-    final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
       await portalDio().post('/billing/charges', data: {
@@ -568,14 +570,17 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     try {
       final res = await portalDio().get<List<dynamic>>('/rooms/available');
       final available = res.data ?? const [];
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
       if (available.isEmpty) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('No available rooms.')));
+        messenger.showSnackBar(
+          const SnackBar(content: Text('No available rooms.')),
+        );
         return;
       }
       String toRoomId =
           ((available.first as Map<String, dynamic>)['id'] ?? '').toString();
+      if (!mounted) return;
       final payload = await showDialog<Map<String, String>>(
         context: context,
         builder: (context) => StatefulBuilder(

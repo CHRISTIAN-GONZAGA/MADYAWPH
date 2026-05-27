@@ -3,16 +3,22 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'admin_notification_badge.dart';
+
 class AdminNavItem {
   const AdminNavItem({
     required this.label,
     required this.icon,
     this.shortLabel,
+    this.badgeCount = 0,
+    this.badgeColor,
   });
 
   final String label;
   final String? shortLabel;
   final IconData icon;
+  final int badgeCount;
+  final Color? badgeColor;
 }
 
 /// Floating bottom nav with wave notch, scroll support, and elevated active icon.
@@ -159,12 +165,28 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar> {
                                       ]
                                     : null,
                               ),
-                              child: Icon(
-                                item.icon,
-                                size: active ? 26 : 22,
-                                color: active
-                                    ? widget.activeColor
-                                    : Colors.grey.shade500,
+                              child: Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  Icon(
+                                    item.icon,
+                                    size: active ? 26 : 22,
+                                    color: active
+                                        ? widget.activeColor
+                                        : Colors.grey.shade500,
+                                  ),
+                                  if (item.badgeCount > 0)
+                                    Positioned(
+                                      right: -6,
+                                      top: -4,
+                                      child: AdminNotificationBadge(
+                                        count: item.badgeCount,
+                                        color: item.badgeColor ??
+                                            const Color(0xFF6C4DFF),
+                                        size: 16,
+                                      ),
+                                    ),
+                                ],
                               ),
                             ),
                             const SizedBox(height: 4),

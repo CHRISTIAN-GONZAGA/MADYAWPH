@@ -11,7 +11,9 @@ use Illuminate\Console\Command;
 
 class PurgeOldBookings extends Command
 {
-    protected $signature = 'hotel:purge-old-bookings {--days=3 : Delete completed/cancelled bookings older than this many days}';
+    protected $signature = 'hotel:purge-old-bookings
+                            {--days=3 : Delete completed/cancelled bookings older than this many days}
+                            {--dry-run : List how many records would be removed without deleting}';
 
     protected $description = 'Remove completed and cancelled booking records older than 3 days (and related charges/reminders).';
 
@@ -38,6 +40,17 @@ class PurgeOldBookings extends Command
 
         if ($ids === []) {
             $this->info('No booking records to purge.');
+
+            return self::SUCCESS;
+        }
+
+        if ($this->option('dry-run')) {
+            $this->info(sprintf(
+                'Dry run: would purge %d booking(s) older than %d day(s) (cutoff %s).',
+                count($ids),
+                $days,
+                $cutoff->toDateTimeString()
+            ));
 
             return self::SUCCESS;
         }

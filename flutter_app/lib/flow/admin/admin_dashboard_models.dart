@@ -2,6 +2,28 @@
 class AdminDashboardModels {
   AdminDashboardModels._();
 
+  static int pendingReservationCount(List<dynamic> reservations) {
+    var n = 0;
+    for (final raw in reservations) {
+      if (raw is! Map<String, dynamic>) continue;
+      if ((raw['status'] ?? '').toString() == 'pending_approval') n++;
+    }
+    return n;
+  }
+
+  static int checkoutSoonCount(List<Map<String, dynamic>> rooms) {
+    return rooms.where(isCheckoutSoon).length;
+  }
+
+  static int pendingAmenityClaimCount(List<dynamic> claims) {
+    var n = 0;
+    for (final raw in claims) {
+      if (raw is! Map<String, dynamic>) continue;
+      if ((raw['status'] ?? 'pending').toString() != 'fulfilled') n++;
+    }
+    return n;
+  }
+
   static String categoryLabel(Map<String, dynamic> room) {
     final cn = (room['category_name'] ?? '').toString().trim();
     if (cn.isNotEmpty) return cn;

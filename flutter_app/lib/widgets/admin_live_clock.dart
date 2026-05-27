@@ -3,10 +3,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 /// Full date + live time for admin dashboard header.
 class AdminLiveClock extends StatefulWidget {
-  const AdminLiveClock({super.key, this.textStyle, this.align = TextAlign.end});
+  const AdminLiveClock({
+    super.key,
+    this.textStyle,
+    this.align = TextAlign.end,
+    this.compact = false,
+  });
 
   final TextStyle? textStyle;
   final TextAlign align;
+  /// Shorter date line for tight header rows.
+  final bool compact;
 
   @override
   State<AdminLiveClock> createState() => _AdminLiveClockState();
@@ -33,29 +40,59 @@ class _AdminLiveClockState extends State<AdminLiveClock> {
 
   @override
   Widget build(BuildContext context) {
-    final date = _formatDate(_now);
+    final date = widget.compact ? _formatDateCompact(_now) : _formatDate(_now);
     final time = _formatTime(_now);
     final style = widget.textStyle ??
         Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: widget.compact ? 11 : null,
             );
 
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: widget.align == TextAlign.end
           ? CrossAxisAlignment.end
           : CrossAxisAlignment.start,
       children: [
-        Text(date, style: style, textAlign: widget.align),
+        Text(
+          date,
+          style: style,
+          textAlign: widget.align,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         Text(
           time,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.5,
-              ),
+          style: (widget.compact
+                  ? Theme.of(context).textTheme.titleSmall
+                  : Theme.of(context).textTheme.titleMedium)
+              ?.copyWith(
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.3,
+          ),
           textAlign: widget.align,
         ),
       ],
     );
+  }
+
+  static String _formatDateCompact(DateTime dt) {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${days[dt.weekday - 1]}, ${months[dt.month - 1]} ${dt.day}';
   }
 
   static String _formatDate(DateTime dt) {

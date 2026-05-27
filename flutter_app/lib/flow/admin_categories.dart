@@ -404,6 +404,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
         return;
       }
       String selectedId = (rooms.first['id'] ?? '').toString();
+      if (!mounted) return;
       final ok = await showDialog<bool>(
         context: context,
         builder: (context) => StatefulBuilder(
