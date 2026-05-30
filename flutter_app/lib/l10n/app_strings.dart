@@ -74,6 +74,9 @@ class AppStrings {
       'cancel': 'Cancel',
       'select_hotel_first': 'Select a hotel first, then sign in.',
       'account_settings': 'Account settings',
+      'hotels_found': '{n} properties',
+      'regions': 'regions',
+      'sign_in_required': 'Sign in required for staff and guest access',
     },
     'fil': {
       'app_title': 'MADYAWPH',
@@ -112,6 +115,9 @@ class AppStrings {
       'cancel': 'Kanselahin',
       'select_hotel_first': 'Pumili muna ng hotel, pagkatapos mag-sign in.',
       'account_settings': 'Account settings',
+      'hotels_found': '{n} na hotel',
+      'regions': 'rehiyon',
+      'sign_in_required': 'Kailangan mag-sign in para sa staff at bisita',
     },
     'zh': {
       'app_title': 'MADYAWPH',

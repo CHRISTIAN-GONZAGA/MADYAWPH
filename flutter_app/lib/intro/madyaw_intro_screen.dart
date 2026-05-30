@@ -1,8 +1,11 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
-/// Splash using the official logo asset; tap to skip.
+import '../branding/madyaw_logo_widget.dart';
+
+/// Splash with vector-drawn Madyaw logo and staged motion.
 class MadyawIntroScreen extends StatefulWidget {
   const MadyawIntroScreen({super.key, required this.onFinished});
 
@@ -13,22 +16,28 @@ class MadyawIntroScreen extends StatefulWidget {
 }
 
 class _MadyawIntroScreenState extends State<MadyawIntroScreen>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
+    with TickerProviderStateMixin {
+  late final AnimationController _main;
+  late final AnimationController _pulse;
   bool _ended = false;
 
-  static const _navy = Color(0xFF1A3150);
+  static const _navy = MadyawLogoWidget.navy;
   static const _mist = Color(0xFFE8EEF5);
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
+    _main = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2400),
-    )..forward();
+      duration: const Duration(milliseconds: 3400),
+    );
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat(reverse: true);
 
-    _controller.addStatusListener((status) {
+    _main.forward();
+    _main.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         _finish();
       }
@@ -38,24 +47,40 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
   void _finish() {
     if (_ended) return;
     _ended = true;
-    if (_controller.isAnimating) {
-      _controller.stop();
-    }
+    HapticFeedback.lightImpact();
+    if (_main.isAnimating) _main.stop();
     widget.onFinished();
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _main.dispose();
+    _pulse.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final curved = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
-    final fade = Tween<double>(begin: 0, end: 1).animate(curved);
-    final scale = Tween<double>(begin: 0.92, end: 1).animate(curved);
-    final drift = Tween<double>(begin: 6, end: 0).animate(curved);
+    final draw = CurvedAnimation(
+      parent: _main,
+      curve: const Interval(0, 0.55, curve: Curves.easeOutCubic),
+    );
+    final textIn = CurvedAnimation(
+      parent: _main,
+      curve: const Interval(0.42, 0.72, curve: Curves.easeOut),
+    );
+    final cardIn = CurvedAnimation(
+      parent: _main,
+      curve: const Interval(0.08, 0.5, curve: Curves.easeOutBack),
+    );
+    final tagline = CurvedAnimation(
+      parent: _main,
+      curve: const Interval(0.62, 0.88, curve: Curves.easeOut),
+    );
+    final shimmer = CurvedAnimation(
+      parent: _main,
+      curve: const Interval(0.5, 1, curve: Curves.easeInOut),
+    );
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -66,64 +91,115 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Color.lerp(Colors.white, _mist, 0.35)!,
+              Color.lerp(Colors.white, _mist, 0.2)!,
               _mist,
-              Color.lerp(_mist, const Color(0xFFD4E4FA), 0.45)!,
+              Color.lerp(_mist, const Color(0xFFB8D4F5), 0.5)!,
             ],
-            stops: const [0.0, 0.55, 1.0],
+            stops: const [0.0, 0.5, 1.0],
           ),
         ),
         child: Stack(
           fit: StackFit.expand,
           children: [
             AnimatedBuilder(
-              animation: _controller,
+              animation: Listenable.merge([_main, _pulse]),
               builder: (context, _) {
                 return CustomPaint(
-                  painter: _SoftGlowPainter(progress: _controller.value),
+                  painter: _IntroAmbientPainter(
+                    phase: _main.value,
+                    pulse: _pulse.value,
+                  ),
                   child: const SizedBox.expand(),
                 );
               },
             ),
             Center(
-              child: FadeTransition(
-                opacity: fade,
-                child: Transform.translate(
-                  offset: Offset(0, drift.value),
-                  child: ScaleTransition(
-                    scale: scale,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Material(
-                          elevation: 12,
-                          shadowColor: Colors.black26,
-                          borderRadius: BorderRadius.circular(20),
-                          color: Colors.white,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 28,
-                              vertical: 20,
-                            ),
-                            child: Image.asset(
-                              'assets/branding/madyaw_logo.png',
-                              width: math.min(280, MediaQuery.sizeOf(context).width * 0.72),
-                              fit: BoxFit.contain,
-                              filterQuality: FilterQuality.high,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        Text(
-                          'Tap anywhere to continue',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: _navy.withValues(alpha: 0.55),
-                          ),
-                        ),
-                      ],
+              child: AnimatedBuilder(
+                animation: _main,
+                builder: (context, child) {
+                  final scale = 0.82 + 0.18 * cardIn.value;
+                  final y = 24 * (1 - cardIn.value);
+                  return Transform.translate(
+                    offset: Offset(0, y),
+                    child: Transform.scale(
+                      scale: scale,
+                      child: Opacity(
+                        opacity: cardIn.value.clamp(0, 1),
+                        child: child,
+                      ),
                     ),
-                  ),
+                  );
+                },
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AnimatedBuilder(
+                      animation: _main,
+                      builder: (context, _) {
+                        final glow = 0.35 +
+                            0.65 *
+                                (0.5 +
+                                    0.5 *
+                                        math.sin(
+                                          shimmer.value * math.pi * 2,
+                                        ));
+                        return Material(
+                          elevation: 8 + 10 * cardIn.value,
+                          shadowColor: MadyawLogoWidget.brightBlue
+                              .withValues(alpha: 0.35),
+                          borderRadius: BorderRadius.circular(24),
+                          color: Colors.white,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 32,
+                              vertical: 28,
+                            ),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: MadyawLogoWidget.brightBlue
+                                    .withValues(alpha: 0.12),
+                              ),
+                            ),
+                            child: MadyawLogoWidget(
+                              size: math.min(
+                                260,
+                                MediaQuery.sizeOf(context).width * 0.68,
+                              ),
+                              drawProgress: draw.value,
+                              textOpacity: textIn.value,
+                              glowStrength: glow,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 28),
+                    FadeTransition(
+                      opacity: tagline,
+                      child: Column(
+                        children: [
+                          Text(
+                            'Hotel operations, simplified',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.3,
+                              color: _navy.withValues(alpha: 0.75),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Tap to continue',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: _navy.withValues(alpha: 0.45),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -134,27 +210,44 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
   }
 }
 
-class _SoftGlowPainter extends CustomPainter {
-  _SoftGlowPainter({required this.progress});
+class _IntroAmbientPainter extends CustomPainter {
+  _IntroAmbientPainter({required this.phase, required this.pulse});
 
-  final double progress;
+  final double phase;
+  final double pulse;
 
   @override
   void paint(Canvas canvas, Size size) {
     final cx = size.width * 0.5;
-    final cy = size.height * 0.42;
-    final paint = Paint()
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 40)
-      ..color = Color.lerp(
-            const Color(0xFF64B5F6),
-            Colors.white,
-            0.65,
-          )!
-          .withValues(alpha: 0.14 * (0.5 + 0.5 * math.sin(progress * math.pi * 2)));
-    canvas.drawCircle(Offset(cx, cy), 120 + 30 * math.sin(progress * math.pi * 2), paint);
+    final cy = size.height * 0.4;
+
+    for (var i = 0; i < 3; i++) {
+      final t = (phase + i * 0.15) % 1;
+      final r = 80 + i * 40 + 25 * math.sin(t * math.pi * 2);
+      final paint = Paint()
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 36)
+        ..color = Color.lerp(
+          MadyawLogoWidget.brightBlue,
+          Colors.white,
+          0.5 + i * 0.15,
+        )!
+            .withValues(alpha: (0.06 + 0.04 * pulse) * (1 - t * 0.5));
+      canvas.drawCircle(Offset(cx, cy), r, paint);
+    }
+
+    final ring = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..color = MadyawLogoWidget.brightBlue
+          .withValues(alpha: 0.08 * (0.5 + 0.5 * pulse));
+    canvas.drawCircle(
+      Offset(cx, cy),
+      100 + 20 * phase,
+      ring,
+    );
   }
 
   @override
-  bool shouldRepaint(covariant _SoftGlowPainter oldDelegate) =>
-      oldDelegate.progress != progress;
+  bool shouldRepaint(covariant _IntroAmbientPainter old) =>
+      old.phase != phase || old.pulse != pulse;
 }

@@ -1,7 +1,9 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../auth_storage.dart';
+import '../branding/madyaw_logo_widget.dart';
 import 'hotel_how_to.dart';
 import '../dio_client.dart';
 import '../ui/app_visual.dart';
@@ -99,11 +101,20 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
     final hid = (hotel['id'] ?? '').toString();
     final hname = (hotel['name'] ?? 'Hotel').toString();
     if (hid.isEmpty) return;
+    HapticFeedback.lightImpact();
     await AuthStorage.setHotelContext(id: hid, name: hname);
     await AuthStorage.clearPortalAuth();
     await AuthStorage.clearGuestAuth();
     if (!mounted) return;
     hotelSessionNotifier.value = HotelSession(hotelId: hid, hotelName: hname);
+  }
+
+  int get _totalHotels {
+    var n = 0;
+    for (final r in _filteredRegions) {
+      n += ((r['hotels'] as List<dynamic>?) ?? const []).length;
+    }
+    return n;
   }
 
   Future<void> _openRegister() async {
@@ -115,57 +126,75 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final visual = AppVisual.of(context);
     final regions = _filteredRegions;
+    final scheme = theme.colorScheme;
 
     return AppScaffold(
       appBar: AppBar(
-        title: Text('${context.tr('app_title')} · ${context.tr('choose_hotel')}'),
+        elevation: 0,
+        scrolledUnderElevation: 2,
+        title: Text(context.tr('choose_hotel')),
         actions: [
           const LanguagePickerButton(),
-          TextButton.icon(
+          IconButton(
+            tooltip: context.tr('how_to'),
             onPressed: () => HotelHowToGuide.show(context),
-            icon: const Icon(Icons.help_outline, size: 20),
-            label: Text(context.tr('how_to')),
+            icon: const Icon(Icons.help_outline),
           ),
         ],
       ),
       body: SafeArea(
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    context.tr('select_property'),
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    context.tr('choose_hotel_hint'),
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      height: 1.4,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: _search,
-                    decoration: InputDecoration(
-                      hintText: context.tr('search_hotels'),
-                      prefixIcon: const Icon(Icons.search),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      isDense: true,
-                    ),
-                  ),
-                ],
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: _ChooseHotelHero(
+                hotelCount: _loading ? null : _totalHotels,
+                regionCount: _loading ? null : regions.length,
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+              child: TextField(
+                controller: _search,
+                decoration: InputDecoration(
+                  hintText: context.tr('search_hotels'),
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  filled: true,
+                  fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.65),
+                  border: OutlineInputBorder(
+                    borderRadius: visual.radiusMd,
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: visual.radiusMd,
+                    borderSide: BorderSide(
+                      color: scheme.outlineVariant.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  isDense: true,
+                ),
+              ),
+            ),
+            if (!_loading && _error == null && regions.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    Icon(Icons.apartment, size: 16, color: scheme.primary),
+                    const SizedBox(width: 6),
+                    Text(
+                      context.tr('hotels_found').replaceAll('{n}', '$_totalHotels'),
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
@@ -176,15 +205,19 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                Icon(Icons.cloud_off_outlined,
+                                    size: 48, color: scheme.error),
+                                const SizedBox(height: 12),
                                 Text(
                                   _error!,
                                   textAlign: TextAlign.center,
-                                  style: TextStyle(color: theme.colorScheme.error),
+                                  style: TextStyle(color: scheme.error),
                                 ),
                                 const SizedBox(height: 16),
-                                FilledButton(
+                                FilledButton.icon(
                                   onPressed: _load,
-                                  child: Text(context.tr('retry')),
+                                  icon: const Icon(Icons.refresh),
+                                  label: Text(context.tr('retry')),
                                 ),
                               ],
                             ),
@@ -193,19 +226,30 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
                       : regions.isEmpty
                           ? Center(
                               child: Padding(
-                                padding: const EdgeInsets.all(24),
-                                child: Text(
-                                  _query.isEmpty
-                                      ? context.tr('no_hotels')
-                                      : context.tr('no_search_results'),
-                                  textAlign: TextAlign.center,
+                                padding: const EdgeInsets.all(32),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.travel_explore_outlined,
+                                        size: 56,
+                                        color: scheme.outline),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      _query.isEmpty
+                                          ? context.tr('no_hotels')
+                                          : context.tr('no_search_results'),
+                                      textAlign: TextAlign.center,
+                                      style: theme.textTheme.titleMedium,
+                                    ),
+                                  ],
                                 ),
                               ),
                             )
                           : RefreshIndicator(
                               onRefresh: _load,
+                              color: scheme.primary,
                               child: ListView.builder(
-                                padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                                padding: const EdgeInsets.fromLTRB(16, 12, 16, 108),
                                 itemCount: regions.length,
                                 itemBuilder: (context, i) {
                                   final block = regions[i];
@@ -215,80 +259,25 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
                                       (block['hotels'] as List<dynamic>?) ??
                                           const [];
                                   return Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Padding(
-                                        padding: const EdgeInsets.only(
-                                          top: 12,
-                                          bottom: 8,
+                                        padding: EdgeInsets.only(
+                                          top: i == 0 ? 4 : 16,
+                                          bottom: 10,
                                         ),
-                                        child: Row(
-                                          children: [
-                                            Icon(
-                                              Icons.location_city_outlined,
-                                              size: 20,
-                                              color: theme.colorScheme.primary,
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              region,
-                                              style: theme
-                                                  .textTheme.titleMedium
-                                                  ?.copyWith(
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              '${hotels.length}',
-                                              style: theme
-                                                  .textTheme.labelLarge
-                                                  ?.copyWith(
-                                                color: theme.colorScheme
-                                                    .onSurfaceVariant,
-                                              ),
-                                            ),
-                                          ],
+                                        child: _RegionHeader(
+                                          name: region,
+                                          count: hotels.length,
                                         ),
                                       ),
                                       ...hotels.whereType<Map>().map((raw) {
                                         final hotel =
                                             Map<String, dynamic>.from(raw);
-                                        final loc =
-                                            (hotel['location'] ?? '')
-                                                .toString();
-                                        return Card(
-                                          margin: const EdgeInsets.only(
-                                            bottom: 8,
-                                          ),
-                                          clipBehavior: Clip.antiAlias,
-                                          child: ListTile(
-                                            leading: CircleAvatar(
-                                              backgroundColor: theme
-                                                  .colorScheme
-                                                  .primaryContainer,
-                                              child: Icon(
-                                                Icons.apartment_outlined,
-                                                color: theme
-                                                    .colorScheme.primary,
-                                              ),
-                                            ),
-                                            title: Text(
-                                              (hotel['name'] ?? 'Hotel')
-                                                  .toString(),
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                            subtitle: loc.isEmpty
-                                                ? null
-                                                : Text(loc),
-                                            trailing: const Icon(
-                                              Icons.chevron_right,
-                                            ),
-                                            onTap: () => _selectHotel(hotel),
-                                          ),
+                                        return _HotelSelectTile(
+                                          hotel: hotel,
+                                          region: region,
+                                          onTap: () => _selectHotel(hotel),
                                         );
                                       }),
                                     ],
@@ -301,9 +290,314 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
+        elevation: 4,
         onPressed: _openRegister,
         icon: const Icon(Icons.add_business_outlined),
         label: Text(context.tr('register_hotel')),
+      ),
+    );
+  }
+}
+
+class _ChooseHotelHero extends StatelessWidget {
+  const _ChooseHotelHero({this.hotelCount, this.regionCount});
+
+  final int? hotelCount;
+  final int? regionCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final visual = AppVisual.of(context);
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: visual.radiusLg,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            scheme.primaryContainer.withValues(alpha: 0.85),
+            scheme.surface,
+          ],
+        ),
+        boxShadow: visual.cardShadow,
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.25)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: visual.radiusMd,
+                boxShadow: [
+                  BoxShadow(
+                    color: scheme.primary.withValues(alpha: 0.15),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: const MadyawLogoWidget(
+                size: 72,
+                drawProgress: 1,
+                showWordmark: false,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    context.tr('select_property'),
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      height: 1.15,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    context.tr('choose_hotel_hint'),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      height: 1.35,
+                    ),
+                  ),
+                  if (hotelCount != null) ...[
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        _StatChip(
+                          icon: Icons.apartment_outlined,
+                          label: '$hotelCount',
+                        ),
+                        if (regionCount != null && regionCount! > 0)
+                          _StatChip(
+                            icon: Icons.map_outlined,
+                            label: '$regionCount ${context.tr('regions')}',
+                          ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StatChip extends StatelessWidget {
+  const _StatChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: scheme.primary.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: scheme.primary),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: scheme.primary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RegionHeader extends StatelessWidget {
+  const _RegionHeader({required this.name, required this.count});
+
+  final String name;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: scheme.primary.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(Icons.location_city_rounded,
+              size: 18, color: scheme.primary),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            name,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            '$count',
+            style: theme.textTheme.labelMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _HotelSelectTile extends StatelessWidget {
+  const _HotelSelectTile({
+    required this.hotel,
+    required this.region,
+    required this.onTap,
+  });
+
+  final Map<String, dynamic> hotel;
+  final String region;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final visual = AppVisual.of(context);
+    final name = (hotel['name'] ?? 'Hotel').toString();
+    final loc = (hotel['location'] ?? '').toString();
+    final city = (hotel['city'] ?? region).toString();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: visual.radiusMd,
+          boxShadow: visual.cardShadow,
+        ),
+        child: Material(
+          color: scheme.surface,
+          borderRadius: visual.radiusMd,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    width: 5,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          scheme.primary,
+                          scheme.primary.withValues(alpha: 0.5),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 26,
+                            backgroundColor: scheme.primaryContainer,
+                            child: Icon(Icons.apartment_rounded,
+                                color: scheme.primary, size: 28),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  name,
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                if (city.isNotEmpty)
+                                  Row(
+                                    children: [
+                                      Icon(Icons.place_outlined,
+                                          size: 14,
+                                          color: scheme.primary),
+                                      const SizedBox(width: 4),
+                                      Flexible(
+                                        child: Text(
+                                          city,
+                                          style: theme.textTheme.labelMedium
+                                              ?.copyWith(
+                                            color: scheme.primary,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                if (loc.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    loc,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          Icon(Icons.arrow_forward_ios_rounded,
+                              size: 16, color: scheme.outline),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -373,7 +667,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
       }
       final name = _hotelName.text.trim();
       await AuthStorage.setHotelContext(id: hid, name: name);
-      await AuthStorage.setPortalAuth(token: token, role: 'admin');
+      await AuthStorage.clearPortalAuth();
       await AuthStorage.clearGuestAuth();
       if (!mounted) return;
       final sms = res.data?['sms'] as Map<String, dynamic>?;
@@ -500,7 +794,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
                     height: 22,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text('Create hotel & go to menu'),
+                : const Text('Create hotel'),
           ),
         ],
       ),
@@ -520,68 +814,44 @@ class RoleMenuScreen extends StatelessWidget {
     hotelSessionNotifier.value = null;
   }
 
-  Future<void> _openAdmin(BuildContext context) async {
-    final token = await AuthStorage.portalToken();
-    final role = await AuthStorage.portalRole();
-    if (!context.mounted) return;
-    if (token != null && (role == 'admin' || role == 'super_admin')) {
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(
-          builder: (_) => AdminDashboardScreen(
-            isSuperAdmin: role == 'super_admin',
-          ),
-        ),
-      );
-      return;
-    }
+  Future<bool> _portalLoginThenDashboard(
+    BuildContext context, {
+    required String role,
+    required Widget Function(bool isSuperAdmin) dashboard,
+  }) async {
     final ok = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
-        builder: (_) => const PortalLoginScreen(role: 'admin'),
+        builder: (_) => PortalLoginScreen(role: role),
       ),
     );
-    if (ok == true && context.mounted) {
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(builder: (_) => const AdminDashboardScreen()),
-      );
-    }
+    if (ok != true || !context.mounted) return false;
+    final savedRole = await AuthStorage.portalRole();
+    if (!context.mounted) return false;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => dashboard(savedRole == 'super_admin'),
+      ),
+    );
+    return true;
+  }
+
+  Future<void> _openAdmin(BuildContext context) async {
+    await _portalLoginThenDashboard(
+      context,
+      role: 'admin',
+      dashboard: (isSuper) => AdminDashboardScreen(isSuperAdmin: isSuper),
+    );
   }
 
   Future<void> _openSuperAdmin(BuildContext context) async {
-    final token = await AuthStorage.portalToken();
-    final role = await AuthStorage.portalRole();
-    if (!context.mounted) return;
-    if (token != null && role == 'super_admin') {
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(
-          builder: (_) => const AdminDashboardScreen(isSuperAdmin: true),
-        ),
-      );
-      return;
-    }
-    final ok = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
-        builder: (_) => const PortalLoginScreen(role: 'super_admin'),
-      ),
+    await _portalLoginThenDashboard(
+      context,
+      role: 'super_admin',
+      dashboard: (_) => const AdminDashboardScreen(isSuperAdmin: true),
     );
-    if (ok == true && context.mounted) {
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(
-          builder: (_) => const AdminDashboardScreen(isSuperAdmin: true),
-        ),
-      );
-    }
   }
 
   Future<void> _openStaff(BuildContext context) async {
-    final token = await AuthStorage.portalToken();
-    final role = await AuthStorage.portalRole();
-    if (!context.mounted) return;
-    if (token != null && role == 'staff') {
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(builder: (_) => const StaffDashboardScreen()),
-      );
-      return;
-    }
     final ok = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
         builder: (_) => const PortalLoginScreen(role: 'staff'),
@@ -618,32 +888,92 @@ class RoleMenuScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final visual = AppVisual.of(context);
+
     return AppScaffold(
       appBar: AppBar(
         title: Text(context.tr('app_title')),
         actions: [
           const LanguagePickerButton(),
-          TextButton(
+          TextButton.icon(
             onPressed: () => _switchHotel(context),
-            child: Text(context.tr('switch_hotel')),
+            icon: const Icon(Icons.swap_horiz, size: 18),
+            label: Text(context.tr('switch_hotel')),
           ),
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          Text(session.hotelName, style: theme.textTheme.headlineSmall),
-          const SizedBox(height: 4),
-          Text(
-            context.tr('choose_role_hint'),
-            style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: visual.radiusLg,
+              gradient: LinearGradient(
+                colors: [
+                  scheme.primaryContainer,
+                  scheme.surface,
+                ],
+              ),
+              boxShadow: visual.cardShadow,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 28,
+                    backgroundColor: scheme.primary,
+                    child: const Icon(Icons.apartment, color: Colors.white),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          session.hotelName,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          context.tr('choose_role_hint'),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Row(
+              children: [
+                Icon(Icons.lock_outline, size: 16, color: scheme.primary),
+                const SizedBox(width: 6),
+                Text(
+                  context.tr('sign_in_required'),
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
           _RoleCard(
             icon: Icons.admin_panel_settings_outlined,
             title: context.tr('administrator'),
             subtitle: context.tr('administrator_sub'),
-            color: theme.colorScheme.primaryContainer,
+            color: scheme.primaryContainer,
+            requiresSignIn: true,
             onTap: () => _openAdmin(context),
           ),
           const SizedBox(height: 12),
@@ -651,7 +981,8 @@ class RoleMenuScreen extends StatelessWidget {
             icon: Icons.shield_outlined,
             title: context.tr('super_admin'),
             subtitle: context.tr('super_admin_sub'),
-            color: theme.colorScheme.errorContainer,
+            color: scheme.errorContainer,
+            requiresSignIn: true,
             onTap: () => _openSuperAdmin(context),
           ),
           const SizedBox(height: 12),
@@ -659,7 +990,8 @@ class RoleMenuScreen extends StatelessWidget {
             icon: Icons.support_agent_outlined,
             title: context.tr('staff'),
             subtitle: context.tr('staff_sub'),
-            color: theme.colorScheme.secondaryContainer,
+            color: scheme.secondaryContainer,
+            requiresSignIn: true,
             onTap: () => _openStaff(context),
           ),
           const SizedBox(height: 12),
@@ -667,7 +999,7 @@ class RoleMenuScreen extends StatelessWidget {
             icon: Icons.storefront_outlined,
             title: context.tr('public_customer'),
             subtitle: context.tr('public_customer_sub'),
-            color: theme.colorScheme.tertiaryContainer,
+            color: scheme.tertiaryContainer,
             onTap: () => _openCustomer(context),
           ),
           const SizedBox(height: 12),
@@ -675,7 +1007,8 @@ class RoleMenuScreen extends StatelessWidget {
             icon: Icons.hotel_class_outlined,
             title: context.tr('guest'),
             subtitle: context.tr('guest_sub'),
-            color: theme.colorScheme.surfaceContainerHighest,
+            color: scheme.surfaceContainerHighest,
+            requiresSignIn: true,
             onTap: () => _openGuest(context),
           ),
         ],
@@ -691,6 +1024,7 @@ class _RoleCard extends StatelessWidget {
     required this.subtitle,
     required this.color,
     required this.onTap,
+    this.requiresSignIn = false,
   });
 
   final IconData icon;
@@ -698,6 +1032,7 @@ class _RoleCard extends StatelessWidget {
   final String subtitle;
   final Color color;
   final VoidCallback onTap;
+  final bool requiresSignIn;
 
   @override
   Widget build(BuildContext context) {
@@ -738,7 +1073,16 @@ class _RoleCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  Icon(Icons.chevron_right_rounded, color: scheme.outline),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (requiresSignIn)
+                        Icon(Icons.login_rounded,
+                            size: 18, color: scheme.primary),
+                      const SizedBox(height: 4),
+                      Icon(Icons.chevron_right_rounded, color: scheme.outline),
+                    ],
+                  ),
                 ],
               ),
             ),
