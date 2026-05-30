@@ -81,4 +81,11 @@ return [
         'from' => env('TWILIO_FROM', env('TWILIO_FROM_NUMBER')),
     ],
 
+    'translation' => [
+        'enabled' => (bool) env('TRANSLATION_ENABLED', true),
+        'staff_default' => env('TRANSLATION_STAFF_DEFAULT', 'en'),
+        'endpoint' => env('TRANSLATION_API_URL', 'https://api.mymemory.translated.net/get'),
+        'timeout' => (int) env('TRANSLATION_TIMEOUT', 12),
+    ],
+
 ];

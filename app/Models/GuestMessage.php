@@ -16,6 +16,8 @@ class GuestMessage extends Model
         'room_number',
         'guest_name',
         'message',
+        'detected_lang',
+        'translations',
         'sender_role',
         'attachment_url',
         'attachment_type',
@@ -30,6 +32,7 @@ class GuestMessage extends Model
             'sent_at' => 'datetime',
             'read_at' => 'datetime',
             'is_read' => 'boolean',
+            'translations' => 'array',
         ];
     }
 }

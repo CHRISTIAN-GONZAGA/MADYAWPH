@@ -94,24 +94,69 @@ class _GuestListHistoryScreenState extends State<GuestListHistoryScreen> {
           final co = (m['check_out_date'] ?? '').toString();
           final checkedOutAt = (m['checked_out_display'] ?? '').toString();
           final phone = (m['guest_phone'] ?? '').toString();
+          final email = (m['guest_email'] ?? '').toString();
+          final total = (m['total_amount'] as num?)?.toDouble();
+          final summary = [
+            if (roomNo.isNotEmpty) 'Room $roomNo',
+            if (checkedOutAt.isNotEmpty) checkedOutAt,
+          ].join(' · ');
+
           return Card(
-            child: ListTile(
+            margin: const EdgeInsets.only(bottom: 8),
+            clipBehavior: Clip.antiAlias,
+            child: ExpansionTile(
               leading: const Icon(Icons.history_edu_outlined),
-              title: Text(guest.isEmpty ? 'Guest' : guest),
-              subtitle: Text(
-                [
-                  if (roomNo.isNotEmpty) 'Room $roomNo',
-                  if (ref.isNotEmpty) 'Ref: $ref',
-                  if (ci.isNotEmpty) 'Check-in: $ci',
-                  if (co.isNotEmpty) 'Scheduled departure: $co',
-                  if (checkedOutAt.isNotEmpty) 'Checked out: $checkedOutAt',
-                  if (phone.isNotEmpty) phone,
-                ].join('\n'),
+              title: Text(
+                guest.isEmpty ? 'Guest' : guest,
+                style: const TextStyle(fontWeight: FontWeight.w600),
               ),
-              isThreeLine: true,
+              subtitle: Text(
+                summary.isEmpty ? (ref.isEmpty ? 'Completed stay' : ref) : summary,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (ref.isNotEmpty) _detail('Reference', ref),
+                      if (ci.isNotEmpty) _detail('Check-in', ci),
+                      if (co.isNotEmpty) _detail('Scheduled departure', co),
+                      if (checkedOutAt.isNotEmpty) _detail('Checked out', checkedOutAt),
+                      if (phone.isNotEmpty) _detail('Phone', phone),
+                      if (email.isNotEmpty) _detail('Email', email),
+                      if (total != null)
+                        _detail('Total', '₱${total.toStringAsFixed(0)}'),
+                    ],
+                  ),
+                ),
+              ],
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _detail(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 130,
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ),
+          Expanded(child: Text(value)),
+        ],
       ),
     );
   }

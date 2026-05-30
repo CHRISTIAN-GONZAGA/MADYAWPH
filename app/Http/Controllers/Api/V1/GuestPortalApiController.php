@@ -19,6 +19,7 @@ use App\Support\GuestPortalStore;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use App\Services\GuestRoomAccessCodeService;
+use App\Services\MessageTranslationService;
 use App\Support\ChatAttachmentUrl;
 use App\Support\GuestMessageResource;
 use Illuminate\Support\Facades\Storage;
@@ -206,12 +207,18 @@ class GuestPortalApiController extends Controller
             );
         }
 
+        $text = $validated['message'];
+        $translator = app(MessageTranslationService::class);
+        $enrichment = $translator->enrichForStorage($text);
+
         $msg = GuestMessage::query()->create([
             'hotel_id' => (string) $portal['hotel_id'],
             'room_id' => $portal['room_id'],
             'room_number' => $portal['room_number'],
             'guest_name' => 'In-House Guest',
-            'message' => $validated['message'],
+            'message' => $text,
+            'detected_lang' => $enrichment['detected_lang'],
+            'translations' => $enrichment['translations'],
             'sender_role' => 'guest',
             'attachment_url' => $uploadedImageUrl ?? ChatAttachmentUrl::fromStoredUrl($validated['image_url'] ?? null),
             'attachment_type' => ($uploadedImageUrl || ! empty($validated['image_url'])) ? 'image' : null,
@@ -234,6 +241,7 @@ class GuestPortalApiController extends Controller
     public function chatMessages(Request $request): JsonResponse
     {
         $portal = $request->attributes->get('guest_portal');
+        $viewerLocale = (string) $request->query('locale', 'en');
         $messages = GuestMessage::query()
             ->where('hotel_id', (string) $portal['hotel_id'])
             ->where('room_id', $portal['room_id'])
@@ -241,7 +249,9 @@ class GuestPortalApiController extends Controller
             ->limit(250)
             ->get();
 
-        return response()->json(['messages' => GuestMessageResource::collection($messages)]);
+        return response()->json([
+            'messages' => GuestMessageResource::collection($messages, $viewerLocale),
+        ]);
     }
 
     public function extendStay(Request $request, FinancialComputationService $financialComputationService): JsonResponse

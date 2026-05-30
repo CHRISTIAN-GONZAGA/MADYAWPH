@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'intro/app_bootstrap.dart';
+import 'locale_controller.dart';
 import 'theme_controller.dart';
 import 'ui/app_theme.dart';
 import 'ui/design_tokens.dart';
@@ -10,6 +11,7 @@ Future<void> main() async {
   await Future.wait<void>([
     loadThemeSeedColor(),
     loadThemeMode(),
+    AppLocales.hydrate(),
   ]);
   runApp(const MadyawPhApp());
 }
@@ -25,15 +27,22 @@ class MadyawPhApp extends StatelessWidget {
         return ValueListenableBuilder<ThemeMode>(
           valueListenable: themeModeNotifier,
           builder: (context, mode, _) {
-            return MaterialApp(
-              title: 'MADYAWPH',
-              debugShowCheckedModeBanner: false,
-              themeAnimationDuration: UiTokens.dStd,
-              themeAnimationCurve: UiTokens.easeOperational,
-              themeMode: mode,
-              theme: AppTheme.light(seed),
-              darkTheme: AppTheme.dark(seed),
-              home: const AppBootstrap(),
+            return ValueListenableBuilder<Locale>(
+              valueListenable: appLocaleNotifier,
+              builder: (context, appLocale, _) {
+                return MaterialApp(
+                  title: 'MADYAWPH',
+                  debugShowCheckedModeBanner: false,
+                  locale: appLocale,
+                  supportedLocales: AppLocales.supported,
+                  themeAnimationDuration: UiTokens.dStd,
+                  themeAnimationCurve: UiTokens.easeOperational,
+                  themeMode: mode,
+                  theme: AppTheme.light(seed),
+                  darkTheme: AppTheme.dark(seed),
+                  home: const AppBootstrap(),
+                );
+              },
             );
           },
         );

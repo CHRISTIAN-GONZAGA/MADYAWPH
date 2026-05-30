@@ -31,13 +31,15 @@ use App\Models\Task;
 use App\Models\User;
 use App\Models\UserSetting;
 use App\Support\ChatAttachmentUrl;
-use App\Support\GuestMessageResource;
+use App\Support\HotelScopeGuard;
+use App\Support\PriceRounding;
 use App\Services\ActivityLogService;
 use App\Services\BookingService;
 use App\Services\FinancialComputationService;
 use App\Services\PaymentGatewayService;
 use App\Services\ReservationActivationService;
 use App\Services\RoomCheckoutService;
+use App\Services\RoomStatusNotificationService;
 use App\Services\SmsService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -369,6 +371,8 @@ Route::middleware('role:admin')->group(function (): void {
             'image_url' => ['nullable', 'url'],
             'image_file' => ['nullable', 'image', 'max:4096'],
         ]);
+        $hotelId = (string) $request->user()->hotel_id;
+        HotelScopeGuard::assertRoomBelongsToHotel($hotelId, $validated['room_id']);
         $uploadedImageUrl = null;
         if ($request->hasFile('image_file')) {
             $uploadedImageUrl = ChatAttachmentUrl::storeUploadedFile(
@@ -378,7 +382,7 @@ Route::middleware('role:admin')->group(function (): void {
         }
 
         $reply = GuestMessage::withoutGlobalScopes()->create([
-            'hotel_id' => (string) $request->user()->hotel_id,
+            'hotel_id' => $hotelId,
             'room_id' => $validated['room_id'],
             'room_number' => $validated['room_number'],
             'guest_name' => $validated['guest_name'],
@@ -404,19 +408,27 @@ Route::middleware('role:admin')->group(function (): void {
         ], 201);
     })->name('api.v1.admin.chat.reply');
 
+    Route::get('/admin/bookings/{booking}/bill-summary', function (Request $request, Booking $booking) {
+        $hotelId = (string) $request->user()->hotel_id;
+        if ((string) $booking->hotel_id !== $hotelId) {
+            return response()->json(['message' => 'Booking outside hotel scope.'], 403);
+        }
+
+        return response()->json(app(\App\Services\BookingPaymentService::class)->billSummary($booking));
+    })->middleware('role:admin,staff')->name('api.v1.admin.bookings.bill-summary');
+
     Route::post('/admin/bookings/{booking}/payment-status', function (Request $request, Booking $booking) {
         $validated = $request->validate([
             'payment_status' => ['required', 'in:paid,unpaid'],
             'payment_reference' => ['nullable', 'string', 'max:120'],
             'payment_method' => ['nullable', 'string', 'max:40'],
+            'amount_tendered' => ['nullable', 'numeric', 'min:0'],
         ]);
         $hotelId = (string) $request->user()->hotel_id;
         if ((string) $booking->hotel_id !== $hotelId) {
             return response()->json(['message' => 'Booking outside hotel scope.'], 403);
         }
 
-        $newStatus = (string) $validated['payment_status'];
-        $wasStatus = (string) ($booking->payment_status ?? 'unpaid');
         $methodRaw = trim((string) ($validated['payment_method'] ?? ''));
         $normalizedMethod = match (strtolower($methodRaw)) {
             '', 'cash' => 'Cash',
@@ -428,50 +440,13 @@ Route::middleware('role:admin')->group(function (): void {
         if ($methodRaw !== '' && $normalizedMethod === null) {
             return response()->json(['message' => 'Unsupported payment method.'], 422);
         }
-
-        $nextReference = array_key_exists('payment_reference', $validated)
-            ? $validated['payment_reference']
-            : ($booking->payment_reference ?? null);
-        $nextMethod = $normalizedMethod ?? ($booking->payment_method?->value ?? $booking->payment_method ?? 'Cash');
-        $methodChanged = (string) ($booking->payment_method?->value ?? $booking->payment_method ?? 'Cash') !== (string) $nextMethod;
-        $referenceChanged = (string) ($booking->payment_reference ?? '') !== (string) ($nextReference ?? '');
-        if ($wasStatus === $newStatus && ! $methodChanged && ! $referenceChanged) {
-            return response()->json(['ok' => true, 'booking' => $booking->fresh()]);
+        if ($normalizedMethod !== null) {
+            $validated['payment_method'] = $normalizedMethod;
         }
 
-        $charges = BillingCharge::withoutGlobalScopes()
-            ->where('hotel_id', $hotelId)
-            ->where('booking_id', (string) $booking->id)
-            ->get();
-        $billTotal = (float) $charges->sum(fn ($c) => (float) ($c->amount ?? 0));
-
-        $updates = [
-            'payment_status' => $newStatus,
-            'paid_at' => $newStatus === 'paid' ? now() : null,
-            'payment_reference' => $nextReference,
-            'payment_method' => $nextMethod,
-        ];
-        if ($newStatus === 'paid' && $billTotal > 0) {
-            $updates['total_amount'] = round($billTotal, 2);
-        }
-
-        $booking->update($updates);
-
-        app(ActivityLogService::class)->log(
-            $hotelId,
-            $request->user(),
-            "Updated payment status for booking {$booking->booking_reference}",
-            [
-                'booking_id' => (string) $booking->id,
-                'from' => $wasStatus,
-                'to' => $newStatus,
-                'payment_reference' => (string) ($booking->payment_reference ?? ''),
-                'payment_method' => (string) ($booking->payment_method?->value ?? $booking->payment_method ?? ''),
-                'bill_total_synced' => $newStatus === 'paid' ? $billTotal : null,
-            ]
+        return response()->json(
+            app(\App\Services\BookingPaymentService::class)->applyPayment($booking, $request->user(), $validated)
         );
-
-        return response()->json(['ok' => true, 'booking' => $booking->fresh()]);
     })->name('api.v1.admin.bookings.payment-status');
 
     Route::post('/admin/bookings/{booking}/refund', function (Request $request, Booking $booking) {
@@ -860,12 +835,42 @@ Route::post('/reviews', function (Request $request) {
 })->middleware('role:admin,staff');
 
 // Room transfers (keep parity with legacy)
-Route::post('/room-transfers', function (Request $request, FinancialComputationService $financialComputationService, ActivityLogService $activityLogService) {
+Route::get('/room-transfers/preview', function (Request $request, FinancialComputationService $financialComputationService) {
+    $validated = $request->validate([
+        'booking_id' => ['required', 'string'],
+        'from_room_id' => ['required', 'string'],
+        'to_room_id' => ['required', 'string', 'different:from_room_id'],
+    ]);
+    $hotelId = (string) $request->user()->hotel_id;
+    $booking = Booking::withoutGlobalScopes()->where('hotel_id', $hotelId)->find($validated['booking_id']);
+    $fromRoom = Room::withoutGlobalScopes()->where('hotel_id', $hotelId)->find($validated['from_room_id']);
+    $toRoom = Room::withoutGlobalScopes()->where('hotel_id', $hotelId)->find($validated['to_room_id']);
+    if (! $booking || ! $fromRoom || ! $toRoom) {
+        return response()->json(['message' => 'Transfer resources are outside your hotel scope.'], 403);
+    }
+    $nightlyDelta = (float) $toRoom->price_per_night - (float) $fromRoom->price_per_night;
+    $priceAdjustment = PriceRounding::nearest50($nightlyDelta);
+    $newTotal = max(0, PriceRounding::nearest50((float) $booking->total_amount + $priceAdjustment));
+
+    return response()->json([
+        'from_room_number' => (string) $fromRoom->room_number,
+        'to_room_number' => (string) $toRoom->room_number,
+        'from_nightly_rate' => (float) $fromRoom->price_per_night,
+        'to_nightly_rate' => (float) $toRoom->price_per_night,
+        'price_adjustment' => $priceAdjustment,
+        'current_total' => (float) $booking->total_amount,
+        'new_total' => $newTotal,
+        'requires_approval' => abs($priceAdjustment) > 0,
+    ]);
+})->middleware('role:admin,staff');
+
+Route::post('/room-transfers', function (Request $request, FinancialComputationService $financialComputationService, ActivityLogService $activityLogService, RoomStatusNotificationService $roomStatusNotificationService) {
     $validated = $request->validate([
         'booking_id' => ['required', 'string'],
         'from_room_id' => ['required', 'string'],
         'to_room_id' => ['required', 'string', 'different:from_room_id'],
         'reason' => ['nullable', 'string', 'max:255'],
+        'approve_price_adjustment' => ['nullable', 'boolean'],
     ]);
     $hotelId = (string) $request->user()->hotel_id;
     $booking = Booking::withoutGlobalScopes()->where('hotel_id', $hotelId)->find($validated['booking_id']);
@@ -875,8 +880,18 @@ Route::post('/room-transfers', function (Request $request, FinancialComputationS
         return response()->json(['message' => 'Transfer resources are outside your hotel scope.'], 403);
     }
     $existingAccessCode = (string) ($fromRoom->current_access_code ?? '');
-    $priceAdjustment = $financialComputationService->computeTotal(max(0, (float) $toRoom->price_per_night - (float) $fromRoom->price_per_night));
-    $booking->update(['room_id' => (string) $toRoom->id, 'total_amount' => $financialComputationService->computeTotal((float) $booking->total_amount, $priceAdjustment)]);
+    $priceAdjustment = PriceRounding::nearest50((float) $toRoom->price_per_night - (float) $fromRoom->price_per_night);
+    if (abs($priceAdjustment) > 0 && ! $request->boolean('approve_price_adjustment')) {
+        return response()->json([
+            'message' => 'Price adjustment requires admin approval.',
+            'price_adjustment' => $priceAdjustment,
+            'requires_approval' => true,
+        ], 422);
+    }
+    $booking->update([
+        'room_id' => (string) $toRoom->id,
+        'total_amount' => max(0, PriceRounding::nearest50((float) $booking->total_amount + $priceAdjustment)),
+    ]);
     ExternalReservation::withoutGlobalScopes()
         ->where('hotel_id', $hotelId)
         ->where('booking_id', (string) $booking->id)
@@ -910,6 +925,22 @@ Route::post('/room-transfers', function (Request $request, FinancialComputationS
         'current_check_out' => $booking->check_out_date,
         'current_access_code' => $existingAccessCode !== '' ? $existingAccessCode : app(\App\Services\GuestRoomAccessCodeService::class)->generateUnique(),
     ]);
+    $fromFresh = $fromRoom->fresh() ?? $fromRoom;
+    $toFresh = $toRoom->fresh() ?? $toRoom;
+    $roomStatusNotificationService->notifyStatusChange(
+        $fromFresh,
+        $fromStatus,
+        RoomStatus::AVAILABLE->value,
+        $request->user(),
+        $booking
+    );
+    $roomStatusNotificationService->notifyStatusChange(
+        $toFresh,
+        RoomStatus::AVAILABLE->value,
+        $toRoomGuestStatus,
+        $request->user(),
+        $booking
+    );
 
     $transfer = RoomTransfer::withoutGlobalScopes()->create([
         ...$validated,
@@ -1077,43 +1108,6 @@ Route::put('/admin/profile', function (Request $request) {
 
     return response()->json(['ok' => true, 'user' => $user->fresh()]);
 })->middleware('role:admin')->name('api.v1.admin.profile');
-
-Route::put('/admin/hotel/access', function (Request $request) {
-    $validated = $request->validate([
-        'current_password' => ['required', 'string'],
-        'access_username' => ['required', 'string', 'max:255'],
-        'access_password' => ['required', 'string', 'min:6', 'confirmed'],
-    ]);
-    $hotelId = (string) $request->user()->hotel_id;
-    $hotel = Hotel::withoutGlobalScopes()->find($hotelId);
-    if (! $hotel || ! Hash::check($validated['current_password'], (string) ($hotel->access_password ?? ''))) {
-        return response()->json(['message' => 'Current hotel password is incorrect.'], 422);
-    }
-    $hotel->update([
-        'access_username' => $validated['access_username'],
-        'access_password' => Hash::make($validated['access_password']),
-    ]);
-    $morph = (new User)->getMorphClass();
-    $userIds = User::withoutGlobalScopes()->where('hotel_id', $hotelId)->pluck('id')->map(fn ($id) => (string) $id)->all();
-    if ($userIds !== []) {
-        PersonalAccessToken::query()
-            ->where('tokenable_type', $morph)
-            ->whereIn('tokenable_id', $userIds)
-            ->delete();
-    }
-    app(ActivityLogService::class)->log(
-        $hotelId,
-        $request->user(),
-        'Hotel access credentials changed; all staff sessions revoked.',
-        []
-    );
-
-    return response()->json([
-        'ok' => true,
-        'message' => 'Hotel login updated. Everyone must sign in again.',
-        'session_revoked' => true,
-    ]);
-})->middleware('role:super_admin')->name('api.v1.admin.hotel.access');
 
 Route::post('/admin/portal-users', function (Request $request) {
     $actor = $request->user();
@@ -1347,6 +1341,7 @@ Route::patch('/admin/pricing/surge', function (Request $request) {
 // Admin chat inbox (guest + staff threads scoped to hotel)
 Route::get('/admin/chat/inbox', function (Request $request) {
     $hotelId = (string) $request->user()->hotel_id;
+    $viewerLocale = (string) $request->query('locale', app(\App\Services\MessageTranslationService::class)->defaultStaffLanguage());
     $messages = GuestMessage::withoutGlobalScopes()
         ->where('hotel_id', $hotelId)
         ->latest('sent_at')
@@ -1387,12 +1382,14 @@ Route::get('/admin/chat/inbox', function (Request $request) {
         'guest_threads' => $guestThreads,
         'staff_threads' => $staffThreads,
         'threads' => $guestThreads,
-        'messages' => GuestMessageResource::collection($messages),
+        'messages' => GuestMessageResource::collection($messages, $viewerLocale),
     ]);
 })->middleware('role:admin');
 
 Route::get('/admin/chat/rooms/{roomId}', function (Request $request, string $roomId) {
     $hotelId = (string) $request->user()->hotel_id;
+    HotelScopeGuard::assertRoomBelongsToHotel($hotelId, $roomId);
+    $viewerLocale = (string) $request->query('locale', app(\App\Services\MessageTranslationService::class)->defaultStaffLanguage());
     $messages = GuestMessage::withoutGlobalScopes()
         ->where('hotel_id', $hotelId)
         ->where('room_id', $roomId)
@@ -1407,5 +1404,5 @@ Route::get('/admin/chat/rooms/{roomId}', function (Request $request, string $roo
         ->where('sender_role', '!=', 'admin')
         ->update(['is_read' => true, 'read_at' => now()]);
 
-    return response()->json(['messages' => GuestMessageResource::collection($messages)]);
+    return response()->json(['messages' => GuestMessageResource::collection($messages, $viewerLocale)]);
 })->middleware('role:admin');

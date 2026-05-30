@@ -17,6 +17,7 @@ class AuthStorage {
   static const _kThemeMode = 'ui_theme_mode';
   static const _kThemeFabDx = 'theme_fab_dx';
   static const _kThemeFabDy = 'theme_fab_dy';
+  static const _kAppLocale = 'app_locale';
 
   static Future<String?> hotelId() => _storage.read(key: _kHotelId);
 
@@ -28,6 +29,11 @@ class AuthStorage {
   static Future<String?> portalRole() => _storage.read(key: _kPortalRole);
 
   static Future<String?> guestToken() => _storage.read(key: _kGuestToken);
+
+  static Future<String?> appLocaleCode() => _storage.read(key: _kAppLocale);
+
+  static Future<void> setAppLocaleCode(String code) =>
+      _storage.write(key: _kAppLocale, value: code);
 
   /// Hex like "#2563eb" (seed color for Material3).
   static Future<String?> uiSeedColorHex() => _storage.read(key: _kUiSeedColor);

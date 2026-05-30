@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../config.dart';
+import '../locale_controller.dart';
+import '../l10n/app_strings.dart';
 
 /// Pick a photo from gallery or camera and build multipart [FormData] for chat APIs.
 class ChatAttachment {
@@ -192,22 +194,34 @@ class ChatMessageBubble extends StatelessWidget {
     required this.message,
     required this.isMine,
     this.attachmentUrl,
+    this.originalMessage,
+    this.showTranslation = false,
+    this.detectedLang,
   });
 
   final String message;
   final bool isMine;
   final String? attachmentUrl;
+  final String? originalMessage;
+  final bool showTranslation;
+  final String? detectedLang;
 
   factory ChatMessageBubble.fromMap(
     Map<String, dynamic> m, {
     required bool isMine,
   }) {
     final url = (m['attachment_url'] ?? '').toString();
+    final display = (m['display_message'] ?? m['message'] ?? '').toString();
+    final original = (m['original_message'] ?? m['message'] ?? '').toString();
+    final show = m['show_translation'] == true;
     return ChatMessageBubble(
-      message: (m['message'] ?? '').toString(),
+      message: display,
       isMine: isMine,
       attachmentUrl:
           url.isEmpty ? null : ChatAttachment.resolveMediaUrl(url),
+      originalMessage: show ? original : null,
+      showTranslation: show,
+      detectedLang: (m['detected_lang'] ?? '').toString(),
     );
   }
 
@@ -264,6 +278,19 @@ class ChatMessageBubble extends StatelessWidget {
             ],
             if (message.isNotEmpty)
               Text(message, style: Theme.of(context).textTheme.bodyMedium),
+            if (showTranslation &&
+                originalMessage != null &&
+                originalMessage!.isNotEmpty &&
+                originalMessage != message) ...[
+              const SizedBox(height: 6),
+              Text(
+                '${AppStrings.t(appLocaleNotifier.value, 'translated_from')}: $originalMessage',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontStyle: FontStyle.italic,
+                      color: scheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
           ],
         ),
       ),

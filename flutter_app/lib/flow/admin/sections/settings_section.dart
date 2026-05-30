@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../locale_controller.dart';
+import '../../../widgets/language_picker_button.dart';
 import '../../admin_categories.dart';
 import '../../admin_chat.dart';
 import '../../admin_reports.dart';
@@ -36,6 +38,16 @@ class SettingsSection extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
       children: [
         Text('Settings', style: Theme.of(context).textTheme.headlineSmall),
+        const SizedBox(height: 12),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.translate_outlined),
+            title: Text(context.tr('change_language')),
+            subtitle: Text(AppLocales.label(appLocaleNotifier.value)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => LanguagePickerButton.showPicker(context),
+          ),
+        ),
         const SizedBox(height: 16),
         _SettingsGroup(
           title: 'Operations',
@@ -163,8 +175,8 @@ class SettingsSection extends StatelessWidget {
             ),
             _SettingsTile(
               icon: Icons.lock_outline,
-              title: 'Account & hotel login',
-              subtitle: 'Admin password, hotel gate credentials',
+              title: 'Account settings',
+              subtitle: 'Admin password and portal admins',
               onTap: onOpenAccountSettings,
             ),
           ],

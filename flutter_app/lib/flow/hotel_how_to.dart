@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// Detailed in-app guide shown from the hotel access (gate) screen.
+/// Detailed in-app guide shown from the choose-hotel screen.
 class HotelHowToGuide {
   HotelHowToGuide._();
 
@@ -63,24 +63,24 @@ class _HowToSheet extends StatelessWidget {
                 _Section(
                   title: '1. Getting started',
                   body:
-                      'MADYAWPH is your hotel operations hub on mobile. Every person at your property starts on this screen with the **hotel username** and **password** you chose when the property was registered.\n\n'
-                      'After hotel access succeeds, you pick a **role**: Administrator, Super admin, Staff, Public customer, or In-house Guest. Each role opens a different workspace scoped to your hotel only.',
+                      'MADYAWPH is your hotel operations hub on mobile. Start by **choosing your hotel** from the list grouped by city or region (e.g. Butuan).\n\n'
+                      'After you select a property, pick a **role**: Administrator, Super admin, Staff, Public customer, or In-house Guest. Each role opens a different workspace scoped to **that hotel only** — data from other hotels is never shown.',
                 ),
                 _Section(
-                  title: '2. Hotel access (this screen)',
+                  title: '2. Choose your hotel',
                   body:
-                      '• Enter the property username and password.\n'
-                      '• Tap **Continue** — you will see the role menu for that hotel.\n'
-                      '• Tap **Register new hotel** only when creating a brand-new property (not for daily staff login).\n'
-                      '• Use **Switch hotel** on the role menu if you manage more than one property and need to change context.',
+                      '• Browse hotels under your **city or region**.\n'
+                      '• Use **Search** to filter by city, hotel name, or address.\n'
+                      '• Tap a hotel card to open its role menu.\n'
+                      '• Tap **Register hotel** only when creating a brand-new property.\n'
+                      '• Use **Switch hotel** on the role menu to pick a different property.',
                 ),
                 _Section(
                   title: '3. Account types',
                   body:
-                      '**Hotel gate** — Shared property login (this screen). Required before any role.\n\n'
-                      '**Super admin** — Owner account: manage hotel gate password, delete administrators, full settings.\n'
-                      '• Username: your hotel username (same as gate username).\n'
-                      '• Default password: the contact number from registration.\n\n'
+                      '**Super admin** — Owner account: delete administrators, full settings.\n'
+                      '• Username: owner username from registration.\n'
+                      '• Default password: contact number from registration.\n\n'
                       '**Administrator** — Day-to-day operations: rooms, bookings, reports, chat, staff.\n'
                       '• Username: `{hotel_username}_admin`.\n'
                       '• Default password: `{hotel_username}123`.\n\n'
@@ -104,12 +104,12 @@ class _HowToSheet extends StatelessWidget {
                 _Section(
                   title: '5. Super admin extras',
                   body:
-                      'From **Account & hotel login** you can change the hotel gate username/password (this signs everyone out). You can remove administrator accounts and manage who has admin access. Use super admin for ownership tasks; use administrator for daily front-desk work.',
+                      'From **Account settings** you can change your super-admin password and remove administrator accounts. Use super admin for ownership tasks; use administrator for daily front-desk work.',
                 ),
                 _Section(
                   title: '6. Staff workflow',
                   body:
-                      'Open **Staff** on the role menu after hotel access. View assigned tasks, update room cleaning/maintenance status, message admin (with photo attachments), and report maintenance completion for a room.',
+                      'Open **Staff** on the role menu after choosing your hotel. View assigned tasks, update room cleaning/maintenance status, message admin (with photo attachments), and report maintenance completion for a room.',
                 ),
                 _Section(
                   title: '7. Payments & reports',

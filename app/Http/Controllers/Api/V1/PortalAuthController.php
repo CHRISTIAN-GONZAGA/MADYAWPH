@@ -8,6 +8,7 @@ use App\Models\Hotel;
 use App\Models\PersonalAccessToken;
 use App\Models\User;
 use App\Services\SmsService;
+use App\Support\HotelDirectory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -21,53 +22,29 @@ class PortalAuthController extends Controller
 
     public function hotels(): JsonResponse
     {
-        $hotels = Hotel::withoutGlobalScopes()->select('id', 'name', 'location')->get();
+        $hotels = Hotel::withoutGlobalScopes()
+            ->select('id', 'name', 'location', 'city')
+            ->orderBy('name')
+            ->get();
 
-        return response()->json(['data' => $hotels]);
+        $flat = $hotels->map(fn (Hotel $hotel) => [
+            'id' => (string) $hotel->id,
+            'name' => (string) $hotel->name,
+            'location' => (string) ($hotel->location ?? ''),
+            'city' => HotelDirectory::regionKey($hotel),
+        ])->values()->all();
+
+        return response()->json([
+            'data' => $flat,
+            'regions' => HotelDirectory::groupHotelsForPicker($hotels),
+        ]);
     }
 
     public function hotelAccess(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'username' => ['required', 'string', 'max:255'],
-            'password' => ['required', 'string', 'min:6', 'max:64'],
-        ]);
-
-        $hotel = Hotel::withoutGlobalScopes()
-            ->where('access_username', $validated['username'])
-            ->first();
-
-        if ($hotel && filled($hotel->access_password ?? null)) {
-            if (Hash::check($validated['password'], (string) $hotel->access_password)) {
-                $hid = (string) $hotel->id;
-
-                return response()->json([
-                    'hotel_id' => $hid,
-                    'hotel_name' => $hotel->name,
-                    'message' => 'Hotel access granted.',
-                ]);
-            }
-        }
-
-        $legacyAdmin = User::withoutGlobalScopes()
-            ->where('name', $validated['username'])
-            ->first();
-
-        $legacyRole = $legacyAdmin ? $legacyAdmin->roleValue() : '';
-        if ($legacyAdmin
-            && in_array($legacyRole, [UserRole::ADMIN->value, UserRole::SUPER_ADMIN->value], true)
-            && $this->passwordMatchesUser($validated['password'], $legacyAdmin)) {
-            $hid = (string) $legacyAdmin->hotel_id;
-            $hotelModel = Hotel::withoutGlobalScopes()->find($hid);
-
-            return response()->json([
-                'hotel_id' => $hid,
-                'hotel_name' => $hotelModel?->name,
-                'message' => 'Hotel access granted.',
-            ]);
-        }
-
-        return response()->json(['message' => 'Invalid hotel credentials.'], 422);
+        return response()->json([
+            'message' => 'Hotel gate login is disabled. Choose your property from the hotel directory in the app.',
+        ], 410);
     }
 
     public function hotelRegister(Request $request): JsonResponse
@@ -77,6 +54,7 @@ class PortalAuthController extends Controller
             'password' => ['required', 'string', 'min:6', 'max:64', 'confirmed'],
             'hotel_name' => ['required', 'string', 'max:255'],
             'location' => ['required', 'string', 'max:255'],
+            'city' => ['nullable', 'string', 'max:120'],
             'contact_number' => ['required', 'string', 'max:30'],
             'admin_email' => ['required', 'email', 'max:255', 'unique:users,email'],
         ]);
@@ -92,6 +70,9 @@ class PortalAuthController extends Controller
         $hotel = Hotel::withoutGlobalScopes()->create([
             'name' => $validated['hotel_name'],
             'location' => $validated['location'],
+            'city' => filled($validated['city'] ?? null)
+                ? HotelDirectory::normalizeRegionLabel((string) $validated['city'])
+                : HotelDirectory::regionKeyFromLocation($validated['location']),
             'contact_number' => $validated['contact_number'],
             'access_username' => $validated['username'],
             'access_password' => Hash::make($validated['password']),
@@ -137,7 +118,7 @@ class PortalAuthController extends Controller
                 'hotel_gate' => [
                     'username' => $validated['username'],
                     'password' => $validated['password'],
-                    'note' => 'Property login on the first screen (Hotel access). Everyone at this hotel signs in here before choosing a role.',
+                    'note' => 'Legacy owner credentials (optional). App entry uses the hotel directory, not a shared gate password.',
                 ],
                 'super_admin' => [
                     'username' => $validated['username'],
@@ -166,7 +147,7 @@ class PortalAuthController extends Controller
             'username' => ['required_without:email', 'string', 'max:255'],
             'email' => ['required_without:username', 'email', 'max:255'],
             'password' => ['required', 'string'],
-            'hotel_id' => ['nullable', 'string'],
+            'hotel_id' => ['required', 'string'],
         ]);
 
         $role = (string) ($validated['role'] ?? '');
@@ -189,10 +170,9 @@ class PortalAuthController extends Controller
         }
 
         $userHotelId = $this->normalizeHotelId($user->hotel_id);
-        $activeHotelId = $this->normalizeHotelId($validated['hotel_id'] ?? '') ?: $userHotelId;
-
+        $activeHotelId = $this->normalizeHotelId($validated['hotel_id']);
         if ($activeHotelId === '') {
-            return response()->json(['message' => 'Sign in to your hotel first (send hotel_id from hotel access).'], 422);
+            return response()->json(['message' => 'Select a hotel from the directory first.'], 422);
         }
 
         if ($userHotelId !== $activeHotelId) {
@@ -249,7 +229,7 @@ class PortalAuthController extends Controller
                 'role' => $userRole,
             ],
             'role' => $userRole,
-            'hotel_id' => $userHotelId,
+            'hotel_id' => (string) $userHotelId,
         ]);
     }
 

@@ -213,19 +213,19 @@ class _SuperAdminControlSectionState extends State<SuperAdminControlSection> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'Hotel gate & your account',
+                  'Your super-admin account',
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Update property login credentials or your super-admin password.',
+                  'Change your password or manage portal administrators.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 10),
                 OutlinedButton.icon(
                   onPressed: widget.onOpenAccountSettings,
                   icon: const Icon(Icons.lock_outline),
-                  label: const Text('Account & hotel login'),
+                  label: const Text('Account settings'),
                 ),
               ],
             ),

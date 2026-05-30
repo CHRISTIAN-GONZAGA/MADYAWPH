@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../widgets/room_status_label.dart';
 import '../admin_dashboard_models.dart';
 import '../widgets/booking_overview_cards.dart';
 import '../../admin_rooms.dart';
@@ -111,9 +112,11 @@ class RoomSummarySection extends StatelessWidget {
           Icons.hotel_outlined,
           color: highlight ? Colors.orange.shade800 : null,
         ),
-        title: Text('Room ${r['room_number']} · $status'),
+        title: Text('Room ${r['room_number']} · ${roomStatusLabel(status)}'),
         subtitle: Text(
-          guest == '—' ? 'No guest' : 'Guest: $guest\nCheck-in → out: $range',
+          guest == '—'
+              ? 'No guest'
+              : 'Guest: $guest\nStay: $range',
         ),
         isThreeLine: true,
         onTap: () {
@@ -321,7 +324,8 @@ class _CategoryCard extends StatelessWidget {
               const SizedBox(height: 10),
               Text('Total: ${stats['total']}'),
               Text('Vacant: ${stats['vacant']}'),
-              Text('Checked in: ${stats['checked_in']}'),
+              Text('Occupied: ${stats['occupied'] ?? stats['checked_in']}'),
+              Text('Booked: ${stats['booked']}'),
               Text(
                 'Reserved (1–2 days): ${stats['reserved_soon']}',
                 style: TextStyle(

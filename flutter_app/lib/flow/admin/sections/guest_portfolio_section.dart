@@ -164,26 +164,70 @@ class _GuestCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final guest = (data['guest_name'] ?? 'Guest').toString();
+    final roomNo = (data['room_number'] ?? '').toString();
+    final summary = [
+      if (roomNo.isNotEmpty) 'Room $roomNo',
+      if (isHistory && (data['check_out'] ?? '').toString().isNotEmpty)
+        'Out: ${data['check_out']}',
+      if (!isHistory && (data['payment_status'] ?? '').toString().isNotEmpty)
+        data['payment_status'],
+    ].join(' · ');
+
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
         leading: Icon(isHistory ? Icons.history_edu_outlined : Icons.person),
-        title: Text((data['guest_name'] ?? 'Guest').toString()),
+        title: Text(guest, style: const TextStyle(fontWeight: FontWeight.w600)),
         subtitle: Text(
-          [
-            'Room ${data['room_number']}',
-            if ((data['category'] ?? '').toString().isNotEmpty)
-              data['category'],
-            'Phone: ${data['guest_phone']}',
-            'Email: ${data['guest_email']}',
-            'Check-in: ${data['check_in']}',
-            'Check-out: ${data['check_out']}',
-            'Payment: ${data['payment_status']}',
-            if ((data['booking_reference'] ?? '').toString().isNotEmpty)
-              'Ref: ${data['booking_reference']}',
-          ].join('\n'),
+          summary.isEmpty ? 'Tap for details' : summary,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
-        isThreeLine: true,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if ((data['category'] ?? '').toString().isNotEmpty)
+                  _row('Category', data['category'].toString()),
+                if ((data['guest_phone'] ?? '').toString().isNotEmpty)
+                  _row('Phone', data['guest_phone'].toString()),
+                if ((data['guest_email'] ?? '').toString().isNotEmpty)
+                  _row('Email', data['guest_email'].toString()),
+                if ((data['check_in'] ?? '').toString().isNotEmpty)
+                  _row('Check-in', data['check_in'].toString()),
+                if ((data['check_out'] ?? '').toString().isNotEmpty)
+                  _row('Check-out', data['check_out'].toString()),
+                if ((data['payment_status'] ?? '').toString().isNotEmpty)
+                  _row('Payment', data['payment_status'].toString()),
+                if ((data['booking_reference'] ?? '').toString().isNotEmpty)
+                  _row('Reference', data['booking_reference'].toString()),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _row(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+          ),
+          Expanded(child: Text(value)),
+        ],
       ),
     );
   }

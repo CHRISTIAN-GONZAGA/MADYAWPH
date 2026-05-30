@@ -21,6 +21,7 @@ class RoomCheckoutService
     public function __construct(
         private readonly ActivityLogService $activityLogService,
         private readonly StayTimingFeeService $stayTimingFeeService,
+        private readonly RoomStatusNotificationService $roomStatusNotificationService,
     ) {}
 
     /**
@@ -51,6 +52,7 @@ class RoomCheckoutService
 
         if ($from === RoomStatus::MAINTENANCE->value && $to === RoomStatus::AVAILABLE->value) {
             $room = $this->releaseToAvailable($room, $actor);
+            $this->notifyRoomStatus($room, $from, $to, $actor);
 
             return [
                 'room' => $room,
@@ -60,6 +62,7 @@ class RoomCheckoutService
 
         if ($to === RoomStatus::CHECKED_IN->value) {
             $room = $this->checkInRoom($room, $actor);
+            $this->notifyRoomStatus($room, $from, $to, $actor);
 
             return [
                 'room' => $room,
@@ -68,8 +71,19 @@ class RoomCheckoutService
         }
 
         $room->update(['status' => $to]);
+        $fresh = $room->fresh() ?? $room;
+        $this->notifyRoomStatus($fresh, $from, $to, $actor);
 
-        return ['room' => $room->fresh() ?? $room, 'message' => null];
+        return ['room' => $fresh, 'message' => null];
+    }
+
+    private function notifyRoomStatus(Room $room, string $from, string $to, User $actor): void
+    {
+        if ($from === $to) {
+            return;
+        }
+        $booking = $this->findActiveBooking((string) $room->hotel_id, (string) $room->id);
+        $this->roomStatusNotificationService->notifyStatusChange($room, $from, $to, $actor, $booking);
     }
 
     /**
@@ -183,6 +197,7 @@ class RoomCheckoutService
     {
         $hotelId = (string) $room->hotel_id;
         $roomId = (string) $room->id;
+        $fromStatus = $this->normalizedStatus($room);
         $booking ??= $this->findActiveBooking($hotelId, $roomId);
 
         $guestName = (string) ($room->getAttributes()['current_guest_name'] ?? $booking?->guest_name ?? '');
@@ -221,6 +236,16 @@ class RoomCheckoutService
                 'room_status' => RoomStatus::MAINTENANCE->value,
             ]
         );
+
+        if ($fromStatus !== RoomStatus::MAINTENANCE->value) {
+            $this->roomStatusNotificationService->notifyStatusChange(
+                $freshRoom,
+                $fromStatus,
+                RoomStatus::MAINTENANCE->value,
+                $actor,
+                $booking
+            );
+        }
 
         return $freshRoom;
     }

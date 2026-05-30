@@ -166,7 +166,7 @@ class _BookingsSectionState extends State<BookingsSection>
           'title':
               '${b['guest_name']} · Room ${b['room_number'] ?? '—'}',
           'subtitle':
-              '${b['check_in_date']} → ${b['check_out_date']} · ${b['status']}',
+              '${AdminDashboardModels.formatBookingDuration(b)} · ${b['status']}',
         });
       }
     }
@@ -637,10 +637,40 @@ class _BookingsSectionState extends State<BookingsSection>
 
   Widget _calendarView() {
     final events = _eventsOnDay(_selectedDay);
+    final monthBookings = _calendarBookings.length;
+    final bookedRooms = AdminDashboardModels.bookedRoomCount(widget.rooms);
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
       children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Active bookings: $monthBookings',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                      Text(
+                        'Rooms currently booked/occupied: $bookedRooms',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.event_seat_outlined),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
         AdminMonthCalendar(
           focusedMonth: _month,
           selectedDay: _selectedDay,

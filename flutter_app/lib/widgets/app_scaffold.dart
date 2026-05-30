@@ -10,6 +10,7 @@ class AppScaffold extends StatelessWidget {
     required this.body,
     this.resizeToAvoidBottomInset = true,
     this.bottomNavigationBar,
+    this.floatingActionButton,
     this.drawer,
     this.endDrawer,
     this.extendBody = true,
@@ -19,6 +20,7 @@ class AppScaffold extends StatelessWidget {
   final Widget body;
   final bool resizeToAvoidBottomInset;
   final Widget? bottomNavigationBar;
+  final Widget? floatingActionButton;
   final Widget? drawer;
   final Widget? endDrawer;
   final bool extendBody;
@@ -36,6 +38,7 @@ class AppScaffold extends StatelessWidget {
       drawer: drawer,
       endDrawer: endDrawer,
       bottomNavigationBar: bottomNavigationBar,
+      floatingActionButton: floatingActionButton,
       body: Stack(
         fit: StackFit.expand,
         children: [

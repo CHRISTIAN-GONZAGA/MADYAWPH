@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../auth_storage.dart';
+import '../locale_controller.dart';
 import '../dio_client.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
@@ -1433,7 +1434,12 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
   Future<void> _refreshChat({bool silent = false}) async {
     try {
       final res =
-          await guestDio().get<Map<String, dynamic>>('/guest/chat/messages');
+          await guestDio().get<Map<String, dynamic>>(
+            '/guest/chat/messages',
+            queryParameters: {
+              'locale': AppLocales.code(appLocaleNotifier.value),
+            },
+          );
       if (!mounted) return;
       final list = (res.data?['messages'] as List?) ?? [];
       setState(() => _chatMessages = list);
@@ -2051,10 +2057,6 @@ class _AdminAccountSettingsScreenState extends State<AdminAccountSettingsScreen>
   final _adminCurrentPass = TextEditingController();
   final _adminNewPass = TextEditingController();
   final _adminNewPass2 = TextEditingController();
-  final _hotelCurrentPass = TextEditingController();
-  final _hotelUserCtrl = TextEditingController();
-  final _hotelNewPass = TextEditingController();
-  final _hotelNewPass2 = TextEditingController();
   bool _busy = false;
   bool _isSuperAdmin = false;
   List<dynamic> _portalUsers = const [];
@@ -2136,10 +2138,6 @@ class _AdminAccountSettingsScreenState extends State<AdminAccountSettingsScreen>
     _adminCurrentPass.dispose();
     _adminNewPass.dispose();
     _adminNewPass2.dispose();
-    _hotelCurrentPass.dispose();
-    _hotelUserCtrl.dispose();
-    _hotelNewPass.dispose();
-    _hotelNewPass2.dispose();
     super.dispose();
   }
 
@@ -2192,64 +2190,10 @@ class _AdminAccountSettingsScreenState extends State<AdminAccountSettingsScreen>
     }
   }
 
-  Future<void> _saveHotelAccess() async {
-    if (_busy) return;
-    if (_hotelUserCtrl.text.trim().isEmpty ||
-        _hotelCurrentPass.text.isEmpty ||
-        _hotelNewPass.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Fill hotel username, current password, and new password.'),
-        ),
-      );
-      return;
-    }
-    if (_hotelNewPass.text != _hotelNewPass2.text) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('New hotel passwords do not match.')),
-      );
-      return;
-    }
-    setState(() => _busy = true);
-    try {
-      final res = await portalDio().put<Map<String, dynamic>>(
-        '/admin/hotel/access',
-        data: {
-          'current_password': _hotelCurrentPass.text,
-          'access_username': _hotelUserCtrl.text.trim(),
-          'access_password': _hotelNewPass.text,
-          'access_password_confirmation': _hotelNewPass2.text,
-        },
-      );
-      if (!mounted) return;
-      final revoked = res.data?['session_revoked'] == true;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            revoked
-                ? 'Hotel login updated. Please sign in again with your admin account.'
-                : 'Hotel login updated.',
-          ),
-        ),
-      );
-      if (revoked) {
-        await AuthStorage.clearPortalAuth();
-        if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
-      }
-    } on DioException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      appBar: AppBar(title: const Text('Account & hotel login')),
+      appBar: AppBar(title: const Text('Account settings')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -2318,47 +2262,6 @@ class _AdminAccountSettingsScreenState extends State<AdminAccountSettingsScreen>
                 ),
               );
             }),
-          ],
-          if (_isSuperAdmin) const SizedBox(height: 28),
-          if (_isSuperAdmin) ...[
-          Text(
-            'Hotel gate password',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'This is the property login guests use before choosing admin/staff. '
-            'After a change, every admin and staff member must log in again.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: 12),
-          AppInput(
-            controller: _hotelUserCtrl,
-            label: 'Hotel username',
-          ),
-          const SizedBox(height: 8),
-          AppInput(
-            controller: _hotelCurrentPass,
-            label: 'Current hotel password',
-            obscureText: true,
-          ),
-          const SizedBox(height: 8),
-          AppInput(
-            controller: _hotelNewPass,
-            label: 'New hotel password',
-            obscureText: true,
-          ),
-          const SizedBox(height: 8),
-          AppInput(
-            controller: _hotelNewPass2,
-            label: 'Confirm new hotel password',
-            obscureText: true,
-          ),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: _busy ? null : _saveHotelAccess,
-            child: const Text('Update hotel login'),
-          ),
           ],
         ],
       ),

@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Services\MessageTranslationService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
@@ -10,9 +11,19 @@ final class GuestMessageResource
     /**
      * @return list<array<string, mixed>>
      */
-    public static function collection(Collection $messages): array
+    public static function collection(Collection $messages, ?string $viewerLocale = null): array
     {
-        return $messages->map(fn ($message) => self::one($message))->values()->all();
+        $translator = app(MessageTranslationService::class);
+        $locale = $viewerLocale ?? $translator->defaultStaffLanguage();
+
+        return $messages->map(function ($message) use ($translator, $locale) {
+            $row = self::one($message);
+            if ($viewerLocale !== null) {
+                $row = $translator->enrichForViewer($row, $locale);
+            }
+
+            return $row;
+        })->values()->all();
     }
 
     /**

@@ -5,70 +5,105 @@ import '../auth_storage.dart';
 import 'hotel_how_to.dart';
 import '../dio_client.dart';
 import '../ui/app_visual.dart';
+import '../locale_controller.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/language_picker_button.dart';
 import 'dashboards.dart';
 import 'flow_state.dart';
 
-// --- Hotel gate (sign-in + create hotel) ---
+// --- Choose hotel (by city/region) → role menu ---
 
-class HotelGateScreen extends StatefulWidget {
-  const HotelGateScreen({super.key});
+class ChooseHotelScreen extends StatefulWidget {
+  const ChooseHotelScreen({super.key});
 
   @override
-  State<HotelGateScreen> createState() => _HotelGateScreenState();
+  State<ChooseHotelScreen> createState() => _ChooseHotelScreenState();
 }
 
-class _HotelGateScreenState extends State<HotelGateScreen> {
-  final _user = TextEditingController();
-  final _pass = TextEditingController();
-  bool _busy = false;
+class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
+  final _search = TextEditingController();
+  List<Map<String, dynamic>> _regions = const [];
+  bool _loading = true;
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    _load();
+    _search.addListener(() => setState(() {}));
+  }
+
+  @override
   void dispose() {
-    _user.dispose();
-    _pass.dispose();
+    _search.dispose();
     super.dispose();
   }
 
-  Future<void> _submit() async {
+  Future<void> _load() async {
     setState(() {
-      _busy = true;
+      _loading = true;
       _error = null;
     });
     try {
-      final res = await publicDio().post<Map<String, dynamic>>(
-        '/hotel/access',
-        data: {
-          'username': _user.text.trim(),
-          'password': _pass.text,
-        },
-      );
-      final hid = res.data?['hotel_id'] as String?;
-      final hname = res.data?['hotel_name'] as String? ?? 'Hotel';
-      if (hid == null || hid.isEmpty) {
-        setState(() {
-          _error = 'Unexpected response.';
-          _busy = false;
-        });
-        return;
-      }
-      await AuthStorage.setHotelContext(id: hid, name: hname);
-      await AuthStorage.clearPortalAuth();
-      await AuthStorage.clearGuestAuth();
+      final res = await publicDio().get<Map<String, dynamic>>('/hotels');
+      final regions =
+          (res.data?['regions'] as List<dynamic>?)?.whereType<Map>().map(
+                (m) => Map<String, dynamic>.from(m),
+              ).toList() ??
+              const [];
       if (!mounted) return;
-      hotelSessionNotifier.value = HotelSession(hotelId: hid, hotelName: hname);
+      setState(() {
+        _regions = regions;
+        _loading = false;
+      });
     } on DioException catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = dioErrorMessage(e);
-        _busy = false;
+        _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = '$e';
-        _busy = false;
+        _loading = false;
       });
     }
+  }
+
+  String get _query => _search.text.trim().toLowerCase();
+
+  List<Map<String, dynamic>> get _filteredRegions {
+    if (_query.isEmpty) return _regions;
+    final out = <Map<String, dynamic>>[];
+    for (final region in _regions) {
+      final name = (region['region'] ?? '').toString();
+      final hotels = (region['hotels'] as List<dynamic>?) ?? const [];
+      final matched = hotels.whereType<Map>().where((h) {
+        final hotelName = (h['name'] ?? '').toString().toLowerCase();
+        final loc = (h['location'] ?? '').toString().toLowerCase();
+        final city = (h['city'] ?? name).toString().toLowerCase();
+        return name.toLowerCase().contains(_query) ||
+            hotelName.contains(_query) ||
+            loc.contains(_query) ||
+            city.contains(_query);
+      }).map((h) => Map<String, dynamic>.from(h)).toList();
+      if (matched.isNotEmpty) {
+        out.add({'region': name, 'hotels': matched});
+      }
+    }
+    return out;
+  }
+
+  Future<void> _selectHotel(Map<String, dynamic> hotel) async {
+    final hid = (hotel['id'] ?? '').toString();
+    final hname = (hotel['name'] ?? 'Hotel').toString();
+    if (hid.isEmpty) return;
+    await AuthStorage.setHotelContext(id: hid, name: hname);
+    await AuthStorage.clearPortalAuth();
+    await AuthStorage.clearGuestAuth();
+    if (!mounted) return;
+    hotelSessionNotifier.value = HotelSession(hotelId: hid, hotelName: hname);
   }
 
   Future<void> _openRegister() async {
@@ -80,107 +115,196 @@ class _HotelGateScreenState extends State<HotelGateScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final regions = _filteredRegions;
+
     return AppScaffold(
       appBar: AppBar(
-        title: const Text('MADYAWPH · Hotel access'),
+        title: Text('${context.tr('app_title')} · ${context.tr('choose_hotel')}'),
         actions: [
+          const LanguagePickerButton(),
           TextButton.icon(
             onPressed: () => HotelHowToGuide.show(context),
             icon: const Icon(Icons.help_outline, size: 20),
-            label: const Text('How to'),
+            label: Text(context.tr('how_to')),
           ),
         ],
       ),
       body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 440),
-            child: ListView(
-              padding: const EdgeInsets.all(24),
-              children: [
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
                   Text(
-                    'MADYAWPH',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.headlineMedium?.copyWith(
+                    context.tr('select_property'),
+                    style: theme.textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.w800,
-                      letterSpacing: 1.2,
-                      color: theme.colorScheme.primary,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
-                    'Hotel operations hub — sign in to manage rooms, staff, guests, and bookings.',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyLarge?.copyWith(
+                    context.tr('choose_hotel_hint'),
+                    style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
-                      height: 1.45,
+                      height: 1.4,
                     ),
                   ),
-                  const SizedBox(height: 28),
-                  Material(
-                    elevation: 2,
-                    shadowColor: Colors.black26,
-                    borderRadius: BorderRadius.circular(20),
-                    color: theme.colorScheme.surfaceContainerHigh,
-                    child: Padding(
-                      padding: const EdgeInsets.all(22),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          TextField(
-                            controller: _user,
-                            decoration: const InputDecoration(
-                              labelText: 'Hotel username',
-                              prefixIcon: Icon(Icons.person_outline),
-                            ),
-                            textInputAction: TextInputAction.next,
-                            autocorrect: false,
-                          ),
-                          const SizedBox(height: 16),
-                          TextField(
-                            controller: _pass,
-                            decoration: const InputDecoration(
-                              labelText: 'Password',
-                              prefixIcon: Icon(Icons.lock_outline),
-                            ),
-                            obscureText: true,
-                            onSubmitted: (_) => _busy ? null : _submit(),
-                          ),
-                          if (_error != null) ...[
-                            const SizedBox(height: 14),
-                            Text(
-                              _error!,
-                              style:
-                                  TextStyle(color: theme.colorScheme.error),
-                            ),
-                          ],
-                          const SizedBox(height: 22),
-                          FilledButton(
-                            onPressed: _busy ? null : _submit,
-                            child: _busy
-                                ? const SizedBox(
-                                    width: 22,
-                                    height: 22,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2),
-                                  )
-                                : const Text('Continue'),
-                          ),
-                          const SizedBox(height: 12),
-                          OutlinedButton.icon(
-                            onPressed: _openRegister,
-                            icon: const Icon(Icons.add_business_outlined),
-                            label: const Text('Register new hotel'),
-                          ),
-                        ],
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _search,
+                    decoration: InputDecoration(
+                      hintText: context.tr('search_hotels'),
+                      prefixIcon: const Icon(Icons.search),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
                       ),
+                      isDense: true,
                     ),
                   ),
                 ],
               ),
             ),
-          ),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _error != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _error!,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: theme.colorScheme.error),
+                                ),
+                                const SizedBox(height: 16),
+                                FilledButton(
+                                  onPressed: _load,
+                                  child: Text(context.tr('retry')),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : regions.isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Text(
+                                  _query.isEmpty
+                                      ? context.tr('no_hotels')
+                                      : context.tr('no_search_results'),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            )
+                          : RefreshIndicator(
+                              onRefresh: _load,
+                              child: ListView.builder(
+                                padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                                itemCount: regions.length,
+                                itemBuilder: (context, i) {
+                                  final block = regions[i];
+                                  final region =
+                                      (block['region'] ?? 'Other').toString();
+                                  final hotels =
+                                      (block['hotels'] as List<dynamic>?) ??
+                                          const [];
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          top: 12,
+                                          bottom: 8,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              Icons.location_city_outlined,
+                                              size: 20,
+                                              color: theme.colorScheme.primary,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              region,
+                                              style: theme
+                                                  .textTheme.titleMedium
+                                                  ?.copyWith(
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              '${hotels.length}',
+                                              style: theme
+                                                  .textTheme.labelLarge
+                                                  ?.copyWith(
+                                                color: theme.colorScheme
+                                                    .onSurfaceVariant,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      ...hotels.whereType<Map>().map((raw) {
+                                        final hotel =
+                                            Map<String, dynamic>.from(raw);
+                                        final loc =
+                                            (hotel['location'] ?? '')
+                                                .toString();
+                                        return Card(
+                                          margin: const EdgeInsets.only(
+                                            bottom: 8,
+                                          ),
+                                          clipBehavior: Clip.antiAlias,
+                                          child: ListTile(
+                                            leading: CircleAvatar(
+                                              backgroundColor: theme
+                                                  .colorScheme
+                                                  .primaryContainer,
+                                              child: Icon(
+                                                Icons.apartment_outlined,
+                                                color: theme
+                                                    .colorScheme.primary,
+                                              ),
+                                            ),
+                                            title: Text(
+                                              (hotel['name'] ?? 'Hotel')
+                                                  .toString(),
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                            subtitle: loc.isEmpty
+                                                ? null
+                                                : Text(loc),
+                                            trailing: const Icon(
+                                              Icons.chevron_right,
+                                            ),
+                                            onTap: () => _selectHotel(hotel),
+                                          ),
+                                        );
+                                      }),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ),
+            ),
+          ],
         ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _openRegister,
+        icon: const Icon(Icons.add_business_outlined),
+        label: Text(context.tr('register_hotel')),
+      ),
     );
   }
 }
@@ -197,6 +321,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
   final _password = TextEditingController();
   final _password2 = TextEditingController();
   final _hotelName = TextEditingController();
+  final _city = TextEditingController();
   final _location = TextEditingController();
   final _contact = TextEditingController();
   final _adminEmail = TextEditingController();
@@ -209,6 +334,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
     _password.dispose();
     _password2.dispose();
     _hotelName.dispose();
+    _city.dispose();
     _location.dispose();
     _contact.dispose();
     _adminEmail.dispose();
@@ -229,6 +355,9 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
           'password_confirmation': _password2.text,
           'hotel_name': _hotelName.text.trim(),
           'location': _location.text.trim(),
+          'city': _city.text.trim().isNotEmpty
+              ? _city.text.trim()
+              : _location.text.trim(),
           'contact_number': _contact.text.trim(),
           'admin_email': _adminEmail.text.trim(),
         },
@@ -301,8 +430,21 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
           ),
           const SizedBox(height: 12),
           TextField(
+            controller: _city,
+            decoration: const InputDecoration(
+              labelText: 'City / region (e.g. Butuan)',
+              border: OutlineInputBorder(),
+              helperText: 'Used to group hotels on the choose-hotel screen',
+            ),
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: 12),
+          TextField(
             controller: _location,
-            decoration: const InputDecoration(labelText: 'Location', border: OutlineInputBorder()),
+            decoration: const InputDecoration(
+              labelText: 'Full address or area',
+              border: OutlineInputBorder(),
+            ),
             textInputAction: TextInputAction.next,
           ),
           const SizedBox(height: 12),
@@ -325,8 +467,9 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
           TextField(
             controller: _username,
             decoration: const InputDecoration(
-              labelText: 'Hotel username (property login)',
+              labelText: 'Owner username (internal)',
               border: OutlineInputBorder(),
+              helperText: 'For super admin sign-in; not used on the hotel picker',
             ),
             autocorrect: false,
             textInputAction: TextInputAction.next,
@@ -477,11 +620,12 @@ class RoleMenuScreen extends StatelessWidget {
     final theme = Theme.of(context);
     return AppScaffold(
       appBar: AppBar(
-        title: const Text('MADYAWPH'),
+        title: Text(context.tr('app_title')),
         actions: [
+          const LanguagePickerButton(),
           TextButton(
             onPressed: () => _switchHotel(context),
-            child: const Text('Switch hotel'),
+            child: Text(context.tr('switch_hotel')),
           ),
         ],
       ),
@@ -491,46 +635,46 @@ class RoleMenuScreen extends StatelessWidget {
           Text(session.hotelName, style: theme.textTheme.headlineSmall),
           const SizedBox(height: 4),
           Text(
-            'Choose how you want to use the app.',
+            context.tr('choose_role_hint'),
             style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 24),
           _RoleCard(
             icon: Icons.admin_panel_settings_outlined,
-            title: 'Administrator',
-            subtitle: 'Day-to-day ops — rooms, bookings, reports',
+            title: context.tr('administrator'),
+            subtitle: context.tr('administrator_sub'),
             color: theme.colorScheme.primaryContainer,
             onTap: () => _openAdmin(context),
           ),
           const SizedBox(height: 12),
           _RoleCard(
             icon: Icons.shield_outlined,
-            title: 'Super admin',
-            subtitle: 'Hotel owner — manage admins & property login',
+            title: context.tr('super_admin'),
+            subtitle: context.tr('super_admin_sub'),
             color: theme.colorScheme.errorContainer,
             onTap: () => _openSuperAdmin(context),
           ),
           const SizedBox(height: 12),
           _RoleCard(
             icon: Icons.support_agent_outlined,
-            title: 'Staff',
-            subtitle: 'Tasks, rooms, guest messages',
+            title: context.tr('staff'),
+            subtitle: context.tr('staff_sub'),
             color: theme.colorScheme.secondaryContainer,
             onTap: () => _openStaff(context),
           ),
           const SizedBox(height: 12),
           _RoleCard(
             icon: Icons.storefront_outlined,
-            title: 'Public customer',
-            subtitle: 'Browse categories and rooms (booking)',
+            title: context.tr('public_customer'),
+            subtitle: context.tr('public_customer_sub'),
             color: theme.colorScheme.tertiaryContainer,
             onTap: () => _openCustomer(context),
           ),
           const SizedBox(height: 12),
           _RoleCard(
             icon: Icons.hotel_class_outlined,
-            title: 'Guest',
-            subtitle: 'In-house guest — room number & room password',
+            title: context.tr('guest'),
+            subtitle: context.tr('guest_sub'),
             color: theme.colorScheme.surfaceContainerHighest,
             onTap: () => _openGuest(context),
           ),
@@ -630,7 +774,7 @@ class _PortalLoginScreenState extends State<PortalLoginScreen> {
   Future<void> _submit() async {
     final hotelId = await AuthStorage.hotelId();
     if (hotelId == null || hotelId.isEmpty) {
-      setState(() => _error = 'Hotel session missing. Use Switch hotel and sign in again.');
+      setState(() => _error = context.tr('select_hotel_first'));
       return;
     }
     setState(() {

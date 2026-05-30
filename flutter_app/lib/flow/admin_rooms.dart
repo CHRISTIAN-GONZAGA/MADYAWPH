@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../dio_client.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/app_state_views.dart';
+import '../widgets/room_status_label.dart';
 import 'admin/widgets/stay_receipt_dialog.dart';
 import 'admin_categories.dart';
 
@@ -246,7 +247,7 @@ class _AdminRoomRow extends StatelessWidget {
     final displayName = (room['display_name'] ?? '').toString().trim();
     final typeHint = (room['room_type'] ?? '').toString().trim();
     final subtitleParts = <String>[
-      if (status.isNotEmpty) 'Status: $status',
+      if (status.isNotEmpty) 'Status: ${roomStatusLabel(status)}',
       if (guest.isNotEmpty) 'Guest: $guest',
       if (pwd.isNotEmpty) 'Password: $pwd',
     ];
@@ -495,7 +496,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
           items: [
             const DropdownMenuItem(value: 'available', child: Text('available')),
             const DropdownMenuItem(value: 'booked', child: Text('booked')),
-            const DropdownMenuItem(value: 'checked_in', child: Text('checked_in')),
+            const DropdownMenuItem(value: 'checked_in', child: Text('Occupied')),
             if (showCheckedOut)
               const DropdownMenuItem(value: 'checked_out', child: Text('checked_out')),
             const DropdownMenuItem(value: 'maintenance', child: Text('maintenance')),
@@ -556,6 +557,27 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     }
   }
 
+  Future<void> _showNoRoomsAlert() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: Icon(Icons.meeting_room_outlined, color: Colors.orange.shade800, size: 40),
+        title: const Text('No rooms available'),
+        content: const Text(
+          'All rooms are currently occupied, booked, or under maintenance. '
+          'Try again later or mark a room as available before transferring.',
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _transferRoom() async {
     final booking = _data?['active_booking'] as Map<String, dynamic>?;
     final room = _data?['room'] as Map<String, dynamic>?;
@@ -571,11 +593,8 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       final res = await portalDio().get<List<dynamic>>('/rooms/available');
       final available = res.data ?? const [];
       if (!mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
       if (available.isEmpty) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('No available rooms.')),
-        );
+        await _showNoRoomsAlert();
         return;
       }
       String toRoomId =
@@ -616,11 +635,66 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         ),
       );
       if (payload == null) return;
+      final toId = payload['to_room_id'] ?? '';
+      Map<String, dynamic>? preview;
+      try {
+        final previewRes = await portalDio().get<Map<String, dynamic>>(
+          '/room-transfers/preview',
+          queryParameters: {
+            'booking_id': bookingId,
+            'from_room_id': fromRoomId,
+            'to_room_id': toId,
+          },
+        );
+        preview = previewRes.data;
+      } on DioException catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+        return;
+      }
+      var approveAdjustment = false;
+      final adjustment = (preview?['price_adjustment'] as num?)?.toDouble() ?? 0;
+      if (preview?['requires_approval'] == true && adjustment.abs() > 0) {
+        if (!mounted) return;
+        final approved = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            icon: Icon(
+              adjustment > 0 ? Icons.trending_up : Icons.trending_down,
+              color: adjustment > 0 ? Colors.orange.shade800 : Colors.green.shade700,
+            ),
+            title: const Text('Room rate change'),
+            content: Text(
+              'Transferring from Room ${preview?['from_room_number']} '
+              '(₱${(preview?['from_nightly_rate'] as num?)?.toStringAsFixed(0) ?? '0'}/night) '
+              'to Room ${preview?['to_room_number']} '
+              '(₱${(preview?['to_nightly_rate'] as num?)?.toStringAsFixed(0) ?? '0'}/night).\n\n'
+              'Bill ${adjustment > 0 ? 'increases' : 'decreases'} by ₱${adjustment.abs().toStringAsFixed(0)}.\n'
+              'New total: ₱${(preview?['new_total'] as num?)?.toStringAsFixed(0) ?? '0'}.\n\n'
+              'Approve this price adjustment?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Approve & transfer'),
+              ),
+            ],
+          ),
+        );
+        if (approved != true) return;
+        approveAdjustment = true;
+      }
       await portalDio().post('/room-transfers', data: {
         'booking_id': bookingId,
         'from_room_id': fromRoomId,
-        'to_room_id': payload['to_room_id'],
+        'to_room_id': toId,
         'reason': 'Guest requested transfer',
+        if (approveAdjustment) 'approve_price_adjustment': true,
       });
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -643,6 +717,18 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       );
       return;
     }
+    Map<String, dynamic>? billSummary;
+    try {
+      final billRes = await portalDio().get<Map<String, dynamic>>(
+        '/admin/bookings/$bookingId/bill-summary',
+      );
+      billSummary = billRes.data;
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      return;
+    }
     final current = (booking?['payment_status'] ?? 'unpaid').toString();
     final currentMethodRaw = (booking?['payment_method'] ?? '').toString().trim();
     String method = (() {
@@ -657,82 +743,152 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       return 'Cash';
     })();
     String next = current;
+    final totalDue =
+        (billSummary?['total_due'] as num?)?.toDouble() ??
+        (booking?['total_amount'] as num?)?.toDouble() ??
+        0;
+    final lines = (billSummary?['lines'] as List?) ?? const [];
     final refCtrl =
         TextEditingController(text: (booking?['payment_reference'] ?? '').toString());
-    final payload = await showDialog<Map<String, String>>(
+    final tenderCtrl = TextEditingController(
+      text: totalDue > 0 ? totalDue.toStringAsFixed(0) : '',
+    );
+    if (!mounted) return;
+    final payload = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setLocal) => AlertDialog(
-          title: const Text('Payment status'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                initialValue: current,
-                items: const [
-                  DropdownMenuItem(value: 'unpaid', child: Text('unpaid')),
-                  DropdownMenuItem(value: 'paid', child: Text('paid')),
-                ],
-                onChanged: (v) => setLocal(() => next = v ?? current),
-                decoration: const InputDecoration(
-                  labelText: 'Status',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: refCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Payment reference (optional)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 10),
-              DropdownButtonFormField<String>(
-                initialValue: method,
-                items: const [
-                  DropdownMenuItem(value: 'Cash', child: Text('Cash')),
-                  DropdownMenuItem(value: 'GCash', child: Text('GCash')),
-                  DropdownMenuItem(value: 'PayMaya', child: Text('PayMaya')),
-                  DropdownMenuItem(
-                    value: 'Credit Card',
-                    child: Text('Credit Card'),
+        builder: (context, setLocal) {
+          final tendered = double.tryParse(tenderCtrl.text.trim()) ?? 0;
+          final change = next == 'paid' && tendered > 0
+              ? (tendered - totalDue).clamp(0, double.infinity)
+              : 0.0;
+          return AlertDialog(
+            title: const Text('Record payment'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Total bill: ₱${totalDue.toStringAsFixed(2)}',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  if (lines.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    ...lines.whereType<Map>().map(
+                      (line) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          children: [
+                            Expanded(child: Text('${line['label']}')),
+                            Text(
+                              '₱${((line['amount'] as num?) ?? 0).toStringAsFixed(0)}',
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                  const Divider(),
+                  DropdownButtonFormField<String>(
+                    initialValue: current,
+                    items: const [
+                      DropdownMenuItem(value: 'unpaid', child: Text('Unpaid')),
+                      DropdownMenuItem(value: 'paid', child: Text('Paid')),
+                    ],
+                    onChanged: (v) => setLocal(() => next = v ?? current),
+                    decoration: const InputDecoration(
+                      labelText: 'Status',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: tenderCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Amount given by guest',
+                      border: OutlineInputBorder(),
+                      prefixText: '₱ ',
+                    ),
+                    onChanged: (_) => setLocal(() {}),
+                  ),
+                  if (next == 'paid' && tendered > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        'Change: ₱${change.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: refCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Payment reference (optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    initialValue: method,
+                    items: const [
+                      DropdownMenuItem(value: 'Cash', child: Text('Cash')),
+                      DropdownMenuItem(value: 'GCash', child: Text('GCash')),
+                      DropdownMenuItem(value: 'PayMaya', child: Text('PayMaya')),
+                      DropdownMenuItem(
+                        value: 'Credit Card',
+                        child: Text('Credit Card'),
+                      ),
+                    ],
+                    onChanged: (v) => setLocal(() => method = v ?? method),
+                    decoration: const InputDecoration(
+                      labelText: 'Payment method',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
                 ],
-                onChanged: (v) => setLocal(() => method = v ?? method),
-                decoration: const InputDecoration(
-                  labelText: 'Payment method',
-                  border: OutlineInputBorder(),
-                  helperText: 'Manual tracking only. Not linked to PayMongo.',
-                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop({
+                  'payment_status': next,
+                  'payment_reference': refCtrl.text.trim(),
+                  'payment_method': method,
+                  'amount_tendered': tendered > 0 ? tendered : null,
+                }),
+                child: const Text('Pay'),
               ),
             ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop({
-                'payment_status': next,
-                'payment_reference': refCtrl.text.trim(),
-                'payment_method': method,
-              }),
-              child: const Text('Update'),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
+    refCtrl.dispose();
+    tenderCtrl.dispose();
     if (payload == null || _updatingPayment) return;
     setState(() => _updatingPayment = true);
     try {
-      await portalDio().post('/admin/bookings/$bookingId/payment-status', data: payload);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Payment status updated.')),
+      final res = await portalDio().post<Map<String, dynamic>>(
+        '/admin/bookings/$bookingId/payment-status',
+        data: payload,
       );
+      if (!mounted) return;
+      final changeDue = (res.data?['change_due'] as num?)?.toDouble();
+      final msg = changeDue != null && changeDue > 0
+          ? 'Payment recorded. Change due: ₱${changeDue.toStringAsFixed(2)}'
+          : 'Payment recorded.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
@@ -860,7 +1016,24 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
               Text('Room $roomNo',
                   style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 8),
-              Text('Status: $status'),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: roomStatusColor(status).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      roomStatusLabel(status),
+                      style: TextStyle(
+                        color: roomStatusColor(status),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
               if (guest.isNotEmpty) Text('Guest: $guest'),
               if (pwd.isNotEmpty) Text('Password: $pwd'),
             ],

@@ -6,7 +6,7 @@ import '../widgets/app_state_views.dart';
 import 'flow_state.dart';
 import 'hotel_screens.dart';
 
-/// Restores saved hotel context, then: hotel gate → role menu → dashboards.
+/// Restores saved hotel context, then: choose hotel → role menu → dashboards.
 class FlowRoot extends StatefulWidget {
   const FlowRoot({super.key});
 
@@ -45,7 +45,7 @@ class _FlowRootState extends State<FlowRoot> {
       valueListenable: hotelSessionNotifier,
       builder: (context, session, _) {
         if (session == null) {
-          return const HotelGateScreen();
+          return const ChooseHotelScreen();
         }
         return RoleMenuScreen(session: session);
       },

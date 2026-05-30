@@ -35,6 +35,51 @@ class AdminDashboardModels {
   static String statusOf(Map<String, dynamic> room) =>
       (room['status'] ?? '').toString().toLowerCase();
 
+  /// Display label: checked_in → Occupied (API value unchanged).
+  static String roomStatusLabel(String status) {
+    switch (status.toLowerCase().trim()) {
+      case 'checked_in':
+        return 'Occupied';
+      case 'checked_out':
+        return 'Checked out';
+      case 'maintenance':
+        return 'Maintenance';
+      case 'reserved':
+        return 'Reserved';
+      case 'booked':
+        return 'Booked';
+      case 'available':
+        return 'Available';
+      default:
+        if (status.isEmpty) return '—';
+        return status[0].toUpperCase() + status.substring(1).replaceAll('_', ' ');
+    }
+  }
+
+  static int bookedRoomCount(List<Map<String, dynamic>> rooms) {
+    return rooms.where((r) {
+      final s = statusOf(r);
+      return s == 'booked' || s == 'checked_in' || s == 'reserved';
+    }).length;
+  }
+
+  static int stayNights(Map<String, dynamic> booking) {
+    final n = (booking['nights'] as num?)?.toInt();
+    if (n != null && n > 0) return n;
+    final inD = parseDate(booking['check_in_date']);
+    final outD = parseDate(booking['check_out_date']);
+    if (inD == null || outD == null) return 0;
+    return outD.difference(inD).inDays.clamp(0, 365);
+  }
+
+  static String formatBookingDuration(Map<String, dynamic> booking) {
+    final inD = parseDate(booking['check_in_date']);
+    final outD = parseDate(booking['check_out_date']);
+    if (inD == null || outD == null) return '—';
+    final nights = stayNights(booking);
+    return '${inD.month}/${inD.day} → ${outD.month}/${outD.day} · $nights night${nights == 1 ? '' : 's'}';
+  }
+
   static Map<String, List<Map<String, dynamic>>> groupByCategory(
     List<Map<String, dynamic>> rooms,
   ) {
@@ -168,6 +213,7 @@ class AdminDashboardModels {
       'total': total,
       'vacant': vacant,
       'checked_in': checkedIn,
+      'occupied': checkedIn,
       'reserved': reserved,
       'reserved_soon': reservedSoon,
       'booked': booked,

@@ -45,7 +45,7 @@ Dio _baseDio() => Dio(
       ),
     );
 
-/// Unauthenticated v1 calls (hotel gate, register, portal login, public customer).
+/// Unauthenticated v1 calls (hotel directory, register, portal login, public customer).
 Dio publicDio() => _baseDio();
 
 Dio _authedDio(_AuthKind kind) {

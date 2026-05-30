@@ -39,16 +39,18 @@ class StandardHotelsSeeder extends Seeder
         Hotel::withoutGlobalScopes()->delete();
 
         $hotels = [
-            ['name' => 'Balanghai Hotel', 'location' => 'Manila'],
-            ['name' => 'Gloretto Hotel', 'location' => 'Cebu'],
-            ['name' => 'Araw Bay Hotel', 'location' => 'Davao'],
-            ['name' => 'Sierra Crest Suites', 'location' => 'Baguio'],
-            ['name' => 'Harborview Grand', 'location' => 'Iloilo'],
-            ['name' => 'Palmstone Residences', 'location' => 'Bohol'],
-            ['name' => 'Azure Peak Hotel', 'location' => 'Tagaytay'],
-            ['name' => 'Citrine Plaza Hotel', 'location' => 'Bacolod'],
-            ['name' => 'Marina Luxe Hotel', 'location' => 'Palawan'],
-            ['name' => 'Narra Crown Hotel', 'location' => 'Cagayan de Oro'],
+            ['name' => 'Balanghai Hotel', 'location' => 'Manila', 'city' => 'Manila'],
+            ['name' => 'Gloretto Hotel', 'location' => 'Cebu', 'city' => 'Cebu'],
+            ['name' => 'Araw Bay Hotel', 'location' => 'Davao', 'city' => 'Davao'],
+            ['name' => 'Sierra Crest Suites', 'location' => 'Baguio', 'city' => 'Baguio'],
+            ['name' => 'Harborview Grand', 'location' => 'Iloilo', 'city' => 'Iloilo'],
+            ['name' => 'Palmstone Residences', 'location' => 'Bohol', 'city' => 'Bohol'],
+            ['name' => 'Azure Peak Hotel', 'location' => 'Tagaytay', 'city' => 'Tagaytay'],
+            ['name' => 'Citrine Plaza Hotel', 'location' => 'Bacolod', 'city' => 'Bacolod'],
+            ['name' => 'Marina Luxe Hotel', 'location' => 'Palawan', 'city' => 'Palawan'],
+            ['name' => 'Narra Crown Hotel', 'location' => 'Cagayan de Oro', 'city' => 'Cagayan de Oro'],
+            ['name' => 'Madyaw Grand Butuan', 'location' => 'Jose Rizal St, Butuan City', 'city' => 'Butuan'],
+            ['name' => 'Agusan River Inn', 'location' => 'Montilla Blvd, Butuan City', 'city' => 'Butuan'],
         ];
 
         foreach ($hotels as $index => $hotelData) {

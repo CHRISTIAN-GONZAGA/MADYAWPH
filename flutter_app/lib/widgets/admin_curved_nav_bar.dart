@@ -95,6 +95,11 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar> {
     final viewportWidth = MediaQuery.sizeOf(context).width - 24;
     final barWidth = math.max(totalWidth, viewportWidth);
 
+    final scheme = Theme.of(context).colorScheme;
+    final activeColor = widget.activeColor == const Color(0xFF6C4DFF)
+        ? scheme.primary
+        : widget.activeColor;
+
     return Container(
       height: 88,
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
@@ -112,8 +117,8 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar> {
                 activeCenterX: _activeCenterX(viewportWidth),
                 barHeight: _barHeight,
                 bumpRadius: _bumpRadius,
-                color: Colors.white,
-                shadowColor: Colors.black.withValues(alpha: 0.1),
+                color: scheme.surface,
+                shadowColor: scheme.shadow.withValues(alpha: 0.12),
               ),
               child: const SizedBox.expand(),
             ),
@@ -151,14 +156,14 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar> {
                               height: active ? 52 : 40,
                               decoration: BoxDecoration(
                                 color: active
-                                    ? Colors.white
+                                    ? scheme.surface
                                     : Colors.transparent,
                                 shape: BoxShape.circle,
                                 boxShadow: active
                                     ? [
                                         BoxShadow(
-                                          color: widget.activeColor
-                                              .withValues(alpha: 0.4),
+                                          color: activeColor
+                                              .withValues(alpha: 0.35),
                                           blurRadius: 14,
                                           offset: const Offset(0, 5),
                                         ),
@@ -172,8 +177,8 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar> {
                                     item.icon,
                                     size: active ? 26 : 22,
                                     color: active
-                                        ? widget.activeColor
-                                        : Colors.grey.shade500,
+                                        ? activeColor
+                                        : scheme.onSurfaceVariant,
                                   ),
                                   if (item.badgeCount > 0)
                                     Positioned(
@@ -198,8 +203,8 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar> {
                                     ? FontWeight.w800
                                     : FontWeight.w500,
                                 color: active
-                                    ? widget.activeColor
-                                    : Colors.grey.shade600,
+                                    ? activeColor
+                                    : scheme.onSurfaceVariant,
                                 letterSpacing: active ? 0.2 : 0,
                               ),
                               child: Text(

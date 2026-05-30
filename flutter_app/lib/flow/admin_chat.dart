@@ -6,7 +6,9 @@ import '../dio_client.dart';
 import '../widgets/admin_notification_badge.dart';
 import 'admin/admin_dashboard_header.dart';
 import '../widgets/chat_attachment.dart';
+import '../locale_controller.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/language_picker_button.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_input.dart';
 import '../widgets/app_state_views.dart';
@@ -292,9 +294,11 @@ class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
       _error = null;
     });
     try {
+      final locale = AppLocales.code(appLocaleNotifier.value);
       final encodedRoomId = Uri.encodeComponent(widget.roomId);
       final res = await portalDio().get<Map<String, dynamic>>(
         '/admin/chat/rooms/$encodedRoomId',
+        queryParameters: {'locale': locale},
       );
       setState(() {
         _messages = (res.data?['messages'] as List?) ?? const [];
@@ -355,6 +359,7 @@ class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
       appBar: AppBar(
         title: Text(title),
         actions: [
+          const LanguagePickerButton(iconOnly: true),
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh))
         ],
       ),
@@ -366,7 +371,7 @@ class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
             child: Row(
               children: [
                 IconButton(
-                  tooltip: 'Attach photo',
+                  tooltip: context.tr('attach_photo'),
                   onPressed: _sending
                       ? null
                       : () async {
@@ -378,13 +383,13 @@ class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
                 Expanded(
                   child: AppInput(
                     controller: _ctrl,
-                    label: 'Reply message',
-                    hint: 'Type a reply',
+                    label: context.tr('reply_message'),
+                    hint: context.tr('type_reply'),
                   ),
                 ),
                 const SizedBox(width: 10),
                 AppPrimaryButton(
-                  label: 'Send',
+                  label: context.tr('send'),
                   onPressed: _sending ? null : () => _send(),
                   isLoading: _sending,
                 ),
@@ -404,7 +409,7 @@ class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
       return Center(child: Text(_error!));
     }
     if (_messages.isEmpty) {
-      return const Center(child: Text('No messages in this thread yet.'));
+      return Center(child: Text(context.tr('no_messages')));
     }
     return ListView.builder(
       padding: const EdgeInsets.all(12),

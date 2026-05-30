@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-/// After hotel gate or register — drives navigation to the role menu.
+/// After choosing a hotel or registering — drives navigation to the role menu.
 class HotelSession {
   const HotelSession({required this.hotelId, required this.hotelName});
 
