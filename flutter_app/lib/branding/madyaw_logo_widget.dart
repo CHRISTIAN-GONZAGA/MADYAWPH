@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 /// Vector Madyaw sailboat mark + wordmark (no image asset).
@@ -9,51 +11,158 @@ class MadyawLogoWidget extends StatelessWidget {
     this.textOpacity = 1,
     this.glowStrength = 0,
     this.showWordmark = true,
+    this.wavePhase = 0,
+    this.swayAngle = 0,
+    this.useStaggeredWordmark = false,
+    this.letterReveal = 1,
   });
 
   final double size;
-  /// 0–1 animates boat paths drawing in.
   final double drawProgress;
   final double textOpacity;
   final double glowStrength;
   final bool showWordmark;
+  final double wavePhase;
+  final double swayAngle;
+  final bool useStaggeredWordmark;
+  final double letterReveal;
 
   static const Color brightBlue = Color(0xFF0077C8);
   static const Color navy = Color(0xFF1A3150);
+  static const String wordmark = 'MADYAW';
 
   @override
   Widget build(BuildContext context) {
-    final markH = size * (showWordmark ? 0.62 : 1);
+    final markH = size * (showWordmark ? 0.58 : 1);
     return SizedBox(
       width: size,
       height: size,
-      child: CustomPaint(
-        painter: _MadyawLogoPainter(
-          drawProgress: drawProgress.clamp(0, 1),
-          textOpacity: textOpacity.clamp(0, 1),
-          glowStrength: glowStrength.clamp(0, 1),
-          showWordmark: showWordmark,
-          markHeight: markH,
-        ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          if (glowStrength > 0.01)
+            CustomPaint(
+              size: Size(size, size),
+              painter: _LogoGlowPainter(
+                strength: glowStrength,
+                markHeight: markH,
+              ),
+            ),
+          Transform.rotate(
+            angle: swayAngle * math.pi / 180,
+            child: CustomPaint(
+              size: Size(size, size),
+              painter: _MadyawLogoPainter(
+                drawProgress: drawProgress.clamp(0, 1),
+                textOpacity: useStaggeredWordmark ? 0 : textOpacity.clamp(0, 1),
+                showWordmark: showWordmark && !useStaggeredWordmark,
+                markHeight: markH,
+                wavePhase: wavePhase,
+              ),
+            ),
+          ),
+          if (showWordmark && useStaggeredWordmark)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: size * 0.02,
+              child: _StaggeredWordmark(
+                progress: letterReveal.clamp(0, 1),
+                opacity: textOpacity,
+                fontSize: size * 0.11,
+              ),
+            ),
+        ],
       ),
     );
   }
+}
+
+class _StaggeredWordmark extends StatelessWidget {
+  const _StaggeredWordmark({
+    required this.progress,
+    required this.opacity,
+    required this.fontSize,
+  });
+
+  final double progress;
+  final double opacity;
+  final double fontSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final letters = MadyawLogoWidget.wordmark.split('');
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(letters.length, (i) {
+        final slice = 1 / letters.length;
+        final start = i * slice;
+        final local = ((progress - start) / slice).clamp(0.0, 1.0);
+        final y = 12 * (1 - Curves.easeOutBack.transform(local));
+        return Transform.translate(
+          offset: Offset(0, y),
+          child: Opacity(
+            opacity: (local * opacity).clamp(0, 1),
+            child: Text(
+              letters[i],
+              style: TextStyle(
+                fontSize: fontSize,
+                fontWeight: FontWeight.w800,
+                letterSpacing: fontSize * 0.06,
+                color: MadyawLogoWidget.navy,
+                shadows: [
+                  Shadow(
+                    color: MadyawLogoWidget.brightBlue.withValues(alpha: 0.35 * local),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }),
+    );
+  }
+}
+
+class _LogoGlowPainter extends CustomPainter {
+  _LogoGlowPainter({required this.strength, required this.markHeight});
+
+  final double strength;
+  final double markHeight;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width * 0.5;
+    final cy = markHeight * 0.42;
+    for (var i = 0; i < 2; i++) {
+      final paint = Paint()
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 24 + i * 12)
+        ..color = MadyawLogoWidget.brightBlue
+            .withValues(alpha: (0.18 - i * 0.06) * strength);
+      canvas.drawCircle(Offset(cx, cy), 48 + i * 18, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _LogoGlowPainter old) =>
+      old.strength != strength;
 }
 
 class _MadyawLogoPainter extends CustomPainter {
   _MadyawLogoPainter({
     required this.drawProgress,
     required this.textOpacity,
-    required this.glowStrength,
     required this.showWordmark,
     required this.markHeight,
+    required this.wavePhase,
   });
 
   final double drawProgress;
   final double textOpacity;
-  final double glowStrength;
   final bool showWordmark;
   final double markHeight;
+  final double wavePhase;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -61,54 +170,38 @@ class _MadyawLogoPainter extends CustomPainter {
     final h = size.height;
     final cx = w * 0.5;
     final scale = markHeight / 120;
-
-    if (glowStrength > 0.01) {
-      final glow = Paint()
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 28)
-        ..color = MadyawLogoWidget.brightBlue
-            .withValues(alpha: 0.22 * glowStrength);
-      canvas.drawCircle(Offset(cx, markHeight * 0.38), 52 * scale, glow);
-    }
+    final waveY = math.sin(wavePhase * math.pi * 2) * 2;
 
     canvas.save();
-    canvas.translate(cx, markHeight * 0.08);
+    canvas.translate(cx, markHeight * 0.08 + waveY);
     canvas.scale(scale);
 
     final layers = <_LogoLayer>[
-      _LogoLayer(
-        path: _leftSail(),
-        color: MadyawLogoWidget.navy,
-        order: 0,
-      ),
-      _LogoLayer(
-        path: _mainSail(),
-        color: MadyawLogoWidget.brightBlue,
-        order: 1,
-      ),
+      _LogoLayer(path: _leftSail(), color: MadyawLogoWidget.navy, order: 0),
+      _LogoLayer(path: _mainSail(), color: MadyawLogoWidget.brightBlue, order: 1),
       _LogoLayer(
         path: _rightSail(),
         color: MadyawLogoWidget.brightBlue.withValues(alpha: 0.92),
         order: 2,
       ),
-      _LogoLayer(
-        path: _hull(),
-        color: MadyawLogoWidget.navy,
-        order: 3,
-      ),
+      _LogoLayer(path: _hull(), color: MadyawLogoWidget.navy, order: 3),
       _LogoLayer(
         path: _waveBack(),
         color: MadyawLogoWidget.brightBlue.withValues(alpha: 0.75),
         order: 4,
       ),
-      _LogoLayer(
-        path: _waveFront(),
-        color: MadyawLogoWidget.brightBlue,
-        order: 5,
-      ),
+      _LogoLayer(path: _waveFront(), color: MadyawLogoWidget.brightBlue, order: 5),
     ];
 
     for (final layer in layers) {
-      _drawTrimmedPath(canvas, layer.path, layer.color, drawProgress, layer.order, layers.length);
+      _drawTrimmedPath(
+        canvas,
+        layer.path,
+        layer.color,
+        drawProgress,
+        layer.order,
+        layers.length,
+      );
     }
 
     canvas.restore();
@@ -116,21 +209,17 @@ class _MadyawLogoPainter extends CustomPainter {
     if (showWordmark && textOpacity > 0.01) {
       final tp = TextPainter(
         text: TextSpan(
-          text: 'MADYAW',
+          text: MadyawLogoWidget.wordmark,
           style: TextStyle(
             fontSize: w * 0.11,
             fontWeight: FontWeight.w800,
             letterSpacing: w * 0.018,
             color: MadyawLogoWidget.navy.withValues(alpha: textOpacity),
-            height: 1,
           ),
         ),
         textDirection: TextDirection.ltr,
       )..layout(maxWidth: w);
-      tp.paint(
-        canvas,
-        Offset((w - tp.width) / 2, markHeight + h * 0.04),
-      );
+      tp.paint(canvas, Offset((w - tp.width) / 2, markHeight + h * 0.04));
     }
   }
 
@@ -157,74 +246,60 @@ class _MadyawLogoPainter extends CustomPainter {
 
     for (final metric in metrics) {
       final len = metric.length * local;
-      final extract = metric.extractPath(0, len);
-      canvas.drawPath(extract, paint);
+      canvas.drawPath(metric.extractPath(0, len), paint);
     }
   }
 
-  Path _mainSail() {
-    return Path()
-      ..moveTo(-8, 78)
-      ..quadraticBezierTo(2, 20, 18, 4)
-      ..quadraticBezierTo(28, -2, 38, 8)
-      ..quadraticBezierTo(42, 42, 28, 78)
-      ..close();
-  }
+  Path _mainSail() => Path()
+    ..moveTo(-8, 78)
+    ..quadraticBezierTo(2, 20, 18, 4)
+    ..quadraticBezierTo(28, -2, 38, 8)
+    ..quadraticBezierTo(42, 42, 28, 78)
+    ..close();
 
-  Path _leftSail() {
-    return Path()
-      ..moveTo(-42, 76)
-      ..quadraticBezierTo(-48, 38, -32, 18)
-      ..quadraticBezierTo(-22, 8, -8, 78)
-      ..close();
-  }
+  Path _leftSail() => Path()
+    ..moveTo(-42, 76)
+    ..quadraticBezierTo(-48, 38, -32, 18)
+    ..quadraticBezierTo(-22, 8, -8, 78)
+    ..close();
 
-  Path _rightSail() {
-    return Path()
-      ..moveTo(36, 76)
-      ..quadraticBezierTo(52, 48, 48, 22)
-      ..quadraticBezierTo(44, 10, 38, 8)
-      ..lineTo(28, 78)
-      ..close();
-  }
+  Path _rightSail() => Path()
+    ..moveTo(36, 76)
+    ..quadraticBezierTo(52, 48, 48, 22)
+    ..quadraticBezierTo(44, 10, 38, 8)
+    ..lineTo(28, 78)
+    ..close();
 
-  Path _hull() {
-    return Path()
-      ..moveTo(-44, 78)
-      ..lineTo(44, 78)
-      ..lineTo(52, 88)
-      ..lineTo(-52, 88)
-      ..close();
-  }
+  Path _hull() => Path()
+    ..moveTo(-44, 78)
+    ..lineTo(44, 78)
+    ..lineTo(52, 88)
+    ..lineTo(-52, 88)
+    ..close();
 
-  Path _waveBack() {
-    return Path()
-      ..moveTo(-58, 94)
-      ..quadraticBezierTo(-20, 82, 20, 92)
-      ..quadraticBezierTo(48, 100, 62, 96)
-      ..lineTo(62, 104)
-      ..quadraticBezierTo(40, 108, 10, 100)
-      ..quadraticBezierTo(-30, 90, -58, 102)
-      ..close();
-  }
+  Path _waveBack() => Path()
+    ..moveTo(-58, 94)
+    ..quadraticBezierTo(-20, 82, 20, 92)
+    ..quadraticBezierTo(48, 100, 62, 96)
+    ..lineTo(62, 104)
+    ..quadraticBezierTo(40, 108, 10, 100)
+    ..quadraticBezierTo(-30, 90, -58, 102)
+    ..close();
 
-  Path _waveFront() {
-    return Path()
-      ..moveTo(-54, 100)
-      ..quadraticBezierTo(-10, 88, 30, 98)
-      ..quadraticBezierTo(56, 104, 66, 100)
-      ..lineTo(66, 108)
-      ..quadraticBezierTo(38, 114, 0, 106)
-      ..quadraticBezierTo(-36, 98, -54, 110)
-      ..close();
-  }
+  Path _waveFront() => Path()
+    ..moveTo(-54, 100)
+    ..quadraticBezierTo(-10, 88, 30, 98)
+    ..quadraticBezierTo(56, 104, 66, 100)
+    ..lineTo(66, 108)
+    ..quadraticBezierTo(38, 114, 0, 106)
+    ..quadraticBezierTo(-36, 98, -54, 110)
+    ..close();
 
   @override
   bool shouldRepaint(covariant _MadyawLogoPainter old) =>
       old.drawProgress != drawProgress ||
       old.textOpacity != textOpacity ||
-      old.glowStrength != glowStrength ||
-      old.showWordmark != showWordmark;
+      old.wavePhase != wavePhase;
 }
 
 class _LogoLayer {
