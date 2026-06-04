@@ -32,7 +32,7 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
     super.initState();
     _timeline = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2400),
+      duration: const Duration(milliseconds: 3600),
     );
     _waves = AnimationController(
       vsync: this,
@@ -85,17 +85,20 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
-    final logoSize = math.min(300.0, size.width * 0.78);
+    final logoSize = math.min(320.0, size.width * 0.82);
 
-    final bgReveal = Curves.easeOutCubic.transform(_interval(0, 0.25));
-    final logoDraw = Curves.easeInOutCubic.transform(_interval(0.08, 0.45));
-    final logoPop = Curves.elasticOut.transform(_interval(0.38, 0.58));
-    final letters = Curves.easeOutCubic.transform(_interval(0.42, 0.72));
-    final tagline = Curves.easeOut.transform(_interval(0.68, 0.88));
-    final cta = Curves.easeOut.transform(_interval(0.82, 0.95));
-    final sway = math.sin(_timeline.value * math.pi * 3) * 2.5 * logoDraw;
+    final bgReveal = Curves.easeOutCubic.transform(_interval(0, 0.22));
+    final logoDraw = Curves.easeInOutCubic.transform(_interval(0.06, 0.42));
+    final logoPop = Curves.elasticOut.transform(_interval(0.34, 0.56));
+    final ringPulse = Curves.easeOut.transform(_interval(0.48, 0.75));
+    final letters = Curves.easeOutCubic.transform(_interval(0.4, 0.68));
+    final brandLine = Curves.easeOutBack.transform(_interval(0.58, 0.78));
+    final tagline = Curves.easeOut.transform(_interval(0.72, 0.9));
+    final cta = Curves.easeOut.transform(_interval(0.85, 0.98));
+    final flash = Curves.easeOut.transform(_interval(0.52, 0.58));
+    final sway = math.sin(_timeline.value * math.pi * 3) * 3.5 * logoDraw;
     final wavePhase = _waves.value;
-    final glow = 0.4 + 0.6 * math.sin(_timeline.value * math.pi * 2).abs();
+    final glow = 0.55 + 0.45 * math.sin(_timeline.value * math.pi * 2).abs();
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -148,20 +151,52 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
                     ),
                   ),
                 ),
+                if (flash > 0 && flash < 1)
+                  ColoredBox(
+                    color: Colors.white.withValues(alpha: 0.35 * (1 - flash)),
+                  ),
                 Center(
                   child: Transform.translate(
-                    offset: Offset(0, 30 * (1 - logoPop) + sway),
+                    offset: Offset(0, 40 * (1 - logoPop) + sway),
                     child: Transform.scale(
-                      scale: 0.7 + 0.3 * logoPop,
+                      scale: 0.55 + 0.45 * logoPop,
                       child: Opacity(
                         opacity: logoDraw.clamp(0, 1),
-                        child: _LogoStage(
-                          logoSize: logoSize,
-                          drawProgress: logoDraw,
-                          letterReveal: letters,
-                          glowStrength: glow,
-                          wavePhase: wavePhase,
-                          swayAngle: sway,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          clipBehavior: Clip.none,
+                          children: [
+                            if (ringPulse > 0)
+                              Container(
+                                width: logoSize * 1.15,
+                                height: logoSize * 1.15,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: MadyawLogoWidget.brightBlue
+                                        .withValues(alpha: 0.35 * ringPulse),
+                                    width: 3,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: MadyawLogoWidget.brightBlue
+                                          .withValues(alpha: 0.25 * ringPulse),
+                                      blurRadius: 40,
+                                      spreadRadius: 4,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            _LogoStage(
+                              logoSize: logoSize,
+                              drawProgress: logoDraw,
+                              letterReveal: letters,
+                              brandReveal: brandLine,
+                              glowStrength: glow,
+                              wavePhase: wavePhase,
+                              swayAngle: sway,
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -202,22 +237,23 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
                           child: Column(
                             children: [
                               Text(
-                                'Hotel operations, simplified',
+                                'Philippine hotel operations, elevated',
                                 style: TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 0.4,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.3,
                                   color: MadyawLogoWidget.navy
-                                      .withValues(alpha: 0.9),
+                                      .withValues(alpha: 0.92),
                                 ),
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                'Rooms · Bookings · Guests · Staff',
+                                'Rooms · Bookings · Wallet · Staff · Guests',
                                 style: TextStyle(
                                   fontSize: 13,
+                                  fontWeight: FontWeight.w500,
                                   color: MadyawLogoWidget.navy
-                                      .withValues(alpha: 0.55),
+                                      .withValues(alpha: 0.58),
                                 ),
                               ),
                             ],
@@ -273,6 +309,7 @@ class _LogoStage extends StatelessWidget {
     required this.logoSize,
     required this.drawProgress,
     required this.letterReveal,
+    required this.brandReveal,
     required this.glowStrength,
     required this.wavePhase,
     required this.swayAngle,
@@ -281,6 +318,7 @@ class _LogoStage extends StatelessWidget {
   final double logoSize;
   final double drawProgress;
   final double letterReveal;
+  final double brandReveal;
   final double glowStrength;
   final double wavePhase;
   final double swayAngle;
@@ -288,37 +326,50 @@ class _LogoStage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 32),
+      padding: const EdgeInsets.fromLTRB(28, 28, 28, 20),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        color: Colors.white.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(32),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white.withValues(alpha: 0.97),
+            MadyawLogoWidget.brightBlue.withValues(alpha: 0.08),
+          ],
+        ),
         boxShadow: [
           BoxShadow(
-            color: MadyawLogoWidget.brightBlue.withValues(alpha: 0.25),
-            blurRadius: 32,
-            spreadRadius: -4,
-            offset: const Offset(0, 12),
+            color: MadyawLogoWidget.brightBlue.withValues(alpha: 0.35),
+            blurRadius: 48,
+            spreadRadius: -8,
+            offset: const Offset(0, 16),
           ),
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 28,
+            offset: const Offset(0, 10),
           ),
         ],
         border: Border.all(
-          color: MadyawLogoWidget.brightBlue.withValues(alpha: 0.15),
-          width: 1.5,
+          color: MadyawLogoWidget.brightBlue.withValues(alpha: 0.22),
+          width: 2,
         ),
       ),
-      child: MadyawLogoWidget(
-        size: logoSize,
-        drawProgress: drawProgress,
-        textOpacity: letterReveal,
-        letterReveal: letterReveal,
-        useStaggeredWordmark: true,
-        glowStrength: glowStrength,
-        wavePhase: wavePhase,
-        swayAngle: swayAngle,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          MadyawLogoWidget(
+            size: logoSize * 0.92,
+            drawProgress: drawProgress,
+            showWordmark: false,
+            showBrandLine: true,
+            brandReveal: brandReveal,
+            letterReveal: letterReveal,
+            glowStrength: glowStrength,
+            wavePhase: wavePhase,
+            swayAngle: swayAngle,
+          ),
+        ],
       ),
     );
   }

@@ -1,0 +1,351 @@
+{
+  "regions": [
+    {
+      "name": "Caraga (Region XIII)",
+      "provinces": [
+        {
+          "name": "Agusan del Norte",
+          "cities": [
+            {
+              "name": "Butuan City",
+              "barangays": [
+                "Ambago", "Baan", "Bancasi", "Bonbon", "Buhangin", "Golden Ribbon",
+                "Imadejas", "Libertad", "Limbuhan", "Maho", "Obrero", "San Vicente",
+                "Sumilihon", "Tungao"
+              ]
+            },
+            {
+              "name": "Cabadbaran City",
+              "barangays": ["Antongale", "Bay-ang", "Del Pilar", "Poblacion 1", "Poblacion 2"]
+            }
+          ]
+        },
+        {
+          "name": "Agusan del Sur",
+          "cities": [
+            {
+              "name": "Bayugan City",
+              "barangays": ["Charito", "Marcelina", "Poblacion", "Saguma"]
+            },
+            {
+              "name": "Prosperidad",
+              "barangays": ["La Suerte", "Mabuhay", "New Mabuhay", "Poblacion"]
+            }
+          ]
+        },
+        {
+          "name": "Surigao del Norte",
+          "cities": [
+            {
+              "name": "Surigao City",
+              "barangays": ["Canlanipa", "Ipil", "Punta Bilar", "Rizal", "San Juan", "Taft"]
+            },
+            {
+              "name": "Dapa",
+              "barangays": ["Bagakay", "Campawan", "Consolacion", "Poblacion"]
+            }
+          ]
+        },
+        {
+          "name": "Surigao del Sur",
+          "cities": [
+            {
+              "name": "Tandag City",
+              "barangays": ["Awasian", "Bag-ong Lungsod", "Bioto", "Poblacion"]
+            },
+            {
+              "name": "Bislig City",
+              "barangays": ["Bucto", "Caguyao", "Mangagoy", "Poblacion"]
+            }
+          ]
+        },
+        {
+          "name": "Dinagat Islands",
+          "cities": [
+            {
+              "name": "San Jose",
+              "barangays": ["Aurelio", "Cuarinta", "Jacquez", "Poblacion"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Region XI (Davao)",
+      "provinces": [
+        {
+          "name": "Davao del Sur",
+          "cities": [
+            {
+              "name": "Davao City",
+              "barangays": [
+                "Agdao", "Buhangin", "Bunawan", "Calinan", "Ecoland", "Lanang",
+                "Ma-a", "Matina", "Poblacion", "Sasa", "Talomo", "Toril"
+              ]
+            },
+            {
+              "name": "Digos City",
+              "barangays": ["Aplaya", "Cogon", "San Jose", "Zone 1", "Zone 3"]
+            }
+          ]
+        },
+        {
+          "name": "Davao del Norte",
+          "cities": [
+            {
+              "name": "Tagum City",
+              "barangays": ["Apokon", "Magdum", "Madaum", "Poblacion", "Visayan Village"]
+            },
+            {
+              "name": "Panabo City",
+              "barangays": ["Gredu", "J.P. Laurel", "Kasilak", "San Francisco"]
+            }
+          ]
+        },
+        {
+          "name": "Davao Oriental",
+          "cities": [
+            {
+              "name": "Mati City",
+              "barangays": ["Badas", "Central", "Dahican", "Matiao", "Poblacion"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Region VII (Central Visayas)",
+      "provinces": [
+        {
+          "name": "Cebu",
+          "cities": [
+            {
+              "name": "Cebu City",
+              "barangays": [
+                "Banilad", "Busay", "Guadalupe", "Lahug", "Mabolo", "Pardo",
+                "Sambag", "Talamban", "Tisa", "Uptown"
+              ]
+            },
+            {
+              "name": "Mandaue City",
+              "barangays": ["Alang-alang", "Banilad", "Centro", "Opao", "Umapad"]
+            },
+            {
+              "name": "Lapu-Lapu City",
+              "barangays": ["Bankal", "Gun-ob", "Maribago", "Pajo", "Poblacion"]
+            }
+          ]
+        },
+        {
+          "name": "Bohol",
+          "cities": [
+            {
+              "name": "Tagbilaran City",
+              "barangays": ["Bool", "Cogon", "Dao", "Mansasa", "Poblacion 1"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Region X (Northern Mindanao)",
+      "provinces": [
+        {
+          "name": "Misamis Oriental",
+          "cities": [
+            {
+              "name": "Cagayan de Oro City",
+              "barangays": [
+                "Bulua", "Carmen", "Gusa", "Lapasan", "Macasandig", "Nazareth",
+                "Poblacion", "Taguanao", "Tignapoloan"
+              ]
+            },
+            {
+              "name": "Gingoog City",
+              "barangays": ["Anakan", "Dakulong", "Poblacion", "San Juan"]
+            }
+          ]
+        },
+        {
+          "name": "Bukidnon",
+          "cities": [
+            {
+              "name": "Malaybalay City",
+              "barangays": ["Aglayan", "Casisang", "Kalasungay", "Poblacion"]
+            },
+            {
+              "name": "Valencia City",
+              "barangays": ["Bagontaas", "Lourdes", "Poblacion", "Tugaya"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Region XII (Soccsksargen)",
+      "provinces": [
+        {
+          "name": "South Cotabato",
+          "cities": [
+            {
+              "name": "General Santos City",
+              "barangays": ["Apopong", "Baluan", "Calumpang", "Dadiangas East", "Lagao", "San Isidro"]
+            },
+            {
+              "name": "Koronadal City",
+              "barangays": ["Assumption", "Carpenter Hill", "Poblacion", "Zone III"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Region IX (Zamboanga Peninsula)",
+      "provinces": [
+        {
+          "name": "Zamboanga del Sur",
+          "cities": [
+            {
+              "name": "Zamboanga City",
+              "barangays": ["Baliwasan", "Canelar", "Pasonanca", "Santa Maria", "Tetuan", "Tumaga"]
+            },
+            {
+              "name": "Pagadian City",
+              "barangays": ["Gatas", "Poblacion", "San Pedro", "Tiguma"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "NCR (Metro Manila)",
+      "provinces": [
+        {
+          "name": "Metro Manila",
+          "cities": [
+            {
+              "name": "Manila",
+              "barangays": ["Ermita", "Intramuros", "Malate", "Paco", "Quiapo", "Sampaloc", "Santa Mesa"]
+            },
+            {
+              "name": "Quezon City",
+              "barangays": ["Cubao", "Diliman", "Fairview", "Kamuning", "Novaliches", "Project 4", "Tandang Sora"]
+            },
+            {
+              "name": "Makati City",
+              "barangays": ["Bel-Air", "Poblacion", "San Antonio", "San Lorenzo", "Urdaneta"]
+            },
+            {
+              "name": "Taguig City",
+              "barangays": ["Bagumbayan", "Bicutan", "Fort Bonifacio", "Western Bicutan"]
+            },
+            {
+              "name": "Pasig City",
+              "barangays": ["Kapitolyo", "Ortigas Center", "Pinagbuhatan", "San Antonio", "Ugong"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Region IV-A (Calabarzon)",
+      "provinces": [
+        {
+          "name": "Cavite",
+          "cities": [
+            {
+              "name": "Bacoor City",
+              "barangays": ["Aniban", "Habay", "Molino", "Niog", "Poblacion"]
+            },
+            {
+              "name": "Tagaytay City",
+              "barangays": ["Asisan", "Kaybagal South", "Poblacion", "Sungay"]
+            }
+          ]
+        },
+        {
+          "name": "Laguna",
+          "cities": [
+            {
+              "name": "Calamba City",
+              "barangays": ["Canlubang", "Halang", "Poblacion", "Real", "Sucol"]
+            },
+            {
+              "name": "Santa Rosa City",
+              "barangays": ["Balibago", "Don Jose", "Market Area", "Poblacion"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Region III (Central Luzon)",
+      "provinces": [
+        {
+          "name": "Pampanga",
+          "cities": [
+            {
+              "name": "Angeles City",
+              "barangays": ["Balibago", "Cutcut", "Pampang", "Pulung Maragul", "Santo Rosario"]
+            },
+            {
+              "name": "San Fernando City",
+              "barangays": ["Del Pilar", "Dolores", "San Agustin", "Sindalan"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Region VI (Western Visayas)",
+      "provinces": [
+        {
+          "name": "Iloilo",
+          "cities": [
+            {
+              "name": "Iloilo City",
+              "barangays": ["City Proper", "Jaro", "La Paz", "Mandurriao", "Molo"]
+            }
+          ]
+        },
+        {
+          "name": "Negros Occidental",
+          "cities": [
+            {
+              "name": "Bacolod City",
+              "barangays": ["Bata", "Estefania", "Mandalagan", "Poblacion", "Taculing", "Villamonte"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Cordillera (CAR)",
+      "provinces": [
+        {
+          "name": "Benguet",
+          "cities": [
+            {
+              "name": "Baguio City",
+              "barangays": ["Camp John Hay", "Gibraltar", "Loakan", "Mines View", "Session Road Area"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Mimaropa",
+      "provinces": [
+        {
+          "name": "Palawan",
+          "cities": [
+            {
+              "name": "Puerto Princesa City",
+              "barangays": ["Bancao-Bancao", "Irawan", "San Manuel", "Santa Monica", "Tiniguiban"]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Support\HotelRegistrationCredits;
 use App\Services\SmsService;
 use App\Support\HotelDirectory;
+use App\Support\PhilippineLocations;
 use App\Support\PortalPassword;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -37,6 +38,11 @@ class PortalAuthController extends Controller
         return response()->json($payload);
     }
 
+    public function philippineLocations(): JsonResponse
+    {
+        return response()->json(PhilippineLocations::tree());
+    }
+
     public function hotelAccess(Request $request): JsonResponse
     {
         return response()->json([
@@ -50,8 +56,12 @@ class PortalAuthController extends Controller
             'username' => ['required', 'string', 'max:255', 'unique:users,name'],
             'password' => ['required', 'string', 'min:6', 'max:64', 'confirmed'],
             'hotel_name' => ['required', 'string', 'max:255'],
-            'location' => ['required', 'string', 'max:255'],
-            'city' => ['nullable', 'string', 'max:120'],
+            'location' => ['nullable', 'string', 'max:500'],
+            'region' => ['required', 'string', 'max:120'],
+            'province' => ['required', 'string', 'max:120'],
+            'city' => ['required', 'string', 'max:120'],
+            'barangay' => ['required', 'string', 'max:120'],
+            'street_address' => ['nullable', 'string', 'max:255'],
             'contact_number' => ['required', 'string', 'max:30'],
             'admin_email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'total_rooms' => ['required', 'integer', 'min:1', 'max:5000'],
@@ -75,12 +85,16 @@ class PortalAuthController extends Controller
             3000
         );
 
+        $address = PhilippineLocations::normalizeRegistrationAddress($validated);
+
         $hotel = Hotel::withoutGlobalScopes()->create([
             'name' => $validated['hotel_name'],
-            'location' => $validated['location'],
-            'city' => filled($validated['city'] ?? null)
-                ? HotelDirectory::normalizeRegionLabel((string) $validated['city'])
-                : HotelDirectory::regionKeyFromLocation($validated['location']),
+            'location' => $address['location'],
+            'city' => HotelDirectory::normalizeRegionLabel($address['city_label']),
+            'region' => HotelDirectory::normalizeRegionLabel($address['region']),
+            'province' => $address['province'],
+            'barangay' => $address['barangay'],
+            'street_address' => $address['street_address'],
             'contact_number' => $validated['contact_number'],
             'access_username' => $validated['username'],
             'access_password' => Hash::make($validated['password']),

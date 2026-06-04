@@ -9,12 +9,27 @@ final class HotelDirectory
 {
     public static function regionKey(Hotel $hotel): string
     {
+        $region = trim((string) ($hotel->region ?? ''));
+        if ($region !== '') {
+            return self::normalizeRegionLabel($region);
+        }
+
         $city = trim((string) ($hotel->city ?? ''));
         if ($city !== '') {
             return self::normalizeRegionLabel($city);
         }
 
         return self::regionKeyFromLocation((string) ($hotel->location ?? ''));
+    }
+
+    public static function pickerCityLabel(Hotel $hotel): string
+    {
+        $city = trim((string) ($hotel->city ?? ''));
+        if ($city !== '') {
+            return self::normalizeRegionLabel($city);
+        }
+
+        return self::regionKey($hotel);
     }
 
     public static function regionKeyFromLocation(string $location): string
@@ -81,7 +96,16 @@ final class HotelDirectory
     public static function pickerApiPayload(): array
     {
         $hotels = Hotel::withoutGlobalScopes()
-            ->select('id', 'name', 'location', 'city', 'picker_banner_url')
+            ->select(
+                'id',
+                'name',
+                'location',
+                'city',
+                'region',
+                'province',
+                'barangay',
+                'picker_banner_url'
+            )
             ->orderBy('name')
             ->get();
 
@@ -155,7 +179,12 @@ final class HotelDirectory
             'id' => (string) $hotel->id,
             'name' => (string) $hotel->name,
             'location' => (string) ($hotel->location ?? ''),
-            'city' => self::regionKey($hotel),
+            'city' => self::pickerCityLabel($hotel),
+            'region' => trim((string) ($hotel->region ?? '')) !== ''
+                ? self::normalizeRegionLabel((string) $hotel->region)
+                : self::regionKey($hotel),
+            'province' => (string) ($hotel->province ?? ''),
+            'barangay' => (string) ($hotel->barangay ?? ''),
             'banner_url' => $banner,
             'min_price' => round((float) ($priceStat['min_price'] ?? 0), 2),
             'max_price' => round((float) ($priceStat['max_price'] ?? 0), 2),
@@ -173,7 +202,9 @@ final class HotelDirectory
             if (! $hotel instanceof Hotel) {
                 continue;
             }
-            $region = self::regionKey($hotel);
+            $region = trim((string) ($hotel->region ?? '')) !== ''
+                ? self::normalizeRegionLabel((string) $hotel->region)
+                : self::pickerCityLabel($hotel);
             $stat = $priceStats[(string) $hotel->id] ?? null;
             $rows[$region] ??= [];
             $rows[$region][] = self::hotelPickerRow($hotel, $stat);

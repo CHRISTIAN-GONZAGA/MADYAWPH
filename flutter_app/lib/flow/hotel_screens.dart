@@ -13,8 +13,10 @@ import '../ui/app_visual.dart';
 import '../locale_controller.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/language_picker_button.dart';
+import '../data/philippine_locations.dart';
 import '../widgets/app_input.dart';
 import '../widgets/chat_attachment.dart';
+import '../widgets/philippine_address_picker.dart';
 import 'dashboards.dart';
 import 'flow_state.dart';
 
@@ -223,6 +225,8 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
       if (name.isNotEmpty) names.add(name);
     }
     for (final hotel in _allHotels) {
+      final r = (hotel['region'] ?? '').toString().trim();
+      if (r.isNotEmpty) names.add(r);
       final city = (hotel['city'] ?? '').toString().trim();
       if (city.isNotEmpty) names.add(city);
     }
@@ -339,8 +343,13 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
 
   bool _passesRegionFilter(Map<String, dynamic> hotel, String regionName) {
     if (_selectedRegion == null) return true;
-    final city = (hotel['city'] ?? regionName).toString();
-    return city == _selectedRegion || regionName == _selectedRegion;
+    final key = _selectedRegion!.toLowerCase();
+    final hotelRegion = (hotel['region'] ?? '').toString().toLowerCase();
+    final city = (hotel['city'] ?? regionName).toString().toLowerCase();
+    final blockRegion = regionName.toLowerCase();
+    return hotelRegion == key ||
+        city == key ||
+        blockRegion == key;
   }
 
   bool _hotelHasListedPrice(Map<String, dynamic> hotel) {
@@ -1136,6 +1145,9 @@ class _HotelSelectTile extends StatelessWidget {
     final name = (hotel['name'] ?? 'Hotel').toString();
     final loc = (hotel['location'] ?? '').toString();
     final city = (hotel['city'] ?? region).toString();
+    final province = (hotel['province'] ?? '').toString();
+    final barangay = (hotel['barangay'] ?? '').toString();
+    final hotelRegion = (hotel['region'] ?? '').toString();
     final roomCount = (hotel['room_count'] as num?)?.toInt() ?? 0;
     final priceLabel = _ChooseHotelScreenState._priceLabelForHotel(context, hotel);
     final minP = (hotel['min_price'] as num?)?.toDouble() ?? 0;
@@ -1217,7 +1229,7 @@ class _HotelSelectTile extends StatelessWidget {
                                   ),
                                 ),
                                 const SizedBox(height: 6),
-                                if (city.isNotEmpty)
+                                if (hotelRegion.isNotEmpty || city.isNotEmpty)
                                   Row(
                                     children: [
                                       Icon(Icons.place_outlined,
@@ -1226,7 +1238,9 @@ class _HotelSelectTile extends StatelessWidget {
                                       const SizedBox(width: 4),
                                       Flexible(
                                         child: Text(
-                                          city,
+                                          hotelRegion.isNotEmpty
+                                              ? '$hotelRegion · $city'
+                                              : city,
                                           style: theme.textTheme.labelMedium
                                               ?.copyWith(
                                             color: scheme.primary,
@@ -1236,6 +1250,21 @@ class _HotelSelectTile extends StatelessWidget {
                                         ),
                                       ),
                                     ],
+                                  ),
+                                if (barangay.isNotEmpty || province.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Text(
+                                      [
+                                        if (barangay.isNotEmpty) 'Brgy $barangay',
+                                        if (province.isNotEmpty) province,
+                                      ].join(' · '),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.labelSmall?.copyWith(
+                                        color: scheme.onSurfaceVariant,
+                                      ),
+                                    ),
                                   ),
                                 if (loc.isNotEmpty) ...[
                                   const SizedBox(height: 2),
@@ -1357,9 +1386,8 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
   final _password = TextEditingController();
   final _password2 = TextEditingController();
   final _hotelName = TextEditingController();
-  final _city = TextEditingController();
-  final _location = TextEditingController();
   final _contact = TextEditingController();
+  PhilippineAddressSelection _address = const PhilippineAddressSelection();
   final _adminEmail = TextEditingController();
   final _totalRooms = TextEditingController(text: '1');
   bool _busy = false;
@@ -1377,8 +1405,6 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
     _password.dispose();
     _password2.dispose();
     _hotelName.dispose();
-    _city.dispose();
-    _location.dispose();
     _contact.dispose();
     _adminEmail.dispose();
     _totalRooms.dispose();
@@ -1386,6 +1412,10 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
   }
 
   Future<void> _submit() async {
+    if (!_address.isComplete) {
+      setState(() => _error = 'Select region, province, city, and barangay.');
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
@@ -1398,10 +1428,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
           'password': _password.text,
           'password_confirmation': _password2.text,
           'hotel_name': _hotelName.text.trim(),
-          'location': _location.text.trim(),
-          'city': _city.text.trim().isNotEmpty
-              ? _city.text.trim()
-              : _location.text.trim(),
+          ..._address.toRegisterPayload(),
           'contact_number': _contact.text.trim(),
           'admin_email': _adminEmail.text.trim(),
           'total_rooms': int.tryParse(_totalRooms.text.trim()) ?? 1,
@@ -1493,23 +1520,8 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
             onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 12),
-          TextField(
-            controller: _city,
-            decoration: const InputDecoration(
-              labelText: 'City / region (e.g. Butuan)',
-              border: OutlineInputBorder(),
-              helperText: 'Used to group hotels on the choose-hotel screen',
-            ),
-            textInputAction: TextInputAction.next,
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _location,
-            decoration: const InputDecoration(
-              labelText: 'Full address or area',
-              border: OutlineInputBorder(),
-            ),
-            textInputAction: TextInputAction.next,
+          PhilippineAddressPicker(
+            onChanged: (v) => setState(() => _address = v),
           ),
           const SizedBox(height: 12),
           TextField(

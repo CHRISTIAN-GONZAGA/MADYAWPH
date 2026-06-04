@@ -15,6 +15,8 @@ class MadyawLogoWidget extends StatelessWidget {
     this.swayAngle = 0,
     this.useStaggeredWordmark = false,
     this.letterReveal = 1,
+    this.showBrandLine = false,
+    this.brandReveal = 1,
   });
 
   final double size;
@@ -26,6 +28,8 @@ class MadyawLogoWidget extends StatelessWidget {
   final double swayAngle;
   final bool useStaggeredWordmark;
   final double letterReveal;
+  final bool showBrandLine;
+  final double brandReveal;
 
   static const Color brightBlue = Color(0xFF0077C8);
   static const Color navy = Color(0xFF1A3150);
@@ -72,7 +76,67 @@ class MadyawLogoWidget extends StatelessWidget {
                 fontSize: size * 0.11,
               ),
             ),
+          if (showBrandLine)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: -size * 0.02,
+              child: _BrandLine(reveal: brandReveal.clamp(0, 1)),
+            ),
         ],
+      ),
+    );
+  }
+}
+
+class _BrandLine extends StatelessWidget {
+  const _BrandLine({required this.reveal});
+
+  final double reveal;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: reveal,
+      child: Transform.scale(
+        scale: 0.85 + 0.15 * reveal,
+        child: ShaderMask(
+          shaderCallback: (bounds) => const LinearGradient(
+            colors: [MadyawLogoWidget.brightBlue, MadyawLogoWidget.navy],
+          ).createShader(bounds),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'MADYAW',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 4,
+                  color: Colors.white,
+                ),
+              ),
+              Container(
+                margin: const EdgeInsets.only(left: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: MadyawLogoWidget.brightBlue,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'PH',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

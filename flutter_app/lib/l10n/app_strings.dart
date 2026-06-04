@@ -42,7 +42,7 @@ class AppStrings {
       'choose_hotel': 'Choose hotel',
       'select_property': 'Select your property',
       'choose_hotel_hint':
-          'Browse by region, price per night, and room count. You only see data for the hotel you select.',
+          'Browse by Philippine region, city, and price. Pick your property once — the app remembers it.',
       'search_hotels': 'Search city, region, or hotel…',
       'register_hotel': 'Register hotel',
       'retry': 'Retry',

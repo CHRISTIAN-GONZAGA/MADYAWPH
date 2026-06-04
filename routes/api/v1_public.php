@@ -83,6 +83,8 @@ Route::get('/integrations/status', function (SmsService $smsService) {
     ]);
 })->middleware('throttle:30,1');
 
+Route::get('/locations/philippines', [PortalAuthController::class, 'philippineLocations'])
+    ->middleware('throttle:60,1');
 Route::get('/hotels', [PortalAuthController::class, 'hotels']);
 Route::post('/hotel/access', [PortalAuthController::class, 'hotelAccess'])->middleware('throttle:8,1');
 Route::post('/hotel/register', [PortalAuthController::class, 'hotelRegister'])->middleware('throttle:3,1');
