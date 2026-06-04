@@ -32,15 +32,15 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
     super.initState();
     _timeline = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 5200),
+      duration: const Duration(milliseconds: 2400),
     );
     _waves = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2400),
+      duration: const Duration(milliseconds: 2800),
     )..repeat();
     _particles = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 8000),
+      duration: const Duration(milliseconds: 6000),
     )..repeat();
     _burst = AnimationController(
       vsync: this,
@@ -62,10 +62,6 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
   }
 
   void _skip() {
-    if (_timeline.value < 0.35) {
-      _timeline.animateTo(0.35, duration: const Duration(milliseconds: 200));
-      return;
-    }
     _burst.forward(from: 0);
     _finish();
   }
@@ -138,7 +134,7 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
                 CustomPaint(
                   painter: _ParticleFieldPainter(
                     phase: _particles.value,
-                    count: 48,
+                    count: 24,
                   ),
                   child: const SizedBox.expand(),
                 ),

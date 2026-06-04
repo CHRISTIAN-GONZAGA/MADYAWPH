@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'auth_storage.dart';
 import 'intro/app_bootstrap.dart';
 import 'locale_controller.dart';
 import 'theme_controller.dart';
@@ -9,16 +10,20 @@ import 'ui/design_tokens.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Future.wait<void>([
+  final prefs = await Future.wait<dynamic>([
     loadThemeSeedColor(),
     loadThemeMode(),
     AppLocales.hydrate(),
+    AuthStorage.hasSeenIntro(),
   ]);
-  runApp(const MadyawPhApp());
+  final skipIntro = prefs[3] as bool;
+  runApp(MadyawPhApp(skipIntro: skipIntro));
 }
 
 class MadyawPhApp extends StatelessWidget {
-  const MadyawPhApp({super.key});
+  const MadyawPhApp({super.key, this.skipIntro = false});
+
+  final bool skipIntro;
 
   @override
   Widget build(BuildContext context) {
@@ -46,7 +51,7 @@ class MadyawPhApp extends StatelessWidget {
                   themeMode: mode,
                   theme: AppTheme.light(seed),
                   darkTheme: AppTheme.dark(seed),
-                  home: const AppBootstrap(),
+                  home: AppBootstrap(skipIntro: skipIntro),
                 );
               },
             );

@@ -18,30 +18,19 @@ use Throwable;
 
 class PortalAuthController extends Controller
 {
+    public const HOTELS_DIRECTORY_CACHE_KEY = 'api.v1.hotels.directory';
+
     public function __construct(private readonly SmsService $smsService) {}
 
     public function hotels(): JsonResponse
     {
-        $hotels = Hotel::withoutGlobalScopes()
-            ->select('id', 'name', 'location', 'city')
-            ->orderBy('name')
-            ->get();
-
-        $priceStats = HotelDirectory::priceStatsForHotels(
-            $hotels->pluck('id')->map(fn ($id) => (string) $id)->all()
+        $payload = Cache::remember(
+            self::HOTELS_DIRECTORY_CACHE_KEY,
+            now()->addMinutes(5),
+            fn (): array => HotelDirectory::pickerApiPayload()
         );
 
-        $flat = $hotels->map(
-            fn (Hotel $hotel) => HotelDirectory::hotelPickerRow(
-                $hotel,
-                $priceStats[(string) $hotel->id] ?? null
-            )
-        )->values()->all();
-
-        return response()->json([
-            'data' => $flat,
-            'regions' => HotelDirectory::groupHotelsForPicker($hotels, $priceStats),
-        ]);
+        return response()->json($payload);
     }
 
     public function hotelAccess(Request $request): JsonResponse
@@ -81,6 +70,8 @@ class PortalAuthController extends Controller
             'access_username' => $validated['username'],
             'access_password' => Hash::make($validated['password']),
         ]);
+
+        Cache::forget(self::HOTELS_DIRECTORY_CACHE_KEY);
 
         User::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,

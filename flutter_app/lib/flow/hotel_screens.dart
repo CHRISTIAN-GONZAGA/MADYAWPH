@@ -1,7 +1,9 @@
+import 'dart:convert';
+import 'dart:math' as math;
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:math' as math;
 
 import '../auth_storage.dart';
 import '../branding/madyaw_logo_widget.dart';
@@ -11,10 +13,15 @@ import '../ui/app_visual.dart';
 import '../locale_controller.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/language_picker_button.dart';
+import '../widgets/app_input.dart';
 import 'dashboards.dart';
 import 'flow_state.dart';
 
 // --- Choose hotel (by city/region) → role menu ---
+
+const _kHotelPriceMin = 1.0;
+const _kHotelPriceMax = 10000.0;
+const _kHotelPriceDivisions = 100;
 
 class ChooseHotelScreen extends StatefulWidget {
   const ChooseHotelScreen({super.key});
@@ -27,10 +34,9 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
   final _search = TextEditingController();
   List<Map<String, dynamic>> _regions = const [];
   bool _loading = true;
+  bool _refreshing = false;
   String? _error;
-  RangeValues _priceRange = const RangeValues(0, 10000);
-  double _catalogMin = 0;
-  double _catalogMax = 10000;
+  RangeValues _priceRange = const RangeValues(_kHotelPriceMin, _kHotelPriceMax);
   String _sortBy = 'closest';
 
   static const _sortOptions = {
@@ -43,8 +49,38 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
     _search.addListener(() => setState(() {}));
+    _hydrateFromCacheThenLoad();
+  }
+
+  List<Map<String, dynamic>> _parseRegions(dynamic raw) {
+    return (raw as List<dynamic>?)
+            ?.whereType<Map>()
+            .map((m) => Map<String, dynamic>.from(m))
+            .toList() ??
+        const [];
+  }
+
+  Future<void> _hydrateFromCacheThenLoad() async {
+    final cached = await AuthStorage.hotelsDirectoryCache();
+    if (cached != null && cached.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(cached);
+        if (decoded is Map<String, dynamic>) {
+          final regions = _parseRegions(decoded['regions']);
+          if (mounted && regions.isNotEmpty) {
+            setState(() {
+              _regions = regions;
+              _loading = false;
+              _error = null;
+            });
+          }
+        }
+      } catch (_) {
+        await AuthStorage.clearHotelsDirectoryCache();
+      }
+    }
+    await _load(silent: _regions.isNotEmpty);
   }
 
   @override
@@ -53,65 +89,79 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
     super.dispose();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    } else {
+      setState(() => _refreshing = true);
+    }
     try {
-      final res = await publicDio().get<Map<String, dynamic>>('/hotels');
-      final regions =
-          (res.data?['regions'] as List<dynamic>?)?.whereType<Map>().map(
-                (m) => Map<String, dynamic>.from(m),
-              ).toList() ??
-              const [];
+      final data = await _fetchHotelsWithRetry();
+      final regions = _parseRegions(data?['regions']);
       if (!mounted) return;
-      _applyCatalogBounds(regions);
+      if (data != null) {
+        await AuthStorage.setHotelsDirectoryCache(jsonEncode(data));
+      }
       setState(() {
         _regions = regions;
         _loading = false;
+        _refreshing = false;
+        _error = null;
       });
     } on DioException catch (e) {
       if (!mounted) return;
+      final msg = dioErrorMessage(e);
       setState(() {
-        _error = dioErrorMessage(e);
+        if (_regions.isEmpty) {
+          _error = msg;
+        } else {
+          _error = null;
+        }
         _loading = false;
+        _refreshing = false;
       });
+      if (_regions.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg)),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = '$e';
         _loading = false;
+        _refreshing = false;
       });
     }
   }
 
-  String get _query => _search.text.trim().toLowerCase();
+  Future<void> _refreshHotels() => _load(silent: _regions.isNotEmpty);
 
-  void _applyCatalogBounds(List<Map<String, dynamic>> regions) {
-    var minP = double.infinity;
-    var maxP = 0.0;
-    for (final region in regions) {
-      for (final raw in (region['hotels'] as List?) ?? const []) {
-        if (raw is! Map) continue;
-        final h = Map<String, dynamic>.from(raw);
-        final lo = (h['min_price'] as num?)?.toDouble() ?? 0;
-        final hi = (h['max_price'] as num?)?.toDouble() ?? lo;
-        if (hi <= 0 && lo <= 0) continue;
-        minP = math.min(minP, lo > 0 ? lo : hi);
-        maxP = math.max(maxP, hi > 0 ? hi : lo);
+  bool _isRetriableTimeout(DioException e) =>
+      e.type == DioExceptionType.receiveTimeout ||
+      e.type == DioExceptionType.connectionTimeout ||
+      e.type == DioExceptionType.connectionError;
+
+  Future<Map<String, dynamic>?> _fetchHotelsWithRetry({int attempt = 0}) async {
+    try {
+      final res = await publicDio().get<Map<String, dynamic>>(
+        '/hotels',
+        options: Options(receiveTimeout: kPublicReceiveTimeout),
+      );
+      return res.data;
+    } on DioException catch (e) {
+      if (attempt < 2 && _isRetriableTimeout(e)) {
+        await Future<void>.delayed(Duration(seconds: 4 * (attempt + 1)));
+        return _fetchHotelsWithRetry(attempt: attempt + 1);
       }
+      rethrow;
     }
-    if (minP == double.infinity) {
-      minP = 0;
-      maxP = 10000;
-    } else if (maxP <= minP) {
-      maxP = minP + 500;
-    }
-    _catalogMin = minP.floorToDouble();
-    _catalogMax = maxP.ceilToDouble();
-    _priceRange = RangeValues(_catalogMin, _catalogMax);
   }
+
+  String get _query => _search.text.trim().toLowerCase();
 
   int _matchScore(Map<String, dynamic> hotel, String query) {
     if (query.isEmpty) return 0;
@@ -263,6 +313,20 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
         scrolledUnderElevation: 2,
         title: Text(context.tr('choose_hotel')),
         actions: [
+          IconButton(
+            tooltip: context.tr('refresh_hotels'),
+            onPressed: (_loading || _refreshing) ? null : _refreshHotels,
+            icon: _refreshing
+                ? SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: scheme.primary,
+                    ),
+                  )
+                : const Icon(Icons.refresh_rounded),
+          ),
           const LanguagePickerButton(),
           IconButton(
             tooltip: context.tr('how_to'),
@@ -278,8 +342,9 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: _ChooseHotelHero(
-                hotelCount: _loading ? null : _totalHotels,
-                regionCount: _loading ? null : regions.length,
+                hotelCount: (_loading && _regions.isEmpty) ? null : _totalHotels,
+                regionCount: (_loading && _regions.isEmpty) ? null : regions.length,
+                isRefreshing: _refreshing,
               ),
             ),
             Padding(
@@ -305,17 +370,15 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
                 ),
               ),
             ),
-            if (!_loading && _error == null && _regions.isNotEmpty)
+            if (_regions.isNotEmpty && _error == null)
               _HotelFilterPanel(
-                catalogMin: _catalogMin,
-                catalogMax: _catalogMax,
                 priceRange: _priceRange,
                 sortBy: _sortBy,
                 sortOptions: _sortOptions,
                 onPriceChanged: (v) => setState(() => _priceRange = v),
                 onSortChanged: (v) => setState(() => _sortBy = v),
               ),
-            if (!_loading && _error == null && regions.isNotEmpty)
+            if (_error == null && regions.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
@@ -333,7 +396,7 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
                 ),
               ),
             Expanded(
-              child: _loading
+              child: (_loading && _regions.isEmpty)
                   ? const Center(child: CircularProgressIndicator())
                   : _error != null
                       ? Center(
@@ -352,7 +415,7 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
                                 ),
                                 const SizedBox(height: 16),
                                 FilledButton.icon(
-                                  onPressed: _load,
+                                  onPressed: _refreshHotels,
                                   icon: const Icon(Icons.refresh),
                                   label: Text(context.tr('retry')),
                                 ),
@@ -383,7 +446,7 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
                               ),
                             )
                           : RefreshIndicator(
-                              onRefresh: _load,
+                              onRefresh: _refreshHotels,
                               color: scheme.primary,
                               child: ListView.builder(
                                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 108),
@@ -453,8 +516,6 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
 
 class _HotelFilterPanel extends StatelessWidget {
   const _HotelFilterPanel({
-    required this.catalogMin,
-    required this.catalogMax,
     required this.priceRange,
     required this.sortBy,
     required this.sortOptions,
@@ -462,8 +523,6 @@ class _HotelFilterPanel extends StatelessWidget {
     required this.onSortChanged,
   });
 
-  final double catalogMin;
-  final double catalogMax;
   final RangeValues priceRange;
   final String sortBy;
   final Map<String, String> sortOptions;
@@ -474,8 +533,6 @@ class _HotelFilterPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final visual = AppVisual.of(context);
-    final span = catalogMax - catalogMin;
-    final divisions = span > 0 ? math.min(50, span.round()) : 1;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -529,9 +586,9 @@ class _HotelFilterPanel extends StatelessWidget {
               ),
               RangeSlider(
                 values: priceRange,
-                min: catalogMin,
-                max: catalogMax,
-                divisions: divisions > 1 ? divisions : null,
+                min: _kHotelPriceMin,
+                max: _kHotelPriceMax,
+                divisions: _kHotelPriceDivisions,
                 labels: RangeLabels(
                   '₱${priceRange.start.round()}',
                   '₱${priceRange.end.round()}',
@@ -539,7 +596,8 @@ class _HotelFilterPanel extends StatelessWidget {
                 onChanged: onPriceChanged,
               ),
               Text(
-                '₱${priceRange.start.round()} – ₱${priceRange.end.round()} / ${context.tr('night')}',
+                '₱${_kHotelPriceMin.round()} – ₱${_kHotelPriceMax.round()} · '
+                '${context.tr('selected')}: ₱${priceRange.start.round()} – ₱${priceRange.end.round()} / ${context.tr('night')}',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: scheme.primary,
@@ -555,10 +613,15 @@ class _HotelFilterPanel extends StatelessWidget {
 }
 
 class _ChooseHotelHero extends StatelessWidget {
-  const _ChooseHotelHero({this.hotelCount, this.regionCount});
+  const _ChooseHotelHero({
+    this.hotelCount,
+    this.regionCount,
+    this.isRefreshing = false,
+  });
 
   final int? hotelCount;
   final int? regionCount;
+  final bool isRefreshing;
 
   @override
   Widget build(BuildContext context) {
@@ -629,6 +692,7 @@ class _ChooseHotelHero extends StatelessWidget {
                     Wrap(
                       spacing: 8,
                       runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         _StatChip(
                           icon: Icons.apartment_outlined,
@@ -638,6 +702,15 @@ class _ChooseHotelHero extends StatelessWidget {
                           _StatChip(
                             icon: Icons.map_outlined,
                             label: '$regionCount ${context.tr('regions')}',
+                          ),
+                        if (isRefreshing)
+                          SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: scheme.primary,
+                            ),
                           ),
                       ],
                     ),
@@ -951,6 +1024,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
       await AuthStorage.setHotelContext(id: hid, name: name);
       await AuthStorage.clearPortalAuth();
       await AuthStorage.clearGuestAuth();
+      await AuthStorage.clearHotelsDirectoryCache();
       if (!mounted) return;
       final sms = res.data?['sms'] as Map<String, dynamic>?;
       final smsSent = sms?['sent'] == true;
@@ -1051,17 +1125,15 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
             textInputAction: TextInputAction.next,
           ),
           const SizedBox(height: 12),
-          TextField(
+          AppPasswordField(
             controller: _password,
-            decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder()),
-            obscureText: true,
+            labelText: 'Password',
             textInputAction: TextInputAction.next,
           ),
           const SizedBox(height: 12),
-          TextField(
+          AppPasswordField(
             controller: _password2,
-            decoration: const InputDecoration(labelText: 'Confirm password', border: OutlineInputBorder()),
-            obscureText: true,
+            labelText: 'Confirm password',
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
@@ -1475,10 +1547,9 @@ class _PortalLoginScreenState extends State<PortalLoginScreen> {
             autocorrect: false,
           ),
           const SizedBox(height: 12),
-          TextField(
+          AppPasswordField(
             controller: _pass,
-            decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder()),
-            obscureText: true,
+            labelText: 'Password',
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
@@ -1578,17 +1649,12 @@ class _GuestRoomLoginScreenState extends State<GuestRoomLoginScreen> {
             decoration: const InputDecoration(labelText: 'Room number', border: OutlineInputBorder()),
           ),
           const SizedBox(height: 12),
-          TextField(
+          AppPasswordField(
             controller: _password,
+            labelText: 'Room password (4 characters)',
+            helperText: 'Exactly 4 letters or numbers (e.g. 1234, a1b2)',
+            counterText: '',
             maxLength: 4,
-            decoration: const InputDecoration(
-              labelText: 'Room password (4 characters)',
-              border: OutlineInputBorder(),
-              counterText: '',
-              helperText: 'Exactly 4 letters or numbers (e.g. 1234, a1b2)',
-            ),
-            obscureText: true,
-            autocorrect: false,
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),

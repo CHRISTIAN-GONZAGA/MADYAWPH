@@ -18,6 +18,8 @@ class AuthStorage {
   static const _kThemeFabDx = 'theme_fab_dx';
   static const _kThemeFabDy = 'theme_fab_dy';
   static const _kAppLocale = 'app_locale';
+  static const _kIntroSeen = 'intro_seen';
+  static const _kHotelsDirectoryCache = 'hotels_directory_cache';
 
   static Future<String?> hotelId() => _storage.read(key: _kHotelId);
 
@@ -34,6 +36,23 @@ class AuthStorage {
 
   static Future<void> setAppLocaleCode(String code) =>
       _storage.write(key: _kAppLocale, value: code);
+
+  /// After first completed intro, skip splash on later launches for faster startup.
+  static Future<bool> hasSeenIntro() async =>
+      (await _storage.read(key: _kIntroSeen)) == '1';
+
+  static Future<void> setIntroSeen() =>
+      _storage.write(key: _kIntroSeen, value: '1');
+
+  /// Cached JSON from GET /hotels for instant picker UI while refreshing.
+  static Future<String?> hotelsDirectoryCache() =>
+      _storage.read(key: _kHotelsDirectoryCache);
+
+  static Future<void> setHotelsDirectoryCache(String json) =>
+      _storage.write(key: _kHotelsDirectoryCache, value: json);
+
+  static Future<void> clearHotelsDirectoryCache() =>
+      _storage.delete(key: _kHotelsDirectoryCache);
 
   /// Hex like "#2563eb" (seed color for Material3).
   static Future<String?> uiSeedColorHex() => _storage.read(key: _kUiSeedColor);

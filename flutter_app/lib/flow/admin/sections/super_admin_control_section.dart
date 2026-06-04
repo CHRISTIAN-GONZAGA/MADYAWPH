@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
+import '../../../widgets/app_input.dart';
 
 /// Super-admin control panel: manage lower-level admin accounts.
 class SuperAdminControlSection extends StatefulWidget {
@@ -76,22 +77,14 @@ class _SuperAdminControlSectionState extends State<SuperAdminControlSection> {
                 ),
               ),
               const SizedBox(height: 10),
-              TextField(
+              AppPasswordField(
                 controller: passCtrl,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'Password',
-                  border: OutlineInputBorder(),
-                ),
+                labelText: 'Password',
               ),
               const SizedBox(height: 10),
-              TextField(
+              AppPasswordField(
                 controller: confirmCtrl,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'Confirm password',
-                  border: OutlineInputBorder(),
-                ),
+                labelText: 'Confirm password',
               ),
             ],
           ),

@@ -1,9 +1,21 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 
 import 'auth_storage.dart';
 import 'config.dart';
 
 String dioErrorMessage(DioException e) {
+  if (e.type == DioExceptionType.receiveTimeout ||
+      e.type == DioExceptionType.connectionTimeout ||
+      e.type == DioExceptionType.sendTimeout) {
+    return 'The server is slow to respond (often while waking up on Render). '
+        'Check your internet, wait a moment, then tap Retry.';
+  }
+  if (e.type == DioExceptionType.connectionError) {
+    return 'Cannot reach the server. Check your internet connection and try again.';
+  }
+
   final response = e.response;
   final data = response?.data;
   if (data is Map) {
@@ -36,17 +48,36 @@ String dioErrorMessage(DioException e) {
 
 enum _AuthKind { portal, guest }
 
-Dio _baseDio() => Dio(
+/// Longer timeouts for cold-hosted APIs (e.g. Render spin-up).
+const kPublicConnectTimeout = Duration(seconds: 45);
+const kPublicReceiveTimeout = Duration(seconds: 90);
+
+Dio _baseDio({Duration? connectTimeout, Duration? receiveTimeout}) => Dio(
       BaseOptions(
         baseUrl: kApiBaseUrl,
-        connectTimeout: const Duration(seconds: 25),
-        receiveTimeout: const Duration(seconds: 25),
+        connectTimeout: connectTimeout ?? const Duration(seconds: 30),
+        receiveTimeout: receiveTimeout ?? const Duration(seconds: 45),
         headers: {Headers.acceptHeader: 'application/json'},
       ),
     );
 
 /// Unauthenticated v1 calls (hotel directory, register, portal login, public customer).
-Dio publicDio() => _baseDio();
+Dio publicDio() => _baseDio(
+      connectTimeout: kPublicConnectTimeout,
+      receiveTimeout: kPublicReceiveTimeout,
+    );
+
+/// Wake the API host in the background (Render cold start).
+void warmPublicApi() {
+  unawaited(
+    publicDio()
+        .get<void>(
+          '/hotels',
+          options: Options(receiveTimeout: kPublicReceiveTimeout),
+        )
+        .then((_) {}, onError: (_) {}),
+  );
+}
 
 Dio _authedDio(_AuthKind kind) {
   final dio = _baseDio();

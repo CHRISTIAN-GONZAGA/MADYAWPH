@@ -24,8 +24,12 @@ class _FlowRootState extends State<FlowRoot> {
   }
 
   Future<void> _hydrateHotelSession() async {
-    final id = await AuthStorage.hotelId();
-    final name = await AuthStorage.hotelName();
+    final results = await Future.wait<String?>([
+      AuthStorage.hotelId(),
+      AuthStorage.hotelName(),
+    ]);
+    final id = results[0];
+    final name = results[1];
     if (mounted && id != null && id.isNotEmpty) {
       hotelSessionNotifier.value = HotelSession(hotelId: id, hotelName: name ?? 'Hotel');
     }

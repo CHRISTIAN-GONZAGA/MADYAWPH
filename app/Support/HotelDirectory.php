@@ -76,6 +76,33 @@ final class HotelDirectory
     }
 
     /**
+     * @return array{data: list<array<string, mixed>>, regions: list<array<string, mixed>>}
+     */
+    public static function pickerApiPayload(): array
+    {
+        $hotels = Hotel::withoutGlobalScopes()
+            ->select('id', 'name', 'location', 'city')
+            ->orderBy('name')
+            ->get();
+
+        $priceStats = self::priceStatsForHotels(
+            $hotels->pluck('id')->map(fn ($id) => (string) $id)->all()
+        );
+
+        $flat = $hotels->map(
+            fn (Hotel $hotel) => self::hotelPickerRow(
+                $hotel,
+                $priceStats[(string) $hotel->id] ?? null
+            )
+        )->values()->all();
+
+        return [
+            'data' => $flat,
+            'regions' => self::groupHotelsForPicker($hotels, $priceStats),
+        ];
+    }
+
+    /**
      * @param  array{min_price?: float, max_price?: float, room_count?: int}|null  $priceStat
      * @return array<string, mixed>
      */

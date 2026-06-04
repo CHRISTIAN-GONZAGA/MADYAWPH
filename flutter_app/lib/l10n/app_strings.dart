@@ -70,6 +70,7 @@ class AppStrings {
       'original': 'Original',
       'attach_photo': 'Attach photo',
       'how_to': 'How to',
+      'refresh_hotels': 'Refresh hotel list',
       'sign_in': 'Sign in',
       'cancel': 'Cancel',
       'select_hotel_first': 'Select a hotel first, then sign in.',
@@ -86,6 +87,7 @@ class AppStrings {
       'sort_name': 'Name A–Z',
       'search_results': 'Matching hotels',
       'from_price': 'From',
+      'selected': 'Selected',
     },
     'fil': {
       'app_title': 'MADYAWPH',
@@ -120,6 +122,7 @@ class AppStrings {
       'original': 'Orihinal',
       'attach_photo': 'Mag-attach ng larawan',
       'how_to': 'Paano',
+      'refresh_hotels': 'I-refresh ang listahan ng hotel',
       'sign_in': 'Mag-sign in',
       'cancel': 'Kanselahin',
       'select_hotel_first': 'Pumili muna ng hotel, pagkatapos mag-sign in.',
@@ -136,6 +139,7 @@ class AppStrings {
       'sort_name': 'Pangalan A–Z',
       'search_results': 'Mga tumugmang hotel',
       'from_price': 'Mula',
+      'selected': 'Napili',
     },
     'zh': {
       'app_title': 'MADYAWPH',
