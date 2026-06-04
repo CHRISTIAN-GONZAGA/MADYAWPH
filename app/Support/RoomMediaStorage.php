@@ -17,7 +17,7 @@ final class RoomMediaStorage
     public static function store(UploadedFile $file, string $directory): string
     {
         $directory = trim($directory, '/');
-        if (! in_array($directory, ['rooms', 'categories'], true)) {
+        if (! in_array($directory, ['rooms', 'categories', 'hotel-banners', 'reseller-ids'], true)) {
             throw ValidationException::withMessages([
                 'image_file' => ['Invalid image storage directory.'],
             ]);

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../dio_client.dart';
 import '../../widgets/admin_curved_nav_bar.dart';
+import '../../widgets/hotel_credits_policy.dart';
 import 'admin_dashboard_models.dart';
 import '../../widgets/theme_fab.dart';
 import '../admin_chat.dart';
@@ -14,6 +15,7 @@ import 'sections/bookings_section.dart';
 import 'sections/checkout_section.dart';
 import 'sections/guest_portfolio_section.dart';
 import 'sections/room_summary_section.dart';
+import 'sections/resellers_section.dart';
 import 'sections/settings_section.dart';
 import 'sections/super_admin_control_section.dart';
 
@@ -97,6 +99,11 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         badgeColor: const Color(0xFF2E7D32),
       ),
       const AdminNavItem(
+        label: 'Resellers',
+        shortLabel: 'Partner',
+        icon: Icons.qr_code_scanner_outlined,
+      ),
+      const AdminNavItem(
         label: 'Settings',
         shortLabel: 'Setup',
         icon: Icons.settings_outlined,
@@ -119,6 +126,15 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     super.initState();
     _pollInbox();
     _chatPoll = Timer.periodic(const Duration(seconds: 15), (_) => _pollInbox());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final credits = widget.data['credits'] as Map<String, dynamic>?;
+      final balance =
+          (credits?['currentCredits'] as num?)?.toDouble() ?? 0;
+      if (HotelCreditsPolicy.isDepleted(balance)) {
+        setState(() => _tab = _settingsTabIndex(widget.data));
+      }
+    });
   }
 
   @override
@@ -126,6 +142,28 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.data != widget.data) {
       _pollInbox();
+      _maybeRedirectToCreditsTab(oldWidget.data, widget.data);
+    }
+  }
+
+  int _settingsTabIndex(Map<String, dynamic> d) => 6;
+
+  void _maybeRedirectToCreditsTab(
+    Map<String, dynamic> oldData,
+    Map<String, dynamic> newData,
+  ) {
+    final oldCredits = oldData['credits'] as Map<String, dynamic>?;
+    final newCredits = newData['credits'] as Map<String, dynamic>?;
+    final oldBalance =
+        (oldCredits?['currentCredits'] as num?)?.toDouble() ?? 0;
+    final newBalance =
+        (newCredits?['currentCredits'] as num?)?.toDouble() ?? 0;
+    if (!HotelCreditsPolicy.isDepleted(oldBalance) &&
+        HotelCreditsPolicy.isDepleted(newBalance)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _tab = _settingsTabIndex(newData));
+      });
     }
   }
 
@@ -162,6 +200,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     final adminName = (user?['name'] ?? user?['username'] ?? 'Admin').toString();
     final chats = d['guestMessages'] as List<dynamic>? ?? [];
     final credits = d['credits'] as Map<String, dynamic>?;
+    final creditAmount = (credits?['currentCredits'] as num?)?.toDouble() ?? 0;
     final balance =
         credits != null ? '${credits['currentCredits'] ?? ''}' : '—';
 
@@ -172,6 +211,8 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
 
     final navItems = _navItemsFor(d);
     final safeTab = _tab.clamp(0, navItems.length - 1);
+    final creditsLocked = HotelCreditsPolicy.areActionsLocked(creditAmount);
+    final settingsTab = _settingsTabIndex(d);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F2FF),
@@ -184,6 +225,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
                   hotelName: hotelName,
                   adminName: adminName,
                   isSuperAdmin: widget.isSuperAdmin,
+                  creditsLocked: creditsLocked,
                   chatBadge: badge,
                   onOpenChat: () async {
                     await Navigator.of(context).push<void>(
@@ -200,29 +242,52 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
                   },
                   onSignOut: widget.onSignOut,
                 ),
+                HotelCreditsReminderBanner(
+                  balance: creditAmount,
+                  onTopUp: widget.onRecharge,
+                ),
                 if (widget.busyAction)
                   const LinearProgressIndicator(minHeight: 2),
                 Expanded(
-                  child: RefreshIndicator(
-                    onRefresh: () async {
-                      await widget.onRefresh();
-                      await _pollInbox();
-                    },
-                    child: IndexedStack(
-                      index: safeTab,
-                      children: _allSections(d, balance),
+                  child: AdminCreditsGate(
+                    balance: creditAmount,
+                    onTopUp: widget.onRecharge,
+                    child: RefreshIndicator(
+                      onRefresh: creditsLocked && safeTab != settingsTab
+                          ? () async {}
+                          : () async {
+                              await widget.onRefresh();
+                              await _pollInbox();
+                            },
+                      child: IndexedStack(
+                        index: safeTab,
+                        children: _allSections(
+                          d,
+                          balance,
+                          creditAmount,
+                          settingsTab,
+                        ),
+                      ),
                     ),
                   ),
                 ),
                 AdminCurvedNavBar(
                   items: navItems,
                   currentIndex: safeTab,
+                  canSelectTab: creditsLocked
+                      ? (i) => i == settingsTab
+                      : null,
+                  onBlockedTabTap: creditsLocked
+                      ? () => AdminCreditsGate.showActionsBlockedMessage(
+                            context,
+                          )
+                      : null,
                   onTap: (i) => setState(() => _tab = i),
                 ),
               ],
             ),
           ),
-          const ThemeFab(),
+          if (!creditsLocked) const ThemeFab(),
         ],
       ),
     );
@@ -235,7 +300,13 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     });
   }
 
-  List<Widget> _allSections(Map<String, dynamic> d, String balance) {
+  List<Widget> _allSections(
+    Map<String, dynamic> d,
+    String balance,
+    double creditAmount,
+    int settingsTab,
+  ) {
+    final creditsLocked = HotelCreditsPolicy.areActionsLocked(creditAmount);
     final tasks = d['tasks'] as List<dynamic>? ?? [];
     final reservations = d['reservations'] as List<dynamic>? ?? [];
     final claims = d['amenityClaims'] as List<dynamic>? ?? [];
@@ -251,34 +322,68 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
       '${_rooms.length}-${reservations.length}-${claims.length}-${tasks.length}-${bookings.length}-${widget.isSuperAdmin}',
     );
 
+    Widget wrapTab(Widget section, int index) {
+      if (!creditsLocked || index == settingsTab) {
+        return section;
+      }
+      return CreditsLockedOverlay(
+        locked: true,
+        onTopUp: widget.onRecharge,
+        child: section,
+      );
+    }
+
     final sections = <Widget>[
-      RoomSummarySection(
-        key: refreshKey,
-        rooms: _rooms,
-        tasks: tasks,
-        localBookingsTotal: localTotal,
-        onlineBookingsTotal: onlineTotal,
-        onOpenLocalBookings: () => _openBookingsTab('local'),
-        onOpenOnlineBookings: () => _openBookingsTab('online'),
+      wrapTab(
+        RoomSummarySection(
+          key: refreshKey,
+          rooms: _rooms,
+          tasks: tasks,
+          localBookingsTotal: localTotal,
+          onlineBookingsTotal: onlineTotal,
+          onOpenLocalBookings: creditsLocked
+              ? () => AdminCreditsGate.showActionsBlockedMessage(context)
+              : () => _openBookingsTab('local'),
+          onOpenOnlineBookings: creditsLocked
+              ? () => AdminCreditsGate.showActionsBlockedMessage(context)
+              : () => _openBookingsTab('online'),
+        ),
+        0,
       ),
-      CheckoutSection(key: refreshKey, rooms: _rooms),
-      GuestPortfolioSection(key: refreshKey, rooms: _rooms),
-      BookingsSection(
-        key: ValueKey('bookings-$_bookingListFilter-${bookings.length}'),
-        rooms: _rooms,
-        reservations: reservations,
-        bookings: bookings,
-        bookingFilter: _bookingListFilter,
-        onChanged: widget.onRefresh,
+      wrapTab(CheckoutSection(key: refreshKey, rooms: _rooms), 1),
+      wrapTab(GuestPortfolioSection(key: refreshKey, rooms: _rooms), 2),
+      wrapTab(
+        BookingsSection(
+          key: ValueKey('bookings-$_bookingListFilter-${bookings.length}'),
+          rooms: _rooms,
+          reservations: reservations,
+          bookings: bookings,
+          bookingFilter: _bookingListFilter,
+          onChanged: widget.onRefresh,
+          currentCredits: creditAmount,
+          onTopUpCredits: widget.onRecharge,
+        ),
+        3,
       ),
-      AmenitiesSection(
-        key: refreshKey,
-        claims: claims,
-        onAddProduct: widget.onAmenityAddProduct,
-        onRefresh: widget.onRefresh,
+      wrapTab(
+        AmenitiesSection(
+          key: refreshKey,
+          claims: claims,
+          onAddProduct: widget.onAmenityAddProduct,
+          onRefresh: widget.onRefresh,
+        ),
+        4,
+      ),
+      wrapTab(
+        ResellersSection(
+          key: refreshKey,
+          onRefresh: widget.onRefresh,
+        ),
+        5,
       ),
       SettingsSection(
         creditBalance: balance,
+        creditsLocked: creditsLocked,
         onRecharge: widget.onRecharge,
         onSurgePricing: widget.onSurgePricing,
         onThemeReset: widget.onThemeReset,
@@ -291,9 +396,12 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
 
     if (widget.isSuperAdmin) {
       sections.add(
-        SuperAdminControlSection(
-          key: refreshKey,
-          onOpenAccountSettings: widget.onOpenAccountSettings,
+        wrapTab(
+          SuperAdminControlSection(
+            key: refreshKey,
+            onOpenAccountSettings: widget.onOpenAccountSettings,
+          ),
+          sections.length,
         ),
       );
     }

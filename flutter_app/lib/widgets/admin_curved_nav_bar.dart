@@ -28,12 +28,16 @@ class AdminCurvedNavBar extends StatefulWidget {
     required this.items,
     required this.currentIndex,
     required this.onTap,
+    this.canSelectTab,
+    this.onBlockedTabTap,
     this.activeColor = const Color(0xFF6C4DFF),
   });
 
   final List<AdminNavItem> items;
   final int currentIndex;
   final ValueChanged<int> onTap;
+  final bool Function(int index)? canSelectTab;
+  final VoidCallback? onBlockedTabTap;
   final Color activeColor;
 
   @override
@@ -183,6 +187,8 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar>
                 child: Row(
                   children: List.generate(widget.items.length, (i) {
                     final active = i == widget.currentIndex;
+                    final enabled =
+                        widget.canSelectTab?.call(i) ?? true;
                     final item = widget.items[i];
                     final popScale = active
                         ? 1.0 + 0.12 * Curves.elasticOut.transform(_iconPop.value)
@@ -192,15 +198,21 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar>
                       child: Material(
                         color: Colors.transparent,
                         child: InkWell(
-                          onTap: () {
-                            if (i == widget.currentIndex) return;
-                            HapticFeedback.mediumImpact();
-                            widget.onTap(i);
-                          },
+                          onTap: enabled
+                              ? () {
+                                  if (i == widget.currentIndex) return;
+                                  HapticFeedback.mediumImpact();
+                                  widget.onTap(i);
+                                }
+                              : () {
+                                  widget.onBlockedTabTap?.call();
+                                },
                           borderRadius: BorderRadius.circular(20),
                           splashColor: activeColor.withValues(alpha: 0.12),
                           highlightColor: activeColor.withValues(alpha: 0.06),
-                          child: Column(
+                          child: Opacity(
+                            opacity: enabled ? 1 : 0.35,
+                            child: Column(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
                               Transform.scale(
@@ -310,6 +322,7 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar>
                                 ),
                               ),
                             ],
+                          ),
                           ),
                         ),
                       ),

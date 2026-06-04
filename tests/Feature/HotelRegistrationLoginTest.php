@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\HotelCredit;
 use App\Models\User;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Hash;
@@ -22,10 +23,19 @@ class HotelRegistrationLoginTest extends TestCase
             'city' => 'Butuan',
             'contact_number' => '09171234567',
             'admin_email' => 'admin@palmresort.test',
+            'total_rooms' => 25,
         ]);
 
         $response->assertCreated();
         $hotelId = (string) $response->json('hotel_id');
+        $response->assertJsonPath('welcome_credits.total_rooms', 25);
+        $response->assertJsonPath('welcome_credits.free_credits', 20000);
+
+        $credit = HotelCredit::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->first();
+        $this->assertNotNull($credit);
+        $this->assertSame(20000.0, (float) $credit->current_credits);
         $this->assertSame('OwnerSecret9', $response->json('portal_accounts.super_admin.password'));
         $this->assertSame('OwnerSecret9', $response->json('portal_accounts.admin.password'));
         $this->assertSame('palmresort_admin', $response->json('portal_accounts.admin.username'));

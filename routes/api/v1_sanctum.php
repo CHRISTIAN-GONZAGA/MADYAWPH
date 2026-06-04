@@ -3,11 +3,14 @@
 use App\Enums\BookingStatus;
 use App\Enums\RoomStatus;
 use App\Enums\UserRole;
+use App\Http\Controllers\Api\V1\AdminChatController;
 use App\Http\Controllers\Api\V1\AdminDashboardApiController;
+use App\Http\Controllers\Api\V1\PortalAuthController;
 use App\Http\Controllers\Api\V1\StaffDashboardApiController;
 use App\Http\Controllers\Api\ActivityLogController;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\ResellerController;
 use App\Http\Controllers\Api\RoomCategoryController;
 use App\Http\Controllers\Api\RoomController;
 use App\Http\Controllers\Api\StaffController;
@@ -32,6 +35,9 @@ use App\Models\User;
 use App\Models\UserSetting;
 use App\Support\ChatAttachmentUrl;
 use App\Support\HotelScopeGuard;
+use App\Support\RoomImageUploadRules;
+use App\Support\RoomMediaStorage;
+use App\Support\StayManagementPolicy;
 use App\Support\PriceRounding;
 use App\Services\ActivityLogService;
 use App\Services\BookingService;
@@ -438,6 +444,7 @@ Route::middleware('role:admin')->group(function (): void {
         if ((string) $booking->hotel_id !== $hotelId) {
             return response()->json(['message' => 'Booking outside hotel scope.'], 403);
         }
+        StayManagementPolicy::denyUnlessCanManage($booking);
 
         $methodRaw = trim((string) ($validated['payment_method'] ?? ''));
         $normalizedMethod = match (strtolower($methodRaw)) {
@@ -468,6 +475,7 @@ Route::middleware('role:admin')->group(function (): void {
         if ((string) $booking->hotel_id !== $hotelId) {
             return response()->json(['message' => 'Booking outside hotel scope.'], 403);
         }
+        StayManagementPolicy::denyUnlessCanManage($booking);
 
         $charges = BillingCharge::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
@@ -675,6 +683,7 @@ Route::post('/billing/charges', function (Request $request, FinancialComputation
     if (! $booking || ! $room) {
         return response()->json(['message' => 'Invalid booking or room for your hotel.'], 403);
     }
+    StayManagementPolicy::denyUnlessCanManage($booking);
     $quantity = (int) ($validated['quantity'] ?? 1);
     $lineTotal = $financialComputationService->computeRoomCharge((float) $validated['amount'], $quantity);
     $charge = BillingCharge::withoutGlobalScopes()->create([
@@ -889,6 +898,7 @@ Route::post('/room-transfers', function (Request $request, FinancialComputationS
     if (! $booking || ! $fromRoom || ! $toRoom) {
         return response()->json(['message' => 'Transfer resources are outside your hotel scope.'], 403);
     }
+    StayManagementPolicy::denyUnlessCanManage($booking);
     $existingAccessCode = (string) ($fromRoom->current_access_code ?? '');
     $priceAdjustment = PriceRounding::nearest50((float) $toRoom->price_per_night - (float) $fromRoom->price_per_night);
     if (abs($priceAdjustment) > 0 && ! $request->boolean('approve_price_adjustment')) {
@@ -991,6 +1001,7 @@ Route::get('/reports/sales/timeseries', [ReportController::class, 'salesTimeseri
 Route::get('/reports/amenity-sales/timeseries', [ReportController::class, 'amenitySalesTimeseries'])->middleware('role:admin');
 Route::get('/reports/amenity-sales/overview', [ReportController::class, 'amenityProfitOverview'])->middleware('role:admin');
 Route::get('/reports/profit-overview', [ReportController::class, 'profitOverview'])->middleware('role:admin');
+Route::get('/reports/reseller-payments/timeseries', [ReportController::class, 'resellerPaymentsTimeseries'])->middleware('role:admin');
 Route::get('/reports/sales-csv', [ReportController::class, 'salesCsv'])->middleware('role:admin');
 Route::get('/reports/sales-pdf', [ReportController::class, 'salesPdf'])->middleware('role:admin');
 Route::get('/reports/staff-performance', [ReportController::class, 'staffPerformance'])->middleware('role:admin');
@@ -998,6 +1009,15 @@ Route::get('/reports/room-occupancy', [ReportController::class, 'roomOccupancy']
 Route::get('/reports/activity/timeline', [ReportController::class, 'activityTimeline'])->middleware('role:admin,staff');
 Route::get('/reports/transfers', [ReportController::class, 'transferSummary'])->middleware('role:admin,staff');
 Route::get('/reports/tasks/performance', [ReportController::class, 'taskPerformance'])->middleware('role:admin,staff');
+
+// Resellers
+Route::get('/admin/resellers', [ResellerController::class, 'index'])->middleware('role:admin');
+Route::post('/admin/resellers', [ResellerController::class, 'store'])->middleware('role:admin');
+Route::get('/admin/resellers/payments', [ResellerController::class, 'payments'])->middleware('role:admin');
+Route::post('/admin/resellers/lookup', [ResellerController::class, 'lookup'])->middleware('role:admin');
+Route::get('/admin/resellers/{id}', [ResellerController::class, 'show'])->middleware('role:admin');
+Route::post('/admin/resellers/{id}/commissions', [ResellerController::class, 'payCommission'])->middleware('role:admin');
+Route::post('/admin/resellers/{id}/credits', [ResellerController::class, 'addCredits'])->middleware('role:admin');
 
 // Activity logs
 Route::get('/activity-logs', [ActivityLogController::class, 'index'])->middleware('role:admin');
@@ -1126,6 +1146,42 @@ Route::put('/admin/profile', function (Request $request) {
 
     return response()->json(['ok' => true, 'user' => $user->fresh()]);
 })->middleware('role:admin')->name('api.v1.admin.profile');
+
+Route::get('/admin/hotel/picker-banner', function (Request $request) {
+    $hotel = Hotel::withoutGlobalScopes()->findOrFail((string) $request->user()->hotel_id);
+    $stored = filled($hotel->picker_banner_url ?? null)
+        ? (string) $hotel->picker_banner_url
+        : null;
+
+    return response()->json([
+        'banner_url' => ChatAttachmentUrl::fromStoredUrl($stored),
+        'picker_banner_url' => $stored,
+    ]);
+})->middleware('role:super_admin')->name('api.v1.admin.hotel.picker-banner.show');
+
+Route::post('/admin/hotel/picker-banner', function (Request $request) {
+    $validated = $request->validate([
+        'image_file' => array_merge(['required'], array_slice(RoomImageUploadRules::fileRules(), 1)),
+    ]);
+
+    $hotel = Hotel::withoutGlobalScopes()->findOrFail((string) $request->user()->hotel_id);
+    $url = RoomMediaStorage::store($request->file('image_file'), 'hotel-banners');
+    $hotel->update(['picker_banner_url' => $url]);
+    Cache::forget(PortalAuthController::HOTELS_DIRECTORY_CACHE_KEY);
+
+    app(ActivityLogService::class)->log(
+        (string) $hotel->id,
+        $request->user(),
+        'Updated property picker banner image',
+        ['banner_url' => $url]
+    );
+
+    return response()->json([
+        'ok' => true,
+        'banner_url' => ChatAttachmentUrl::fromStoredUrl($url),
+        'picker_banner_url' => $url,
+    ]);
+})->middleware('role:super_admin')->name('api.v1.admin.hotel.picker-banner.store');
 
 Route::post('/admin/portal-users', function (Request $request) {
     $actor = $request->user();
@@ -1283,24 +1339,33 @@ Route::get('/admin/rooms/{room}', function (Request $request, Room $room) {
 
     $bookingPayload = null;
     if ($booking) {
-        $ci = Carbon::parse($booking->check_in_date)->startOfDay();
-        $co = Carbon::parse($booking->check_out_date)->startOfDay();
-        $bookingPayload = array_merge($booking->toArray(), [
-            'stay_nights' => $nights,
-            'check_in_datetime_iso' => $ci->toIso8601String(),
-            'check_out_datetime_iso' => $co->toIso8601String(),
-            'stay_duration_label' => $nights !== null
-                ? "{$nights} night".($nights === 1 ? '' : 's').' · '
-                    .$ci->format('M j, Y').' → '.$co->format('M j, Y')
-                : null,
-            'check_in_display' => $ci->format('l, M j, Y').' · after 3:00 PM',
-            'check_out_display' => $co->format('l, M j, Y').' · before 11:00 AM',
-            'payment_method' => (string) ($booking->payment_method?->value ?? $booking->payment_method ?? ''),
-            'payment_status' => (string) ($booking->payment_status ?? 'unpaid'),
-            'paid_at_iso' => optional($booking->paid_at)->toIso8601String(),
-            'payment_reference' => (string) ($booking->payment_reference ?? ''),
-        ]);
+        try {
+            $ci = Carbon::parse($booking->check_in_date)->startOfDay();
+            $co = Carbon::parse($booking->check_out_date)->startOfDay();
+            $bookingPayload = array_merge($booking->toArray(), [
+                'stay_nights' => $nights,
+                'check_in_datetime_iso' => $ci->toIso8601String(),
+                'check_out_datetime_iso' => $co->toIso8601String(),
+                'stay_duration_label' => $nights !== null
+                    ? "{$nights} night".($nights === 1 ? '' : 's').' · '
+                        .$ci->format('M j, Y').' → '.$co->format('M j, Y')
+                    : null,
+                'check_in_display' => $ci->format('l, M j, Y').' · after 3:00 PM',
+                'check_out_display' => $co->format('l, M j, Y').' · before 11:00 AM',
+                'payment_method' => (string) ($booking->payment_method?->value ?? $booking->payment_method ?? ''),
+                'payment_status' => (string) ($booking->payment_status ?? 'unpaid'),
+                'paid_at_iso' => optional($booking->paid_at)->toIso8601String(),
+                'payment_reference' => (string) ($booking->payment_reference ?? ''),
+            ]);
+        } catch (Throwable) {
+            $bookingPayload = array_merge($booking->toArray(), [
+                'payment_method' => (string) ($booking->payment_method?->value ?? $booking->payment_method ?? ''),
+                'payment_status' => (string) ($booking->payment_status ?? 'unpaid'),
+            ]);
+        }
     }
+
+    $stayFlags = StayManagementPolicy::roomDetailFlags($booking, $room, $hotelId);
 
     return response()->json([
         'room' => array_merge($room->toArray(), [
@@ -1312,6 +1377,9 @@ Route::get('/admin/rooms/{room}', function (Request $request, Room $room) {
         'refund_total' => (float) $charges
             ->filter(fn ($charge) => (string) ($charge->type ?? '') === 'refund')
             ->sum(fn ($charge) => abs((float) ($charge->amount ?? 0))),
+        'can_edit_guest_stay' => $stayFlags['can_edit_guest_stay'],
+        'management_blocked_reason' => $stayFlags['management_blocked_reason'],
+        'pending_reservation' => $stayFlags['pending_reservation'],
     ]);
 })->middleware('role:admin');
 
@@ -1356,79 +1424,5 @@ Route::patch('/admin/pricing/surge', function (Request $request) {
     return response()->json(['ok' => true]);
 })->middleware('role:admin');
 
-// Admin chat inbox (guest + staff threads scoped to hotel)
-Route::get('/admin/chat/inbox', function (Request $request) {
-    $hotelId = (string) $request->user()->hotel_id;
-    $messages = GuestMessage::withoutGlobalScopes()
-        ->where('hotel_id', $hotelId)
-        ->latest('sent_at')
-        ->limit(200)
-        ->get();
-
-    $mapThread = function ($msgs): array {
-        $latest = $msgs->first();
-        $roomId = (string) ($latest?->room_id ?? '');
-        $isStaff = str_starts_with($roomId, 'STAFF-ADMIN:');
-
-        return [
-            'room_id' => $roomId,
-            'room_number' => (string) ($latest?->room_number ?? ''),
-            'staff_name' => $isStaff ? (string) ($latest?->guest_name ?? 'Staff') : null,
-            'staff_user_id' => $isStaff ? str_replace('STAFF-ADMIN:', '', $roomId) : null,
-            'latest_message' => (string) ($latest?->message ?? ''),
-            'latest_sender_role' => (string) ($latest?->sender_role ?? ''),
-            'latest_sent_at' => optional($latest?->sent_at)->toISOString(),
-            'unread_count' => (int) $msgs->where('is_read', false)->where('sender_role', '!=', 'admin')->count(),
-            'is_staff_thread' => $isStaff,
-        ];
-    };
-
-    $threads = $messages
-        ->groupBy('room_id')
-        ->map($mapThread)
-        ->values();
-
-    $guestThreads = $threads
-        ->filter(fn (array $t) => ! ($t['is_staff_thread'] ?? false))
-        ->values();
-    $staffThreads = $threads
-        ->filter(fn (array $t) => (bool) ($t['is_staff_thread'] ?? false))
-        ->values();
-
-    return response()->json([
-        'guest_threads' => $guestThreads,
-        'staff_threads' => $staffThreads,
-        'threads' => $guestThreads,
-    ]);
-})->middleware('role:admin');
-
-Route::get('/admin/chat/rooms/{roomId}', function (Request $request, string $roomId) {
-    $hotelId = (string) $request->user()->hotel_id;
-    HotelScopeGuard::assertRoomBelongsToHotel($hotelId, $roomId);
-    $viewerLocale = (string) $request->query('locale', app(\App\Services\MessageTranslationService::class)->defaultStaffLanguage());
-    $translate = filter_var($request->query('translate', '1'), FILTER_VALIDATE_BOOL);
-    $maxTranslations = $translate
-        ? (int) config('services.translation.max_per_request', 25)
-        : 0;
-    $messages = GuestMessage::withoutGlobalScopes()
-        ->where('hotel_id', $hotelId)
-        ->where('room_id', $roomId)
-        ->orderBy('sent_at', 'asc')
-        ->limit(250)
-        ->get();
-
-    GuestMessage::withoutGlobalScopes()
-        ->where('hotel_id', $hotelId)
-        ->where('room_id', $roomId)
-        ->where('is_read', false)
-        ->where('sender_role', '!=', 'admin')
-        ->update(['is_read' => true, 'read_at' => now()]);
-
-    return response()->json([
-        'messages' => GuestMessageResource::collectionNewestFirst(
-            $messages,
-            $translate ? $viewerLocale : null,
-            $maxTranslations,
-        ),
-    ]);
-})->middleware('role:admin');
+Route::get('/admin/chat/inbox', [AdminChatController::class, 'inbox'])->middleware('role:admin');
+Route::get('/admin/chat/rooms/{roomId}', [AdminChatController::class, 'room'])->middleware('role:admin');

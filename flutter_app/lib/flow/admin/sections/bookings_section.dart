@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
+import '../../../widgets/insufficient_hotel_credits.dart';
 import '../../../widgets/admin_month_calendar.dart';
 import '../../../widgets/admin_time_slot_field.dart';
 import '../admin_dashboard_models.dart';
@@ -16,6 +17,8 @@ class BookingsSection extends StatefulWidget {
     required this.bookings,
     required this.bookingFilter,
     required this.onChanged,
+    required this.currentCredits,
+    required this.onTopUpCredits,
   });
 
   final List<Map<String, dynamic>> rooms;
@@ -24,6 +27,8 @@ class BookingsSection extends StatefulWidget {
   /// `all`, `local`, or `online`
   final String bookingFilter;
   final Future<void> Function() onChanged;
+  final double currentCredits;
+  final VoidCallback onTopUpCredits;
 
   @override
   State<BookingsSection> createState() => _BookingsSectionState();
@@ -219,6 +224,13 @@ class _BookingsSectionState extends State<BookingsSection>
 
   Future<void> _approveReservation(String id) async {
     if (_busy || id.isEmpty) return;
+    if (!await guardHotelCreditsBeforeApproval(
+      context,
+      currentCredits: widget.currentCredits,
+      onTopUp: widget.onTopUpCredits,
+    )) {
+      return;
+    }
     setState(() => _busy = true);
     try {
       final res = await portalDio()
@@ -227,13 +239,18 @@ class _BookingsSectionState extends State<BookingsSection>
       final activated = res.data?['activated'] == true;
       final wallet = res.data?['wallet'] as Map<String, dynamic>?;
       final fee = (wallet?['fee'] as num?)?.toDouble() ?? 0;
+      final roomTotal = (wallet?['room_total'] as num?)?.toDouble();
+      final feePercent = (wallet?['fee_percent'] as num?)?.toDouble() ?? 8;
       final balance = (wallet?['balance_after'] as num?)?.toDouble();
       var msg = activated
           ? 'Reservation approved and converted to booking.'
           : 'Reservation approved. Will activate on check-in date.';
       if (fee > 0) {
-        msg += ' Wallet fee: ₱${fee.toStringAsFixed(0)}'
-            '${balance != null ? ' (balance ₱${balance.toStringAsFixed(0)})' : ''}.';
+        msg += ' ${feePercent.toStringAsFixed(0)}% platform fee'
+            ' (₱${fee.toStringAsFixed(2)}'
+            '${roomTotal != null ? ' of ₱${roomTotal.toStringAsFixed(2)} booking total' : ''})'
+            ' deducted from hotel credits'
+            '${balance != null ? '. Balance: ₱${balance.toStringAsFixed(2)}' : ''}.';
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(msg)),
@@ -241,8 +258,16 @@ class _BookingsSectionState extends State<BookingsSection>
       await widget.onChanged();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      if (isHotelCreditsApprovalError(e)) {
+        await handleHotelCreditsApprovalError(
+          context,
+          e,
+          onTopUp: widget.onTopUpCredits,
+        );
+      } else {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }

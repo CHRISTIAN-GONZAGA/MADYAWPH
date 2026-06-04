@@ -92,6 +92,8 @@ return [
     'hotel_credits' => [
         /** Platform fee taken from hotel wallet when admin confirms a booking (percent of room stay total). */
         'booking_confirm_fee_percent' => (float) env('BOOKING_CONFIRM_FEE_PERCENT', 8),
+        /** Remind hotels to top up when wallet balance falls below this amount (PHP). */
+        'low_balance_threshold' => (float) env('HOTEL_CREDITS_LOW_BALANCE_THRESHOLD', 3000),
     ],
 
 ];

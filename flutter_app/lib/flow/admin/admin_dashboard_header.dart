@@ -102,6 +102,7 @@ class AdminDashboardHeader extends StatelessWidget {
     required this.onRefresh,
     this.onSignOut,
     this.isSuperAdmin = false,
+    this.creditsLocked = false,
   });
 
   final String hotelName;
@@ -111,6 +112,7 @@ class AdminDashboardHeader extends StatelessWidget {
   final VoidCallback onOpenChat;
   final VoidCallback onRefresh;
   final VoidCallback? onSignOut;
+  final bool creditsLocked;
 
   String _displayHotelName(String raw) {
     final trimmed = raw.trim();
@@ -186,8 +188,10 @@ class AdminDashboardHeader extends StatelessWidget {
               const AdminLiveClock(align: TextAlign.end, compact: true),
               IconButton(
                 visualDensity: VisualDensity.compact,
-                tooltip: 'Refresh dashboard',
-                onPressed: onRefresh,
+                tooltip: creditsLocked
+                    ? 'Disabled — top up credits first'
+                    : 'Refresh dashboard',
+                onPressed: creditsLocked ? null : onRefresh,
                 icon: const Icon(Icons.refresh),
               ),
               if (onSignOut != null)
@@ -199,7 +203,7 @@ class AdminDashboardHeader extends StatelessWidget {
                 ),
               AdminChatHeaderButton(
                 badge: chatBadge,
-                onPressed: onOpenChat,
+                onPressed: creditsLocked ? null : onOpenChat,
               ),
             ],
           ),

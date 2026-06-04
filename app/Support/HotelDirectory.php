@@ -81,7 +81,7 @@ final class HotelDirectory
     public static function pickerApiPayload(): array
     {
         $hotels = Hotel::withoutGlobalScopes()
-            ->select('id', 'name', 'location', 'city')
+            ->select('id', 'name', 'location', 'city', 'picker_banner_url')
             ->orderBy('name')
             ->get();
 
@@ -108,11 +108,18 @@ final class HotelDirectory
      */
     public static function hotelPickerRow(Hotel $hotel, ?array $priceStat = null): array
     {
+        $banner = ChatAttachmentUrl::fromStoredUrl(
+            filled($hotel->picker_banner_url ?? null)
+                ? (string) $hotel->picker_banner_url
+                : null
+        );
+
         return [
             'id' => (string) $hotel->id,
             'name' => (string) $hotel->name,
             'location' => (string) ($hotel->location ?? ''),
             'city' => self::regionKey($hotel),
+            'banner_url' => $banner,
             'min_price' => round((float) ($priceStat['min_price'] ?? 0), 2),
             'max_price' => round((float) ($priceStat['max_price'] ?? 0), 2),
             'room_count' => (int) ($priceStat['room_count'] ?? 0),

@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../dio_client.dart';
+import '../widgets/insufficient_hotel_credits.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_state_views.dart';
@@ -16,6 +17,7 @@ class AdminBookingsScreen extends StatefulWidget {
 
 class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
   List<dynamic> _reservations = const [];
+  double _currentCredits = 0;
   String? _error;
   bool _loading = true;
   bool _busy = false;
@@ -33,8 +35,11 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
     });
     try {
       final d = await portalDio().get<Map<String, dynamic>>('/admin/dashboard');
+      final credits = d.data?['credits'] as Map<String, dynamic>?;
       setState(() {
         _reservations = (d.data?['reservations'] as List?) ?? const [];
+        _currentCredits =
+            (credits?['currentCredits'] as num?)?.toDouble() ?? 0;
         _loading = false;
       });
     } on DioException catch (e) {
@@ -52,6 +57,12 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
 
   Future<void> _approve(String id) async {
     if (_busy || id.isEmpty) return;
+    if (!await guardHotelCreditsBeforeApproval(
+      context,
+      currentCredits: _currentCredits,
+    )) {
+      return;
+    }
     setState(() => _busy = true);
     try {
       await portalDio().post<Map<String, dynamic>>('/admin/reservations/$id/approve');
@@ -62,9 +73,13 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      if (isHotelCreditsApprovalError(e)) {
+        await handleHotelCreditsApprovalError(context, e);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(dioErrorMessage(e))),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }

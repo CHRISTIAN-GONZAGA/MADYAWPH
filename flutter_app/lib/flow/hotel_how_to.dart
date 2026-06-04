@@ -192,6 +192,7 @@ Future<void> showHotelRegistrationCredentialsDialog(
   BuildContext context, {
   required String hotelName,
   required Map<String, dynamic>? portalAccounts,
+  Map<String, dynamic>? welcomeCredits,
   Map<String, dynamic>? sms,
   String? verificationCode,
 }) async {
@@ -200,6 +201,9 @@ Future<void> showHotelRegistrationCredentialsDialog(
   final smsError = (sms?['error'] ?? '').toString();
   final superA = portalAccounts?['super_admin'] as Map<String, dynamic>?;
   final adminA = portalAccounts?['admin'] as Map<String, dynamic>?;
+  final freeCredits = (welcomeCredits?['free_credits'] as num?)?.toInt();
+  final totalRooms = welcomeCredits?['total_rooms'];
+  final tierLabel = (welcomeCredits?['tier_label'] ?? '').toString();
 
   final buffer = StringBuffer()
     ..writeln('Hotel: $hotelName')
@@ -231,6 +235,34 @@ Future<void> showHotelRegistrationCredentialsDialog(
               'Use the password from your registration form (not your contact number).',
               style: Theme.of(ctx).textTheme.bodyMedium,
             ),
+            if (freeCredits != null && freeCredits > 0) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Theme.of(ctx).colorScheme.primaryContainer.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Welcome wallet credits',
+                      style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '₱${freeCredits.toString()} added to your hotel wallet '
+                      '($totalRooms room(s), $tierLabel tier).',
+                      style: Theme.of(ctx).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             Container(
               width: double.infinity,

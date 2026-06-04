@@ -10,6 +10,15 @@ class GuestMessage extends Model
 {
     use BelongsToHotel, HasFactory;
 
+    protected static function booted(): void
+    {
+        static::creating(function (GuestMessage $message): void {
+            if ($message->sent_at === null) {
+                $message->sent_at = now();
+            }
+        });
+    }
+
     protected $fillable = [
         'hotel_id',
         'room_id',

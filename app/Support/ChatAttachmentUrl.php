@@ -49,7 +49,9 @@ final class ChatAttachmentUrl
     {
         return str_starts_with($path, 'chat/')
             || str_starts_with($path, 'categories/')
-            || str_starts_with($path, 'rooms/');
+            || str_starts_with($path, 'rooms/')
+            || str_starts_with($path, 'hotel-banners/')
+            || str_starts_with($path, 'reseller-ids/');
     }
 
     private static function extractPublicDiskPath(string $url): ?string

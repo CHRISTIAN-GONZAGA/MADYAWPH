@@ -136,10 +136,20 @@ class HotelCreditBookingFeeService
             }
 
             $balanceBefore = (float) $credit->current_credits;
+            if ($fee > 0 && $balanceBefore <= 0) {
+                throw ValidationException::withMessages([
+                    'credits' => sprintf(
+                        'Your hotel credit balance is zero. Top up credits before confirming this booking (need ₱%s — %s%% of booking total ₱%s).',
+                        number_format($fee, 2),
+                        rtrim(rtrim(number_format($this->feePercent(), 2), '0'), '.'),
+                        number_format($roomTotal, 2)
+                    ),
+                ]);
+            }
             if ($balanceBefore < $fee) {
                 throw ValidationException::withMessages([
                     'credits' => sprintf(
-                        'Insufficient wallet credits. Need ₱%s to confirm this booking (%s%% of room total ₱%s). Current balance: ₱%s.',
+                        'Insufficient wallet credits. Top up credits to confirm this booking. Need ₱%s (%s%% of booking total ₱%s). Current balance: ₱%s.',
                         number_format($fee, 2),
                         rtrim(rtrim(number_format($this->feePercent(), 2), '0'), '.'),
                         number_format($roomTotal, 2),
@@ -152,7 +162,12 @@ class HotelCreditBookingFeeService
             $transactions = $transactions->push([
                 'id' => (string) Str::uuid(),
                 'type' => 'booking_fee',
-                'description' => "Booking confirmation fee ({$this->feePercent()}%) for reservation {$reference}",
+                'description' => sprintf(
+                    'Booking confirmation fee (%s%% of booking total ₱%s) for reservation %s',
+                    rtrim(rtrim(number_format($this->feePercent(), 2), '0'), '.'),
+                    number_format($roomTotal, 2),
+                    $reference
+                ),
                 'amount' => -$fee,
                 'timestamp' => now()->toISOString(),
                 'balanceAfter' => $balanceAfter,

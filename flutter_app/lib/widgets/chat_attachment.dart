@@ -111,7 +111,10 @@ class ChatAttachment {
       }
     }
 
-    if (trimmed.startsWith('categories/') || trimmed.startsWith('rooms/')) {
+    if (trimmed.startsWith('categories/') ||
+        trimmed.startsWith('rooms/') ||
+        trimmed.startsWith('hotel-banners/') ||
+        trimmed.startsWith('reseller-ids/')) {
       return '$origin/api/v1/chat/media?f=${Uri.encodeComponent(trimmed)}';
     }
 

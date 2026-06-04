@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
+import '../../../widgets/insufficient_hotel_credits.dart';
 import '../../admin_bookings.dart';
 import '../../admin_chat.dart';
 
@@ -10,10 +11,14 @@ class ReservationSection extends StatefulWidget {
     super.key,
     required this.reservations,
     required this.onChanged,
+    this.currentCredits = 0,
+    this.onTopUpCredits,
   });
 
   final List<dynamic> reservations;
   final Future<void> Function() onChanged;
+  final double currentCredits;
+  final VoidCallback? onTopUpCredits;
 
   @override
   State<ReservationSection> createState() => _ReservationSectionState();
@@ -24,6 +29,13 @@ class _ReservationSectionState extends State<ReservationSection> {
 
   Future<void> _approve(String id) async {
     if (_busy || id.isEmpty) return;
+    if (!await guardHotelCreditsBeforeApproval(
+      context,
+      currentCredits: widget.currentCredits,
+      onTopUp: widget.onTopUpCredits,
+    )) {
+      return;
+    }
     setState(() => _busy = true);
     try {
       await portalDio().post('/admin/reservations/$id/approve');
@@ -34,8 +46,16 @@ class _ReservationSectionState extends State<ReservationSection> {
       await widget.onChanged();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      if (isHotelCreditsApprovalError(e)) {
+        await handleHotelCreditsApprovalError(
+          context,
+          e,
+          onTopUp: widget.onTopUpCredits,
+        );
+      } else {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }

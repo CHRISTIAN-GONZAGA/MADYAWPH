@@ -22,6 +22,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   Map<String, dynamic>? _tasks;
   Map<String, dynamic>? _occupancy;
   Map<String, dynamic>? _profitOverview;
+  Map<String, dynamic>? _resellerPayments;
   bool _loading = true;
   String? _error;
   String _granularity = 'week';
@@ -62,6 +63,10 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           await portalDio().get<Map<String, dynamic>>('/reports/room-occupancy');
       final overview =
           await portalDio().get<Map<String, dynamic>>('/reports/profit-overview');
+      final resellerPay = await portalDio().get<Map<String, dynamic>>(
+        '/reports/reseller-payments/timeseries',
+        queryParameters: qp,
+      );
       setState(() {
         _sales = sales.data;
         _timeline = timeline.data;
@@ -69,6 +74,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         _tasks = tasks.data;
         _occupancy = occupancy.data;
         _profitOverview = overview.data;
+        _resellerPayments = resellerPay.data;
         _loading = false;
       });
     } on DioException catch (e) {
@@ -108,6 +114,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         (_transfers?['summary'] as Map<String, dynamic>?) ?? {};
     final taskSummary = (_tasks?['summary'] as Map<String, dynamic>?) ?? {};
     final overview = _profitOverview ?? const {};
+    final resellerPay = _resellerPayments ?? const {};
+    final resellerTotals = resellerPay['totals'] as Map<String, dynamic>? ?? {};
+    final resellerPoints = (resellerPay['points'] as List<dynamic>?) ?? [];
 
     return RefreshIndicator(
       onRefresh: _load,
@@ -139,6 +148,63 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   label: 'This year',
                   data: overview['annual'] as Map<String, dynamic>?,
                 ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          AppSectionCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Reseller commissions (payouts)',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Period total: ₱${_AdminReportsScreenState._fmtNum(resellerTotals['total_paid'] ?? 0)} · '
+                  '${resellerTotals['payment_count'] ?? 0} payment(s)',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 8),
+                _ResellerPeriodRow(
+                  label: 'Today',
+                  data: (overview['reseller_payments'] as Map?)?['daily']
+                      as Map<String, dynamic>?,
+                ),
+                _ResellerPeriodRow(
+                  label: 'This week',
+                  data: (overview['reseller_payments'] as Map?)?['weekly']
+                      as Map<String, dynamic>?,
+                ),
+                _ResellerPeriodRow(
+                  label: 'This month',
+                  data: (overview['reseller_payments'] as Map?)?['monthly']
+                      as Map<String, dynamic>?,
+                ),
+                _ResellerPeriodRow(
+                  label: 'This year',
+                  data: (overview['reseller_payments'] as Map?)?['annual']
+                      as Map<String, dynamic>?,
+                ),
+                if (resellerPoints.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    'Chart period breakdown',
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                  ...resellerPoints.whereType<Map>().map((p) {
+                    final m = Map<String, dynamic>.from(p);
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        '${m['period_label']}: ₱${_AdminReportsScreenState._fmtNum(m['total_paid'])} '
+                        '(${m['payment_count']} payments)',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    );
+                  }),
+                ],
               ],
             ),
           ),
@@ -574,11 +640,16 @@ class _PeriodFinanceRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final revenue = (data?['gross_revenue'] ?? data?['revenue'] ?? data?['profit'] ?? 0);
+    final revenue = (data?['gross_revenue'] ?? data?['revenue'] ?? 0);
     final refunds = (data?['refunds'] ?? 0);
+    final reseller = (data?['reseller_commissions_paid'] ?? 0);
     final expenses = (data?['expenses'] ?? data?['refund_expense'] ?? 0);
-    final net = (data?['net_revenue'] ?? data?['profit'] ?? revenue);
+    final net = (data?['profit'] ?? data?['net_revenue'] ?? revenue);
+    final grossNet = (data?['profit_before_reseller_payouts'] ?? data?['net_revenue'] ?? revenue);
     final bookings = data?['bookings'] ?? 0;
+    final amenity = (data?['amenity_revenue'] ?? 0);
+    final room = (data?['room_revenue'] ?? 0);
+    final transfers = (data?['transfer_adjustments'] ?? 0);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -587,14 +658,54 @@ class _PeriodFinanceRow extends StatelessWidget {
         children: [
           Text(label, style: Theme.of(context).textTheme.titleSmall),
           Text(
-            'Revenue ₱${_AdminReportsScreenState._fmtNum(revenue)} · '
-            'Refunds ₱${_AdminReportsScreenState._fmtNum(refunds)} · '
-            'Expenses ₱${_AdminReportsScreenState._fmtNum(expenses)} · '
-            'Net ₱${_AdminReportsScreenState._fmtNum(net)} · '
-            '$bookings paid booking(s)',
+            'Gross revenue ₱${_AdminReportsScreenState._fmtNum(revenue)} · '
+            'Room ₱${_AdminReportsScreenState._fmtNum(room)} · '
+            'Amenities ₱${_AdminReportsScreenState._fmtNum(amenity)} · '
+            'Transfers ₱${_AdminReportsScreenState._fmtNum(transfers)}',
             style: Theme.of(context).textTheme.bodySmall,
           ),
+          Text(
+            'Refunds ₱${_AdminReportsScreenState._fmtNum(refunds)} · '
+            'Reseller payouts ₱${_AdminReportsScreenState._fmtNum(reseller)} · '
+            'Total expenses ₱${_AdminReportsScreenState._fmtNum(expenses)}',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          Text(
+            'Net before resellers ₱${_AdminReportsScreenState._fmtNum(grossNet)} · '
+            'Net profit ₱${_AdminReportsScreenState._fmtNum(net)} · '
+            '$bookings paid booking(s)',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _ResellerPeriodRow extends StatelessWidget {
+  const _ResellerPeriodRow({required this.label, this.data});
+
+  final String label;
+  final Map<String, dynamic>? data;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = (data?['total_paid'] ?? 0);
+    final count = data?['payment_count'] ?? 0;
+    final resellers = data?['unique_resellers'] ?? 0;
+    final byCat = data?['by_category'] as Map<String, dynamic>? ?? {};
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        '$label: ₱${_AdminReportsScreenState._fmtNum(total)} · $count payment(s) · '
+        '$resellers reseller(s)'
+        '${byCat.isEmpty ? '' : ' · taxi ₱${_AdminReportsScreenState._fmtNum(byCat['taxi'] ?? 0)}, '
+            'moto ₱${_AdminReportsScreenState._fmtNum(byCat['motorcycle'] ?? 0)}, '
+            'individual ₱${_AdminReportsScreenState._fmtNum(byCat['individual'] ?? 0)}'}',
+        style: Theme.of(context).textTheme.bodySmall,
       ),
     );
   }

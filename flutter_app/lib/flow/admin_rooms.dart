@@ -485,15 +485,10 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     final hasStay = current == 'checked_in' ||
         current == 'booked' ||
         (room?['current_guest_name'] ?? '').toString().trim().isNotEmpty;
-    final showCheckedOut = hasStay && paid;
+    final showCheckedOut = hasStay && paid && _canEditGuestStay;
     String status = current;
-    final chosen = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Change room status'),
-        content: DropdownButtonFormField<String>(
-          initialValue: current,
-          items: [
+    final statusItems = _canEditGuestStay
+        ? [
             const DropdownMenuItem(value: 'available', child: Text('available')),
             const DropdownMenuItem(value: 'booked', child: Text('booked')),
             const DropdownMenuItem(value: 'checked_in', child: Text('Occupied')),
@@ -501,7 +496,20 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
               const DropdownMenuItem(value: 'checked_out', child: Text('checked_out')),
             const DropdownMenuItem(value: 'maintenance', child: Text('maintenance')),
             const DropdownMenuItem(value: 'reserved', child: Text('reserved')),
-          ],
+          ]
+        : const [
+            DropdownMenuItem(value: 'available', child: Text('available')),
+            DropdownMenuItem(value: 'maintenance', child: Text('maintenance')),
+          ];
+    final chosen = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(_canEditGuestStay ? 'Change room status' : 'Housekeeping status'),
+        content: DropdownButtonFormField<String>(
+          initialValue: _canEditGuestStay
+              ? current
+              : (current == 'maintenance' ? 'maintenance' : 'available'),
+          items: statusItems,
           onChanged: (v) => status = v ?? current,
         ),
         actions: [
@@ -982,6 +990,13 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     );
   }
 
+  bool get _canEditGuestStay => _data?['can_edit_guest_stay'] == true;
+
+  String? get _managementBlockedReason {
+    final r = _data?['management_blocked_reason'];
+    return r == null ? null : r.toString();
+  }
+
   Widget _buildBody() {
     if (_loading) return const AppLoadingView();
     if (_error != null) {
@@ -1035,10 +1050,26 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                 ],
               ),
               if (guest.isNotEmpty) Text('Guest: $guest'),
-              if (pwd.isNotEmpty) Text('Password: $pwd'),
+              if (_canEditGuestStay && pwd.isNotEmpty) Text('Password: $pwd'),
             ],
           ),
         ),
+        if (!_canEditGuestStay) ...[
+          const SizedBox(height: 12),
+          MaterialBanner(
+            backgroundColor: Colors.orange.shade50,
+            content: Text(
+              _managementBlockedReason ??
+                  'Confirm this stay in the Bookings tab before changing guest or payment details here.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Back'),
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: 16),
         Text('Booking info', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
@@ -1096,75 +1127,84 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
               ),
             ),
           ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: FilledButton.icon(
-                onPressed: _busy ? null : _addFee,
-                icon: const Icon(Icons.add),
-                label: const Text('Add fee'),
+        if (_canEditGuestStay) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _busy ? null : _addFee,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add fee'),
+                ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _updatingPayment ? null : _updatePaymentStatus,
-                icon: const Icon(Icons.payments_outlined),
-                label: const Text('Payment'),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _issuingRefund ? null : _issueRefund,
-                icon: const Icon(Icons.replay_outlined),
-                label: const Text('Refund'),
-              ),
-            ),
-          ],
-        ),
-        if (status == 'checked_in' || status == 'booked') ...[
+            ],
+          ),
           const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: (_checkingOut || _changingStatus) ? null : _checkoutGuest,
-              icon: _checkingOut
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.logout_outlined),
-              label: Text(_checkingOut ? 'Checking out…' : 'Check out guest'),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _updatingPayment ? null : _updatePaymentStatus,
+                  icon: const Icon(Icons.payments_outlined),
+                  label: const Text('Payment'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _issuingRefund ? null : _issueRefund,
+                  icon: const Icon(Icons.replay_outlined),
+                  label: const Text('Refund'),
+                ),
+              ),
+            ],
+          ),
+          if (status == 'checked_in' || status == 'booked') ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: (_checkingOut || _changingStatus) ? null : _checkoutGuest,
+                icon: _checkingOut
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.logout_outlined),
+                label: Text(_checkingOut ? 'Checking out…' : 'Check out guest'),
+              ),
             ),
+          ],
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _changingStatus ? null : _changeStatus,
+                  icon: const Icon(Icons.toggle_on_outlined),
+                  label: const Text('Change status'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _transferRoom,
+                  icon: const Icon(Icons.swap_horiz_outlined),
+                  label: const Text('Transfer room'),
+                ),
+              ),
+            ],
+          ),
+        ] else ...[
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: _changingStatus ? null : _changeStatus,
+            icon: const Icon(Icons.build_outlined),
+            label: const Text('Housekeeping status only'),
           ),
         ],
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _changingStatus ? null : _changeStatus,
-                icon: const Icon(Icons.toggle_on_outlined),
-                label: const Text('Change status'),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _transferRoom,
-                icon: const Icon(Icons.swap_horiz_outlined),
-                label: const Text('Transfer room'),
-              ),
-            ),
-          ],
-        ),
         const SizedBox(height: 16),
         Text('Charges', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 4),

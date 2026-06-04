@@ -7,6 +7,7 @@ import '../../admin_chat.dart';
 import '../../admin_reports.dart';
 import '../../admin_rooms.dart';
 import '../../admin_staff.dart';
+import '../../admin_tasks.dart';
 import '../../guest_list_history.dart';
 
 class SettingsSection extends StatelessWidget {
@@ -20,9 +21,11 @@ class SettingsSection extends StatelessWidget {
     required this.onOpenActivityLogs,
     required this.onOpenAccountSettings,
     required this.onRefreshAfterNav,
+    this.creditsLocked = false,
   });
 
   final String creditBalance;
+  final bool creditsLocked;
   final VoidCallback onRecharge;
   final VoidCallback onSurgePricing;
   final Future<void> Function() onThemeReset;
@@ -45,9 +48,28 @@ class SettingsSection extends StatelessWidget {
             title: Text(context.tr('change_language')),
             subtitle: Text(AppLocales.label(appLocaleNotifier.value)),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => LanguagePickerButton.showPicker(context),
+            enabled: !creditsLocked,
+            onTap: creditsLocked
+                ? null
+                : () => LanguagePickerButton.showPicker(context),
           ),
         ),
+        if (creditsLocked) ...[
+          const SizedBox(height: 12),
+          Card(
+            color: Theme.of(context).colorScheme.errorContainer,
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Text(
+                'Credits are depleted. Only recharge is available until your balance is above ₱0.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onErrorContainer,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 16),
         _SettingsGroup(
           title: 'Operations',
@@ -56,6 +78,7 @@ class SettingsSection extends StatelessWidget {
               icon: Icons.forum_outlined,
               title: 'Chatroom',
               subtitle: 'Guest and staff inboxes',
+              enabled: !creditsLocked,
               onTap: () async {
                 await Navigator.of(context).push<void>(
                   MaterialPageRoute<void>(
@@ -69,6 +92,7 @@ class SettingsSection extends StatelessWidget {
               icon: Icons.history_edu_outlined,
               title: 'Guest history',
               subtitle: 'Completed stays archive',
+              enabled: !creditsLocked,
               onTap: () async {
                 await Navigator.of(context).push<void>(
                   MaterialPageRoute<void>(
@@ -86,6 +110,7 @@ class SettingsSection extends StatelessWidget {
               icon: Icons.hotel_outlined,
               title: 'Rooms & status',
               subtitle: 'Add, edit, passwords, fees, checkout',
+              enabled: !creditsLocked,
               onTap: () async {
                 await Navigator.of(context).push<void>(
                   MaterialPageRoute<void>(
@@ -99,6 +124,7 @@ class SettingsSection extends StatelessWidget {
               icon: Icons.category_outlined,
               title: 'Room categories',
               subtitle: 'Categories, pricing, gallery images',
+              enabled: !creditsLocked,
               onTap: () async {
                 await Navigator.of(context).push<void>(
                   MaterialPageRoute<void>(
@@ -112,6 +138,7 @@ class SettingsSection extends StatelessWidget {
               icon: Icons.trending_up_outlined,
               title: 'Dynamic / surge pricing',
               subtitle: 'Weekend, peak, emergency surge toggles',
+              enabled: !creditsLocked,
               onTap: onSurgePricing,
             ),
           ],
@@ -123,10 +150,25 @@ class SettingsSection extends StatelessWidget {
               icon: Icons.groups_outlined,
               title: 'Staff management',
               subtitle: 'Add, edit, roles, suspend',
+              enabled: !creditsLocked,
               onTap: () async {
                 await Navigator.of(context).push<void>(
                   MaterialPageRoute<void>(
                     builder: (_) => const AdminStaffScreen(),
+                  ),
+                );
+                await onRefreshAfterNav();
+              },
+            ),
+            _SettingsTile(
+              icon: Icons.assignment_outlined,
+              title: 'Assign tasks',
+              subtitle: 'Delegate work to maintenance, reception, and staff',
+              enabled: !creditsLocked,
+              onTap: () async {
+                await Navigator.of(context).push<void>(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AdminTasksScreen(),
                   ),
                 );
                 await onRefreshAfterNav();
@@ -147,6 +189,7 @@ class SettingsSection extends StatelessWidget {
               icon: Icons.insights_outlined,
               title: 'Analytics & reports',
               subtitle: 'Daily, weekly, monthly, annual revenue',
+              enabled: !creditsLocked,
               onTap: () {
                 Navigator.of(context).push<void>(
                   MaterialPageRoute<void>(
@@ -159,24 +202,28 @@ class SettingsSection extends StatelessWidget {
               icon: Icons.receipt_long_outlined,
               title: 'Checkout reminders',
               subtitle: 'Process due billing reminders',
+              enabled: !creditsLocked,
               onTap: () => onProcessReminders(),
             ),
             _SettingsTile(
               icon: Icons.palette_outlined,
               title: 'Theme customization',
               subtitle: 'Reset personal admin theme',
+              enabled: !creditsLocked,
               onTap: () => onThemeReset(),
             ),
             _SettingsTile(
               icon: Icons.list_alt_outlined,
               title: 'Activity logs & audit',
               subtitle: 'System activity tracking',
+              enabled: !creditsLocked,
               onTap: onOpenActivityLogs,
             ),
             _SettingsTile(
               icon: Icons.lock_outline,
               title: 'Account settings',
               subtitle: 'Admin password and portal admins',
+              enabled: !creditsLocked,
               onTap: onOpenAccountSettings,
             ),
           ],
@@ -219,12 +266,14 @@ class _SettingsTile extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.enabled = true,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -235,7 +284,8 @@ class _SettingsTile extends StatelessWidget {
         title: Text(title),
         subtitle: Text(subtitle),
         trailing: const Icon(Icons.chevron_right),
-        onTap: onTap,
+        enabled: enabled,
+        onTap: enabled ? onTap : null,
       ),
     );
   }

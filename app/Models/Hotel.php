@@ -17,7 +17,16 @@ class Hotel extends Model
         'contact_number',
         'access_username',
         'access_password',
+        'picker_banner_url',
+        'total_rooms',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'total_rooms' => 'integer',
+        ];
+    }
 
     public function users(): HasMany
     {

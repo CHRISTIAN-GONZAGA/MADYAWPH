@@ -20,7 +20,7 @@ final class GuestMessageResource
         $locale = $viewerLocale ?? $translator->defaultStaffLanguage();
         $remoteBudget = max(0, $maxRemoteTranslations);
 
-        return $messages->map(function ($message) use ($translator, $locale, &$remoteBudget) {
+        return $messages->map(function ($message) use ($translator, $locale, &$remoteBudget, $viewerLocale) {
             $row = self::one($message);
             if ($viewerLocale === null) {
                 return self::withoutTranslation($row);

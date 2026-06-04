@@ -13,6 +13,7 @@ use App\Services\StayReceiptService;
 use App\Support\ChatAttachmentUrl;
 use App\Support\PriceRounding;
 use App\Support\RoomImageUploadRules;
+use App\Support\StayManagementPolicy;
 use App\Support\RoomMediaStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -130,6 +131,11 @@ class RoomController extends Controller
         );
         $bookingId = $bookingBefore ? (string) $bookingBefore->id : null;
 
+        StayManagementPolicy::assertAllowedStatusChange($bookingBefore, (string) $validated['status']);
+        if (in_array((string) $validated['status'], [RoomStatus::CHECKED_OUT->value], true)) {
+            StayManagementPolicy::denyUnlessCanManage($bookingBefore);
+        }
+
         $result = $this->roomCheckoutService->applyStatusChange(
             $room,
             $request->user(),
@@ -160,6 +166,7 @@ class RoomController extends Controller
             (string) $room->hotel_id,
             (string) $room->id
         );
+        StayManagementPolicy::denyUnlessCanManage($bookingBefore);
         $room = $this->roomCheckoutService->checkoutGuest($room, $request->user());
         $bookingId = $bookingBefore ? (string) $bookingBefore->id : null;
         $booking = $bookingId

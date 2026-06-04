@@ -12,7 +12,7 @@ class AdminChatHeaderButton extends StatelessWidget {
   });
 
   final AdminChatBadgeInfo badge;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
 
   String get _tooltip {
     if (badge.totalUnread == 0) return 'Open chatroom';

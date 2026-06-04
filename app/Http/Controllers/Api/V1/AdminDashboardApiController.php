@@ -68,16 +68,21 @@ class AdminDashboardApiController extends Controller
             ->groupBy('room_id')
             ->map(fn ($bookings) => $bookings->first());
 
+        $lowBalanceThreshold = (float) config(
+            'services.hotel_credits.low_balance_threshold',
+            3000
+        );
         $credit = HotelCredit::query()->firstOrCreate(
             ['hotel_id' => (string) $user->hotel_id],
             [
                 'current_credits' => 0,
-                'warning_threshold' => 5000,
+                'warning_threshold' => $lowBalanceThreshold,
                 'custom_markup_percentage' => 10,
                 'total_spent' => 0,
                 'transactions' => [],
             ]
         );
+        $currentCredits = (float) $credit->current_credits;
 
         $payload = [
             'auth' => ['user' => array_merge($user->toArray(), [
@@ -121,8 +126,11 @@ class AdminDashboardApiController extends Controller
                 ]);
             }),
             'credits' => [
-                'currentCredits' => (float) $credit->current_credits,
+                'currentCredits' => $currentCredits,
                 'warningThreshold' => (float) $credit->warning_threshold,
+                'lowBalanceThreshold' => $lowBalanceThreshold,
+                'isLowBalance' => $currentCredits > 0 && $currentCredits < $lowBalanceThreshold,
+                'isDepleted' => $currentCredits <= 0,
                 'customMarkupPercentage' => (float) $credit->custom_markup_percentage,
                 'totalSpent' => (float) $credit->total_spent,
                 'transactions' => collect($credit->transactions ?? [])->values(),

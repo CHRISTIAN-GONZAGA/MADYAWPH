@@ -14,6 +14,7 @@ import '../locale_controller.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/language_picker_button.dart';
 import '../widgets/app_input.dart';
+import '../widgets/chat_attachment.dart';
 import 'dashboards.dart';
 import 'flow_state.dart';
 
@@ -834,6 +835,9 @@ class _HotelSelectTile extends StatelessWidget {
             ? '₱${minPrice.round()}–${maxPrice.round()}'
             : '₱${minPrice.round()}')
         : null;
+    final rawBanner = (hotel['banner_url'] ?? '').toString().trim();
+    final bannerUrl =
+        rawBanner.isNotEmpty ? ChatAttachment.resolveMediaUrl(rawBanner) : '';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -848,34 +852,53 @@ class _HotelSelectTile extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onTap,
-            child: IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Container(
-                    width: 5,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          scheme.primary,
-                          scheme.primary.withValues(alpha: 0.5),
-                        ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (bannerUrl.isNotEmpty)
+                  SizedBox(
+                    height: 120,
+                    child: Image.network(
+                      bannerUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => ColoredBox(
+                        color: scheme.surfaceContainerHighest,
+                        child: Icon(Icons.apartment_rounded,
+                            size: 40, color: scheme.outline),
                       ),
                     ),
                   ),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 26,
-                            backgroundColor: scheme.primaryContainer,
-                            child: Icon(Icons.apartment_rounded,
-                                color: scheme.primary, size: 28),
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        width: 5,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              scheme.primary,
+                              scheme.primary.withValues(alpha: 0.5),
+                            ],
                           ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
+                          child: Row(
+                            children: [
+                              if (bannerUrl.isEmpty)
+                                CircleAvatar(
+                                  radius: 26,
+                                  backgroundColor: scheme.primaryContainer,
+                                  child: Icon(Icons.apartment_rounded,
+                                      color: scheme.primary, size: 28),
+                                )
+                              else
+                                const SizedBox(width: 0),
                           const SizedBox(width: 14),
                           Expanded(
                             child: Column(
@@ -944,12 +967,14 @@ class _HotelSelectTile extends StatelessWidget {
                           ),
                           Icon(Icons.arrow_forward_ios_rounded,
                               size: 16, color: scheme.outline),
-                        ],
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -974,8 +999,15 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
   final _location = TextEditingController();
   final _contact = TextEditingController();
   final _adminEmail = TextEditingController();
+  final _totalRooms = TextEditingController(text: '1');
   bool _busy = false;
   String? _error;
+
+  int _estimatedWelcomeCredits() {
+    final n = int.tryParse(_totalRooms.text.trim()) ?? 0;
+    if (n < 1) return 0;
+    return ((n + 19) ~/ 20) * 10000;
+  }
 
   @override
   void dispose() {
@@ -987,6 +1019,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
     _location.dispose();
     _contact.dispose();
     _adminEmail.dispose();
+    _totalRooms.dispose();
     super.dispose();
   }
 
@@ -1009,6 +1042,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
               : _location.text.trim(),
           'contact_number': _contact.text.trim(),
           'admin_email': _adminEmail.text.trim(),
+          'total_rooms': int.tryParse(_totalRooms.text.trim()) ?? 1,
         },
       );
       final hid = res.data?['hotel_id'] as String?;
@@ -1046,6 +1080,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
         context,
         hotelName: name,
         portalAccounts: res.data?['portal_accounts'] as Map<String, dynamic>?,
+        welcomeCredits: res.data?['welcome_credits'] as Map<String, dynamic>?,
         sms: sms,
         verificationCode:
             verificationCode.isNotEmpty ? verificationCode : null,
@@ -1077,6 +1112,21 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
             controller: _hotelName,
             decoration: const InputDecoration(labelText: 'Hotel name', border: OutlineInputBorder()),
             textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _totalRooms,
+            decoration: InputDecoration(
+              labelText: 'Total number of rooms *',
+              border: const OutlineInputBorder(),
+              helperText:
+                  'Welcome credits: 1–20 rooms → ₱10,000; 21–40 → ₱20,000; '
+                  '41–60 → ₱30,000 (+₱10,000 per 20 rooms). '
+                  'Estimated: ₱${_estimatedWelcomeCredits()}.',
+            ),
+            keyboardType: TextInputType.number,
+            textInputAction: TextInputAction.next,
+            onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 12),
           TextField(

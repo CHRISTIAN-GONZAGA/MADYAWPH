@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Api\V1;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\Hotel;
+use App\Models\HotelCredit;
 use App\Models\PersonalAccessToken;
 use App\Models\User;
+use App\Support\HotelRegistrationCredits;
 use App\Services\SmsService;
 use App\Support\HotelDirectory;
 use Illuminate\Http\JsonResponse;
@@ -14,6 +16,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Throwable;
 
 class PortalAuthController extends Controller
@@ -50,6 +53,7 @@ class PortalAuthController extends Controller
             'city' => ['nullable', 'string', 'max:120'],
             'contact_number' => ['required', 'string', 'max:30'],
             'admin_email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'total_rooms' => ['required', 'integer', 'min:1', 'max:5000'],
         ]);
 
         $operatorLogin = $validated['username'].'_admin';
@@ -60,6 +64,13 @@ class PortalAuthController extends Controller
             ], 422);
         }
 
+        $totalRooms = (int) $validated['total_rooms'];
+        $freeCredits = HotelRegistrationCredits::freeCreditsForRoomCount($totalRooms);
+        $lowBalanceThreshold = (float) config(
+            'services.hotel_credits.low_balance_threshold',
+            3000
+        );
+
         $hotel = Hotel::withoutGlobalScopes()->create([
             'name' => $validated['hotel_name'],
             'location' => $validated['location'],
@@ -69,6 +80,31 @@ class PortalAuthController extends Controller
             'contact_number' => $validated['contact_number'],
             'access_username' => $validated['username'],
             'access_password' => Hash::make($validated['password']),
+            'total_rooms' => $totalRooms,
+        ]);
+
+        HotelCredit::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'current_credits' => $freeCredits,
+            'warning_threshold' => $lowBalanceThreshold,
+            'custom_markup_percentage' => 10,
+            'total_spent' => 0,
+            'transactions' => [
+                [
+                    'id' => (string) Str::uuid(),
+                    'type' => 'registration_bonus',
+                    'description' => sprintf(
+                        'Welcome credits for %d room(s) (%s tier)',
+                        $totalRooms,
+                        HotelRegistrationCredits::tierRangeLabel($totalRooms)
+                    ),
+                    'amount' => $freeCredits,
+                    'timestamp' => now()->toISOString(),
+                    'balanceAfter' => $freeCredits,
+                    'transactionId' => 'registration-bonus-'.(string) $hotel->id,
+                    'total_rooms' => $totalRooms,
+                ],
+            ],
         ]);
 
         Cache::forget(self::HOTELS_DIRECTORY_CACHE_KEY);
@@ -107,6 +143,13 @@ class PortalAuthController extends Controller
             'hotel_id' => (string) $hotel->id,
             'token' => $token,
             'user' => $admin,
+            'welcome_credits' => [
+                'total_rooms' => $totalRooms,
+                'free_credits' => $freeCredits,
+                'tier_label' => HotelRegistrationCredits::tierRangeLabel($totalRooms),
+                'credits_per_tier' => HotelRegistrationCredits::CREDITS_PER_TIER,
+                'rooms_per_tier' => HotelRegistrationCredits::ROOMS_PER_TIER,
+            ],
             'sms' => $sms->toArray(),
             'message' => $sms->sent
                 ? 'Hotel registered. Verification code sent by SMS to '.$sms->normalizedPhone.'.'

@@ -8,6 +8,7 @@ use App\Models\ActivityLog;
 use App\Models\BillingCharge;
 use App\Models\Booking;
 use App\Models\Room;
+use App\Models\ResellerCommissionPayment;
 use App\Models\RoomTransfer;
 use App\Models\StaffMember;
 use App\Models\Task;
@@ -344,6 +345,79 @@ class ReportController extends Controller
                 $anchor->copy()->startOfYear(),
                 $anchor->copy()->endOfYear()
             ),
+            'reseller_payments' => [
+                'daily' => $this->resellerCommissionSummary(
+                    $anchor->copy()->startOfDay(),
+                    $anchor->copy()->endOfDay()
+                ),
+                'weekly' => $this->resellerCommissionSummary(
+                    $anchor->copy()->startOfWeek(),
+                    $anchor->copy()->endOfWeek()
+                ),
+                'monthly' => $this->resellerCommissionSummary(
+                    $anchor->copy()->startOfMonth(),
+                    $anchor->copy()->endOfMonth()
+                ),
+                'annual' => $this->resellerCommissionSummary(
+                    $anchor->copy()->startOfYear(),
+                    $anchor->copy()->endOfYear()
+                ),
+            ],
+        ]);
+    }
+
+    public function resellerPaymentsTimeseries(Request $request)
+    {
+        $validated = $request->validate([
+            'granularity' => ['nullable', 'in:day,week,month,year'],
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date'],
+        ]);
+
+        $granularity = $validated['granularity'] ?? 'week';
+        $defaultFrom = match ($granularity) {
+            'day' => now()->subDays(14)->startOfDay(),
+            'week' => now()->subWeeks(12)->startOfDay(),
+            'month' => now()->subMonths(12)->startOfMonth(),
+            'year' => now()->subYears(5)->startOfYear(),
+            default => now()->subWeeks(12)->startOfDay(),
+        };
+        $from = isset($validated['from']) ? Carbon::parse($validated['from'])->startOfDay() : $defaultFrom;
+        $to = isset($validated['to']) ? Carbon::parse($validated['to'])->endOfDay() : now()->endOfDay();
+
+        $payments = ResellerCommissionPayment::query()
+            ->whereBetween('created_at', [$from, $to])
+            ->get(['amount', 'reseller_category', 'created_at']);
+
+        $points = $payments
+            ->groupBy(fn ($p) => $this->bucketLabel(
+                SafeModelAttributes::carbonFromModel($p, 'created_at'),
+                $granularity
+            ))
+            ->map(function ($group, $label) {
+                $byCategory = $group->groupBy('reseller_category')
+                    ->map(fn ($g) => round((float) $g->sum(fn ($row) => (float) ($row->amount ?? 0)), 2))
+                    ->all();
+
+                return [
+                    'period_label' => (string) $label,
+                    'total_paid' => round((float) $group->sum(fn ($row) => (float) ($row->amount ?? 0)), 2),
+                    'payment_count' => (int) $group->count(),
+                    'by_category' => $byCategory,
+                ];
+            })
+            ->sortBy('period_label')
+            ->values();
+
+        return response()->json([
+            'granularity' => $granularity,
+            'from' => $from->toDateString(),
+            'to' => $to->toDateString(),
+            'totals' => [
+                'total_paid' => round((float) $payments->sum(fn ($p) => (float) ($p->amount ?? 0)), 2),
+                'payment_count' => (int) $payments->count(),
+            ],
+            'points' => $points,
         ]);
     }
 
@@ -615,8 +689,11 @@ class ReportController extends Controller
             ->whereBetween('transferred_at', [$from, $to])
             ->sum('price_adjustment');
 
+        $resellerCommissions = $this->resellerCommissionTotal($from, $to);
         $netRevenue = $grossRevenue + $refunds + $transferAdjustments;
         $refundExpense = abs(min(0, $refunds));
+        $totalExpenses = $refundExpense + $resellerCommissions;
+        $profitAfterReseller = $netRevenue - $resellerCommissions;
 
         return [
             'from' => $from->toDateString(),
@@ -629,9 +706,41 @@ class ReportController extends Controller
             'amenity_revenue' => round($amenityRevenue, 2),
             'room_revenue' => round($roomRevenue > 0 ? $roomRevenue : $grossRevenue, 2),
             'transfer_adjustments' => round($transferAdjustments, 2),
-            'expenses' => round($refundExpense, 2),
+            'reseller_commissions_paid' => round($resellerCommissions, 2),
+            'expenses' => round($totalExpenses, 2),
             'net_revenue' => round($netRevenue, 2),
-            'profit' => round($netRevenue, 2),
+            'profit' => round($profitAfterReseller, 2),
+            'profit_before_reseller_payouts' => round($netRevenue, 2),
+        ];
+    }
+
+    private function resellerCommissionTotal(Carbon $from, Carbon $to): float
+    {
+        return (float) ResellerCommissionPayment::query()
+            ->whereBetween('created_at', [$from, $to])
+            ->sum('amount');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function resellerCommissionSummary(Carbon $from, Carbon $to): array
+    {
+        $payments = ResellerCommissionPayment::query()
+            ->whereBetween('created_at', [$from, $to])
+            ->get(['amount', 'reseller_category', 'reseller_id']);
+
+        $byCategory = $payments->groupBy('reseller_category')
+            ->map(fn ($g) => round((float) $g->sum(fn ($p) => (float) ($p->amount ?? 0)), 2))
+            ->all();
+
+        return [
+            'from' => $from->toDateString(),
+            'to' => $to->toDateString(),
+            'payment_count' => (int) $payments->count(),
+            'total_paid' => round((float) $payments->sum(fn ($p) => (float) ($p->amount ?? 0)), 2),
+            'unique_resellers' => (int) $payments->pluck('reseller_id')->unique()->count(),
+            'by_category' => $byCategory,
         ];
     }
 }
