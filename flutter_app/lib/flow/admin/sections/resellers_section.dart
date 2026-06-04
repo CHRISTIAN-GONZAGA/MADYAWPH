@@ -7,6 +7,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../../dio_client.dart';
 import '../../../widgets/chat_attachment.dart';
 import '../../../widgets/hotel_credits_policy.dart';
+import '../../../widgets/insufficient_hotel_credits.dart';
 
 /// Reseller onboarding, QR codes, scan-to-pay commission, and payment history.
 class ResellersSection extends StatefulWidget {
@@ -27,7 +28,6 @@ class _ResellersSectionState extends State<ResellersSection>
   List<Map<String, dynamic>> _resellers = [];
   List<Map<String, dynamic>> _payments = [];
   Map<String, dynamic>? _paymentSummary;
-  Map<String, dynamic>? _scannedReseller;
   bool _loading = true;
   bool _busy = false;
   bool _scanning = false;
@@ -35,7 +35,6 @@ class _ResellersSectionState extends State<ResellersSection>
   final _nameCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
-  final _openingCreditsCtrl = TextEditingController(text: '0');
   String _category = 'taxi';
   XFile? _idFile;
 
@@ -52,7 +51,6 @@ class _ResellersSectionState extends State<ResellersSection>
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
     _emailCtrl.dispose();
-    _openingCreditsCtrl.dispose();
     super.dispose();
   }
 
@@ -109,7 +107,6 @@ class _ResellersSectionState extends State<ResellersSection>
           'phone': _phoneCtrl.text.trim(),
           'email': _emailCtrl.text.trim(),
           'category': _category,
-          'opening_credits': double.tryParse(_openingCreditsCtrl.text.trim()) ?? 0,
         },
         file: _idFile!,
         fileField: 'id_file',
@@ -130,7 +127,6 @@ class _ResellersSectionState extends State<ResellersSection>
       _nameCtrl.clear();
       _phoneCtrl.clear();
       _emailCtrl.clear();
-      _openingCreditsCtrl.text = '0';
       setState(() => _idFile = null);
       await _load();
       await widget.onRefresh();
@@ -165,8 +161,7 @@ class _ResellersSectionState extends State<ResellersSection>
                 ),
               const SizedBox(height: 12),
               Text(
-                'Category: ${reseller['category']}\n'
-                'Credits: ₱${reseller['current_credits']}',
+                'Category: ${reseller['category']}',
                 textAlign: TextAlign.center,
               ),
             ],
@@ -184,18 +179,23 @@ class _ResellersSectionState extends State<ResellersSection>
 
   Future<void> _lookupCode(String code) async {
     if (_busy || code.trim().isEmpty) return;
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _scanning = false;
+    });
     try {
       final res = await portalDio().post<Map<String, dynamic>>(
         '/admin/resellers/lookup',
         data: {'code': code.trim()},
       );
       if (!mounted) return;
-      setState(() {
-        _scannedReseller = Map<String, dynamic>.from(res.data?['reseller'] as Map? ?? {});
-        _scanning = false;
-      });
-      _tabs.animateTo(1);
+      final reseller =
+          Map<String, dynamic>.from(res.data?['reseller'] as Map? ?? {});
+      final wallet =
+          Map<String, dynamic>.from(res.data?['hotel_wallet'] as Map? ?? {});
+      final hotelBalance =
+          (wallet['current_credits'] as num?)?.toDouble() ?? 0;
+      await _showCommissionDialog(reseller, hotelBalance);
     } on DioException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -205,125 +205,149 @@ class _ResellersSectionState extends State<ResellersSection>
     }
   }
 
-  Future<void> _payCommission(Map<String, dynamic> reseller) async {
-    if (_busy) return;
+  Future<void> _showCommissionDialog(
+    Map<String, dynamic> reseller,
+    double hotelBalance,
+  ) async {
+    if (!mounted) return;
     if (!AdminCreditsGate.canPerformActions(context)) {
       AdminCreditsGate.showActionsBlockedMessage(context);
       return;
     }
+
     final amountCtrl = TextEditingController();
     final noteCtrl = TextEditingController();
     final id = (reseller['id'] ?? '').toString();
-    final balance = (reseller['current_credits'] as num?)?.toDouble() ?? 0;
+    final idUrl = (reseller['id_document_url'] ?? '').toString();
 
-    final ok = await showDialog<bool>(
+    final paid = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Pay commission — ${reseller['name']}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Available reseller credits: ₱${balance.toStringAsFixed(2)}'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: amountCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Commission amount (PHP)',
-                border: OutlineInputBorder(),
+        title: Text(reseller['name']?.toString() ?? 'Reseller'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _infoRow('Category', '${reseller['category']}'),
+              _infoRow('Phone', '${reseller['phone'] ?? '—'}'),
+              if ((reseller['email'] ?? '').toString().isNotEmpty)
+                _infoRow('Email', '${reseller['email']}'),
+              _infoRow(
+                'Total commissions paid',
+                '₱${(reseller['total_commissions_paid'] as num?)?.toStringAsFixed(2) ?? '0'}',
               ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: noteCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Note (optional)',
-                border: OutlineInputBorder(),
+              _infoRow(
+                'Hotel wallet balance',
+                '₱${hotelBalance.toStringAsFixed(2)}',
               ),
-            ),
-          ],
+              if (idUrl.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    ChatAttachment.resolveMediaUrl(idUrl),
+                    height: 100,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+              Text(
+                'Commission will be deducted from your hotel credits.',
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: amountCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Commission amount (PHP) *',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: noteCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Note (optional)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Pay')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Pay commission'),
+          ),
         ],
       ),
     );
+
     final amount = double.tryParse(amountCtrl.text.trim()) ?? 0;
     final note = noteCtrl.text.trim();
     amountCtrl.dispose();
     noteCtrl.dispose();
-    if (ok != true || id.isEmpty) return;
+
+    if (paid != true || id.isEmpty || amount <= 0) return;
 
     setState(() => _busy = true);
     try {
-      await portalDio().post<Map<String, dynamic>>(
+      final res = await portalDio().post<Map<String, dynamic>>(
         '/admin/resellers/$id/commissions',
-        data: {
-          'amount': amount,
-          'note': note,
-        },
+        data: {'amount': amount, 'note': note},
       );
       if (!mounted) return;
+      final wallet = res.data?['wallet'] as Map<String, dynamic>?;
+      final after = (wallet?['balance_after'] as num?)?.toDouble();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Commission recorded and deducted from reseller credits.')),
+        SnackBar(
+          content: Text(
+            'Commission ₱${amount.toStringAsFixed(2)} paid. '
+            '${after != null ? 'Hotel balance: ₱${after.toStringAsFixed(2)}.' : ''}',
+          ),
+        ),
       );
-      setState(() => _scannedReseller = null);
       await _load();
       await widget.onRefresh();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      if (isHotelCreditsApprovalError(e)) {
+        await handleHotelCreditsApprovalError(context, e);
+      } else {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _topUpReseller(Map<String, dynamic> reseller) async {
-    if (_busy) return;
-    final amountCtrl = TextEditingController();
-    final id = (reseller['id'] ?? '').toString();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Add credits — ${reseller['name']}'),
-        content: TextField(
-          controller: amountCtrl,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(
-            labelText: 'Amount (PHP)',
-            border: OutlineInputBorder(),
-          ),
+  Widget _infoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: RichText(
+        text: TextSpan(
+          style: Theme.of(context).textTheme.bodyMedium,
+          children: [
+            TextSpan(
+              text: '$label: ',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            TextSpan(text: value),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Add')),
-        ],
       ),
     );
-    final amount = double.tryParse(amountCtrl.text.trim()) ?? 0;
-    amountCtrl.dispose();
-    if (ok != true || id.isEmpty) return;
-
-    setState(() => _busy = true);
-    try {
-      await portalDio().post('/admin/resellers/$id/credits', data: {
-        'amount': amount,
-      });
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Reseller credits updated.')),
-      );
-      await _load();
-    } on DioException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
   }
 
   @override
@@ -418,16 +442,6 @@ class _ResellersSectionState extends State<ResellersSection>
           onChanged: _busy ? null : (v) => setState(() => _category = v ?? 'taxi'),
         ),
         const SizedBox(height: 12),
-        TextField(
-          controller: _openingCreditsCtrl,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(
-            labelText: 'Opening credit balance (PHP)',
-            helperText: 'Commission payouts deduct from this balance.',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 12),
         OutlinedButton.icon(
           onPressed: _busy
               ? null
@@ -482,7 +496,6 @@ class _ResellersSectionState extends State<ResellersSection>
       );
     }
 
-    final scanned = _scannedReseller;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
       children: [
@@ -492,50 +505,11 @@ class _ResellersSectionState extends State<ResellersSection>
           label: const Text('Scan reseller QR with camera'),
         ),
         const SizedBox(height: 16),
-        if (scanned == null)
-          Text(
-            'Scan a reseller QR code to view their profile and pay a custom commission. '
-            'The amount is deducted from that reseller\'s credit balance.',
-            style: Theme.of(context).textTheme.bodySmall,
-          )
-        else ...[
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    scanned['name']?.toString() ?? 'Reseller',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  Text('Category: ${scanned['category']}'),
-                  Text('Phone: ${scanned['phone'] ?? '—'}'),
-                  Text(
-                    'Credits: ₱${(scanned['current_credits'] as num?)?.toStringAsFixed(2) ?? '0'}',
-                  ),
-                  Text(
-                    'Total paid: ₱${(scanned['total_commissions_paid'] as num?)?.toStringAsFixed(2) ?? '0'}',
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      FilledButton(
-                        onPressed: _busy ? null : () => _payCommission(scanned),
-                        child: const Text('Pay commission'),
-                      ),
-                      OutlinedButton(
-                        onPressed: _busy ? null : () => _topUpReseller(scanned),
-                        child: const Text('Add credits'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
+        Text(
+          'After scanning, you will see the reseller\'s details and can enter a commission amount. '
+          'The commission is deducted from your hotel wallet credits.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
       ],
     );
   }
@@ -587,7 +561,7 @@ class _ResellersSectionState extends State<ResellersSection>
                   subtitle: Text(
                     '${p['reseller_category']} · ${p['created_at']}\n'
                     '${p['note'] ?? ''}\n'
-                    'Balance after: ₱${p['balance_after']}',
+                    'Hotel balance after: ₱${p['hotel_balance_after'] ?? p['balance_after']}',
                   ),
                   isThreeLine: true,
                 ),
@@ -639,17 +613,15 @@ class _ResellersSectionState extends State<ResellersSection>
                             icon: const Icon(Icons.qr_code),
                             label: const Text('Show QR'),
                           ),
-                          OutlinedButton.icon(
-                            onPressed: _busy ? null : () => _topUpReseller(r),
-                            icon: const Icon(Icons.add_card),
-                            label: const Text('Add credits'),
-                          ),
                           FilledButton.icon(
                             onPressed: _busy
                                 ? null
                                 : () {
-                                    setState(() => _scannedReseller = r);
-                                    _tabs.animateTo(1);
+                                    final payload =
+                                        (r['qr_payload'] ?? '').toString();
+                                    if (payload.isNotEmpty) {
+                                      _lookupCode(payload);
+                                    }
                                   },
                             icon: const Icon(Icons.paid_outlined),
                             label: const Text('Pay commission'),

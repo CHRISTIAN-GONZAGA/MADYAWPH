@@ -1,11 +1,21 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-/// Secure keys for hotel context, Sanctum portal, and guest portal tokens.
+/// Persists hotel context and preferences in [SharedPreferences] (survives app restarts
+/// reliably on Android). Portal and guest tokens stay in [FlutterSecureStorage].
 class AuthStorage {
   AuthStorage._();
 
-  static const _storage = FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  static const _migrationFlag = 'auth_storage_migrated_v2';
+
+  static const _secure = FlutterSecureStorage(
+    aOptions: AndroidOptions(
+      encryptedSharedPreferences: true,
+      resetOnError: false,
+    ),
+    iOptions: IOSOptions(
+      accessibility: KeychainAccessibility.first_unlock_this_device,
+    ),
   );
 
   static const _kHotelId = 'hotel_id';
@@ -21,84 +31,160 @@ class AuthStorage {
   static const _kIntroSeen = 'intro_seen';
   static const _kHotelsDirectoryCache = 'hotels_directory_cache';
 
-  static Future<String?> hotelId() => _storage.read(key: _kHotelId);
+  static SharedPreferences? _prefs;
+  static bool _migrationStarted = false;
 
-  static Future<String?> hotelName() => _storage.read(key: _kHotelName);
-
-  static Future<String?> portalToken() => _storage.read(key: _kPortalToken);
-
-  /// `admin` or `staff` after portal login or register.
-  static Future<String?> portalRole() => _storage.read(key: _kPortalRole);
-
-  static Future<String?> guestToken() => _storage.read(key: _kGuestToken);
-
-  static Future<String?> appLocaleCode() => _storage.read(key: _kAppLocale);
-
-  static Future<void> setAppLocaleCode(String code) =>
-      _storage.write(key: _kAppLocale, value: code);
-
-  /// After first completed intro, skip splash on later launches for faster startup.
-  static Future<bool> hasSeenIntro() async =>
-      (await _storage.read(key: _kIntroSeen)) == '1';
-
-  static Future<void> setIntroSeen() =>
-      _storage.write(key: _kIntroSeen, value: '1');
-
-  /// Cached JSON from GET /hotels for instant picker UI while refreshing.
-  static Future<String?> hotelsDirectoryCache() =>
-      _storage.read(key: _kHotelsDirectoryCache);
-
-  static Future<void> setHotelsDirectoryCache(String json) =>
-      _storage.write(key: _kHotelsDirectoryCache, value: json);
-
-  static Future<void> clearHotelsDirectoryCache() =>
-      _storage.delete(key: _kHotelsDirectoryCache);
-
-  /// Hex like "#2563eb" (seed color for Material3).
-  static Future<String?> uiSeedColorHex() => _storage.read(key: _kUiSeedColor);
-
-  /// `light`, `dark`, or `system`.
-  static Future<String?> themeModePreference() =>
-      _storage.read(key: _kThemeMode);
-
-  static Future<void> setThemeModePreference(String mode) =>
-      _storage.write(key: _kThemeMode, value: mode);
-
-  static Future<void> setHotelContext(
-      {required String id, required String name}) async {
-    await _storage.write(key: _kHotelId, value: id);
-    await _storage.write(key: _kHotelName, value: name);
+  static Future<SharedPreferences> _preferences() async {
+    return _prefs ??= await SharedPreferences.getInstance();
   }
 
-  static Future<void> setPortalAuth(
-      {required String token, required String role}) async {
-    await _storage.write(key: _kPortalToken, value: token);
-    await _storage.write(key: _kPortalRole, value: role);
+  /// Moves non-secret keys out of secure storage (older builds stored everything there).
+  static Future<void> _ensureMigrated() async {
+    if (_migrationStarted) return;
+    _migrationStarted = true;
+
+    final prefs = await _preferences();
+    if (prefs.getBool(_migrationFlag) == true) {
+      return;
+    }
+
+    Future<void> migrateString(String key) async {
+      if (prefs.containsKey(key)) return;
+      final legacy = await _secure.read(key: key);
+      if (legacy != null && legacy.isNotEmpty) {
+        await prefs.setString(key, legacy);
+      }
+    }
+
+    await migrateString(_kHotelId);
+    await migrateString(_kHotelName);
+    await migrateString(_kUiSeedColor);
+    await migrateString(_kThemeMode);
+    await migrateString(_kThemeFabDx);
+    await migrateString(_kThemeFabDy);
+    await migrateString(_kAppLocale);
+    await migrateString(_kIntroSeen);
+    await migrateString(_kHotelsDirectoryCache);
+
+    await prefs.setBool(_migrationFlag, true);
+  }
+
+  static Future<String?> hotelId() async {
+    await _ensureMigrated();
+    return (await _preferences()).getString(_kHotelId);
+  }
+
+  static Future<String?> hotelName() async {
+    await _ensureMigrated();
+    return (await _preferences()).getString(_kHotelName);
+  }
+
+  static Future<String?> portalToken() => _secure.read(key: _kPortalToken);
+
+  /// `admin`, `staff`, or `super_admin` after portal login or register.
+  static Future<String?> portalRole() => _secure.read(key: _kPortalRole);
+
+  static Future<String?> guestToken() => _secure.read(key: _kGuestToken);
+
+  static Future<String?> appLocaleCode() async {
+    await _ensureMigrated();
+    return (await _preferences()).getString(_kAppLocale);
+  }
+
+  static Future<void> setAppLocaleCode(String code) async {
+    await _ensureMigrated();
+    await (await _preferences()).setString(_kAppLocale, code);
+  }
+
+  static Future<bool> hasSeenIntro() async {
+    await _ensureMigrated();
+    return (await _preferences()).getString(_kIntroSeen) == '1';
+  }
+
+  static Future<void> setIntroSeen() async {
+    await _ensureMigrated();
+    await (await _preferences()).setString(_kIntroSeen, '1');
+  }
+
+  static Future<String?> hotelsDirectoryCache() async {
+    await _ensureMigrated();
+    return (await _preferences()).getString(_kHotelsDirectoryCache);
+  }
+
+  static Future<void> setHotelsDirectoryCache(String json) async {
+    await _ensureMigrated();
+    await (await _preferences()).setString(_kHotelsDirectoryCache, json);
+  }
+
+  static Future<void> clearHotelsDirectoryCache() async {
+    await _ensureMigrated();
+    await (await _preferences()).remove(_kHotelsDirectoryCache);
+  }
+
+  static Future<String?> uiSeedColorHex() async {
+    await _ensureMigrated();
+    return (await _preferences()).getString(_kUiSeedColor);
+  }
+
+  static Future<String?> themeModePreference() async {
+    await _ensureMigrated();
+    return (await _preferences()).getString(_kThemeMode);
+  }
+
+  static Future<void> setThemeModePreference(String mode) async {
+    await _ensureMigrated();
+    await (await _preferences()).setString(_kThemeMode, mode);
+  }
+
+  static Future<void> setHotelContext({
+    required String id,
+    required String name,
+  }) async {
+    await _ensureMigrated();
+    final prefs = await _preferences();
+    await prefs.setString(_kHotelId, id);
+    await prefs.setString(_kHotelName, name);
+  }
+
+  static Future<void> setPortalAuth({
+    required String token,
+    required String role,
+  }) async {
+    await _secure.write(key: _kPortalToken, value: token);
+    await _secure.write(key: _kPortalRole, value: role);
   }
 
   static Future<void> setGuestToken(String token) =>
-      _storage.write(key: _kGuestToken, value: token);
+      _secure.write(key: _kGuestToken, value: token);
 
   /// Removes Sanctum portal credentials only (keeps hotel context and guest).
   static Future<void> clearPortalAuth() async {
-    await _storage.delete(key: _kPortalToken);
-    await _storage.delete(key: _kPortalRole);
+    await _secure.delete(key: _kPortalToken);
+    await _secure.delete(key: _kPortalRole);
   }
 
-  static Future<void> clearGuestAuth() => _storage.delete(key: _kGuestToken);
+  static Future<void> clearGuestAuth() => _secure.delete(key: _kGuestToken);
 
-  static Future<void> setUiSeedColorHex(String hex) =>
-      _storage.write(key: _kUiSeedColor, value: hex);
+  static Future<void> setUiSeedColorHex(String hex) async {
+    await _ensureMigrated();
+    await (await _preferences()).setString(_kUiSeedColor, hex);
+  }
 
-  /// Last FAB position for theme picker (logical px from bottom-right anchor).
-  static Future<void> setThemeFabOffset(double dxFromRight, double dyFromBottom) async {
-    await _storage.write(key: _kThemeFabDx, value: dxFromRight.toString());
-    await _storage.write(key: _kThemeFabDy, value: dyFromBottom.toString());
+  static Future<void> setThemeFabOffset(
+    double dxFromRight,
+    double dyFromBottom,
+  ) async {
+    await _ensureMigrated();
+    final prefs = await _preferences();
+    await prefs.setString(_kThemeFabDx, dxFromRight.toString());
+    await prefs.setString(_kThemeFabDy, dyFromBottom.toString());
   }
 
   static Future<(double, double)?> themeFabOffset() async {
-    final xs = await _storage.read(key: _kThemeFabDx);
-    final ys = await _storage.read(key: _kThemeFabDy);
+    await _ensureMigrated();
+    final prefs = await _preferences();
+    final xs = prefs.getString(_kThemeFabDx);
+    final ys = prefs.getString(_kThemeFabDy);
     if (xs == null || ys == null) return null;
     final dx = double.tryParse(xs);
     final dy = double.tryParse(ys);
@@ -106,8 +192,11 @@ class AuthStorage {
     return (dx, dy);
   }
 
-  /// Full sign-out / switch hotel: clears all persisted auth.
+  /// Switch hotel / full reset: clears preferences and secure tokens.
   static Future<void> clearAll() async {
-    await _storage.deleteAll();
+    await _ensureMigrated();
+    await (await _preferences()).clear();
+    await _secure.deleteAll();
+    _migrationStarted = false;
   }
 }

@@ -216,7 +216,7 @@ Route::middleware('role:admin')->group(function (): void {
         ) {
             return response()->json(['message' => 'Invalid SMS verification code.'], 422);
         }
-        $request->user()->update(['password' => Hash::make($validated['new_password'])]);
+        \App\Support\PortalPassword::assign($request->user(), (string) $validated['new_password']);
         Cache::forget('admin_pwd_change:'.(string) $request->user()->id);
         app(ActivityLogService::class)->log(
             (string) $request->user()->hotel_id,
@@ -1017,7 +1017,6 @@ Route::get('/admin/resellers/payments', [ResellerController::class, 'payments'])
 Route::post('/admin/resellers/lookup', [ResellerController::class, 'lookup'])->middleware('role:admin');
 Route::get('/admin/resellers/{id}', [ResellerController::class, 'show'])->middleware('role:admin');
 Route::post('/admin/resellers/{id}/commissions', [ResellerController::class, 'payCommission'])->middleware('role:admin');
-Route::post('/admin/resellers/{id}/credits', [ResellerController::class, 'addCredits'])->middleware('role:admin');
 
 // Activity logs
 Route::get('/activity-logs', [ActivityLogController::class, 'index'])->middleware('role:admin');

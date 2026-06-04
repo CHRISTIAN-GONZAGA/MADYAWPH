@@ -96,9 +96,46 @@ final class HotelDirectory
             )
         )->values()->all();
 
+        $bounds = self::priceBoundsFromRows($flat);
+
         return [
             'data' => $flat,
             'regions' => self::groupHotelsForPicker($hotels, $priceStats),
+            'meta' => [
+                'hotel_count' => count($flat),
+                'region_count' => count(array_unique(array_column($flat, 'city'))),
+                'price_floor' => $bounds['floor'],
+                'price_ceiling' => $bounds['ceiling'],
+                'has_pricing' => $bounds['has_pricing'],
+            ],
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     * @return array{floor: float, ceiling: float, has_pricing: bool}
+     */
+    public static function priceBoundsFromRows(array $rows): array
+    {
+        $floor = null;
+        $ceiling = null;
+
+        foreach ($rows as $row) {
+            $lo = (float) ($row['min_price'] ?? 0);
+            $hi = (float) ($row['max_price'] ?? 0);
+            if ($hi <= 0 && $lo <= 0) {
+                continue;
+            }
+            $effectiveMin = $lo > 0 ? $lo : $hi;
+            $effectiveMax = $hi > 0 ? $hi : $lo;
+            $floor = $floor === null ? $effectiveMin : min($floor, $effectiveMin);
+            $ceiling = $ceiling === null ? $effectiveMax : max($ceiling, $effectiveMax);
+        }
+
+        return [
+            'floor' => round((float) ($floor ?? 0), 2),
+            'ceiling' => round((float) ($ceiling ?? 0), 2),
+            'has_pricing' => $floor !== null,
         ];
     }
 

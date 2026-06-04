@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Support\HotelRegistrationCredits;
 use App\Services\SmsService;
 use App\Support\HotelDirectory;
+use App\Support\PortalPassword;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -55,6 +56,9 @@ class PortalAuthController extends Controller
             'admin_email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'total_rooms' => ['required', 'integer', 'min:1', 'max:5000'],
         ]);
+
+        $validated['username'] = trim((string) $validated['username']);
+        $validated['password'] = (string) $validated['password'];
 
         $operatorLogin = $validated['username'].'_admin';
         if (User::withoutGlobalScopes()->where('name', $operatorLogin)->exists()) {
@@ -111,7 +115,7 @@ class PortalAuthController extends Controller
 
         $ownerPassword = (string) $validated['password'];
 
-        User::withoutGlobalScopes()->create([
+        $super = User::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'name' => $validated['username'],
             'email' => 'super.'.substr(sha1((string) $hotel->id), 0, 12).'@super.local',
@@ -126,6 +130,14 @@ class PortalAuthController extends Controller
             'password' => $ownerPassword,
             'role' => UserRole::ADMIN,
         ]);
+
+        $this->ensurePortalPasswordStored($ownerPassword, $super);
+        $this->ensurePortalPasswordStored($ownerPassword, $admin);
+
+        $super->refresh();
+        $admin->refresh();
+        $passwordsVerified = PortalPassword::verify($ownerPassword, $super)
+            && PortalPassword::verify($ownerPassword, $admin);
 
         $verificationCode = (string) random_int(100000, 999999);
         Cache::put('hotel_verify:'.(string) $hotel->id, $verificationCode, now()->addHours(24));
@@ -154,6 +166,8 @@ class PortalAuthController extends Controller
             'message' => $sms->sent
                 ? 'Hotel registered. Verification code sent by SMS to '.$sms->normalizedPhone.'.'
                 : 'Hotel registered. SMS was not delivered — use verification_code below (also check SEMAPHORE_API_KEY on the server).',
+            'registration_password' => $ownerPassword,
+            'passwords_verified' => $passwordsVerified,
             'portal_accounts' => [
                 'super_admin' => [
                     'username' => $validated['username'],
@@ -186,7 +200,7 @@ class PortalAuthController extends Controller
         ]);
 
         $role = (string) ($validated['role'] ?? '');
-        $identifier = (string) ($validated['username'] ?? $validated['email'] ?? '');
+        $identifier = trim((string) ($validated['username'] ?? $validated['email'] ?? ''));
         $identifierField = filled($validated['username'] ?? null) ? 'name' : 'email';
 
         $user = User::withoutGlobalScopes()
@@ -345,7 +359,7 @@ class PortalAuthController extends Controller
             return response()->json(['message' => 'Invalid reset code.'], 422);
         }
 
-        $user->update(['password' => Hash::make($validated['new_password'])]);
+        PortalPassword::assign($user, (string) $validated['new_password']);
         Cache::forget('password_reset:'.(string) $user->id);
 
         return response()->json(['ok' => true, 'message' => 'Password updated. You may now sign in.']);
@@ -353,16 +367,27 @@ class PortalAuthController extends Controller
 
     private function passwordMatchesUser(string $plainPassword, User $user): bool
     {
-        $hash = $user->getAuthPassword();
-        if (! is_string($hash) || trim($hash) === '') {
-            return false;
+        return PortalPassword::verifyOrLegacy($plainPassword, $user);
+    }
+
+    private function ensurePortalPasswordStored(string $plainPassword, ?User $user): void
+    {
+        if ($user === null) {
+            return;
         }
 
-        try {
-            return Hash::check($plainPassword, $hash);
-        } catch (Throwable) {
-            return false;
+        $user->refresh();
+
+        if (PortalPassword::verify($plainPassword, $user)) {
+            return;
         }
+
+        Log::warning('Portal password hash missing or invalid after registration; re-saving', [
+            'user_id' => (string) $user->id,
+            'name' => (string) ($user->name ?? ''),
+        ]);
+
+        PortalPassword::assign($user, $plainPassword);
     }
 
     private function normalizeHotelId(mixed $value): string
@@ -371,6 +396,12 @@ class PortalAuthController extends Controller
             return '';
         }
 
-        return trim((string) $value);
+        $normalized = trim((string) $value);
+
+        if (preg_match('/^[a-f0-9]{24}$/i', $normalized) === 1) {
+            return strtolower($normalized);
+        }
+
+        return $normalized;
     }
 }

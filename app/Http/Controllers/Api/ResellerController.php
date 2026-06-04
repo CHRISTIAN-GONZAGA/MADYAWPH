@@ -34,7 +34,6 @@ class ResellerController extends Controller
             'phone' => ['nullable', 'string', 'max:40'],
             'email' => ['nullable', 'email', 'max:255'],
             'category' => ['required', 'in:taxi,motorcycle,individual'],
-            'opening_credits' => ['nullable', 'numeric', 'min:0'],
             'id_file' => array_merge(['required'], array_slice(RoomImageUploadRules::fileRules(), 1)),
         ]);
 
@@ -85,6 +84,7 @@ class ResellerController extends Controller
 
         return response()->json([
             'reseller' => $this->resellerService->present($reseller),
+            'hotel_wallet' => $this->resellerService->hotelWalletSummary($hotelId),
         ]);
     }
 
@@ -109,29 +109,7 @@ class ResellerController extends Controller
             'ok' => true,
             'payment' => $this->presentPayment($result['payment']),
             'reseller' => $this->resellerService->present($result['reseller']),
-        ]);
-    }
-
-    public function addCredits(Request $request, string $id): JsonResponse
-    {
-        $validated = $request->validate([
-            'amount' => ['required', 'numeric', 'min:0.01'],
-            'note' => ['nullable', 'string', 'max:500'],
-        ]);
-
-        $hotelId = (string) $request->user()->hotel_id;
-        $reseller = Reseller::query()->findOrFail($id);
-        $result = $this->resellerService->addCredits(
-            $hotelId,
-            $reseller,
-            (float) $validated['amount'],
-            $validated['note'] ?? null,
-            $request->user(),
-        );
-
-        return response()->json([
-            'ok' => true,
-            'reseller' => $this->resellerService->present($result['reseller']),
+            'wallet' => $result['wallet'],
         ]);
     }
 
@@ -192,6 +170,8 @@ class ResellerController extends Controller
             'reseller_category' => (string) ($payment->reseller_category ?? ''),
             'amount' => round((float) ($payment->amount ?? 0), 2),
             'note' => (string) ($payment->note ?? ''),
+            'hotel_balance_before' => round((float) ($payment->balance_before ?? 0), 2),
+            'hotel_balance_after' => round((float) ($payment->balance_after ?? 0), 2),
             'balance_before' => round((float) ($payment->balance_before ?? 0), 2),
             'balance_after' => round((float) ($payment->balance_after ?? 0), 2),
             'paid_by_user_name' => (string) ($payment->paid_by_user_name ?? ''),

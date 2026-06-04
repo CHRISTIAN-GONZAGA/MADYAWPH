@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\HotelCredit;
 use App\Models\Reseller;
 use App\Models\ResellerCommissionPayment;
 use App\Models\User;
@@ -41,10 +42,34 @@ class ResellerService
             ),
             'qr_token' => $token,
             'qr_payload' => $qrPayload,
-            'current_credits' => round((float) ($reseller->current_credits ?? 0), 2),
             'total_commissions_paid' => round((float) ($reseller->total_commissions_paid ?? 0), 2),
             'status' => (string) ($reseller->status ?? 'active'),
             'created_at' => optional($reseller->created_at)->toISOString(),
+        ];
+    }
+
+    /**
+     * @return array{current_credits: float}
+     */
+    public function hotelWalletSummary(string $hotelId): array
+    {
+        $lowBalanceThreshold = (float) config(
+            'services.hotel_credits.low_balance_threshold',
+            3000
+        );
+        $credit = HotelCredit::withoutGlobalScopes()->firstOrCreate(
+            ['hotel_id' => $hotelId],
+            [
+                'current_credits' => 0,
+                'warning_threshold' => $lowBalanceThreshold,
+                'custom_markup_percentage' => 10,
+                'total_spent' => 0,
+                'transactions' => [],
+            ]
+        );
+
+        return [
+            'current_credits' => round((float) $credit->current_credits, 2),
         ];
     }
 
@@ -65,7 +90,6 @@ class ResellerService
             $idUrl = RoomMediaStorage::store($idFile, 'reseller-ids');
         }
 
-        $opening = round(max(0, (float) ($validated['opening_credits'] ?? 0)), 2);
         $qrToken = (string) Str::uuid();
 
         $reseller = Reseller::withoutGlobalScopes()->create([
@@ -76,18 +100,9 @@ class ResellerService
             'category' => $category,
             'id_document_url' => $idUrl,
             'qr_token' => $qrToken,
-            'current_credits' => $opening,
+            'current_credits' => 0,
             'total_commissions_paid' => 0,
-            'transactions' => $opening > 0
-                ? [[
-                    'id' => (string) Str::uuid(),
-                    'type' => 'opening_balance',
-                    'description' => 'Opening credit balance',
-                    'amount' => $opening,
-                    'timestamp' => now()->toISOString(),
-                    'balanceAfter' => $opening,
-                ]]
-                : [],
+            'transactions' => [],
             'status' => 'active',
         ]);
 
@@ -98,7 +113,6 @@ class ResellerService
             [
                 'reseller_id' => (string) $reseller->id,
                 'category' => $category,
-                'opening_credits' => $opening,
             ]
         );
 
@@ -125,7 +139,11 @@ class ResellerService
     }
 
     /**
-     * @return array{payment: ResellerCommissionPayment, reseller: Reseller}
+     * @return array{
+     *     payment: ResellerCommissionPayment,
+     *     reseller: Reseller,
+     *     wallet: array{balance_before: float, balance_after: float, amount: float}
+     * }
      */
     public function payCommission(
         string $hotelId,
@@ -141,18 +159,58 @@ class ResellerService
             ]);
         }
 
-        return DB::transaction(function () use ($hotelId, $reseller, $amount, $note, $actor): array {
+        $resellerId = (string) $reseller->id;
+        $paymentId = (string) Str::uuid();
+        $transactionKey = "reseller-commission-{$paymentId}";
+
+        return DB::transaction(function () use (
+            $hotelId,
+            $resellerId,
+            $amount,
+            $note,
+            $actor,
+            $paymentId,
+            $transactionKey,
+        ): array {
             $locked = Reseller::withoutGlobalScopes()
                 ->where('hotel_id', $hotelId)
-                ->where('id', (string) $reseller->id)
+                ->where('id', $resellerId)
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $balanceBefore = round((float) ($locked->current_credits ?? 0), 2);
+            $lowBalanceThreshold = (float) config(
+                'services.hotel_credits.low_balance_threshold',
+                3000
+            );
+            $credit = HotelCredit::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $credit) {
+                $credit = HotelCredit::withoutGlobalScopes()->create([
+                    'hotel_id' => $hotelId,
+                    'current_credits' => 0,
+                    'warning_threshold' => $lowBalanceThreshold,
+                    'custom_markup_percentage' => 10,
+                    'total_spent' => 0,
+                    'transactions' => [],
+                ]);
+            }
+
+            $balanceBefore = round((float) $credit->current_credits, 2);
+            if ($balanceBefore <= 0) {
+                throw ValidationException::withMessages([
+                    'credits' => sprintf(
+                        'Your hotel credit balance is zero. Top up credits before paying reseller commission (need ₱%s).',
+                        number_format($amount, 2)
+                    ),
+                ]);
+            }
             if ($balanceBefore < $amount) {
                 throw ValidationException::withMessages([
-                    'amount' => sprintf(
-                        'Insufficient reseller credits. Need ₱%s but balance is ₱%s.',
+                    'credits' => sprintf(
+                        'Insufficient hotel wallet credits. Need ₱%s for this commission. Current balance: ₱%s.',
                         number_format($amount, 2),
                         number_format($balanceBefore, 2)
                     ),
@@ -160,28 +218,46 @@ class ResellerService
             }
 
             $balanceAfter = round($balanceBefore - $amount, 2);
-            $transactions = collect($locked->transactions ?? []);
-            $transactions = $transactions->push([
-                'id' => (string) Str::uuid(),
-                'type' => 'commission_payout',
-                'description' => $note !== null && $note !== ''
-                    ? "Commission: {$note}"
-                    : 'Commission payout',
-                'amount' => -$amount,
-                'timestamp' => now()->toISOString(),
-                'balanceAfter' => $balanceAfter,
-                'paid_by' => $actor ? (string) $actor->id : null,
-            ])->values()->all();
+            $hotelTransactions = collect($credit->transactions ?? []);
+            $alreadyApplied = $hotelTransactions->contains(function (mixed $row) use ($transactionKey): bool {
+                if (! is_array($row)) {
+                    return false;
+                }
+
+                return ($row['transactionId'] ?? $row['transaction_id'] ?? '') === $transactionKey;
+            });
+            if (! $alreadyApplied) {
+                $hotelTransactions = $hotelTransactions->push([
+                    'id' => (string) Str::uuid(),
+                    'type' => 'reseller_commission',
+                    'description' => sprintf(
+                        'Reseller commission to %s (%s)',
+                        (string) $locked->name,
+                        (string) $locked->category
+                    ),
+                    'amount' => -$amount,
+                    'timestamp' => now()->toISOString(),
+                    'balanceAfter' => $balanceAfter,
+                    'transactionId' => $transactionKey,
+                    'reseller_id' => $resellerId,
+                    'note' => $note,
+                ])->values()->all();
+
+                $credit->update([
+                    'current_credits' => $balanceAfter,
+                    'total_spent' => round((float) $credit->total_spent + $amount, 2),
+                    'transactions' => $hotelTransactions,
+                ]);
+            }
 
             $locked->update([
-                'current_credits' => $balanceAfter,
                 'total_commissions_paid' => round((float) $locked->total_commissions_paid + $amount, 2),
-                'transactions' => $transactions,
             ]);
 
             $payment = ResellerCommissionPayment::withoutGlobalScopes()->create([
+                'id' => $paymentId,
                 'hotel_id' => $hotelId,
-                'reseller_id' => (string) $locked->id,
+                'reseller_id' => $resellerId,
                 'reseller_name' => (string) $locked->name,
                 'reseller_category' => (string) $locked->category,
                 'amount' => $amount,
@@ -196,12 +272,12 @@ class ResellerService
             $this->activityLogService->log(
                 $hotelId,
                 $actor,
-                "Paid reseller commission ₱{$amount} to {$locked->name}",
+                "Paid reseller commission ₱{$amount} to {$locked->name} (deducted from hotel credits)",
                 [
-                    'reseller_id' => (string) $locked->id,
+                    'reseller_id' => $resellerId,
                     'payment_id' => (string) $payment->id,
                     'amount' => $amount,
-                    'balance_after' => $balanceAfter,
+                    'hotel_balance_after' => $balanceAfter,
                     'category' => (string) $locked->category,
                 ]
             );
@@ -209,55 +285,12 @@ class ResellerService
             return [
                 'payment' => $payment,
                 'reseller' => $locked->fresh(),
+                'wallet' => [
+                    'amount' => $amount,
+                    'balance_before' => $balanceBefore,
+                    'balance_after' => $balanceAfter,
+                ],
             ];
         });
-    }
-
-    /**
-     * @return array{reseller: Reseller}
-     */
-    public function addCredits(
-        string $hotelId,
-        Reseller $reseller,
-        float $amount,
-        ?string $note,
-        ?User $actor,
-    ): array {
-        $amount = round($amount, 2);
-        if ($amount <= 0) {
-            throw ValidationException::withMessages([
-                'amount' => ['Amount must be greater than zero.'],
-            ]);
-        }
-
-        $balanceBefore = round((float) ($reseller->current_credits ?? 0), 2);
-        $balanceAfter = round($balanceBefore + $amount, 2);
-        $transactions = collect($reseller->transactions ?? []);
-        $transactions = $transactions->push([
-            'id' => (string) Str::uuid(),
-            'type' => 'credit_top_up',
-            'description' => $note !== null && $note !== '' ? $note : 'Credit top-up',
-            'amount' => $amount,
-            'timestamp' => now()->toISOString(),
-            'balanceAfter' => $balanceAfter,
-        ])->values()->all();
-
-        $reseller->update([
-            'current_credits' => $balanceAfter,
-            'transactions' => $transactions,
-        ]);
-
-        $this->activityLogService->log(
-            $hotelId,
-            $actor,
-            "Topped up reseller {$reseller->name} credits by ₱{$amount}",
-            [
-                'reseller_id' => (string) $reseller->id,
-                'amount' => $amount,
-                'balance_after' => $balanceAfter,
-            ]
-        );
-
-        return ['reseller' => $reseller->fresh()];
     }
 }

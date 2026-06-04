@@ -20,9 +20,8 @@ import 'flow_state.dart';
 
 // --- Choose hotel (by city/region) → role menu ---
 
-const _kHotelPriceMin = 1.0;
-const _kHotelPriceMax = 10000.0;
-const _kHotelPriceDivisions = 100;
+const _kHotelPriceFallbackMin = 0.0;
+const _kHotelPriceFallbackMax = 50000.0;
 
 class ChooseHotelScreen extends StatefulWidget {
   const ChooseHotelScreen({super.key});
@@ -37,7 +36,12 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
   bool _loading = true;
   bool _refreshing = false;
   String? _error;
-  RangeValues _priceRange = const RangeValues(_kHotelPriceMin, _kHotelPriceMax);
+  RangeValues _priceRange =
+      const RangeValues(_kHotelPriceFallbackMin, _kHotelPriceFallbackMax);
+  double _catalogFloor = _kHotelPriceFallbackMin;
+  double _catalogCeiling = _kHotelPriceFallbackMax;
+  String? _selectedRegion;
+  bool _onlyWithPrices = false;
   String _sortBy = 'closest';
 
   static const _sortOptions = {
@@ -45,6 +49,7 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
     'price_low': 'sort_price_low',
     'price_high': 'sort_price_high',
     'name': 'sort_name',
+    'region': 'sort_region',
   };
 
   @override
@@ -75,6 +80,8 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
               _loading = false;
               _error = null;
             });
+            _syncCatalogPriceBounds(decoded['meta']);
+            if (mounted) setState(() {});
           }
         }
       } catch (_) {
@@ -112,6 +119,10 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
         _refreshing = false;
         _error = null;
       });
+      _syncCatalogPriceBounds(data?['meta']);
+      if (mounted) {
+        setState(() {});
+      }
     } on DioException catch (e) {
       if (!mounted) return;
       final msg = dioErrorMessage(e);
@@ -164,6 +175,133 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
 
   String get _query => _search.text.trim().toLowerCase();
 
+  List<String> get _queryTokens => _query
+      .split(RegExp(r'\s+'))
+      .where((t) => t.length >= 2)
+      .toList();
+
+  bool get _hasActiveFilters =>
+      _query.isNotEmpty ||
+      _selectedRegion != null ||
+      _onlyWithPrices ||
+      _priceFilterIsNarrowed ||
+      _sortBy != 'closest';
+
+  bool get _priceFilterIsNarrowed =>
+      _catalogCeiling > _catalogFloor &&
+      (_priceRange.start > _catalogFloor + 0.5 ||
+          _priceRange.end < _catalogCeiling - 0.5);
+
+  bool get _catalogHasPricing => _catalogCeiling > _catalogFloor;
+
+  int get _priceSliderDivisions {
+    final span = _catalogCeiling - _catalogFloor;
+    if (span <= 0) return 1;
+    return math.min(100, math.max(12, (span / 100).round()));
+  }
+
+  List<Map<String, dynamic>> get _allHotels {
+    final list = <Map<String, dynamic>>[];
+    for (final region in _regions) {
+      final regionName = (region['region'] ?? 'Other').toString();
+      for (final raw in (region['hotels'] as List?) ?? const []) {
+        if (raw is! Map) continue;
+        final hotel = Map<String, dynamic>.from(raw);
+        if ((hotel['city'] ?? '').toString().isEmpty) {
+          hotel['city'] = regionName;
+        }
+        list.add(hotel);
+      }
+    }
+    return list;
+  }
+
+  List<String> get _availableRegions {
+    final names = <String>{};
+    for (final region in _regions) {
+      final name = (region['region'] ?? '').toString().trim();
+      if (name.isNotEmpty) names.add(name);
+    }
+    for (final hotel in _allHotels) {
+      final city = (hotel['city'] ?? '').toString().trim();
+      if (city.isNotEmpty) names.add(city);
+    }
+    final sorted = names.toList()..sort();
+    return sorted;
+  }
+
+  void _syncCatalogPriceBounds(dynamic meta) {
+    double floor = (meta is Map ? (meta['price_floor'] as num?) : null)?.toDouble() ?? 0;
+    double ceiling =
+        (meta is Map ? (meta['price_ceiling'] as num?) : null)?.toDouble() ?? 0;
+
+    if (ceiling <= floor) {
+      for (final hotel in _allHotels) {
+        final lo = (hotel['min_price'] as num?)?.toDouble() ?? 0;
+        final hi = (hotel['max_price'] as num?)?.toDouble() ?? 0;
+        if (hi <= 0 && lo <= 0) continue;
+        final effectiveMin = lo > 0 ? lo : hi;
+        final effectiveMax = hi > 0 ? hi : lo;
+        floor = floor <= 0 ? effectiveMin : math.min(floor, effectiveMin);
+        ceiling = math.max(ceiling, effectiveMax);
+      }
+    }
+
+    if (ceiling > floor) {
+      _catalogFloor = floor;
+      _catalogCeiling = ceiling;
+      if (!_priceFilterIsNarrowed) {
+        _priceRange = RangeValues(floor, ceiling);
+      } else {
+        _priceRange = RangeValues(
+          _priceRange.start.clamp(floor, ceiling),
+          _priceRange.end.clamp(floor, ceiling),
+        );
+      }
+    } else {
+      _catalogFloor = _kHotelPriceFallbackMin;
+      _catalogCeiling = _kHotelPriceFallbackMax;
+    }
+  }
+
+  void _resetFilters() {
+    setState(() {
+      _search.clear();
+      _selectedRegion = null;
+      _onlyWithPrices = false;
+      _sortBy = 'closest';
+      _priceRange = RangeValues(_catalogFloor, _catalogCeiling);
+    });
+  }
+
+  static String _formatPeso(num value) {
+    final n = value.round();
+    final s = n.toString();
+    final buf = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
+      buf.write(s[i]);
+    }
+    return '₱$buf';
+  }
+
+  static String _priceLabelForHotel(
+    BuildContext context,
+    Map<String, dynamic> hotel,
+  ) {
+    final minPrice = (hotel['min_price'] as num?)?.toDouble() ?? 0;
+    final maxPrice = (hotel['max_price'] as num?)?.toDouble() ?? 0;
+    if (minPrice <= 0 && maxPrice <= 0) {
+      return context.tr('price_not_listed');
+    }
+    final lo = minPrice > 0 ? minPrice : maxPrice;
+    final hi = maxPrice > 0 ? maxPrice : lo;
+    if (hi > lo) {
+      return '${_formatPeso(lo)} – ${_formatPeso(hi)} / ${context.tr('night')}';
+    }
+    return '${context.tr('from_price')} ${_formatPeso(lo)} / ${context.tr('night')}';
+  }
+
   int _matchScore(Map<String, dynamic> hotel, String query) {
     if (query.isEmpty) return 0;
     var score = 0;
@@ -191,16 +329,38 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
     final hotelName = (hotel['name'] ?? '').toString().toLowerCase();
     final loc = (hotel['location'] ?? '').toString().toLowerCase();
     final city = (hotel['city'] ?? regionName).toString().toLowerCase();
-    return regionName.toLowerCase().contains(_query) ||
-        hotelName.contains(_query) ||
-        loc.contains(_query) ||
-        city.contains(_query);
+    final region = regionName.toLowerCase();
+    final haystack = '$region $city $hotelName $loc';
+    if (_queryTokens.isEmpty) {
+      return haystack.contains(_query);
+    }
+    return _queryTokens.every((token) => haystack.contains(token));
+  }
+
+  bool _passesRegionFilter(Map<String, dynamic> hotel, String regionName) {
+    if (_selectedRegion == null) return true;
+    final city = (hotel['city'] ?? regionName).toString();
+    return city == _selectedRegion || regionName == _selectedRegion;
+  }
+
+  bool _hotelHasListedPrice(Map<String, dynamic> hotel) {
+    final minPrice = (hotel['min_price'] as num?)?.toDouble() ?? 0;
+    final maxPrice = (hotel['max_price'] as num?)?.toDouble() ?? 0;
+    return minPrice > 0 || maxPrice > 0;
   }
 
   bool _passesPriceFilter(Map<String, dynamic> hotel) {
+    if (_onlyWithPrices && !_hotelHasListedPrice(hotel)) {
+      return false;
+    }
+    if (!_catalogHasPricing || !_priceFilterIsNarrowed) {
+      return true;
+    }
     final lo = (hotel['min_price'] as num?)?.toDouble() ?? 0;
     final hi = (hotel['max_price'] as num?)?.toDouble() ?? lo;
-    if (hi <= 0 && lo <= 0) return true;
+    if (hi <= 0 && lo <= 0) {
+      return !_onlyWithPrices;
+    }
     final minVal = hi > 0 ? math.min(lo > 0 ? lo : hi, hi) : lo;
     final maxVal = hi > 0 ? hi : lo;
     return maxVal >= _priceRange.start && minVal <= _priceRange.end;
@@ -213,6 +373,7 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
       for (final raw in (region['hotels'] as List?) ?? const []) {
         if (raw is! Map) continue;
         final hotel = Map<String, dynamic>.from(raw);
+        if (!_passesRegionFilter(hotel, regionName)) continue;
         if (!_passesTextFilter(hotel, regionName)) continue;
         if (!_passesPriceFilter(hotel)) continue;
         list.add(hotel);
@@ -239,6 +400,17 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
               .toLowerCase()
               .compareTo((b['name'] ?? '').toString().toLowerCase()),
         );
+      case 'region':
+        list.sort((a, b) {
+          final ac = (a['city'] ?? '').toString().toLowerCase();
+          final bc = (b['city'] ?? '').toString().toLowerCase();
+          final c = ac.compareTo(bc);
+          if (c != 0) return c;
+          return (a['name'] ?? '')
+              .toString()
+              .toLowerCase()
+              .compareTo((b['name'] ?? '').toString().toLowerCase());
+        });
       case 'closest':
       default:
         if (_query.isNotEmpty) {
@@ -257,7 +429,8 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
   List<Map<String, dynamic>> get _filteredRegions {
     if (_sortBy == 'price_low' ||
         _sortBy == 'price_high' ||
-        (_sortBy == 'closest' && _query.isNotEmpty)) {
+        (_sortBy == 'closest' && _queryTokens.isNotEmpty) ||
+        _selectedRegion != null) {
       if (_filteredHotels.isEmpty) return const [];
       return [
         {'region': '', 'hotels': _filteredHotels},
@@ -280,9 +453,12 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
     final hname = (hotel['name'] ?? 'Hotel').toString();
     if (hid.isEmpty) return;
     HapticFeedback.lightImpact();
+    final previousId = await AuthStorage.hotelId();
     await AuthStorage.setHotelContext(id: hid, name: hname);
-    await AuthStorage.clearPortalAuth();
-    await AuthStorage.clearGuestAuth();
+    if (previousId != hid) {
+      await AuthStorage.clearPortalAuth();
+      await AuthStorage.clearGuestAuth();
+    }
     if (!mounted) return;
     hotelSessionNotifier.value = HotelSession(hotelId: hid, hotelName: hname);
   }
@@ -374,10 +550,22 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
             if (_regions.isNotEmpty && _error == null)
               _HotelFilterPanel(
                 priceRange: _priceRange,
+                catalogFloor: _catalogFloor,
+                catalogCeiling: _catalogCeiling,
+                catalogHasPricing: _catalogHasPricing,
+                priceDivisions: _priceSliderDivisions,
                 sortBy: _sortBy,
                 sortOptions: _sortOptions,
+                regions: _availableRegions,
+                selectedRegion: _selectedRegion,
+                onlyWithPrices: _onlyWithPrices,
+                hasActiveFilters: _hasActiveFilters,
                 onPriceChanged: (v) => setState(() => _priceRange = v),
                 onSortChanged: (v) => setState(() => _sortBy = v),
+                onRegionChanged: (v) => setState(() => _selectedRegion = v),
+                onOnlyWithPricesChanged: (v) =>
+                    setState(() => _onlyWithPrices = v),
+                onClearFilters: _resetFilters,
               ),
             if (_error == null && regions.isNotEmpty)
               Padding(
@@ -436,12 +624,21 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
                                         color: scheme.outline),
                                     const SizedBox(height: 16),
                                     Text(
-                                      _query.isEmpty
+                                      _queryTokens.isEmpty &&
+                                              !_hasActiveFilters
                                           ? context.tr('no_hotels')
                                           : context.tr('no_search_results'),
                                       textAlign: TextAlign.center,
                                       style: theme.textTheme.titleMedium,
                                     ),
+                                    if (_hasActiveFilters) ...[
+                                      const SizedBox(height: 16),
+                                      FilledButton.tonalIcon(
+                                        onPressed: _resetFilters,
+                                        icon: const Icon(Icons.filter_alt_off),
+                                        label: Text(context.tr('clear_filters')),
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ),
@@ -518,22 +715,48 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
 class _HotelFilterPanel extends StatelessWidget {
   const _HotelFilterPanel({
     required this.priceRange,
+    required this.catalogFloor,
+    required this.catalogCeiling,
+    required this.catalogHasPricing,
+    required this.priceDivisions,
     required this.sortBy,
     required this.sortOptions,
+    required this.regions,
+    required this.selectedRegion,
+    required this.onlyWithPrices,
+    required this.hasActiveFilters,
     required this.onPriceChanged,
     required this.onSortChanged,
+    required this.onRegionChanged,
+    required this.onOnlyWithPricesChanged,
+    required this.onClearFilters,
   });
 
   final RangeValues priceRange;
+  final double catalogFloor;
+  final double catalogCeiling;
+  final bool catalogHasPricing;
+  final int priceDivisions;
   final String sortBy;
   final Map<String, String> sortOptions;
+  final List<String> regions;
+  final String? selectedRegion;
+  final bool onlyWithPrices;
+  final bool hasActiveFilters;
   final ValueChanged<RangeValues> onPriceChanged;
   final ValueChanged<String> onSortChanged;
+  final ValueChanged<String?> onRegionChanged;
+  final ValueChanged<bool> onOnlyWithPricesChanged;
+  final VoidCallback onClearFilters;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final visual = AppVisual.of(context);
+    final clampedRange = RangeValues(
+      priceRange.start.clamp(catalogFloor, catalogCeiling),
+      priceRange.end.clamp(catalogFloor, catalogCeiling),
+    );
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -543,68 +766,153 @@ class _HotelFilterPanel extends StatelessWidget {
           borderRadius: visual.radiusMd,
           border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
         ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.tune, size: 18, color: scheme.primary),
-                  const SizedBox(width: 8),
-                  Text(
-                    context.tr('filter_sort'),
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
+        child: Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            tilePadding: const EdgeInsets.symmetric(horizontal: 14),
+            childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+            initiallyExpanded: hasActiveFilters,
+            leading: Icon(Icons.tune, size: 20, color: scheme.primary),
+            title: Text(
+              context.tr('filter_sort'),
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
                   ),
-                  const Spacer(),
-                  DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: sortBy,
-                      isDense: true,
-                      items: sortOptions.entries
-                          .map(
-                            (e) => DropdownMenuItem(
-                              value: e.key,
-                              child: Text(context.tr(e.value)),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (v) {
-                        if (v != null) onSortChanged(v);
-                      },
+            ),
+            trailing: SizedBox(
+              width: 200,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (hasActiveFilters)
+                    TextButton(
+                      onPressed: onClearFilters,
+                      child: Text(context.tr('clear_filters')),
+                    ),
+                  Flexible(
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: sortBy,
+                        isDense: true,
+                        isExpanded: true,
+                        items: sortOptions.entries
+                            .map(
+                              (e) => DropdownMenuItem(
+                                value: e.key,
+                                child: Text(
+                                  context.tr(e.value),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) {
+                          if (v != null) onSortChanged(v);
+                        },
+                      ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                context.tr('price_range'),
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-              ),
-              RangeSlider(
-                values: priceRange,
-                min: _kHotelPriceMin,
-                max: _kHotelPriceMax,
-                divisions: _kHotelPriceDivisions,
-                labels: RangeLabels(
-                  '₱${priceRange.start.round()}',
-                  '₱${priceRange.end.round()}',
+            ),
+            children: [
+              if (regions.isNotEmpty) ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    context.tr('filter_by_region'),
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
                 ),
-                onChanged: onPriceChanged,
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 40,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: FilterChip(
+                          label: Text(context.tr('all_regions')),
+                          selected: selectedRegion == null,
+                          onSelected: (_) => onRegionChanged(null),
+                        ),
+                      ),
+                      ...regions.map(
+                        (name) => Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: FilterChip(
+                            label: Text(name),
+                            selected: selectedRegion == name,
+                            onSelected: (on) =>
+                                onRegionChanged(on ? name : null),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                title: Text(context.tr('only_with_prices')),
+                subtitle: Text(
+                  context.tr('only_with_prices_hint'),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                ),
+                value: onlyWithPrices,
+                onChanged: onOnlyWithPricesChanged,
               ),
-              Text(
-                '₱${_kHotelPriceMin.round()} – ₱${_kHotelPriceMax.round()} · '
-                '${context.tr('selected')}: ₱${priceRange.start.round()} – ₱${priceRange.end.round()} / ${context.tr('night')}',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: scheme.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-              ),
+              if (catalogHasPricing) ...[
+                const SizedBox(height: 4),
+                Text(
+                  context.tr('price_range'),
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                RangeSlider(
+                  values: clampedRange,
+                  min: catalogFloor,
+                  max: catalogCeiling,
+                  divisions: priceDivisions,
+                  labels: RangeLabels(
+                    _ChooseHotelScreenState._formatPeso(clampedRange.start),
+                    _ChooseHotelScreenState._formatPeso(clampedRange.end),
+                  ),
+                  onChanged: onPriceChanged,
+                ),
+                Text(
+                  '${context.tr('catalog_range')}: '
+                  '${_ChooseHotelScreenState._formatPeso(catalogFloor)} – '
+                  '${_ChooseHotelScreenState._formatPeso(catalogCeiling)} · '
+                  '${context.tr('selected')}: '
+                  '${_ChooseHotelScreenState._formatPeso(clampedRange.start)} – '
+                  '${_ChooseHotelScreenState._formatPeso(clampedRange.end)}',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ] else
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    context.tr('no_catalog_prices'),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -828,13 +1136,11 @@ class _HotelSelectTile extends StatelessWidget {
     final name = (hotel['name'] ?? 'Hotel').toString();
     final loc = (hotel['location'] ?? '').toString();
     final city = (hotel['city'] ?? region).toString();
-    final minPrice = (hotel['min_price'] as num?)?.toDouble() ?? 0;
-    final maxPrice = (hotel['max_price'] as num?)?.toDouble() ?? 0;
-    final priceLabel = minPrice > 0
-        ? (maxPrice > minPrice
-            ? '₱${minPrice.round()}–${maxPrice.round()}'
-            : '₱${minPrice.round()}')
-        : null;
+    final roomCount = (hotel['room_count'] as num?)?.toInt() ?? 0;
+    final priceLabel = _ChooseHotelScreenState._priceLabelForHotel(context, hotel);
+    final minP = (hotel['min_price'] as num?)?.toDouble() ?? 0;
+    final maxP = (hotel['max_price'] as num?)?.toDouble() ?? 0;
+    final hasPrice = minP > 0 || maxP > 0;
     final rawBanner = (hotel['banner_url'] ?? '').toString().trim();
     final bannerUrl =
         rawBanner.isNotEmpty ? ChatAttachment.resolveMediaUrl(rawBanner) : '';
@@ -942,26 +1248,82 @@ class _HotelSelectTile extends StatelessWidget {
                                     ),
                                   ),
                                 ],
-                                if (priceLabel != null) ...[
-                                  const SizedBox(height: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: scheme.tertiaryContainer,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      '${context.tr('from_price')} $priceLabel / ${context.tr('night')}',
-                                      style: theme.textTheme.labelSmall?.copyWith(
-                                        fontWeight: FontWeight.w700,
-                                        color: scheme.onTertiaryContainer,
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 6,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: hasPrice
+                                            ? scheme.tertiaryContainer
+                                            : scheme.surfaceContainerHighest,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.payments_outlined,
+                                            size: 14,
+                                            color: hasPrice
+                                                ? scheme.onTertiaryContainer
+                                                : scheme.onSurfaceVariant,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            priceLabel,
+                                            style: theme.textTheme.labelSmall
+                                                ?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                              color: hasPrice
+                                                  ? scheme.onTertiaryContainer
+                                                  : scheme.onSurfaceVariant,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                  ),
-                                ],
+                                    if (roomCount > 0)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: scheme.primaryContainer
+                                              .withValues(alpha: 0.65),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.bed_outlined,
+                                              size: 14,
+                                              color: scheme.onPrimaryContainer,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              context.tr('rooms_count')
+                                                  .replaceAll(
+                                                      '{n}', '$roomCount'),
+                                              style: theme.textTheme.labelSmall
+                                                  ?.copyWith(
+                                                fontWeight: FontWeight.w700,
+                                                color:
+                                                    scheme.onPrimaryContainer,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                  ],
+                                ),
                               ],
                             ),
                           ),
@@ -1056,7 +1418,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
       }
       final name = _hotelName.text.trim();
       await AuthStorage.setHotelContext(id: hid, name: name);
-      await AuthStorage.clearPortalAuth();
+      await AuthStorage.setPortalAuth(token: token, role: 'admin');
       await AuthStorage.clearGuestAuth();
       await AuthStorage.clearHotelsDirectoryCache();
       if (!mounted) return;
@@ -1084,6 +1446,8 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
         sms: sms,
         verificationCode:
             verificationCode.isNotEmpty ? verificationCode : null,
+        registrationUsername: _username.text.trim(),
+        registrationPassword: _password.text,
       );
       if (!mounted) return;
       Navigator.of(context).pop();
@@ -1240,6 +1604,19 @@ class RoleMenuScreen extends StatelessWidget {
   }
 
   Future<void> _openAdmin(BuildContext context) async {
+    final token = await AuthStorage.portalToken();
+    final role = await AuthStorage.portalRole();
+    if (token != null &&
+        token.isNotEmpty &&
+        (role == 'admin' || role == 'super_admin')) {
+      if (!context.mounted) return;
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => AdminDashboardScreen(isSuperAdmin: role == 'super_admin'),
+        ),
+      );
+      return;
+    }
     await _portalLoginThenDashboard(
       context,
       role: 'admin',
@@ -1248,6 +1625,17 @@ class RoleMenuScreen extends StatelessWidget {
   }
 
   Future<void> _openSuperAdmin(BuildContext context) async {
+    final token = await AuthStorage.portalToken();
+    final role = await AuthStorage.portalRole();
+    if (token != null && token.isNotEmpty && role == 'super_admin') {
+      if (!context.mounted) return;
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => const AdminDashboardScreen(isSuperAdmin: true),
+        ),
+      );
+      return;
+    }
     await _portalLoginThenDashboard(
       context,
       role: 'super_admin',
@@ -1583,7 +1971,12 @@ class _PortalLoginScreenState extends State<PortalLoginScreen> {
         padding: const EdgeInsets.all(24),
         children: [
           Text(
-            'Use your $label account (name or email) and password for this hotel.',
+            widget.role == 'admin'
+                ? 'Use your administrator username (often ends with _admin), '
+                    'or your super-admin username, and the password from hotel registration.'
+                : widget.role == 'super_admin'
+                    ? 'Use your hotel registration username (property login name) and password.'
+                    : 'Use your $label account (name or email) and password for this hotel.',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 20),

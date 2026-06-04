@@ -4,16 +4,16 @@ namespace Tests\Feature;
 
 use App\Enums\UserRole;
 use App\Models\Hotel;
+use App\Models\HotelCredit;
 use App\Models\Reseller;
 use App\Models\ResellerCommissionPayment;
 use App\Models\User;
-use App\Support\ResellerQrCode;
 use Illuminate\Http\UploadedFile;
 use Tests\TestCase;
 
 class ResellerManagementTest extends TestCase
 {
-    public function test_admin_can_create_reseller_lookup_and_pay_commission(): void
+    public function test_admin_can_create_reseller_lookup_and_pay_commission_from_hotel_wallet(): void
     {
         $hotel = Hotel::create(['name' => 'Reseller Hotel', 'location' => 'City']);
         $admin = User::create([
@@ -22,6 +22,14 @@ class ResellerManagementTest extends TestCase
             'email' => 'adminres@test.local',
             'password' => bcrypt('secret123'),
             'role' => UserRole::ADMIN,
+        ]);
+        HotelCredit::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'current_credits' => 5000,
+            'warning_threshold' => 3000,
+            'custom_markup_percentage' => 10,
+            'total_spent' => 0,
+            'transactions' => [],
         ]);
 
         $png = base64_decode(
@@ -32,7 +40,6 @@ class ResellerManagementTest extends TestCase
             'name' => 'Juan Taxi',
             'phone' => '09171234567',
             'category' => 'taxi',
-            'opening_credits' => 500,
             'id_file' => UploadedFile::fake()->createWithContent('id.png', $png),
         ]);
 
@@ -40,23 +47,27 @@ class ResellerManagementTest extends TestCase
         $resellerId = (string) $create->json('reseller.id');
         $qrPayload = (string) $create->json('reseller.qr_payload');
         $this->assertStringContainsString('MADYAW_RESELLER', $qrPayload);
+        $this->assertArrayNotHasKey('current_credits', $create->json('reseller'));
 
         $lookup = $this->actingAs($admin)->postJson('/api/v1/admin/resellers/lookup', [
             'code' => $qrPayload,
         ]);
         $lookup->assertOk();
         $lookup->assertJsonPath('reseller.name', 'Juan Taxi');
+        $lookup->assertJsonPath('hotel_wallet.current_credits', 5000);
 
         $pay = $this->actingAs($admin)->postJson("/api/v1/admin/resellers/{$resellerId}/commissions", [
             'amount' => 80,
             'note' => 'Referral booking',
         ]);
         $pay->assertOk();
-        $pay->assertJsonPath('reseller.current_credits', 420);
+        $pay->assertJsonPath('wallet.balance_after', 4920);
         $pay->assertJsonPath('payment.amount', 80);
 
+        $credit = HotelCredit::withoutGlobalScopes()->where('hotel_id', (string) $hotel->id)->first();
+        $this->assertSame(4920.0, (float) $credit->current_credits);
+
         $reseller = Reseller::withoutGlobalScopes()->find($resellerId);
-        $this->assertSame(420.0, (float) $reseller->current_credits);
         $this->assertSame(80.0, (float) $reseller->total_commissions_paid);
 
         $this->assertSame(
@@ -67,9 +78,9 @@ class ResellerManagementTest extends TestCase
         );
     }
 
-    public function test_commission_rejected_when_reseller_credits_insufficient(): void
+    public function test_commission_rejected_when_hotel_credits_insufficient(): void
     {
-        $hotel = Hotel::create(['name' => 'Poor Reseller Hotel', 'location' => 'City']);
+        $hotel = Hotel::create(['name' => 'Poor Hotel', 'location' => 'City']);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'adminr2',
@@ -77,13 +88,21 @@ class ResellerManagementTest extends TestCase
             'password' => bcrypt('secret123'),
             'role' => UserRole::ADMIN,
         ]);
+        HotelCredit::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'current_credits' => 10,
+            'warning_threshold' => 3000,
+            'custom_markup_percentage' => 10,
+            'total_spent' => 0,
+            'transactions' => [],
+        ]);
 
         $reseller = Reseller::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'Moto Rider',
             'category' => 'motorcycle',
             'qr_token' => 'token-moto-1',
-            'current_credits' => 10,
+            'current_credits' => 0,
             'total_commissions_paid' => 0,
             'transactions' => [],
             'status' => 'active',
@@ -95,7 +114,7 @@ class ResellerManagementTest extends TestCase
         );
 
         $response->assertStatus(422);
-        $response->assertJsonValidationErrors(['amount']);
+        $response->assertJsonValidationErrors(['credits']);
     }
 
     public function test_profit_overview_includes_reseller_commissions(): void

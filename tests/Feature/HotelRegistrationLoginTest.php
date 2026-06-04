@@ -30,6 +30,8 @@ class HotelRegistrationLoginTest extends TestCase
         $hotelId = (string) $response->json('hotel_id');
         $response->assertJsonPath('welcome_credits.total_rooms', 25);
         $response->assertJsonPath('welcome_credits.free_credits', 20000);
+        $response->assertJsonPath('registration_password', 'OwnerSecret9');
+        $response->assertJsonPath('passwords_verified', true);
 
         $credit = HotelCredit::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
@@ -74,5 +76,67 @@ class HotelRegistrationLoginTest extends TestCase
             'password' => '09171234567',
             'hotel_id' => $hotelId,
         ])->assertStatus(422);
+    }
+
+    public function test_registration_trims_username_and_echoes_form_password(): void
+    {
+        $this->withoutMiddleware([ThrottleRequests::class]);
+
+        $response = $this->postJson('/api/v1/hotel/register', [
+            'username' => '  trimhotel  ',
+            'password' => 'TrimPass99',
+            'password_confirmation' => 'TrimPass99',
+            'hotel_name' => 'Trim Hotel',
+            'location' => 'Manila',
+            'city' => 'Manila',
+            'contact_number' => '09170001122',
+            'admin_email' => 'ops@trimhotel.test',
+            'total_rooms' => 5,
+        ]);
+
+        $response->assertCreated();
+        $response->assertJsonPath('portal_accounts.super_admin.username', 'trimhotel');
+        $response->assertJsonPath('portal_accounts.admin.username', 'trimhotel_admin');
+        $response->assertJsonPath('portal_accounts.super_admin.password', 'TrimPass99');
+        $response->assertJsonPath('registration_password', 'TrimPass99');
+        $response->assertJsonPath('passwords_verified', true);
+    }
+
+    public function test_portal_login_repairs_user_password_from_hotel_gate_hash(): void
+    {
+        $this->withoutMiddleware([ThrottleRequests::class]);
+
+        $response = $this->postJson('/api/v1/hotel/register', [
+            'username' => 'gatefix',
+            'password' => 'GateFixPass1',
+            'password_confirmation' => 'GateFixPass1',
+            'hotel_name' => 'Gate Fix Hotel',
+            'location' => 'Davao',
+            'city' => 'Davao',
+            'contact_number' => '09181112233',
+            'admin_email' => 'admin@gatefix.test',
+            'total_rooms' => 10,
+        ]);
+
+        $response->assertCreated();
+        $hotelId = (string) $response->json('hotel_id');
+
+        $admin = User::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where('name', 'gatefix_admin')
+            ->first();
+        $this->assertNotNull($admin);
+
+        $admin->forceFill(['password' => 'not-a-bcrypt-hash'])->save();
+
+        $this->postJson('/api/v1/auth/portal-login', [
+            'role' => 'admin',
+            'username' => 'gatefix_admin',
+            'password' => 'GateFixPass1',
+            'hotel_id' => $hotelId,
+        ])->assertOk()->assertJsonStructure(['token']);
+
+        $admin->refresh();
+        $this->assertTrue(Hash::check('GateFixPass1', (string) $admin->password));
     }
 }

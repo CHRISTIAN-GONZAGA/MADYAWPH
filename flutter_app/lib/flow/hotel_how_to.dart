@@ -195,12 +195,22 @@ Future<void> showHotelRegistrationCredentialsDialog(
   Map<String, dynamic>? welcomeCredits,
   Map<String, dynamic>? sms,
   String? verificationCode,
+  String? registrationUsername,
+  String? registrationPassword,
 }) async {
   final smsSent = sms?['sent'] == true;
   final smsPhone = (sms?['phone'] ?? '').toString();
   final smsError = (sms?['error'] ?? '').toString();
   final superA = portalAccounts?['super_admin'] as Map<String, dynamic>?;
   final adminA = portalAccounts?['admin'] as Map<String, dynamic>?;
+  final ownerUser = (registrationUsername ?? superA?['username'] ?? '').toString().trim();
+  final ownerPass = (registrationPassword ?? superA?['password'] ?? '').toString();
+  final adminUser = ownerUser.isEmpty
+      ? (adminA?['username'] ?? '').toString()
+      : '${ownerUser}_admin';
+  final adminPass = ownerPass.isEmpty
+      ? (adminA?['password'] ?? '').toString()
+      : ownerPass;
   final freeCredits = (welcomeCredits?['free_credits'] as num?)?.toInt();
   final totalRooms = welcomeCredits?['total_rooms'];
   final tierLabel = (welcomeCredits?['tier_label'] ?? '').toString();
@@ -212,12 +222,12 @@ Future<void> showHotelRegistrationCredentialsDialog(
     ..writeln('Use the same password you entered when registering.')
     ..writeln()
     ..writeln('── Super admin ──')
-    ..writeln('Username: ${superA?['username'] ?? ''}')
-    ..writeln('Password: ${superA?['password'] ?? ''}')
+    ..writeln('Username: $ownerUser')
+    ..writeln('Password: $ownerPass')
     ..writeln()
     ..writeln('── Administrator ──')
-    ..writeln('Username: ${adminA?['username'] ?? ''}')
-    ..writeln('Password: ${adminA?['password'] ?? ''}');
+    ..writeln('Username: $adminUser')
+    ..writeln('Password: $adminPass');
 
   if (!context.mounted) return;
 
@@ -301,16 +311,16 @@ Future<void> showHotelRegistrationCredentialsDialog(
             const SizedBox(height: 16),
             _CredentialBlock(
               title: 'Super admin',
-              subtitle: 'Role menu → Super admin',
-              username: (superA?['username'] ?? '').toString(),
-              password: (superA?['password'] ?? '').toString(),
+              subtitle: 'Role menu → Super admin · same password you just entered',
+              username: ownerUser,
+              password: ownerPass,
             ),
             const SizedBox(height: 12),
             _CredentialBlock(
               title: 'Administrator',
-              subtitle: 'Role menu → Administrator',
-              username: (adminA?['username'] ?? '').toString(),
-              password: (adminA?['password'] ?? '').toString(),
+              subtitle: 'Role menu → Administrator · username ends with _admin',
+              username: adminUser,
+              password: adminPass,
             ),
           ],
         ),
