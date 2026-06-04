@@ -198,22 +198,20 @@ Future<void> showHotelRegistrationCredentialsDialog(
   final smsSent = sms?['sent'] == true;
   final smsPhone = (sms?['phone'] ?? '').toString();
   final smsError = (sms?['error'] ?? '').toString();
-  final gate = portalAccounts?['hotel_gate'] as Map<String, dynamic>?;
   final superA = portalAccounts?['super_admin'] as Map<String, dynamic>?;
   final adminA = portalAccounts?['admin'] as Map<String, dynamic>?;
 
   final buffer = StringBuffer()
     ..writeln('Hotel: $hotelName')
     ..writeln()
-    ..writeln('── Property login (Hotel access screen) ──')
-    ..writeln('Username: ${gate?['username'] ?? ''}')
-    ..writeln('Password: ${gate?['password'] ?? ''}')
+    ..writeln('Sign in from the role menu after selecting this hotel.')
+    ..writeln('Use the same password you entered when registering.')
     ..writeln()
-    ..writeln('── Super admin (role menu) ──')
+    ..writeln('── Super admin ──')
     ..writeln('Username: ${superA?['username'] ?? ''}')
     ..writeln('Password: ${superA?['password'] ?? ''}')
     ..writeln()
-    ..writeln('── Administrator (role menu) ──')
+    ..writeln('── Administrator ──')
     ..writeln('Username: ${adminA?['username'] ?? ''}')
     ..writeln('Password: ${adminA?['password'] ?? ''}');
 
@@ -229,7 +227,8 @@ Future<void> showHotelRegistrationCredentialsDialog(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Write these down or copy them now. Passwords are shown once.',
+              'Write these down or copy them now. Passwords are shown once. '
+              'Use the password from your registration form (not your contact number).',
               style: Theme.of(ctx).textTheme.bodyMedium,
             ),
             const SizedBox(height: 12),
@@ -268,13 +267,6 @@ Future<void> showHotelRegistrationCredentialsDialog(
               ),
             ),
             const SizedBox(height: 16),
-            _CredentialBlock(
-              title: 'Property login',
-              subtitle: 'First screen · Hotel access',
-              username: (gate?['username'] ?? '').toString(),
-              password: (gate?['password'] ?? '').toString(),
-            ),
-            const SizedBox(height: 12),
             _CredentialBlock(
               title: 'Super admin',
               subtitle: 'Role menu → Super admin',

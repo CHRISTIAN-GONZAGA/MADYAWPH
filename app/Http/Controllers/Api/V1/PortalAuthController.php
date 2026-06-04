@@ -73,11 +73,13 @@ class PortalAuthController extends Controller
 
         Cache::forget(self::HOTELS_DIRECTORY_CACHE_KEY);
 
+        $ownerPassword = (string) $validated['password'];
+
         User::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'name' => $validated['username'],
             'email' => 'super.'.substr(sha1((string) $hotel->id), 0, 12).'@super.local',
-            'password' => Hash::make($validated['contact_number']),
+            'password' => $ownerPassword,
             'role' => UserRole::SUPER_ADMIN,
         ]);
 
@@ -85,7 +87,7 @@ class PortalAuthController extends Controller
             'hotel_id' => (string) $hotel->id,
             'name' => $operatorLogin,
             'email' => $validated['admin_email'],
-            'password' => Hash::make($validated['username'].'123'),
+            'password' => $ownerPassword,
             'role' => UserRole::ADMIN,
         ]);
 
@@ -110,20 +112,15 @@ class PortalAuthController extends Controller
                 ? 'Hotel registered. Verification code sent by SMS to '.$sms->normalizedPhone.'.'
                 : 'Hotel registered. SMS was not delivered — use verification_code below (also check SEMAPHORE_API_KEY on the server).',
             'portal_accounts' => [
-                'hotel_gate' => [
-                    'username' => $validated['username'],
-                    'password' => $validated['password'],
-                    'note' => 'Legacy owner credentials (optional). App entry uses the hotel directory, not a shared gate password.',
-                ],
                 'super_admin' => [
                     'username' => $validated['username'],
-                    'password' => $validated['contact_number'],
-                    'note' => 'Role menu → Super admin. Password is the contact number you entered at registration.',
+                    'password' => $ownerPassword,
+                    'note' => 'Role menu → Super admin. Password is the one you chose on the registration form.',
                 ],
                 'admin' => [
                     'username' => $operatorLogin,
-                    'password' => $validated['username'].'123',
-                    'note' => 'Role menu → Administrator.',
+                    'password' => $ownerPassword,
+                    'note' => 'Role menu → Administrator. Same password as registration; username ends with _admin.',
                 ],
             ],
         ];
