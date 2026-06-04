@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\UserRole;
 use App\Models\ExternalReservation;
 use App\Models\Hotel;
+use App\Models\HotelCredit;
 use App\Models\Room;
 use App\Models\User;
 use Tests\TestCase;
@@ -77,6 +78,14 @@ class SuperAdminPortalUsersTest extends TestCase
             'room_type' => 'Deluxe',
             'price_per_night' => 1000,
             'status' => 'available',
+        ]);
+        HotelCredit::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'current_credits' => 5000,
+            'warning_threshold' => 500,
+            'custom_markup_percentage' => 10,
+            'total_spent' => 0,
+            'transactions' => [],
         ]);
         $res = ExternalReservation::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,

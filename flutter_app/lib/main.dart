@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'intro/app_bootstrap.dart';
 import 'locale_controller.dart';
@@ -35,6 +36,11 @@ class MadyawPhApp extends StatelessWidget {
                   debugShowCheckedModeBanner: false,
                   locale: appLocale,
                   supportedLocales: AppLocales.supported,
+                  localizationsDelegates: const [
+                    GlobalMaterialLocalizations.delegate,
+                    GlobalWidgetsLocalizations.delegate,
+                    GlobalCupertinoLocalizations.delegate,
+                  ],
                   themeAnimationDuration: UiTokens.dStd,
                   themeAnimationCurve: UiTokens.easeOperational,
                   themeMode: mode,

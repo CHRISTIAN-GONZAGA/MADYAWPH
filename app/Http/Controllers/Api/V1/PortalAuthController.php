@@ -27,16 +27,20 @@ class PortalAuthController extends Controller
             ->orderBy('name')
             ->get();
 
-        $flat = $hotels->map(fn (Hotel $hotel) => [
-            'id' => (string) $hotel->id,
-            'name' => (string) $hotel->name,
-            'location' => (string) ($hotel->location ?? ''),
-            'city' => HotelDirectory::regionKey($hotel),
-        ])->values()->all();
+        $priceStats = HotelDirectory::priceStatsForHotels(
+            $hotels->pluck('id')->map(fn ($id) => (string) $id)->all()
+        );
+
+        $flat = $hotels->map(
+            fn (Hotel $hotel) => HotelDirectory::hotelPickerRow(
+                $hotel,
+                $priceStats[(string) $hotel->id] ?? null
+            )
+        )->values()->all();
 
         return response()->json([
             'data' => $flat,
-            'regions' => HotelDirectory::groupHotelsForPicker($hotels),
+            'regions' => HotelDirectory::groupHotelsForPicker($hotels, $priceStats),
         ]);
     }
 

@@ -7,7 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../dio_client.dart';
 
-/// Shows stay receipt summary after checkout; can download PDF with auth.
+/// Shows stay receipt summary; fetches line items when missing; downloads printable PDF.
 Future<void> showStayReceiptDialog(
   BuildContext context, {
   required Map<String, dynamic>? receipt,
@@ -16,46 +16,112 @@ Future<void> showStayReceiptDialog(
     return;
   }
 
+  var data = Map<String, dynamic>.from(receipt);
+  final id = (data['booking_id'] ?? '').toString();
+
+  if (id.isNotEmpty &&
+      ((data['lines'] as List?) ?? const []).isEmpty) {
+    try {
+      final res = await portalDio().get<Map<String, dynamic>>(
+        '/admin/bookings/$id/receipt-summary',
+      );
+      final summary = res.data?['receipt'];
+      if (summary is Map) {
+        data = Map<String, dynamic>.from(summary);
+      }
+    } on DioException {
+      // Show partial receipt from caller data.
+    }
+  }
+
+  if (!context.mounted) return;
+
   await showDialog<void>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Checkout receipt'),
+      title: Row(
+        children: [
+          Icon(Icons.receipt_long, color: Theme.of(ctx).colorScheme.primary),
+          const SizedBox(width: 8),
+          const Expanded(child: Text('Checkout receipt')),
+        ],
+      ),
       content: SingleChildScrollView(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              '${receipt['booking_reference'] ?? ''}',
-              style: Theme.of(ctx).textTheme.titleMedium,
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(ctx).colorScheme.primaryContainer.withValues(alpha: 0.35),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${data['booking_reference'] ?? ''}',
+                    style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text('Guest: ${data['guest_name'] ?? ''}'),
+                  Text('Room: ${data['room_number'] ?? ''}'),
+                  Text(
+                    'Stay: ${data['check_in_date']} → ${data['check_out_date']}',
+                  ),
+                  if ((data['payment_status'] ?? '').toString().isNotEmpty)
+                    Text('Payment: ${data['payment_status']}'),
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
-            Text('Guest: ${receipt['guest_name'] ?? ''}'),
-            Text('Room: ${receipt['room_number'] ?? ''}'),
+            const SizedBox(height: 12),
             Text(
-              'Stay: ${receipt['check_in_date']} → ${receipt['check_out_date']}',
+              'Line items',
+              style: Theme.of(ctx).textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
             ),
-            const Divider(),
-            ...((receipt['lines'] as List?) ?? const []).whereType<Map>().map(
+            const SizedBox(height: 6),
+            ...((data['lines'] as List?) ?? const []).whereType<Map>().map(
               (line) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
+                padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
                   children: [
                     Expanded(child: Text('${line['label']}')),
                     Text(
-                      '₱${(line['amount'] as num?)?.toStringAsFixed(0) ?? '0'}',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      '₱${(line['amount'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Total: ₱${(receipt['subtotal'] as num?)?.toStringAsFixed(0) ?? '0'}',
-              style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
+            if (((data['lines'] as List?) ?? const []).isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('No line breakdown — download PDF for full receipt.'),
+              ),
+            const Divider(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'TOTAL',
+                  style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                Text(
+                  '₱${(data['subtotal'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
+                  style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: Theme.of(ctx).colorScheme.primary,
+                      ),
+                ),
+              ],
             ),
           ],
         ),
@@ -66,47 +132,54 @@ Future<void> showStayReceiptDialog(
           child: const Text('Close'),
         ),
         FilledButton.icon(
-          onPressed: () async {
-            final id = (receipt['booking_id'] ?? '').toString();
-            if (id.isEmpty) return;
-            try {
-              final res = await portalDio().get<Uint8List>(
-                '/admin/bookings/$id/receipt',
-                options: Options(responseType: ResponseType.bytes),
-              );
-              final bytes = res.data;
-              if (bytes == null || bytes.isEmpty) {
-                throw Exception('Empty receipt file');
-              }
-              final path =
-                  '${Directory.systemTemp.path}/receipt_${receipt['booking_reference']}.pdf';
-              final file = File(path);
-              await file.writeAsBytes(bytes, flush: true);
-              final uri = Uri.file(file.path);
-              if (await canLaunchUrl(uri)) {
-                await launchUrl(uri, mode: LaunchMode.externalApplication);
-              } else if (ctx.mounted) {
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  SnackBar(content: Text('Receipt saved: ${file.path}')),
-                );
-              }
-            } on DioException catch (e) {
-              if (ctx.mounted) {
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  SnackBar(content: Text(dioErrorMessage(e))),
-                );
-              }
-            } catch (e) {
-              if (ctx.mounted) {
-                ScaffoldMessenger.of(ctx)
-                    .showSnackBar(SnackBar(content: Text('$e')));
-              }
-            }
-          },
-          icon: const Icon(Icons.picture_as_pdf_outlined),
-          label: const Text('Open PDF'),
+          onPressed: () => _downloadReceiptPdf(ctx, data),
+          icon: const Icon(Icons.download_rounded),
+          label: const Text('Download PDF'),
         ),
       ],
     ),
   );
+}
+
+Future<void> _downloadReceiptPdf(
+  BuildContext context,
+  Map<String, dynamic> receipt,
+) async {
+  final id = (receipt['booking_id'] ?? '').toString();
+  if (id.isEmpty) return;
+
+  try {
+    final res = await portalDio().get<Uint8List>(
+      '/admin/bookings/$id/receipt',
+      options: Options(responseType: ResponseType.bytes),
+    );
+    final bytes = res.data;
+    if (bytes == null || bytes.isEmpty) {
+      throw Exception('Empty receipt file');
+    }
+    final ref = (receipt['booking_reference'] ?? id).toString();
+    final path = '${Directory.systemTemp.path}/receipt_$ref.pdf';
+    final file = File(path);
+    await file.writeAsBytes(bytes, flush: true);
+    final uri = Uri.file(file.path);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Receipt saved: ${file.path}')),
+      );
+    }
+  } on DioException catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dioErrorMessage(e))),
+      );
+    }
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e')),
+      );
+    }
+  }
 }

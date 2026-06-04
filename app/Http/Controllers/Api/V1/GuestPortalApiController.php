@@ -242,6 +242,7 @@ class GuestPortalApiController extends Controller
     {
         $portal = $request->attributes->get('guest_portal');
         $viewerLocale = (string) $request->query('locale', 'en');
+        $translate = filter_var($request->query('translate', '1'), FILTER_VALIDATE_BOOL);
         $messages = GuestMessage::query()
             ->where('hotel_id', (string) $portal['hotel_id'])
             ->where('room_id', $portal['room_id'])
@@ -250,7 +251,11 @@ class GuestPortalApiController extends Controller
             ->get();
 
         return response()->json([
-            'messages' => GuestMessageResource::collection($messages, $viewerLocale),
+            'messages' => GuestMessageResource::collectionNewestFirst(
+                $messages,
+                $translate ? $viewerLocale : null,
+                (int) config('services.translation.max_per_request', 25),
+            ),
         ]);
     }
 

@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:math' as math;
 
 import '../auth_storage.dart';
 import '../branding/madyaw_logo_widget.dart';
@@ -27,6 +28,17 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
   List<Map<String, dynamic>> _regions = const [];
   bool _loading = true;
   String? _error;
+  RangeValues _priceRange = const RangeValues(0, 10000);
+  double _catalogMin = 0;
+  double _catalogMax = 10000;
+  String _sortBy = 'closest';
+
+  static const _sortOptions = {
+    'closest': 'sort_closest',
+    'price_low': 'sort_price_low',
+    'price_high': 'sort_price_high',
+    'name': 'sort_name',
+  };
 
   @override
   void initState() {
@@ -54,6 +66,7 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
               ).toList() ??
               const [];
       if (!mounted) return;
+      _applyCatalogBounds(regions);
       setState(() {
         _regions = regions;
         _loading = false;
@@ -75,26 +88,140 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
 
   String get _query => _search.text.trim().toLowerCase();
 
-  List<Map<String, dynamic>> get _filteredRegions {
-    if (_query.isEmpty) return _regions;
-    final out = <Map<String, dynamic>>[];
-    for (final region in _regions) {
-      final name = (region['region'] ?? '').toString();
-      final hotels = (region['hotels'] as List<dynamic>?) ?? const [];
-      final matched = hotels.whereType<Map>().where((h) {
-        final hotelName = (h['name'] ?? '').toString().toLowerCase();
-        final loc = (h['location'] ?? '').toString().toLowerCase();
-        final city = (h['city'] ?? name).toString().toLowerCase();
-        return name.toLowerCase().contains(_query) ||
-            hotelName.contains(_query) ||
-            loc.contains(_query) ||
-            city.contains(_query);
-      }).map((h) => Map<String, dynamic>.from(h)).toList();
-      if (matched.isNotEmpty) {
-        out.add({'region': name, 'hotels': matched});
+  void _applyCatalogBounds(List<Map<String, dynamic>> regions) {
+    var minP = double.infinity;
+    var maxP = 0.0;
+    for (final region in regions) {
+      for (final raw in (region['hotels'] as List?) ?? const []) {
+        if (raw is! Map) continue;
+        final h = Map<String, dynamic>.from(raw);
+        final lo = (h['min_price'] as num?)?.toDouble() ?? 0;
+        final hi = (h['max_price'] as num?)?.toDouble() ?? lo;
+        if (hi <= 0 && lo <= 0) continue;
+        minP = math.min(minP, lo > 0 ? lo : hi);
+        maxP = math.max(maxP, hi > 0 ? hi : lo);
       }
     }
-    return out;
+    if (minP == double.infinity) {
+      minP = 0;
+      maxP = 10000;
+    } else if (maxP <= minP) {
+      maxP = minP + 500;
+    }
+    _catalogMin = minP.floorToDouble();
+    _catalogMax = maxP.ceilToDouble();
+    _priceRange = RangeValues(_catalogMin, _catalogMax);
+  }
+
+  int _matchScore(Map<String, dynamic> hotel, String query) {
+    if (query.isEmpty) return 0;
+    var score = 0;
+    final name = (hotel['name'] ?? '').toString().toLowerCase();
+    final city = (hotel['city'] ?? '').toString().toLowerCase();
+    final loc = (hotel['location'] ?? '').toString().toLowerCase();
+    if (city == query) {
+      score += 120;
+    } else if (city.startsWith(query)) {
+      score += 90;
+    } else if (city.contains(query)) {
+      score += 60;
+    }
+    if (name.startsWith(query)) {
+      score += 50;
+    } else if (name.contains(query)) {
+      score += 35;
+    }
+    if (loc.contains(query)) score += 25;
+    return score;
+  }
+
+  bool _passesTextFilter(Map<String, dynamic> hotel, String regionName) {
+    if (_query.isEmpty) return true;
+    final hotelName = (hotel['name'] ?? '').toString().toLowerCase();
+    final loc = (hotel['location'] ?? '').toString().toLowerCase();
+    final city = (hotel['city'] ?? regionName).toString().toLowerCase();
+    return regionName.toLowerCase().contains(_query) ||
+        hotelName.contains(_query) ||
+        loc.contains(_query) ||
+        city.contains(_query);
+  }
+
+  bool _passesPriceFilter(Map<String, dynamic> hotel) {
+    final lo = (hotel['min_price'] as num?)?.toDouble() ?? 0;
+    final hi = (hotel['max_price'] as num?)?.toDouble() ?? lo;
+    if (hi <= 0 && lo <= 0) return true;
+    final minVal = hi > 0 ? math.min(lo > 0 ? lo : hi, hi) : lo;
+    final maxVal = hi > 0 ? hi : lo;
+    return maxVal >= _priceRange.start && minVal <= _priceRange.end;
+  }
+
+  List<Map<String, dynamic>> get _filteredHotels {
+    var list = <Map<String, dynamic>>[];
+    for (final region in _regions) {
+      final regionName = (region['region'] ?? 'Other').toString();
+      for (final raw in (region['hotels'] as List?) ?? const []) {
+        if (raw is! Map) continue;
+        final hotel = Map<String, dynamic>.from(raw);
+        if (!_passesTextFilter(hotel, regionName)) continue;
+        if (!_passesPriceFilter(hotel)) continue;
+        list.add(hotel);
+      }
+    }
+
+    switch (_sortBy) {
+      case 'price_low':
+        list.sort((a, b) {
+          final av = (a['min_price'] as num?)?.toDouble() ?? 0;
+          final bv = (b['min_price'] as num?)?.toDouble() ?? 0;
+          return av.compareTo(bv);
+        });
+      case 'price_high':
+        list.sort((a, b) {
+          final av = (a['max_price'] as num?)?.toDouble() ?? 0;
+          final bv = (b['max_price'] as num?)?.toDouble() ?? 0;
+          return bv.compareTo(av);
+        });
+      case 'name':
+        list.sort(
+          (a, b) => (a['name'] ?? '')
+              .toString()
+              .toLowerCase()
+              .compareTo((b['name'] ?? '').toString().toLowerCase()),
+        );
+      case 'closest':
+      default:
+        if (_query.isNotEmpty) {
+          list.sort(
+            (a, b) => _matchScore(b, _query).compareTo(_matchScore(a, _query)),
+          );
+        } else {
+          list.sort((a, b) => (a['city'] ?? '')
+              .toString()
+              .compareTo((b['city'] ?? '').toString()));
+        }
+    }
+    return list;
+  }
+
+  List<Map<String, dynamic>> get _filteredRegions {
+    if (_sortBy == 'price_low' ||
+        _sortBy == 'price_high' ||
+        (_sortBy == 'closest' && _query.isNotEmpty)) {
+      if (_filteredHotels.isEmpty) return const [];
+      return [
+        {'region': '', 'hotels': _filteredHotels},
+      ];
+    }
+
+    final grouped = <String, List<Map<String, dynamic>>>{};
+    for (final h in _filteredHotels) {
+      final city = (h['city'] ?? 'Other').toString();
+      grouped.putIfAbsent(city, () => []).add(h);
+    }
+    final keys = grouped.keys.toList()..sort();
+    return keys
+        .map((k) => {'region': k, 'hotels': grouped[k]!})
+        .toList();
   }
 
   Future<void> _selectHotel(Map<String, dynamic> hotel) async {
@@ -156,7 +283,7 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
               child: TextField(
                 controller: _search,
                 decoration: InputDecoration(
@@ -178,6 +305,16 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
                 ),
               ),
             ),
+            if (!_loading && _error == null && _regions.isNotEmpty)
+              _HotelFilterPanel(
+                catalogMin: _catalogMin,
+                catalogMax: _catalogMax,
+                priceRange: _priceRange,
+                sortBy: _sortBy,
+                sortOptions: _sortOptions,
+                onPriceChanged: (v) => setState(() => _priceRange = v),
+                onSortChanged: (v) => setState(() => _sortBy = v),
+              ),
             if (!_loading && _error == null && regions.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -258,19 +395,34 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
                                   final hotels =
                                       (block['hotels'] as List<dynamic>?) ??
                                           const [];
+                                  final showRegionHeader = region.isNotEmpty;
                                   return Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Padding(
-                                        padding: EdgeInsets.only(
-                                          top: i == 0 ? 4 : 16,
-                                          bottom: 10,
+                                      if (showRegionHeader)
+                                        Padding(
+                                          padding: EdgeInsets.only(
+                                            top: i == 0 ? 4 : 16,
+                                            bottom: 10,
+                                          ),
+                                          child: _RegionHeader(
+                                            name: region,
+                                            count: hotels.length,
+                                          ),
+                                        )
+                                      else if (i == 0)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            bottom: 10,
+                                          ),
+                                          child: Text(
+                                            context.tr('search_results'),
+                                            style: theme.textTheme.titleSmall
+                                                ?.copyWith(
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
                                         ),
-                                        child: _RegionHeader(
-                                          name: region,
-                                          count: hotels.length,
-                                        ),
-                                      ),
                                       ...hotels.whereType<Map>().map((raw) {
                                         final hotel =
                                             Map<String, dynamic>.from(raw);
@@ -294,6 +446,109 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
         onPressed: _openRegister,
         icon: const Icon(Icons.add_business_outlined),
         label: Text(context.tr('register_hotel')),
+      ),
+    );
+  }
+}
+
+class _HotelFilterPanel extends StatelessWidget {
+  const _HotelFilterPanel({
+    required this.catalogMin,
+    required this.catalogMax,
+    required this.priceRange,
+    required this.sortBy,
+    required this.sortOptions,
+    required this.onPriceChanged,
+    required this.onSortChanged,
+  });
+
+  final double catalogMin;
+  final double catalogMax;
+  final RangeValues priceRange;
+  final String sortBy;
+  final Map<String, String> sortOptions;
+  final ValueChanged<RangeValues> onPriceChanged;
+  final ValueChanged<String> onSortChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final visual = AppVisual.of(context);
+    final span = catalogMax - catalogMin;
+    final divisions = span > 0 ? math.min(50, span.round()) : 1;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLow,
+          borderRadius: visual.radiusMd,
+          border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.tune, size: 18, color: scheme.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    context.tr('filter_sort'),
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  const Spacer(),
+                  DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: sortBy,
+                      isDense: true,
+                      items: sortOptions.entries
+                          .map(
+                            (e) => DropdownMenuItem(
+                              value: e.key,
+                              child: Text(context.tr(e.value)),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) {
+                        if (v != null) onSortChanged(v);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                context.tr('price_range'),
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+              ),
+              RangeSlider(
+                values: priceRange,
+                min: catalogMin,
+                max: catalogMax,
+                divisions: divisions > 1 ? divisions : null,
+                labels: RangeLabels(
+                  '₱${priceRange.start.round()}',
+                  '₱${priceRange.end.round()}',
+                ),
+                onChanged: onPriceChanged,
+              ),
+              Text(
+                '₱${priceRange.start.round()} – ₱${priceRange.end.round()} / ${context.tr('night')}',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: scheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -499,6 +754,13 @@ class _HotelSelectTile extends StatelessWidget {
     final name = (hotel['name'] ?? 'Hotel').toString();
     final loc = (hotel['location'] ?? '').toString();
     final city = (hotel['city'] ?? region).toString();
+    final minPrice = (hotel['min_price'] as num?)?.toDouble() ?? 0;
+    final maxPrice = (hotel['max_price'] as num?)?.toDouble() ?? 0;
+    final priceLabel = minPrice > 0
+        ? (maxPrice > minPrice
+            ? '₱${minPrice.round()}–${maxPrice.round()}'
+            : '₱${minPrice.round()}')
+        : null;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -581,6 +843,26 @@ class _HotelSelectTile extends StatelessWidget {
                                     overflow: TextOverflow.ellipsis,
                                     style: theme.textTheme.bodySmall?.copyWith(
                                       color: scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                                if (priceLabel != null) ...[
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: scheme.tertiaryContainer,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      '${context.tr('from_price')} $priceLabel / ${context.tr('night')}',
+                                      style: theme.textTheme.labelSmall?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                        color: scheme.onTertiaryContainer,
+                                      ),
                                     ),
                                   ),
                                 ],

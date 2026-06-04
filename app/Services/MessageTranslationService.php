@@ -68,9 +68,37 @@ class MessageTranslationService
 
     /**
      * @param  array<string, mixed>  $messageRow
+     */
+    public function needsRemoteTranslation(array $messageRow, string $viewerLocale): bool
+    {
+        if (! $this->isEnabled()) {
+            return false;
+        }
+
+        $viewerLocale = $this->normalizeLocale($viewerLocale);
+        $original = trim((string) ($messageRow['message'] ?? ''));
+        if ($original === '') {
+            return false;
+        }
+
+        $stored = $messageRow['translations'] ?? [];
+        if (! is_array($stored)) {
+            $stored = [];
+        }
+
+        $detected = (string) ($messageRow['detected_lang'] ?? $this->detectLanguage($original));
+        if ($viewerLocale === $detected) {
+            return false;
+        }
+
+        return empty($stored[$viewerLocale]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $messageRow
      * @return array<string, mixed>
      */
-    public function enrichForViewer(array $messageRow, string $viewerLocale): array
+    public function enrichForViewer(array $messageRow, string $viewerLocale, bool $allowRemote = true): array
     {
         $viewerLocale = $this->normalizeLocale($viewerLocale);
         $original = (string) ($messageRow['message'] ?? '');
@@ -85,7 +113,7 @@ class MessageTranslationService
         if ($viewerLocale !== $detected) {
             if (! empty($stored[$viewerLocale])) {
                 $display = (string) $stored[$viewerLocale];
-            } else {
+            } elseif ($allowRemote) {
                 $translated = $this->translate($original, $viewerLocale, $detected);
                 if ($translated !== null && $translated !== '') {
                     $display = $translated;

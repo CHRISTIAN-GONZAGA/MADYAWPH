@@ -33,7 +33,7 @@ class StayReceiptService
             'hotel' => $hotel,
             'charges' => $charges,
             'subtotal' => $subtotal,
-        ]);
+        ])->setPaper('a4', 'portrait');
 
         $ref = (string) ($booking->booking_reference ?? $booking->id);
 

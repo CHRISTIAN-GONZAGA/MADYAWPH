@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\GuestMessage;
 use App\Models\Room;
 use App\Models\User;
 
@@ -17,10 +18,16 @@ final class HotelScopeGuard
 
         if (str_starts_with($roomId, 'STAFF-ADMIN:')) {
             $staffUserId = str_replace('STAFF-ADMIN:', '', $roomId);
-
-            return User::withoutGlobalScopes()
+            if (User::withoutGlobalScopes()
                 ->where('hotel_id', $hotelId)
                 ->where('id', $staffUserId)
+                ->exists()) {
+                return true;
+            }
+
+            return GuestMessage::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
+                ->where('room_id', $roomId)
                 ->exists();
         }
 

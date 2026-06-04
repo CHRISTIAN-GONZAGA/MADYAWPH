@@ -298,7 +298,10 @@ class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
       final encodedRoomId = Uri.encodeComponent(widget.roomId);
       final res = await portalDio().get<Map<String, dynamic>>(
         '/admin/chat/rooms/$encodedRoomId',
-        queryParameters: {'locale': locale},
+        queryParameters: {
+          'locale': locale,
+          'translate': locale == 'en' ? '0' : '1',
+        },
       );
       setState(() {
         _messages = (res.data?['messages'] as List?) ?? const [];

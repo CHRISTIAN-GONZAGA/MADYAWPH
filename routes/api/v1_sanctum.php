@@ -79,6 +79,16 @@ Route::middleware('role:admin')->group(function (): void {
         return $built['pdf']->download($built['filename']);
     })->middleware('role:admin,staff')->name('api.v1.admin.booking.receipt');
 
+    Route::get('/admin/bookings/{booking}/receipt-summary', function (Request $request, Booking $booking) {
+        if ((string) $booking->hotel_id !== (string) $request->user()->hotel_id) {
+            return response()->json(['message' => 'Booking is outside your hotel scope.'], 403);
+        }
+
+        return response()->json([
+            'receipt' => app(\App\Services\StayReceiptService::class)->summaryFor($booking),
+        ]);
+    })->middleware('role:admin,staff')->name('api.v1.admin.booking.receipt-summary');
+
     Route::post('/admin/credits/recharge', function (Request $request) {
         $gateway = app(PaymentGatewayService::class);
         $minRecharge = $gateway->minimumRechargeAmount();
@@ -1048,6 +1058,13 @@ Route::post('/admin/reservations/{id}/approve', function (Request $request, stri
     if ($overlap) {
         return response()->json(['message' => 'Another reservation overlaps these dates for this room.'], 422);
     }
+
+    $walletFee = app(\App\Services\HotelCreditBookingFeeService::class)->deductForReservationConfirmation(
+        $res,
+        $room,
+        (string) $request->user()->id,
+    );
+
     $res->update(['status' => 'approved']);
     $room->update(['status' => RoomStatus::RESERVED->value]);
     app(ActivityLogService::class)->log(
@@ -1068,6 +1085,7 @@ Route::post('/admin/reservations/{id}/approve', function (Request $request, stri
         'reservation' => $res->fresh(),
         'booking' => $booking,
         'activated' => $booking !== null,
+        'wallet' => $walletFee,
     ]);
 })->middleware('role:admin')->name('api.v1.admin.reservations.approve');
 
@@ -1341,7 +1359,6 @@ Route::patch('/admin/pricing/surge', function (Request $request) {
 // Admin chat inbox (guest + staff threads scoped to hotel)
 Route::get('/admin/chat/inbox', function (Request $request) {
     $hotelId = (string) $request->user()->hotel_id;
-    $viewerLocale = (string) $request->query('locale', app(\App\Services\MessageTranslationService::class)->defaultStaffLanguage());
     $messages = GuestMessage::withoutGlobalScopes()
         ->where('hotel_id', $hotelId)
         ->latest('sent_at')
@@ -1382,7 +1399,6 @@ Route::get('/admin/chat/inbox', function (Request $request) {
         'guest_threads' => $guestThreads,
         'staff_threads' => $staffThreads,
         'threads' => $guestThreads,
-        'messages' => GuestMessageResource::collection($messages, $viewerLocale),
     ]);
 })->middleware('role:admin');
 
@@ -1390,6 +1406,10 @@ Route::get('/admin/chat/rooms/{roomId}', function (Request $request, string $roo
     $hotelId = (string) $request->user()->hotel_id;
     HotelScopeGuard::assertRoomBelongsToHotel($hotelId, $roomId);
     $viewerLocale = (string) $request->query('locale', app(\App\Services\MessageTranslationService::class)->defaultStaffLanguage());
+    $translate = filter_var($request->query('translate', '1'), FILTER_VALIDATE_BOOL);
+    $maxTranslations = $translate
+        ? (int) config('services.translation.max_per_request', 25)
+        : 0;
     $messages = GuestMessage::withoutGlobalScopes()
         ->where('hotel_id', $hotelId)
         ->where('room_id', $roomId)
@@ -1404,5 +1424,11 @@ Route::get('/admin/chat/rooms/{roomId}', function (Request $request, string $roo
         ->where('sender_role', '!=', 'admin')
         ->update(['is_read' => true, 'read_at' => now()]);
 
-    return response()->json(['messages' => GuestMessageResource::collection($messages, $viewerLocale)]);
+    return response()->json([
+        'messages' => GuestMessageResource::collectionNewestFirst(
+            $messages,
+            $translate ? $viewerLocale : null,
+            $maxTranslations,
+        ),
+    ]);
 })->middleware('role:admin');

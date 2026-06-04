@@ -225,14 +225,18 @@ class _BookingsSectionState extends State<BookingsSection>
           .post<Map<String, dynamic>>('/admin/reservations/$id/approve');
       if (!mounted) return;
       final activated = res.data?['activated'] == true;
+      final wallet = res.data?['wallet'] as Map<String, dynamic>?;
+      final fee = (wallet?['fee'] as num?)?.toDouble() ?? 0;
+      final balance = (wallet?['balance_after'] as num?)?.toDouble();
+      var msg = activated
+          ? 'Reservation approved and converted to booking.'
+          : 'Reservation approved. Will activate on check-in date.';
+      if (fee > 0) {
+        msg += ' Wallet fee: ₱${fee.toStringAsFixed(0)}'
+            '${balance != null ? ' (balance ₱${balance.toStringAsFixed(0)})' : ''}.';
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            activated
-                ? 'Reservation approved and converted to booking.'
-                : 'Reservation approved. Will activate on check-in date.',
-          ),
-        ),
+        SnackBar(content: Text(msg)),
       );
       await widget.onChanged();
     } on DioException catch (e) {

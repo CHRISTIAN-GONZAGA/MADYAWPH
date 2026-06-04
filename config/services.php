@@ -85,7 +85,13 @@ return [
         'enabled' => (bool) env('TRANSLATION_ENABLED', true),
         'staff_default' => env('TRANSLATION_STAFF_DEFAULT', 'en'),
         'endpoint' => env('TRANSLATION_API_URL', 'https://api.mymemory.translated.net/get'),
-        'timeout' => (int) env('TRANSLATION_TIMEOUT', 12),
+        'timeout' => (int) env('TRANSLATION_TIMEOUT', 4),
+        'max_per_request' => (int) env('TRANSLATION_MAX_PER_REQUEST', 25),
+    ],
+
+    'hotel_credits' => [
+        /** Platform fee taken from hotel wallet when admin confirms a booking (percent of room stay total). */
+        'booking_confirm_fee_percent' => (float) env('BOOKING_CONFIRM_FEE_PERCENT', 8),
     ],
 
 ];

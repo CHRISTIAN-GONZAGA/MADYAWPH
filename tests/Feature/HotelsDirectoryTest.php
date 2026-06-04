@@ -31,7 +31,7 @@ class HotelsDirectoryTest extends TestCase
 
         $response->assertOk();
         $response->assertJsonStructure([
-            'data' => [['id', 'name', 'location', 'city']],
+            'data' => [['id', 'name', 'location', 'city', 'min_price', 'max_price', 'room_count']],
             'regions' => [['region', 'hotels']],
         ]);
 
