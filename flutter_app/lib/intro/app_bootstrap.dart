@@ -35,13 +35,13 @@ class _AppBootstrapState extends State<AppBootstrap> {
 
   @override
   Widget build(BuildContext context) {
+    // FlowRoot loads underneath while intro plays; intro fades out before removal.
     return Stack(
       fit: StackFit.expand,
       clipBehavior: Clip.none,
       children: [
         const FlowRoot(),
-        if (_showIntro)
-          MadyawIntroScreen(onFinished: _onIntroDone),
+        if (_showIntro) MadyawIntroScreen(onFinished: _onIntroDone),
         if (!_showIntro) const ThemeFab(),
       ],
     );

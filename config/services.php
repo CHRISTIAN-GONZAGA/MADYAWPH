@@ -89,6 +89,13 @@ return [
         'max_per_request' => (int) env('TRANSLATION_MAX_PER_REQUEST', 25),
     ],
 
+    'google_maps' => [
+        /** Enables geocoding hotel addresses for “near me” in the app. */
+        'api_key' => trim((string) env('GOOGLE_MAPS_API_KEY', '')),
+        /** Max hotels to geocode per GET /hotels when coordinates are missing. */
+        'geocode_batch_limit' => (int) env('GOOGLE_MAPS_GEOCODE_BATCH_LIMIT', 5),
+    ],
+
     'hotel_credits' => [
         /** Platform fee taken from hotel wallet when admin confirms a booking (percent of room stay total). */
         'booking_confirm_fee_percent' => (float) env('BOOKING_CONFIRM_FEE_PERCENT', 8),

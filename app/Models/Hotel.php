@@ -18,6 +18,8 @@ class Hotel extends Model
         'province',
         'barangay',
         'street_address',
+        'latitude',
+        'longitude',
         'contact_number',
         'access_username',
         'access_password',

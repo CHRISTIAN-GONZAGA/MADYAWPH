@@ -9,6 +9,7 @@ use App\Models\HotelCredit;
 use App\Models\PersonalAccessToken;
 use App\Models\User;
 use App\Support\HotelRegistrationCredits;
+use App\Services\GoogleMapsGeocoder;
 use App\Services\SmsService;
 use App\Support\HotelDirectory;
 use App\Support\PhilippineLocations;
@@ -25,14 +26,17 @@ class PortalAuthController extends Controller
 {
     public const HOTELS_DIRECTORY_CACHE_KEY = 'api.v1.hotels.directory';
 
-    public function __construct(private readonly SmsService $smsService) {}
+    public function __construct(
+        private readonly SmsService $smsService,
+        private readonly GoogleMapsGeocoder $googleMapsGeocoder,
+    ) {}
 
     public function hotels(): JsonResponse
     {
         $payload = Cache::remember(
             self::HOTELS_DIRECTORY_CACHE_KEY,
             now()->addMinutes(5),
-            fn (): array => HotelDirectory::pickerApiPayload()
+            fn (): array => HotelDirectory::pickerApiPayload($this->googleMapsGeocoder)
         );
 
         return response()->json($payload);
@@ -100,6 +104,8 @@ class PortalAuthController extends Controller
             'access_password' => Hash::make($validated['password']),
             'total_rooms' => $totalRooms,
         ]);
+
+        HotelDirectory::assignCoordinates($hotel->fresh() ?? $hotel, $this->googleMapsGeocoder);
 
         HotelCredit::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,

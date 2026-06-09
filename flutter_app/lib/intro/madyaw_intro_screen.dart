@@ -1,11 +1,14 @@
 import 'dart:math' as math;
+import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
-import '../branding/madyaw_logo_widget.dart';
+import '../branding/madyaw_intro_logo.dart';
+import '../branding/madyaw_logo_paths.dart';
 
-/// Cinematic splash — vector logo, ocean waves, particles, staged reveal.
+/// Premium programmatic intro — Apple-style staged reveal, shine pass, seamless exit.
 class MadyawIntroScreen extends StatefulWidget {
   const MadyawIntroScreen({super.key, required this.onFinished});
 
@@ -16,286 +19,235 @@ class MadyawIntroScreen extends StatefulWidget {
 }
 
 class _MadyawIntroScreenState extends State<MadyawIntroScreen>
-    with TickerProviderStateMixin {
-  late final AnimationController _timeline;
-  late final AnimationController _waves;
-  late final AnimationController _particles;
-  late final AnimationController _burst;
-  bool _ended = false;
+    with SingleTickerProviderStateMixin {
+  static const _duration = Duration(milliseconds: 3200);
 
-  static const _deepNavy = Color(0xFF0D1B2A);
-  static const _ocean = Color(0xFF1B4965);
-  static const _sky = Color(0xFFCAE9FF);
+  late final AnimationController _timeline;
+  bool _ended = false;
+  late final bool _reduceMotion;
 
   @override
   void initState() {
     super.initState();
-    _timeline = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 3600),
-    );
-    _waves = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2800),
-    )..repeat();
-    _particles = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 6000),
-    )..repeat();
-    _burst = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    );
-
+    _reduceMotion = SchedulerBinding.instance.platformDispatcher.accessibilityFeatures
+        .disableAnimations;
+    _timeline = AnimationController(vsync: this, duration: _duration);
     _timeline.forward();
-    _timeline.addStatusListener((s) {
-      if (s == AnimationStatus.completed) _finish();
+    _timeline.addStatusListener((status) {
+      if (status == AnimationStatus.completed) _finish();
     });
   }
 
   void _finish() {
     if (_ended) return;
     _ended = true;
-    HapticFeedback.mediumImpact();
-    _timeline.stop();
+    HapticFeedback.lightImpact();
     widget.onFinished();
   }
 
   void _skip() {
-    _burst.forward(from: 0);
+    if (_ended) return;
+    _timeline.stop();
     _finish();
   }
 
   @override
   void dispose() {
     _timeline.dispose();
-    _waves.dispose();
-    _particles.dispose();
-    _burst.dispose();
     super.dispose();
   }
 
-  double _interval(double start, double end) {
-    final t = _timeline.value;
-    if (t <= start) return 0;
-    if (t >= end) return 1;
-    return ((t - start) / (end - start)).clamp(0.0, 1.0);
+  double _t(double start, double end) {
+    final v = _timeline.value;
+    if (v <= start) return 0;
+    if (v >= end) return 1;
+    return ((v - start) / (end - start)).clamp(0.0, 1.0);
   }
 
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
-    final logoSize = math.min(320.0, size.width * 0.82);
-
-    final bgReveal = Curves.easeOutCubic.transform(_interval(0, 0.22));
-    final logoDraw = Curves.easeInOutCubic.transform(_interval(0.06, 0.42));
-    final logoPop = Curves.elasticOut.transform(_interval(0.34, 0.56));
-    final ringPulse = Curves.easeOut.transform(_interval(0.48, 0.75));
-    final letters = Curves.easeOutCubic.transform(_interval(0.4, 0.68));
-    final brandLine = Curves.easeOutBack.transform(_interval(0.58, 0.78));
-    final tagline = Curves.easeOut.transform(_interval(0.72, 0.9));
-    final cta = Curves.easeOut.transform(_interval(0.85, 0.98));
-    final flash = Curves.easeOut.transform(_interval(0.52, 0.58));
-    final sway = math.sin(_timeline.value * math.pi * 3) * 3.5 * logoDraw;
-    final wavePhase = _waves.value;
-    final glow = 0.55 + 0.45 * math.sin(_timeline.value * math.pi * 2).abs();
+    final logoSize = math.min(280.0, size.width * 0.68);
+    final reduceMotion = _reduceMotion ||
+        MediaQuery.maybeOf(context)?.disableAnimations == true;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _skip,
       child: AnimatedBuilder(
-        animation: Listenable.merge([
-          _timeline,
-          _waves,
-          _particles,
-          _burst,
-        ]),
+        animation: _timeline,
         builder: (context, _) {
-          return DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color.lerp(Colors.white, _sky, bgReveal)!,
-                  Color.lerp(_sky, _ocean, bgReveal * 0.6)!,
-                  Color.lerp(_ocean, _deepNavy, bgReveal * 0.35)!,
-                ],
-                stops: const [0.0, 0.45, 1.0],
-              ),
-            ),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                CustomPaint(
-                  painter: _SunRaysPainter(
-                    progress: _interval(0.1, 0.6),
-                    pulse: _particles.value,
-                  ),
-                  child: const SizedBox.expand(),
-                ),
-                CustomPaint(
-                  painter: _ParticleFieldPainter(
-                    phase: _particles.value,
-                    count: 24,
-                  ),
-                  child: const SizedBox.expand(),
-                ),
-                Align(
-                  alignment: Alignment.bottomCenter,
-                  child: CustomPaint(
-                    size: Size(size.width, size.height * 0.42),
-                    painter: _OceanWavesPainter(
-                      phase: wavePhase,
-                      depth: bgReveal,
+          final t = _timeline.value;
+
+          // Timeline choreography (2.5–4s total feel)
+          final bgIn = Curves.easeOutCubic.transform(_t(0, 0.12));
+          final ambient = Curves.easeOut.transform(_t(0.05, 0.35));
+          final logoDraw = Curves.easeInOutCubic.transform(_t(0.08, 0.52));
+          final logoSettle = Curves.easeOutExpo.transform(_t(0.42, 0.58));
+          final shine = Curves.easeInOut.transform(_t(0.54, 0.72));
+          final glow = Curves.easeOut.transform(_t(0.38, 0.65));
+          final wordmark = Curves.easeOutCubic.transform(_t(0.62, 0.82));
+          final subtitle = Curves.easeOut.transform(_t(0.72, 0.88));
+          final tagline = Curves.easeOut.transform(_t(0.78, 0.92));
+          final exitFade = Curves.easeInCubic.transform(_t(0.93, 1.0));
+          final screenOpacity = 1.0 - exitFade;
+
+          final logoScale = reduceMotion
+              ? 1.0
+              : lerpDouble(0.88, 1.0, logoSettle)!;
+          final logoLift = reduceMotion ? 0.0 : 24 * (1 - logoSettle);
+          final breathe = reduceMotion ? 0.0 : t * 0.4;
+
+          return Opacity(
+            opacity: screenOpacity.clamp(0, 1),
+            child: ColoredBox(
+              color: MadyawBrand.introBgTop,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Branded gradient background
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Color.lerp(
+                            MadyawBrand.introBgTop,
+                            const Color(0xFF0E1524),
+                            bgIn,
+                          )!,
+                          Color.lerp(
+                            MadyawBrand.introBgBottom,
+                            const Color(0xFF0A1020),
+                            bgIn,
+                          )!,
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                if (flash > 0 && flash < 1)
-                  ColoredBox(
-                    color: Colors.white.withValues(alpha: 0.35 * (1 - flash)),
-                  ),
-                Center(
-                  child: Transform.translate(
-                    offset: Offset(0, 40 * (1 - logoPop) + sway),
-                    child: Transform.scale(
-                      scale: 0.55 + 0.45 * logoPop,
-                      child: Opacity(
-                        opacity: logoDraw.clamp(0, 1),
-                        child: Stack(
-                          alignment: Alignment.center,
-                          clipBehavior: Clip.none,
+
+                  // Ambient orb + vignette
+                  if (!reduceMotion)
+                    CustomPaint(
+                      painter: _AmbientPainter(
+                        strength: ambient,
+                        pulse: t,
+                      ),
+                      child: const SizedBox.expand(),
+                    ),
+
+                  // Subtle particles
+                  if (!reduceMotion && ambient > 0.1)
+                    CustomPaint(
+                      painter: _ParticlePainter(phase: t, count: 18),
+                      child: const SizedBox.expand(),
+                    ),
+
+                  // Logo + wordmark stack
+                  Center(
+                    child: Transform.translate(
+                      offset: Offset(0, logoLift),
+                      child: Transform.scale(
+                        scale: logoScale,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (ringPulse > 0)
-                              Container(
-                                width: logoSize * 1.15,
-                                height: logoSize * 1.15,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: MadyawLogoWidget.brightBlue
-                                        .withValues(alpha: 0.35 * ringPulse),
-                                    width: 3,
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: MadyawLogoWidget.brightBlue
-                                          .withValues(alpha: 0.25 * ringPulse),
-                                      blurRadius: 40,
-                                      spreadRadius: 4,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            _LogoStage(
-                              logoSize: logoSize,
+                            MadyawIntroLogo(
+                              size: logoSize,
                               drawProgress: logoDraw,
-                              letterReveal: letters,
-                              brandReveal: brandLine,
+                              shineProgress: shine,
                               glowStrength: glow,
-                              wavePhase: wavePhase,
-                              swayAngle: sway,
+                              breathe: breathe,
+                              reduceMotion: reduceMotion,
+                            ),
+                            SizedBox(height: logoSize * 0.1),
+                            Opacity(
+                              opacity: wordmark,
+                              child: MadyawIntroWordmark(
+                                progress: wordmark,
+                                fontSize: logoSize * 0.11,
+                              ),
+                            ),
+                            SizedBox(height: logoSize * 0.04),
+                            Opacity(
+                              opacity: subtitle,
+                              child: Transform.translate(
+                                offset: Offset(0, 8 * (1 - subtitle)),
+                                child: _PhBadge(reveal: subtitle),
+                              ),
                             ),
                           ],
                         ),
                       ),
                     ),
                   ),
-                ),
-                if (_burst.value > 0)
-                  CustomPaint(
-                    painter: _BurstPainter(
-                      progress: Curves.easeOut.transform(_burst.value),
-                      center: Offset(size.width / 2, size.height * 0.42),
-                    ),
-                    child: const SizedBox.expand(),
-                  ),
-                SafeArea(
-                  child: Column(
-                    children: [
-                      Align(
-                        alignment: Alignment.topRight,
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: TextButton(
-                            onPressed: _skip,
-                            style: TextButton.styleFrom(
-                              foregroundColor: MadyawLogoWidget.navy
-                                  .withValues(alpha: 0.7),
-                              backgroundColor:
-                                  Colors.white.withValues(alpha: 0.65),
-                            ),
-                            child: const Text('Skip'),
-                          ),
-                        ),
-                      ),
-                      const Spacer(),
-                      Opacity(
-                        opacity: tagline,
-                        child: Transform.translate(
-                          offset: Offset(0, 16 * (1 - tagline)),
-                          child: Column(
-                            children: [
-                              Text(
-                                'Philippine hotel operations, elevated',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.3,
-                                  color: MadyawLogoWidget.navy
-                                      .withValues(alpha: 0.92),
+
+                  // Tagline
+                  SafeArea(
+                    child: Column(
+                      children: [
+                        Align(
+                          alignment: Alignment.topRight,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                            child: TextButton(
+                              onPressed: _skip,
+                              style: TextButton.styleFrom(
+                                foregroundColor:
+                                    Colors.white.withValues(alpha: 0.55),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 8,
                                 ),
                               ),
-                              const SizedBox(height: 6),
-                              Text(
-                                'Rooms · Bookings · Wallet · Staff · Guests',
+                              child: const Text(
+                                'Skip',
                                 style: TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w500,
-                                  color: MadyawLogoWidget.navy
-                                      .withValues(alpha: 0.58),
+                                  letterSpacing: 0.3,
                                 ),
                               ),
-                            ],
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 28),
-                      Opacity(
-                        opacity: cta,
-                        child: Column(
-                          children: [
-                            SizedBox(
-                              width: 120,
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(4),
-                                child: LinearProgressIndicator(
-                                  value: _timeline.value,
-                                  minHeight: 3,
-                                  backgroundColor: MadyawLogoWidget.navy
-                                      .withValues(alpha: 0.12),
-                                  color: MadyawLogoWidget.brightBlue,
+                        const Spacer(),
+                        Opacity(
+                          opacity: tagline,
+                          child: Transform.translate(
+                            offset: Offset(0, 12 * (1 - tagline)),
+                            child: Column(
+                              children: [
+                                Text(
+                                  'Hotel operations, refined',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w500,
+                                    letterSpacing: 0.6,
+                                    color: Colors.white.withValues(alpha: 0.72),
+                                  ),
                                 ),
-                              ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Rooms · Bookings · Wallet · Staff',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w400,
+                                    letterSpacing: 0.4,
+                                    color: Colors.white.withValues(alpha: 0.38),
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 12),
-                            Text(
-                              'Tap anywhere to continue',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                color: MadyawLogoWidget.navy
-                                    .withValues(alpha: 0.45),
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
-                      ),
-                      SizedBox(height: size.height * 0.14),
-                    ],
+                        const SizedBox(height: 48),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         },
@@ -304,215 +256,117 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
   }
 }
 
-class _LogoStage extends StatelessWidget {
-  const _LogoStage({
-    required this.logoSize,
-    required this.drawProgress,
-    required this.letterReveal,
-    required this.brandReveal,
-    required this.glowStrength,
-    required this.wavePhase,
-    required this.swayAngle,
-  });
+class _PhBadge extends StatelessWidget {
+  const _PhBadge({required this.reveal});
 
-  final double logoSize;
-  final double drawProgress;
-  final double letterReveal;
-  final double brandReveal;
-  final double glowStrength;
-  final double wavePhase;
-  final double swayAngle;
+  final double reveal;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(28, 28, 28, 20),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(32),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Colors.white.withValues(alpha: 0.97),
-            MadyawLogoWidget.brightBlue.withValues(alpha: 0.08),
-          ],
+    return Transform.scale(
+      scale: 0.9 + 0.1 * Curves.easeOutBack.transform(reveal),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: MadyawBrand.brightBlue.withValues(alpha: 0.45 * reveal),
+          ),
+          color: MadyawBrand.brightBlue.withValues(alpha: 0.12 * reveal),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: MadyawLogoWidget.brightBlue.withValues(alpha: 0.35),
-            blurRadius: 48,
-            spreadRadius: -8,
-            offset: const Offset(0, 16),
+        child: Text(
+          'PH',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.2,
+            color: Colors.white.withValues(alpha: 0.85 * reveal),
           ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 28,
-            offset: const Offset(0, 10),
-          ),
-        ],
-        border: Border.all(
-          color: MadyawLogoWidget.brightBlue.withValues(alpha: 0.22),
-          width: 2,
         ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          MadyawLogoWidget(
-            size: logoSize * 0.92,
-            drawProgress: drawProgress,
-            showWordmark: false,
-            showBrandLine: true,
-            brandReveal: brandReveal,
-            letterReveal: letterReveal,
-            glowStrength: glowStrength,
-            wavePhase: wavePhase,
-            swayAngle: swayAngle,
-          ),
-        ],
       ),
     );
   }
 }
 
-class _ParticleFieldPainter extends CustomPainter {
-  _ParticleFieldPainter({required this.phase, required this.count});
+class _AmbientPainter extends CustomPainter {
+  _AmbientPainter({required this.strength, required this.pulse});
+
+  final double strength;
+  final double pulse;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (strength <= 0) return;
+
+    final cx = size.width * 0.5;
+    final cy = size.height * 0.38;
+    final breathe = 1 + math.sin(pulse * math.pi * 2) * 0.04;
+
+    final paint = Paint()
+      ..shader = RadialGradient(
+        center: Alignment.center,
+        radius: 0.85 * breathe,
+        colors: [
+          MadyawBrand.brightBlue.withValues(alpha: 0.14 * strength),
+          MadyawBrand.brightBlue.withValues(alpha: 0.04 * strength),
+          Colors.transparent,
+        ],
+        stops: const [0.0, 0.45, 1.0],
+      ).createShader(Rect.fromCircle(
+        center: Offset(cx, cy),
+        radius: size.width * 0.55,
+      ));
+
+    canvas.drawRect(Offset.zero & size, paint);
+
+    // Soft vignette
+    final vignette = Paint()
+      ..shader = RadialGradient(
+        center: Alignment.center,
+        radius: 1.1,
+        colors: [
+          Colors.transparent,
+          Colors.black.withValues(alpha: 0.45 * strength),
+        ],
+        stops: const [0.55, 1.0],
+      ).createShader(Offset.zero & size);
+    canvas.drawRect(Offset.zero & size, vignette);
+  }
+
+  @override
+  bool shouldRepaint(covariant _AmbientPainter old) =>
+      old.strength != strength || old.pulse != pulse;
+}
+
+class _ParticlePainter extends CustomPainter {
+  _ParticlePainter({required this.phase, this.count = 18});
 
   final double phase;
   final int count;
-  final _rng = math.Random(42);
+  final _rng = math.Random(7);
 
   @override
   void paint(Canvas canvas, Size size) {
     for (var i = 0; i < count; i++) {
       final bx = _rng.nextDouble();
       final by = _rng.nextDouble();
-      final speed = 0.3 + _rng.nextDouble() * 0.7;
+      final speed = 0.15 + _rng.nextDouble() * 0.35;
       final x = (bx + phase * speed) % 1.0 * size.width;
-      final y = (by + phase * speed * 0.4) % 1.0 * size.height * 0.85;
-      final r = 1.5 + _rng.nextDouble() * 2.5;
-      final alpha = 0.08 + _rng.nextDouble() * 0.2;
+      final y = (by + phase * speed * 0.25) % 1.0 * size.height;
+      final r = 0.8 + _rng.nextDouble() * 1.2;
+      final alpha = 0.04 + _rng.nextDouble() * 0.1;
+
       canvas.drawCircle(
         Offset(x, y),
         r,
         Paint()
           ..color = Colors.white.withValues(alpha: alpha)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5),
       );
     }
   }
 
   @override
-  bool shouldRepaint(covariant _ParticleFieldPainter old) =>
+  bool shouldRepaint(covariant _ParticlePainter old) =>
       old.phase != phase;
-}
-
-class _SunRaysPainter extends CustomPainter {
-  _SunRaysPainter({required this.progress, required this.pulse});
-
-  final double progress;
-  final double pulse;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (progress <= 0) return;
-    final cx = size.width * 0.5;
-    final cy = size.height * 0.32;
-    final rayCount = 12;
-    for (var i = 0; i < rayCount; i++) {
-      final angle = (i / rayCount) * math.pi * 2 + pulse * math.pi * 2;
-      final len = size.width * 0.55 * progress;
-      final path = Path()
-        ..moveTo(cx, cy)
-        ..lineTo(
-          cx + math.cos(angle) * len,
-          cy + math.sin(angle) * len,
-        );
-      final rayPaint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 28
-        ..strokeCap = StrokeCap.round
-        ..color =
-            MadyawLogoWidget.brightBlue.withValues(alpha: 0.04 * progress)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18);
-      canvas.drawPath(path, rayPaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _SunRaysPainter old) =>
-      old.progress != progress || old.pulse != pulse;
-}
-
-class _OceanWavesPainter extends CustomPainter {
-  _OceanWavesPainter({required this.phase, required this.depth});
-
-  final double phase;
-  final double depth;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final h = size.height;
-    final w = size.width;
-
-    void drawWave(double yOff, Color color, double amp, double speed) {
-      final path = Path()..moveTo(0, h);
-      for (var x = 0.0; x <= w; x += 6) {
-        final y = yOff +
-            amp * math.sin((x / w) * math.pi * 4 + phase * math.pi * 2 * speed);
-        path.lineTo(x, y);
-      }
-      path.lineTo(w, h);
-      path.close();
-      canvas.drawPath(path, Paint()..color = color);
-    }
-
-    final base = h * (0.55 - 0.15 * depth);
-    drawWave(
-      base,
-      MadyawLogoWidget.brightBlue.withValues(alpha: 0.35),
-      14,
-      1,
-    );
-    drawWave(
-      base + 18,
-      MadyawLogoWidget.navy.withValues(alpha: 0.5),
-      10,
-      1.3,
-    );
-    drawWave(
-      base + 36,
-      const Color(0xFF0D1B2A).withValues(alpha: 0.75),
-      8,
-      0.8,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _OceanWavesPainter old) =>
-      old.phase != phase || old.depth != depth;
-}
-
-class _BurstPainter extends CustomPainter {
-  _BurstPainter({required this.progress, required this.center});
-
-  final double progress;
-  final Offset center;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (progress <= 0) return;
-    final radius = size.width * 0.8 * progress;
-    final paint = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          MadyawLogoWidget.brightBlue.withValues(alpha: 0.2 * (1 - progress)),
-          Colors.transparent,
-        ],
-      ).createShader(Rect.fromCircle(center: center, radius: radius));
-    canvas.drawCircle(center, radius, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _BurstPainter old) => old.progress != progress;
 }

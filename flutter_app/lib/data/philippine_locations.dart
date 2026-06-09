@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 
 /// Philippine region → province → city/municipality → barangay hierarchy.
 class PhilippineLocations {
-  PhilippineLocations._();
+  PhilippineLocations._loaded(this.regions);
 
   static PhilippineLocations? _instance;
 
@@ -22,10 +22,8 @@ class PhilippineLocations {
       if (r is! Map) continue;
       regions.add(PhRegion.fromJson(Map<String, dynamic>.from(r)));
     }
-    return PhilippineLocations._(regions);
+    return PhilippineLocations._loaded(regions);
   }
-
-  PhilippineLocations._(this.regions);
 
   final List<PhRegion> regions;
 

@@ -47,6 +47,21 @@ flutter run --dart-define=API_BASE_URL=https://your-service.onrender.com/api/v1
 flutter build appbundle --dart-define=API_BASE_URL=https://your-service.onrender.com/api/v1
 ```
 
+### Google Maps / “Near me” (optional)
+
+On **Select your property**, users can tap **Use my current location** to sort hotels by distance.
+
+1. **Server (recommended):** set `GOOGLE_MAPS_API_KEY` on Render/Laravel `.env`. New hotels are geocoded on register; existing hotels are geocoded in small batches when `/hotels` is loaded.
+2. **App (optional):** pass the same key at build time so the app can geocode hotels that still lack coordinates:
+
+```bash
+flutter build apk --release \
+  --dart-define=API_BASE_URL=https://your-service.onrender.com/api/v1 \
+  --dart-define=GOOGLE_MAPS_API_KEY=your_google_maps_api_key
+```
+
+Without a key, the button still appears but nearby search explains that a key is needed once hotels have no stored coordinates. Location permission is only requested when the user taps the button.
+
 ### Primary v1 endpoints (Sanctum unless noted)
 
 | Flow | Method | Path |

@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'madyaw_logo_paths.dart';
+
 /// Vector Madyaw sailboat mark + wordmark (no image asset).
 class MadyawLogoWidget extends StatelessWidget {
   const MadyawLogoWidget({
@@ -31,9 +33,9 @@ class MadyawLogoWidget extends StatelessWidget {
   final bool showBrandLine;
   final double brandReveal;
 
-  static const Color brightBlue = Color(0xFF0077C8);
-  static const Color navy = Color(0xFF1A3150);
-  static const String wordmark = 'MADYAW';
+  static const Color brightBlue = MadyawBrand.brightBlue;
+  static const Color navy = MadyawBrand.navy;
+  static const String wordmark = MadyawBrand.wordmark;
 
   @override
   Widget build(BuildContext context) {
@@ -240,30 +242,15 @@ class _MadyawLogoPainter extends CustomPainter {
     canvas.translate(cx, markHeight * 0.08 + waveY);
     canvas.scale(scale);
 
-    final layers = <_LogoLayer>[
-      _LogoLayer(path: _leftSail(), color: MadyawLogoWidget.navy, order: 0),
-      _LogoLayer(path: _mainSail(), color: MadyawLogoWidget.brightBlue, order: 1),
-      _LogoLayer(
-        path: _rightSail(),
-        color: MadyawLogoWidget.brightBlue.withValues(alpha: 0.92),
-        order: 2,
-      ),
-      _LogoLayer(path: _hull(), color: MadyawLogoWidget.navy, order: 3),
-      _LogoLayer(
-        path: _waveBack(),
-        color: MadyawLogoWidget.brightBlue.withValues(alpha: 0.75),
-        order: 4,
-      ),
-      _LogoLayer(path: _waveFront(), color: MadyawLogoWidget.brightBlue, order: 5),
-    ];
-
-    for (final layer in layers) {
+    final layers = MadyawBrand.layers();
+    for (var i = 0; i < layers.length; i++) {
+      final layer = layers[i];
       _drawTrimmedPath(
         canvas,
         layer.path,
         layer.color,
         drawProgress,
-        layer.order,
+        i,
         layers.length,
       );
     }
@@ -314,66 +301,9 @@ class _MadyawLogoPainter extends CustomPainter {
     }
   }
 
-  Path _mainSail() => Path()
-    ..moveTo(-8, 78)
-    ..quadraticBezierTo(2, 20, 18, 4)
-    ..quadraticBezierTo(28, -2, 38, 8)
-    ..quadraticBezierTo(42, 42, 28, 78)
-    ..close();
-
-  Path _leftSail() => Path()
-    ..moveTo(-42, 76)
-    ..quadraticBezierTo(-48, 38, -32, 18)
-    ..quadraticBezierTo(-22, 8, -8, 78)
-    ..close();
-
-  Path _rightSail() => Path()
-    ..moveTo(36, 76)
-    ..quadraticBezierTo(52, 48, 48, 22)
-    ..quadraticBezierTo(44, 10, 38, 8)
-    ..lineTo(28, 78)
-    ..close();
-
-  Path _hull() => Path()
-    ..moveTo(-44, 78)
-    ..lineTo(44, 78)
-    ..lineTo(52, 88)
-    ..lineTo(-52, 88)
-    ..close();
-
-  Path _waveBack() => Path()
-    ..moveTo(-58, 94)
-    ..quadraticBezierTo(-20, 82, 20, 92)
-    ..quadraticBezierTo(48, 100, 62, 96)
-    ..lineTo(62, 104)
-    ..quadraticBezierTo(40, 108, 10, 100)
-    ..quadraticBezierTo(-30, 90, -58, 102)
-    ..close();
-
-  Path _waveFront() => Path()
-    ..moveTo(-54, 100)
-    ..quadraticBezierTo(-10, 88, 30, 98)
-    ..quadraticBezierTo(56, 104, 66, 100)
-    ..lineTo(66, 108)
-    ..quadraticBezierTo(38, 114, 0, 106)
-    ..quadraticBezierTo(-36, 98, -54, 110)
-    ..close();
-
   @override
   bool shouldRepaint(covariant _MadyawLogoPainter old) =>
       old.drawProgress != drawProgress ||
       old.textOpacity != textOpacity ||
       old.wavePhase != wavePhase;
-}
-
-class _LogoLayer {
-  const _LogoLayer({
-    required this.path,
-    required this.color,
-    required this.order,
-  });
-
-  final Path path;
-  final Color color;
-  final int order;
 }

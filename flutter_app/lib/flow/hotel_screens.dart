@@ -5,7 +5,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../config.dart';
 import '../auth_storage.dart';
+import '../services/nearby_hotels.dart';
 import '../branding/madyaw_logo_widget.dart';
 import 'hotel_how_to.dart';
 import '../dio_client.dart';
@@ -44,10 +46,15 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
   double _catalogCeiling = _kHotelPriceFallbackMax;
   String? _selectedRegion;
   bool _onlyWithPrices = false;
+  bool _nearMeActive = false;
+  bool _locatingNearMe = false;
+  final Map<String, double> _hotelDistanceKm = {};
+  bool _mapsGeocodingConfigured = false;
   String _sortBy = 'closest';
 
   static const _sortOptions = {
     'closest': 'sort_closest',
+    'distance': 'sort_distance',
     'price_low': 'sort_price_low',
     'price_high': 'sort_price_high',
     'name': 'sort_name',
@@ -83,6 +90,8 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
               _error = null;
             });
             _syncCatalogPriceBounds(decoded['meta']);
+            _mapsGeocodingConfigured =
+                decoded['meta']?['maps_geocoding_configured'] == true;
             if (mounted) setState(() {});
           }
         }
@@ -122,6 +131,8 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
         _error = null;
       });
       _syncCatalogPriceBounds(data?['meta']);
+      _mapsGeocodingConfigured =
+          data?['meta']?['maps_geocoding_configured'] == true;
       if (mounted) {
         setState(() {});
       }
@@ -186,8 +197,12 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
       _query.isNotEmpty ||
       _selectedRegion != null ||
       _onlyWithPrices ||
+      _nearMeActive ||
       _priceFilterIsNarrowed ||
       _sortBy != 'closest';
+
+  bool get _nearMeAvailable =>
+      kGoogleMapsConfigured || _mapsGeocodingConfigured;
 
   bool get _priceFilterIsNarrowed =>
       _catalogCeiling > _catalogFloor &&
@@ -273,9 +288,124 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
       _search.clear();
       _selectedRegion = null;
       _onlyWithPrices = false;
+      _nearMeActive = false;
+      _hotelDistanceKm.clear();
       _sortBy = 'closest';
       _priceRange = RangeValues(_catalogFloor, _catalogCeiling);
     });
+  }
+
+  Future<void> _useNearMe() async {
+    if (_locatingNearMe) return;
+    setState(() => _locatingNearMe = true);
+    try {
+      final pos = await NearbyHotelsService.currentPosition();
+      if (pos == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.tr('near_me_location_failed'))),
+        );
+        return;
+      }
+
+      final distances = <String, double>{};
+      var locatedCount = 0;
+
+      for (final hotel in _allHotels) {
+        final id = (hotel['id'] ?? '').toString();
+        if (id.isEmpty) continue;
+
+        var lat = NearbyHotelsService.hotelLatitude(hotel);
+        var lng = NearbyHotelsService.hotelLongitude(hotel);
+
+        if ((lat == null || lng == null) && kGoogleMapsConfigured) {
+          final address = NearbyHotelsService.addressForGeocoding(hotel);
+          final coords = await NearbyHotelsService.geocodeAddress(address);
+          if (coords != null) {
+            lat = coords.lat;
+            lng = coords.lng;
+            hotel['latitude'] = lat;
+            hotel['longitude'] = lng;
+          }
+        }
+
+        if (lat == null || lng == null) continue;
+
+        final km = NearbyHotelsService.distanceKm(pos.lat, pos.lng, lat, lng);
+        distances[id] = km;
+        if (km <= NearbyHotelsService.defaultRadiusKm) {
+          locatedCount++;
+        }
+      }
+
+      if (!mounted) return;
+
+      if (distances.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _nearMeAvailable
+                  ? context.tr('near_me_no_coordinates')
+                  : context.tr('near_me_maps_key_required'),
+            ),
+            duration: const Duration(seconds: 6),
+          ),
+        );
+        setState(() {
+          _locatingNearMe = false;
+        });
+        return;
+      }
+
+      setState(() {
+        _hotelDistanceKm
+          ..clear()
+          ..addAll(distances);
+        _nearMeActive = true;
+        _sortBy = 'distance';
+        _locatingNearMe = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.tr('near_me_found').replaceAll('{n}', '$locatedCount'),
+          ),
+        ),
+      );
+    } on NearbyHotelsException catch (e) {
+      if (!mounted) return;
+      final msg = switch (e.code) {
+        'permission_denied' || 'permission_denied_forever' =>
+          context.tr('near_me_permission_denied'),
+        'location_services_disabled' => context.tr('near_me_location_disabled'),
+        _ => context.tr('near_me_location_failed'),
+      };
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      setState(() => _locatingNearMe = false);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr('near_me_location_failed'))),
+      );
+      setState(() => _locatingNearMe = false);
+    }
+  }
+
+  void _clearNearMe() {
+    setState(() {
+      _nearMeActive = false;
+      _hotelDistanceKm.clear();
+      if (_sortBy == 'distance') _sortBy = 'closest';
+    });
+  }
+
+  bool _passesNearMeFilter(Map<String, dynamic> hotel) {
+    if (!_nearMeActive) return true;
+    final id = (hotel['id'] ?? '').toString();
+    final km = _hotelDistanceKm[id];
+    if (km == null) return false;
+    return km <= NearbyHotelsService.defaultRadiusKm;
   }
 
   static String _formatPeso(num value) {
@@ -385,11 +515,18 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
         if (!_passesRegionFilter(hotel, regionName)) continue;
         if (!_passesTextFilter(hotel, regionName)) continue;
         if (!_passesPriceFilter(hotel)) continue;
+        if (!_passesNearMeFilter(hotel)) continue;
         list.add(hotel);
       }
     }
 
     switch (_sortBy) {
+      case 'distance':
+        list.sort((a, b) {
+          final ak = _hotelDistanceKm[(a['id'] ?? '').toString()] ?? 99999;
+          final bk = _hotelDistanceKm[(b['id'] ?? '').toString()] ?? 99999;
+          return ak.compareTo(bk);
+        });
       case 'price_low':
         list.sort((a, b) {
           final av = (a['min_price'] as num?)?.toDouble() ?? 0;
@@ -438,8 +575,10 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
   List<Map<String, dynamic>> get _filteredRegions {
     if (_sortBy == 'price_low' ||
         _sortBy == 'price_high' ||
+        _sortBy == 'distance' ||
         (_sortBy == 'closest' && _queryTokens.isNotEmpty) ||
-        _selectedRegion != null) {
+        _selectedRegion != null ||
+        _nearMeActive) {
       if (_filteredHotels.isEmpty) return const [];
       return [
         {'region': '', 'hotels': _filteredHotels},
@@ -556,6 +695,50 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
                 ),
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.tonalIcon(
+                      onPressed: _locatingNearMe
+                          ? null
+                          : (_nearMeActive ? _clearNearMe : _useNearMe),
+                      icon: _locatingNearMe
+                          ? SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: scheme.primary,
+                              ),
+                            )
+                          : Icon(
+                              _nearMeActive
+                                  ? Icons.near_me_disabled_outlined
+                                  : Icons.near_me_rounded,
+                            ),
+                      label: Text(
+                        _nearMeActive
+                            ? context.tr('near_me_clear')
+                            : context.tr('near_me_use'),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (_nearMeActive)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                child: Text(
+                  context.tr('near_me_active_hint'),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: scheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
             if (_regions.isNotEmpty && _error == null)
               _HotelFilterPanel(
                 priceRange: _priceRange,
@@ -696,10 +879,13 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
                                       ...hotels.whereType<Map>().map((raw) {
                                         final hotel =
                                             Map<String, dynamic>.from(raw);
+                                        final hid =
+                                            (hotel['id'] ?? '').toString();
                                         return _HotelSelectTile(
                                           hotel: hotel,
                                           region: region,
                                           onTap: () => _selectHotel(hotel),
+                                          distanceKm: _hotelDistanceKm[hid],
                                         );
                                       }),
                                     ],
@@ -1131,11 +1317,13 @@ class _HotelSelectTile extends StatelessWidget {
     required this.hotel,
     required this.region,
     required this.onTap,
+    this.distanceKm,
   });
 
   final Map<String, dynamic> hotel;
   final String region;
   final VoidCallback onTap;
+  final double? distanceKm;
 
   @override
   Widget build(BuildContext context) {
@@ -1143,10 +1331,8 @@ class _HotelSelectTile extends StatelessWidget {
     final scheme = theme.colorScheme;
     final visual = AppVisual.of(context);
     final name = (hotel['name'] ?? 'Hotel').toString();
-    final loc = (hotel['location'] ?? '').toString();
+    final displayAddress = hotelDisplayAddress(hotel);
     final city = (hotel['city'] ?? region).toString();
-    final province = (hotel['province'] ?? '').toString();
-    final barangay = (hotel['barangay'] ?? '').toString();
     final hotelRegion = (hotel['region'] ?? '').toString();
     final roomCount = (hotel['room_count'] as num?)?.toInt() ?? 0;
     final priceLabel = _ChooseHotelScreenState._priceLabelForHotel(context, hotel);
@@ -1222,61 +1408,90 @@ class _HotelSelectTile extends StatelessWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  name,
-                                  style: theme.textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                if (hotelRegion.isNotEmpty || city.isNotEmpty)
-                                  Row(
-                                    children: [
-                                      Icon(Icons.place_outlined,
-                                          size: 14,
-                                          color: scheme.primary),
-                                      const SizedBox(width: 4),
-                                      Flexible(
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        name,
+                                        style: theme.textTheme.titleSmall
+                                            ?.copyWith(
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                    if (distanceKm != null)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: scheme.secondaryContainer,
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                        ),
                                         child: Text(
-                                          hotelRegion.isNotEmpty
-                                              ? '$hotelRegion · $city'
-                                              : city,
-                                          style: theme.textTheme.labelMedium
+                                          formatDistanceKm(distanceKm!),
+                                          style: theme.textTheme.labelSmall
                                               ?.copyWith(
-                                            color: scheme.primary,
-                                            fontWeight: FontWeight.w600,
+                                            fontWeight: FontWeight.w800,
+                                            color: scheme.onSecondaryContainer,
                                           ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                if (hotelRegion.isNotEmpty || city.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Text(
+                                      hotelRegion.isNotEmpty
+                                          ? '$hotelRegion · $city'
+                                          : city,
+                                      style: theme.textTheme.labelMedium
+                                          ?.copyWith(
+                                        color: scheme.primary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                const SizedBox(height: 8),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: scheme.surfaceContainerHigh,
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: scheme.outlineVariant
+                                          .withValues(alpha: 0.45),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(
+                                        Icons.location_on_outlined,
+                                        size: 18,
+                                        color: scheme.primary,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          displayAddress,
+                                          maxLines: 3,
                                           overflow: TextOverflow.ellipsis,
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                            height: 1.35,
+                                            fontWeight: FontWeight.w500,
+                                          ),
                                         ),
                                       ),
                                     ],
                                   ),
-                                if (barangay.isNotEmpty || province.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 2),
-                                    child: Text(
-                                      [
-                                        if (barangay.isNotEmpty) 'Brgy $barangay',
-                                        if (province.isNotEmpty) province,
-                                      ].join(' · '),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: theme.textTheme.labelSmall?.copyWith(
-                                        color: scheme.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ),
-                                if (loc.isNotEmpty) ...[
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    loc,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: scheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ],
+                                ),
                                 const SizedBox(height: 8),
                                 Wrap(
                                   spacing: 8,
