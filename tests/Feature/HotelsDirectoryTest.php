@@ -37,7 +37,10 @@ class HotelsDirectoryTest extends TestCase
                 'min_price', 'max_price', 'room_count',
             ]],
             'regions' => [['region', 'hotels']],
-            'meta' => ['hotel_count', 'region_count', 'price_floor', 'price_ceiling', 'has_pricing'],
+            'meta' => [
+                'hotel_count', 'region_count', 'price_floor', 'price_ceiling',
+                'has_pricing', 'hotels_with_coordinates',
+            ],
         ]);
 
         $regions = collect($response->json('regions'))->keyBy('region');

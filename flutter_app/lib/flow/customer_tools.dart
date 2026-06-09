@@ -31,17 +31,6 @@ class CustomerToolsScreen extends StatelessWidget {
               ),
             ),
           ),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.sms_outlined),
-              title: const Text('OTP verification'),
-              subtitle: const Text('Send OTP via email and verify'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(context).push<void>(
-                MaterialPageRoute<void>(builder: (_) => const OtpScreen()),
-              ),
-            ),
-          ),
         ],
       ),
     );

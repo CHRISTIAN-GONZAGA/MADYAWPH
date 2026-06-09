@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\AuthApiController;
 use App\Http\Controllers\Api\BookingController;
 use App\Services\AppEmailService;
 use App\Support\EmailOtp;
+use App\Support\MessagingFlags;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Route;
@@ -20,6 +21,10 @@ Route::get('/bookings/{reference}', [BookingController::class, 'show']);
 Route::get('/bookings/{reference}/pdf', [BookingController::class, 'confirmationPdf']);
 Route::get('/my-bookings', [BookingController::class, 'myBookings']);
 Route::post('/otp/send', function (Request $request, AppEmailService $emailService) {
+    if (! MessagingFlags::emailEnabled()) {
+        return response()->json(['ok' => false, 'message' => 'Email OTP is not enabled.'], 503);
+    }
+
     $validated = $request->validate([
         'email' => ['required', 'email', 'max:255'],
     ]);
@@ -36,6 +41,10 @@ Route::post('/otp/send', function (Request $request, AppEmailService $emailServi
     ], $mail->sent ? 200 : 503);
 });
 Route::post('/otp/verify', function (Request $request) {
+    if (! MessagingFlags::emailEnabled()) {
+        return response()->json(['ok' => false, 'message' => 'Email OTP is not enabled.'], 503);
+    }
+
     $validated = $request->validate([
         'email' => ['required', 'email', 'max:255'],
         'otp' => ['required', 'string', 'size:6'],

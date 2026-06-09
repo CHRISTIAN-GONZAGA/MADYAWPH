@@ -11,6 +11,7 @@ class SemaphoreSmsTest extends TestCase
 {
     public function test_sms_uses_semaphore_when_api_key_configured(): void
     {
+        Config::set('services.messaging.sms_enabled', true);
         Config::set('services.semaphore.api_key', 'test-semaphore-key');
         Config::set('services.semaphore.sender', 'MADYAW');
         Config::set('services.twilio.sid', '');

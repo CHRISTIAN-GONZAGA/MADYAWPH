@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\User;
+use App\Support\MessagingFlags;
 use App\Support\PhilippinePhone;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -21,6 +22,10 @@ class SmsService
 
     public function isConfigured(): bool
     {
+        if (! MessagingFlags::smsEnabled()) {
+            return false;
+        }
+
         return $this->semaphore->isConfigured()
             || $this->twilioReady()
             || $this->genericReady();
@@ -43,7 +48,8 @@ class SmsService
         }
 
         return [
-            'configured' => $providers !== [],
+            'enabled' => MessagingFlags::smsEnabled(),
+            'configured' => MessagingFlags::smsEnabled() && $providers !== [],
             'providers' => $providers,
             'primary' => $providers[0] ?? null,
         ];
@@ -61,6 +67,15 @@ class SmsService
         ?User $actor = null
     ): SmsSendResult {
         $normalized = PhilippinePhone::forSms($phone);
+
+        if (! MessagingFlags::smsEnabled()) {
+            return new SmsSendResult(
+                false,
+                null,
+                $normalized,
+                'SMS messaging is disabled (MESSAGING_SMS_ENABLED=false).',
+            );
+        }
 
         if ($this->semaphore->isConfigured()) {
             $result = $this->semaphore->sendDetailed($normalized, $message);

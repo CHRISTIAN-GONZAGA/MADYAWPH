@@ -12,6 +12,10 @@ final class GoogleMapsGeocoder
 {
     public function isConfigured(): bool
     {
+        if (! (bool) config('services.google_maps.enabled', false)) {
+            return false;
+        }
+
         return $this->apiKey() !== '';
     }
 

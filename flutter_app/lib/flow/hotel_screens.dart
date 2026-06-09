@@ -4,8 +4,8 @@ import 'dart:math' as math;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 
-import '../config.dart';
 import '../auth_storage.dart';
 import '../services/nearby_hotels.dart';
 import '../branding/madyaw_logo_widget.dart';
@@ -49,7 +49,7 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
   bool _nearMeActive = false;
   bool _locatingNearMe = false;
   final Map<String, double> _hotelDistanceKm = {};
-  bool _mapsGeocodingConfigured = false;
+  int _hotelsWithCoordinates = 0;
   String _sortBy = 'closest';
 
   static const _sortOptions = {
@@ -90,8 +90,9 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
               _error = null;
             });
             _syncCatalogPriceBounds(decoded['meta']);
-            _mapsGeocodingConfigured =
-                decoded['meta']?['maps_geocoding_configured'] == true;
+            _hotelsWithCoordinates =
+                (decoded['meta']?['hotels_with_coordinates'] as num?)?.toInt() ??
+                    0;
             if (mounted) setState(() {});
           }
         }
@@ -131,8 +132,8 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
         _error = null;
       });
       _syncCatalogPriceBounds(data?['meta']);
-      _mapsGeocodingConfigured =
-          data?['meta']?['maps_geocoding_configured'] == true;
+      _hotelsWithCoordinates =
+          (data?['meta']?['hotels_with_coordinates'] as num?)?.toInt() ?? 0;
       if (mounted) {
         setState(() {});
       }
@@ -201,8 +202,7 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
       _priceFilterIsNarrowed ||
       _sortBy != 'closest';
 
-  bool get _nearMeAvailable =>
-      kGoogleMapsConfigured || _mapsGeocodingConfigured;
+  bool get _nearMeAvailable => _hotelsWithCoordinates > 0;
 
   bool get _priceFilterIsNarrowed =>
       _catalogCeiling > _catalogFloor &&
@@ -300,13 +300,6 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
     setState(() => _locatingNearMe = true);
     try {
       final pos = await NearbyHotelsService.currentPosition();
-      if (pos == null) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.tr('near_me_location_failed'))),
-        );
-        return;
-      }
 
       final distances = <String, double>{};
       var locatedCount = 0;
@@ -315,20 +308,8 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
         final id = (hotel['id'] ?? '').toString();
         if (id.isEmpty) continue;
 
-        var lat = NearbyHotelsService.hotelLatitude(hotel);
-        var lng = NearbyHotelsService.hotelLongitude(hotel);
-
-        if ((lat == null || lng == null) && kGoogleMapsConfigured) {
-          final address = NearbyHotelsService.addressForGeocoding(hotel);
-          final coords = await NearbyHotelsService.geocodeAddress(address);
-          if (coords != null) {
-            lat = coords.lat;
-            lng = coords.lng;
-            hotel['latitude'] = lat;
-            hotel['longitude'] = lng;
-          }
-        }
-
+        final lat = NearbyHotelsService.hotelLatitude(hotel);
+        final lng = NearbyHotelsService.hotelLongitude(hotel);
         if (lat == null || lng == null) continue;
 
         final km = NearbyHotelsService.distanceKm(pos.lat, pos.lng, lat, lng);
@@ -343,11 +324,7 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
       if (distances.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              _nearMeAvailable
-                  ? context.tr('near_me_no_coordinates')
-                  : context.tr('near_me_maps_key_required'),
-            ),
+            content: Text(context.tr('near_me_no_coordinates')),
             duration: const Duration(seconds: 6),
           ),
         );
@@ -703,7 +680,9 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
                     child: FilledButton.tonalIcon(
                       onPressed: _locatingNearMe
                           ? null
-                          : (_nearMeActive ? _clearNearMe : _useNearMe),
+                          : (_nearMeActive
+                              ? _clearNearMe
+                              : (_nearMeAvailable ? _useNearMe : null)),
                       icon: _locatingNearMe
                           ? SizedBox(
                               width: 18,
@@ -1605,12 +1584,9 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
   PhilippineAddressSelection _address = const PhilippineAddressSelection();
   final _adminEmail = TextEditingController();
   final _totalRooms = TextEditingController(text: '1');
-  final _otpCode = TextEditingController();
   bool _busy = false;
   String? _error;
-  int _step = 0;
-  String? _registrationToken;
-  String? _emailMasked;
+  ({double lat, double lng})? _previewCoords;
 
   int _estimatedWelcomeCredits() {
     final n = int.tryParse(_totalRooms.text.trim()) ?? 0;
@@ -1627,22 +1603,77 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
     _contact.dispose();
     _adminEmail.dispose();
     _totalRooms.dispose();
-    _otpCode.dispose();
     super.dispose();
   }
 
-  Map<String, dynamic> _registrationPayload() => {
-        'username': _username.text.trim(),
-        'password': _password.text,
-        'password_confirmation': _password2.text,
-        'hotel_name': _hotelName.text.trim(),
-        ..._address.toRegisterPayload(),
-        'contact_number': _contact.text.trim(),
-        'admin_email': _adminEmail.text.trim(),
-        'total_rooms': int.tryParse(_totalRooms.text.trim()) ?? 1,
+  Future<({double lat, double lng})?> _resolveRegistrationCoordinates() async {
+    try {
+      return await NearbyHotelsService.currentPosition();
+    } on NearbyHotelsException catch (e) {
+      if (!mounted) return null;
+      final message = switch (e.code) {
+        'permission_denied' || 'permission_denied_forever' =>
+          'Location permission lets guests find your hotel with Near me.',
+        'location_services_disabled' =>
+          'Turn on location services to save your hotel GPS pin.',
+        _ => 'Could not read your GPS right now.',
       };
+      final continueWithout = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Hotel GPS location'),
+          content: Text(
+            '$message\n\nYou can register without GPS, but your hotel will not '
+            'appear in Near me searches until coordinates are saved.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Try again'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Continue without GPS'),
+            ),
+          ],
+        ),
+      );
+      if (continueWithout == true) return null;
+      if (e.code == 'permission_denied' || e.code == 'permission_denied_forever') {
+        await Geolocator.openAppSettings();
+      }
+      rethrow;
+    }
+  }
 
-  Future<void> _sendVerificationCode() async {
+  Future<void> _previewLocation() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final pos = await NearbyHotelsService.currentPosition();
+      if (!mounted) return;
+      setState(() {
+        _previewCoords = pos;
+        _busy = false;
+      });
+    } on NearbyHotelsException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = switch (e.code) {
+          'permission_denied' || 'permission_denied_forever' =>
+            'Location permission is required to save GPS coordinates.',
+          'location_services_disabled' =>
+            'Turn on location services, then try again.',
+          _ => 'Could not read GPS. Try again.',
+        };
+      });
+    }
+  }
+
+  Future<void> _submit() async {
     if (!_address.isComplete) {
       setState(() => _error = 'Select region, province, city, and barangay.');
       return;
@@ -1652,99 +1683,33 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
       _error = null;
     });
     try {
-      final res = await publicDio().post<Map<String, dynamic>>(
-        '/hotel/register/send-code',
-        data: _registrationPayload(),
-      );
-      final token = (res.data?['registration_token'] ?? '').toString();
-      if (token.isEmpty) {
-        setState(() {
-          _error = 'Could not start email verification.';
-          _busy = false;
-        });
-        return;
+      final coords = _previewCoords ?? await _resolveRegistrationCoordinates();
+      if (mounted && coords != null) {
+        setState(() => _previewCoords = coords);
       }
-      if (!mounted) return;
-      setState(() {
-        _registrationToken = token;
-        _emailMasked = (res.data?['email_masked'] ?? _adminEmail.text.trim())
-            .toString();
-        _step = 1;
-        _busy = false;
-        _otpCode.clear();
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Verification code sent to $_emailMasked. Check your inbox.',
-          ),
-          duration: const Duration(seconds: 5),
-        ),
-      );
-    } on DioException catch (e) {
-      setState(() {
-        _error = dioErrorMessage(e);
-        _busy = false;
-      });
-    } catch (e) {
-      setState(() {
-        _error = '$e';
-        _busy = false;
-      });
-    }
-  }
 
-  Future<void> _resendCode() async {
-    final token = _registrationToken;
-    if (token == null || token.isEmpty) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
-      await publicDio().post<Map<String, dynamic>>(
-        '/hotel/register/resend-code',
-        data: {'registration_token': token},
-      );
-      if (!mounted) return;
-      setState(() => _busy = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('A new verification code was sent.')),
-      );
-    } on DioException catch (e) {
-      setState(() {
-        _error = dioErrorMessage(e);
-        _busy = false;
-      });
-    }
-  }
+      final payload = <String, dynamic>{
+        'username': _username.text.trim(),
+        'password': _password.text,
+        'password_confirmation': _password2.text,
+        'hotel_name': _hotelName.text.trim(),
+        ..._address.toRegisterPayload(),
+        'contact_number': _contact.text.trim(),
+        'admin_email': _adminEmail.text.trim(),
+        'total_rooms': int.tryParse(_totalRooms.text.trim()) ?? 1,
+      };
+      if (coords != null) {
+        payload['latitude'] = coords.lat;
+        payload['longitude'] = coords.lng;
+      }
 
-  Future<void> _verifyAndCreate() async {
-    final token = _registrationToken;
-    final code = _otpCode.text.trim();
-    if (token == null || token.isEmpty) {
-      setState(() => _error = 'Session expired. Go back and try again.');
-      return;
-    }
-    if (code.length != 6) {
-      setState(() => _error = 'Enter the 6-digit code from your email.');
-      return;
-    }
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
       final res = await publicDio().post<Map<String, dynamic>>(
-        '/hotel/register/verify',
-        data: {
-          'registration_token': token,
-          'code': code,
-        },
+        '/hotel/register',
+        data: payload,
       );
       final hid = res.data?['hotel_id'] as String?;
-      final authToken = res.data?['token'] as String?;
-      if (hid == null || authToken == null || authToken.isEmpty) {
+      final token = res.data?['token'] as String?;
+      if (hid == null || token == null || token.isEmpty) {
         setState(() {
           _error = 'Unexpected response.';
           _busy = false;
@@ -1753,7 +1718,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
       }
       final name = _hotelName.text.trim();
       await AuthStorage.setHotelContext(id: hid, name: name);
-      await AuthStorage.setPortalAuth(token: authToken, role: 'admin');
+      await AuthStorage.setPortalAuth(token: token, role: 'admin');
       await AuthStorage.clearGuestAuth();
       await AuthStorage.clearHotelsDirectoryCache();
       if (!mounted) return;
@@ -1762,13 +1727,14 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
         hotelName: name,
         portalAccounts: res.data?['portal_accounts'] as Map<String, dynamic>?,
         welcomeCredits: res.data?['welcome_credits'] as Map<String, dynamic>?,
-        verifiedEmail: _adminEmail.text.trim(),
         registrationUsername: _username.text.trim(),
         registrationPassword: _password.text,
       );
       if (!mounted) return;
       Navigator.of(context).pop();
       hotelSessionNotifier.value = HotelSession(hotelId: hid, hotelName: name);
+    } on NearbyHotelsException {
+      setState(() => _busy = false);
     } on DioException catch (e) {
       setState(() {
         _error = dioErrorMessage(e);
@@ -1784,30 +1750,12 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return AppScaffold(
-      appBar: AppBar(
-        title: Text(_step == 0 ? 'Create hotel' : 'Verify email'),
-        leading: _step == 1
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: _busy
-                    ? null
-                    : () => setState(() {
-                          _step = 0;
-                          _error = null;
-                        }),
-              )
-            : null,
-      ),
+      appBar: AppBar(title: const Text('Create hotel')),
       body: ListView(
         padding: const EdgeInsets.all(24),
-        children: _step == 0 ? _buildDetailsStep(context) : _buildOtpStep(context),
-      ),
-    );
-  }
-
-  List<Widget> _buildDetailsStep(BuildContext context) {
-    return [
+        children: [
       TextField(
         controller: _hotelName,
         decoration: const InputDecoration(labelText: 'Hotel name', border: OutlineInputBorder()),
@@ -1833,6 +1781,59 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
         onChanged: (v) => setState(() => _address = v),
       ),
       const SizedBox(height: 12),
+      Card(
+        elevation: 0,
+        color: scheme.surfaceContainerHighest,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.location_on_outlined, color: scheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Hotel GPS pin',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'We use your phone GPS so guests can find your hotel with Near me. '
+                'Your typed address is still saved.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+              ),
+              if (_previewCoords != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'GPS: ${_previewCoords!.lat.toStringAsFixed(5)}, '
+                  '${_previewCoords!.lng.toStringAsFixed(5)}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ],
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: _busy ? null : _previewLocation,
+                icon: const Icon(Icons.my_location_outlined, size: 18),
+                label: Text(
+                  _previewCoords == null ? 'Use current location' : 'Refresh GPS',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height: 12),
       TextField(
         controller: _contact,
         decoration: const InputDecoration(labelText: 'Contact number', border: OutlineInputBorder()),
@@ -1844,7 +1845,6 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
         controller: _adminEmail,
         decoration: const InputDecoration(
           labelText: 'Admin email',
-          helperText: 'We will send a 6-digit verification code to this address.',
           border: OutlineInputBorder(),
         ),
         keyboardType: TextInputType.emailAddress,
@@ -1880,65 +1880,18 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
       ],
       const SizedBox(height: 20),
       FilledButton(
-        onPressed: _busy ? null : _sendVerificationCode,
+        onPressed: _busy ? null : _submit,
         child: _busy
             ? const SizedBox(
                 width: 22,
                 height: 22,
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
-            : const Text('Send verification code'),
+            : const Text('Create hotel'),
       ),
-    ];
-  }
-
-  List<Widget> _buildOtpStep(BuildContext context) {
-    return [
-      Text(
-        'Enter the 6-digit code sent to ${_emailMasked ?? _adminEmail.text.trim()}.',
-        style: Theme.of(context).textTheme.bodyLarge,
+        ],
       ),
-      const SizedBox(height: 8),
-      Text(
-        'The code expires in 10 minutes. Check spam if you do not see it.',
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-      ),
-      const SizedBox(height: 20),
-      TextField(
-        controller: _otpCode,
-        decoration: const InputDecoration(
-          labelText: 'Verification code',
-          border: OutlineInputBorder(),
-          hintText: '000000',
-        ),
-        keyboardType: TextInputType.number,
-        maxLength: 6,
-        textAlign: TextAlign.center,
-        style: const TextStyle(fontSize: 24, letterSpacing: 8, fontWeight: FontWeight.w600),
-      ),
-      if (_error != null) ...[
-        const SizedBox(height: 12),
-        Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-      ],
-      const SizedBox(height: 20),
-      FilledButton(
-        onPressed: _busy ? null : _verifyAndCreate,
-        child: _busy
-            ? const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Text('Verify & create hotel'),
-      ),
-      const SizedBox(height: 12),
-      TextButton(
-        onPressed: _busy ? null : _resendCode,
-        child: const Text('Resend code'),
-      ),
-    ];
+    );
   }
 }
 

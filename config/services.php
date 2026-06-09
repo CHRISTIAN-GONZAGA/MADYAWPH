@@ -89,15 +89,22 @@ return [
         'max_per_request' => (int) env('TRANSLATION_MAX_PER_REQUEST', 25),
     ],
 
+    'messaging' => [
+        /** Set true when ready to send SMS (Semaphore/Twilio). */
+        'sms_enabled' => filter_var(env('MESSAGING_SMS_ENABLED', false), FILTER_VALIDATE_BOOL),
+        /** Set true when ready to send email OTP via SES/SMTP. */
+        'email_enabled' => filter_var(env('MESSAGING_EMAIL_ENABLED', false), FILTER_VALIDATE_BOOL),
+    ],
+
     'email_otp' => [
         'registration_ttl_minutes' => (int) env('EMAIL_OTP_REGISTRATION_TTL_MINUTES', 10),
         'password_reset_ttl_minutes' => (int) env('EMAIL_OTP_RESET_TTL_MINUTES', 30),
     ],
 
     'google_maps' => [
-        /** Enables geocoding hotel addresses for “near me” in the app. */
+        /** Legacy — geocoding disabled; hotels use device GPS at registration. */
+        'enabled' => filter_var(env('GOOGLE_MAPS_ENABLED', false), FILTER_VALIDATE_BOOL),
         'api_key' => trim((string) env('GOOGLE_MAPS_API_KEY', '')),
-        /** Max hotels to geocode per GET /hotels when coordinates are missing. */
         'geocode_batch_limit' => (int) env('GOOGLE_MAPS_GEOCODE_BATCH_LIMIT', 5),
     ],
 

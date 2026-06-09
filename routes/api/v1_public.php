@@ -8,6 +8,7 @@ use App\Services\AppEmailService;
 use App\Services\PaymentGatewayService;
 use App\Services\SmsService;
 use App\Support\EmailOtp;
+use App\Support\MessagingFlags;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Route;
@@ -72,15 +73,19 @@ Route::get('/integrations/status', function (SmsService $smsService, AppEmailSer
         'app_url' => (string) config('app.url'),
         'email' => array_merge($emailService->status(), [
             'mail_mailer' => (string) config('mail.default'),
-            'hint' => $emailService->isConfigured()
-                ? 'Hotel registration OTP and password reset use this mailer.'
-                : 'Set MAIL_MAILER=ses, MAIL_FROM_ADDRESS, and AWS credentials on Render.',
+            'hint' => MessagingFlags::emailEnabled()
+                ? ($emailService->isConfigured()
+                    ? 'Hotel registration OTP and password reset use this mailer.'
+                    : 'Set MAIL_MAILER=ses, MAIL_FROM_ADDRESS, and AWS credentials on Render.')
+                : 'Email messaging is off (MESSAGING_EMAIL_ENABLED=false).',
         ]),
         'sms' => array_merge($smsService->status(), [
             'semaphore_api_key_present' => $apiKey !== '',
             'semaphore_api_key_length' => strlen($apiKey),
             'semaphore_sender' => (string) config('services.semaphore.sender'),
-            'hint' => 'Legacy optional channel — registration and reset now use email OTP.',
+            'hint' => MessagingFlags::smsEnabled()
+                ? 'Optional guest/staff SMS notifications.'
+                : 'SMS messaging is off (MESSAGING_SMS_ENABLED=false).',
         ]),
         'payments' => [
             'xendit' => (string) config('services.xendit.secret_key') !== '',
@@ -93,6 +98,7 @@ Route::get('/locations/philippines', [PortalAuthController::class, 'philippineLo
     ->middleware('throttle:60,1');
 Route::get('/hotels', [PortalAuthController::class, 'hotels']);
 Route::post('/hotel/access', [PortalAuthController::class, 'hotelAccess'])->middleware('throttle:8,1');
+Route::post('/hotel/register', [PortalAuthController::class, 'hotelRegister'])->middleware('throttle:3,1');
 Route::post('/hotel/register/send-code', [PortalAuthController::class, 'hotelRegisterSendCode'])->middleware('throttle:5,1');
 Route::post('/hotel/register/verify', [PortalAuthController::class, 'hotelRegisterVerify'])->middleware('throttle:10,1');
 Route::post('/hotel/register/resend-code', [PortalAuthController::class, 'hotelRegisterResendCode'])->middleware('throttle:5,1');
@@ -113,6 +119,13 @@ Route::get('/bookings/{reference}/pdf', [BookingController::class, 'confirmation
 Route::get('/my-bookings', [BookingController::class, 'myBookings'])->middleware('throttle:30,1');
 
 Route::post('/otp/send', function (Request $request, AppEmailService $emailService) {
+    if (! MessagingFlags::emailEnabled()) {
+        return response()->json([
+            'ok' => false,
+            'message' => 'Email OTP is not enabled yet (MESSAGING_EMAIL_ENABLED=false).',
+        ], 503);
+    }
+
     $validated = $request->validate([
         'email' => ['required', 'email', 'max:255'],
     ]);
@@ -146,6 +159,13 @@ Route::post('/otp/send', function (Request $request, AppEmailService $emailServi
 })->middleware('throttle:5,1');
 
 Route::post('/otp/verify', function (Request $request) {
+    if (! MessagingFlags::emailEnabled()) {
+        return response()->json([
+            'ok' => false,
+            'message' => 'Email OTP is not enabled yet (MESSAGING_EMAIL_ENABLED=false).',
+        ], 503);
+    }
+
     $validated = $request->validate([
         'email' => ['required', 'email', 'max:255'],
         'otp' => ['required', 'string', 'size:6'],

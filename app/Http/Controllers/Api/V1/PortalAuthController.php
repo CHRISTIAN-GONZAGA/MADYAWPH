@@ -9,9 +9,9 @@ use App\Models\HotelCredit;
 use App\Models\PersonalAccessToken;
 use App\Models\User;
 use App\Services\AppEmailService;
-use App\Services\GoogleMapsGeocoder;
 use App\Support\EmailOtp;
 use App\Support\HotelDirectory;
+use App\Support\MessagingFlags;
 use App\Support\HotelRegistrationCredits;
 use App\Support\PhilippineLocations;
 use App\Support\PortalPassword;
@@ -31,7 +31,6 @@ class PortalAuthController extends Controller
 
     public function __construct(
         private readonly AppEmailService $appEmailService,
-        private readonly GoogleMapsGeocoder $googleMapsGeocoder,
     ) {}
 
     public function hotels(): JsonResponse
@@ -39,7 +38,7 @@ class PortalAuthController extends Controller
         $payload = Cache::remember(
             self::HOTELS_DIRECTORY_CACHE_KEY,
             now()->addMinutes(5),
-            fn (): array => HotelDirectory::pickerApiPayload($this->googleMapsGeocoder)
+            fn (): array => HotelDirectory::pickerApiPayload()
         );
 
         return response()->json($payload);
@@ -58,10 +57,38 @@ class PortalAuthController extends Controller
     }
 
     /**
+     * Direct hotel registration (used while email OTP is disabled).
+     */
+    public function hotelRegister(Request $request): JsonResponse
+    {
+        if (MessagingFlags::emailEnabled()) {
+            return response()->json([
+                'message' => 'Email verification is required. Call POST /hotel/register/send-code, then /hotel/register/verify.',
+            ], 400);
+        }
+
+        $validated = $this->validateRegistrationInput($request);
+
+        $operatorLogin = $validated['username'].'_admin';
+        if (User::withoutGlobalScopes()->where('name', $operatorLogin)->exists()) {
+            return response()->json([
+                'message' => 'That hotel username cannot be used (conflict with an existing account name).',
+                'errors' => ['username' => ['Choose a different hotel username.']],
+            ], 422);
+        }
+
+        return $this->finalizeHotelRegistration($validated, emailVerified: false);
+    }
+
+    /**
      * Step 1 — validate registration details and email a 6-digit OTP to admin_email.
      */
     public function hotelRegisterSendCode(Request $request): JsonResponse
     {
+        if ($disabled = $this->emailMessagingDisabledResponse()) {
+            return $disabled;
+        }
+
         $validated = $this->validateRegistrationInput($request);
 
         $operatorLogin = $validated['username'].'_admin';
@@ -127,6 +154,10 @@ class PortalAuthController extends Controller
      */
     public function hotelRegisterVerify(Request $request): JsonResponse
     {
+        if ($disabled = $this->emailMessagingDisabledResponse()) {
+            return $disabled;
+        }
+
         $validated = $request->validate([
             'registration_token' => ['required', 'string', 'max:64'],
             'code' => ['required', 'string', 'size:6'],
@@ -151,7 +182,7 @@ class PortalAuthController extends Controller
 
         Cache::forget(self::PENDING_REGISTER_PREFIX.$validated['registration_token']);
 
-        return $this->finalizeHotelRegistration($registration);
+        return $this->finalizeHotelRegistration($registration, emailVerified: true);
     }
 
     /**
@@ -159,6 +190,10 @@ class PortalAuthController extends Controller
      */
     public function hotelRegisterResendCode(Request $request): JsonResponse
     {
+        if ($disabled = $this->emailMessagingDisabledResponse()) {
+            return $disabled;
+        }
+
         $validated = $request->validate([
             'registration_token' => ['required', 'string', 'max:64'],
         ]);
@@ -312,6 +347,10 @@ class PortalAuthController extends Controller
 
     public function forgotSend(Request $request): JsonResponse
     {
+        if ($disabled = $this->emailMessagingDisabledResponse()) {
+            return $disabled;
+        }
+
         $validated = $request->validate([
             'role' => ['nullable', 'in:admin,staff'],
             'username' => ['required', 'string', 'max:255'],
@@ -372,6 +411,10 @@ class PortalAuthController extends Controller
 
     public function forgotReset(Request $request): JsonResponse
     {
+        if ($disabled = $this->emailMessagingDisabledResponse()) {
+            return $disabled;
+        }
+
         $validated = $request->validate([
             'username' => ['required', 'string', 'max:255'],
             'code' => ['required', 'string', 'size:6'],
@@ -421,6 +464,8 @@ class PortalAuthController extends Controller
             'contact_number' => ['required', 'string', 'max:30'],
             'admin_email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'total_rooms' => ['required', 'integer', 'min:1', 'max:5000'],
+            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
         ]);
 
         $validated['username'] = trim((string) $validated['username']);
@@ -433,7 +478,22 @@ class PortalAuthController extends Controller
     /**
      * @param  array<string, mixed>  $validated
      */
-    private function finalizeHotelRegistration(array $validated): JsonResponse
+    private function emailMessagingDisabledResponse(): ?JsonResponse
+    {
+        if (MessagingFlags::emailEnabled()) {
+            return null;
+        }
+
+        return response()->json([
+            'ok' => false,
+            'message' => 'Email messaging is not enabled yet. Set MESSAGING_EMAIL_ENABLED=true when ready.',
+        ], 503);
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function finalizeHotelRegistration(array $validated, bool $emailVerified = false): JsonResponse
     {
         $totalRooms = (int) $validated['total_rooms'];
         $freeCredits = HotelRegistrationCredits::freeCreditsForRoomCount($totalRooms);
@@ -443,6 +503,7 @@ class PortalAuthController extends Controller
         );
 
         $address = PhilippineLocations::normalizeRegistrationAddress($validated);
+        $coords = HotelDirectory::coordinatesFromInput($validated);
 
         $hotel = Hotel::withoutGlobalScopes()->create([
             'name' => $validated['hotel_name'],
@@ -452,13 +513,13 @@ class PortalAuthController extends Controller
             'province' => $address['province'],
             'barangay' => $address['barangay'],
             'street_address' => $address['street_address'],
+            'latitude' => $coords['latitude'],
+            'longitude' => $coords['longitude'],
             'contact_number' => $validated['contact_number'],
             'access_username' => $validated['username'],
             'access_password' => Hash::make($validated['password']),
             'total_rooms' => $totalRooms,
         ]);
-
-        HotelDirectory::assignCoordinates($hotel->fresh() ?? $hotel, $this->googleMapsGeocoder);
 
         HotelCredit::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
@@ -487,7 +548,6 @@ class PortalAuthController extends Controller
         Cache::forget(self::HOTELS_DIRECTORY_CACHE_KEY);
 
         $ownerPassword = (string) $validated['password'];
-        $verifiedAt = now();
 
         $super = User::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
@@ -497,14 +557,17 @@ class PortalAuthController extends Controller
             'role' => UserRole::SUPER_ADMIN,
         ]);
 
-        $admin = User::withoutGlobalScopes()->create([
+        $adminData = [
             'hotel_id' => (string) $hotel->id,
             'name' => $validated['username'].'_admin',
             'email' => $validated['admin_email'],
             'password' => $ownerPassword,
             'role' => UserRole::ADMIN,
-            'email_verified_at' => $verifiedAt,
-        ]);
+        ];
+        if ($emailVerified) {
+            $adminData['email_verified_at'] = now();
+        }
+        $admin = User::withoutGlobalScopes()->create($adminData);
 
         $this->ensurePortalPasswordStored($ownerPassword, $super);
         $this->ensurePortalPasswordStored($ownerPassword, $admin);
@@ -520,7 +583,7 @@ class PortalAuthController extends Controller
             'hotel_id' => (string) $hotel->id,
             'token' => $token,
             'user' => $admin,
-            'email_verified' => true,
+            'email_verified' => $emailVerified,
             'welcome_credits' => [
                 'total_rooms' => $totalRooms,
                 'free_credits' => $freeCredits,
@@ -528,7 +591,9 @@ class PortalAuthController extends Controller
                 'credits_per_tier' => HotelRegistrationCredits::CREDITS_PER_TIER,
                 'rooms_per_tier' => HotelRegistrationCredits::ROOMS_PER_TIER,
             ],
-            'message' => 'Hotel registered. Your email has been verified.',
+            'message' => $emailVerified
+                ? 'Hotel registered. Your email has been verified.'
+                : 'Hotel registered successfully.',
             'registration_password' => $ownerPassword,
             'passwords_verified' => $passwordsVerified,
             'portal_accounts' => [

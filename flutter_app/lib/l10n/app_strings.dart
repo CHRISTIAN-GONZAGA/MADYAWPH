@@ -107,8 +107,10 @@ class AppStrings {
       'near_me_permission_denied': 'Location permission is required to find nearby hotels.',
       'near_me_location_disabled': 'Turn on location services on your phone, then try again.',
       'near_me_location_failed': 'Could not read your location. Try again.',
-      'near_me_no_coordinates': 'No hotel coordinates yet. Add GOOGLE_MAPS_API_KEY on the server or app build.',
-      'near_me_maps_key_required': 'Nearby search needs GOOGLE_MAPS_API_KEY on the server or in the APK build.',
+      'near_me_no_coordinates':
+          'No hotels have GPS coordinates yet. New registrations can save location from the device.',
+      'near_me_maps_key_required':
+          'Nearby search needs hotels registered with GPS coordinates.',
     },
     'fil': {
       'app_title': 'MADYAWPH',
@@ -180,8 +182,10 @@ class AppStrings {
       'near_me_permission_denied': 'Kailangan ng pahintulot sa lokasyon.',
       'near_me_location_disabled': 'Buksan ang location services sa telepono.',
       'near_me_location_failed': 'Hindi mabasa ang lokasyon. Subukan muli.',
-      'near_me_no_coordinates': 'Walang coordinates ang mga hotel pa. Maglagay ng GOOGLE_MAPS_API_KEY.',
-      'near_me_maps_key_required': 'Kailangan ng GOOGLE_MAPS_API_KEY sa server o APK.',
+      'near_me_no_coordinates':
+          'Walang GPS coordinates ang mga hotel pa. Magrehistro gamit ang lokasyon ng telepono.',
+      'near_me_maps_key_required':
+          'Kailangan ng GPS coordinates ang mga hotel para sa Near me.',
     },
     'zh': {
       'app_title': 'MADYAWPH',

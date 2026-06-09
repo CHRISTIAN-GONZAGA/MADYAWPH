@@ -120,7 +120,7 @@ class _HowToSheet extends StatelessWidget {
                   title: '8. Tips & troubleshooting',
                   body:
                       '• Save credentials shown after registration — they are not emailed by default.\n'
-                      '• Forgot admin/staff password? Use forgot-password flow (email code to your account email).\n'
+                      '• Forgot admin/staff password? Contact your hotel administrator (email reset coming soon).\n'
                       '• If reports look empty, confirm bookings are marked paid and dates fall in the selected range.\n'
                       '• Chat images require network access to the API server.\n'
                       '• For support, keep your hotel name, username, and the error message on screen.',

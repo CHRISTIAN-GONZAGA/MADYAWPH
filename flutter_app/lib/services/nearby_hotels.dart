@@ -1,17 +1,14 @@
 import 'dart:math' as math;
 
-import 'package:dio/dio.dart';
 import 'package:geolocator/geolocator.dart';
 
-import '../config.dart';
-
-/// Device GPS + optional Google Geocoding for hotel coordinates.
+/// Device GPS distance sorting for the hotel picker (no external geocoding APIs).
 class NearbyHotelsService {
   NearbyHotelsService._();
 
   static const defaultRadiusKm = 75.0;
 
-  static Future<({double lat, double lng})?> currentPosition() async {
+  static Future<({double lat, double lng})> currentPosition() async {
     final enabled = await Geolocator.isLocationServiceEnabled();
     if (!enabled) {
       throw const NearbyHotelsException('location_services_disabled');
@@ -31,7 +28,7 @@ class NearbyHotelsService {
     final pos = await Geolocator.getCurrentPosition(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.medium,
-        timeLimit: Duration(seconds: 20),
+        timeLimit: Duration(seconds: 25),
       ),
     );
 
@@ -53,47 +50,8 @@ class NearbyHotelsService {
   static bool hasCoordinates(Map<String, dynamic> hotel) =>
       hotelLatitude(hotel) != null && hotelLongitude(hotel) != null;
 
-  /// Geocode using Google Geocoding API when [kGoogleMapsApiKey] is set.
-  static Future<({double lat, double lng})?> geocodeAddress(String address) async {
-    if (!kGoogleMapsConfigured || address.trim().isEmpty) {
-      return null;
-    }
-
-    try {
-      final dio = Dio(
-        BaseOptions(
-          connectTimeout: const Duration(seconds: 10),
-          receiveTimeout: const Duration(seconds: 10),
-        ),
-      );
-      final res = await dio.get<Map<String, dynamic>>(
-        'https://maps.googleapis.com/maps/api/geocode/json',
-        queryParameters: {
-          'address': address,
-          'key': kGoogleMapsApiKey,
-          'region': 'ph',
-        },
-      );
-      final status = res.data?['status']?.toString() ?? '';
-      if (status != 'OK') return null;
-      final loc = res.data?['results'] as List?;
-      if (loc == null || loc.isEmpty) return null;
-      final geometry = (loc.first as Map?)?['geometry'] as Map?;
-      final location = geometry?['location'] as Map?;
-      final lat = (location?['lat'] as num?)?.toDouble();
-      final lng = (location?['lng'] as num?)?.toDouble();
-      if (lat == null || lng == null) return null;
-      return (lat: lat, lng: lng);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  static String addressForGeocoding(Map<String, dynamic> hotel) {
-    final formatted = (hotel['formatted_address'] ?? '').toString().trim();
-    if (formatted.isNotEmpty) return formatted;
-    return (hotel['location'] ?? '').toString().trim();
-  }
+  static int countHotelsWithCoordinates(Iterable<Map<String, dynamic>> hotels) =>
+      hotels.where(hasCoordinates).length;
 
   static double distanceKm(
     double lat1,

@@ -47,20 +47,11 @@ flutter run --dart-define=API_BASE_URL=https://your-service.onrender.com/api/v1
 flutter build appbundle --dart-define=API_BASE_URL=https://your-service.onrender.com/api/v1
 ```
 
-### Google Maps / “Near me” (optional)
+### “Near me” (device GPS — no Google Maps API)
 
-On **Select your property**, users can tap **Use my current location** to sort hotels by distance.
+On **Select your property**, users tap **Use my current location**. The app reads phone GPS and sorts hotels that have **latitude/longitude** stored at registration.
 
-1. **Server (recommended):** set `GOOGLE_MAPS_API_KEY` on Render/Laravel `.env`. New hotels are geocoded on register; existing hotels are geocoded in small batches when `/hotels` is loaded.
-2. **App (optional):** pass the same key at build time so the app can geocode hotels that still lack coordinates:
-
-```bash
-flutter build apk --release \
-  --dart-define=API_BASE_URL=https://your-service.onrender.com/api/v1 \
-  --dart-define=GOOGLE_MAPS_API_KEY=your_google_maps_api_key
-```
-
-Without a key, the button still appears but nearby search explains that a key is needed once hotels have no stored coordinates. Location permission is only requested when the user taps the button.
+When registering a hotel, the app asks for location permission and saves GPS coordinates with the typed Philippine address. No geocoding API is required.
 
 ### Primary v1 endpoints (Sanctum unless noted)
 
@@ -68,9 +59,8 @@ Without a key, the button still appears but nearby search explains that a key is
 |------|--------|------|
 | List hotels | GET | `/hotels` |
 | Hotel gate (username/password) | POST | `/hotel/access` |
-| New hotel — send email OTP | POST | `/hotel/register/send-code` |
-| New hotel — verify OTP + create | POST | `/hotel/register/verify` |
-| Resend registration OTP | POST | `/hotel/register/resend-code` |
+| New hotel + admin | POST | `/hotel/register` |
+| New hotel — email OTP (when enabled) | POST | `/hotel/register/send-code` then `/verify` |
 | Admin/staff login → Bearer token | POST | `/auth/portal-login` |
 | Forgot password email OTP | POST | `/auth/forgot/send` |
 | Reset password | POST | `/auth/forgot/reset` |

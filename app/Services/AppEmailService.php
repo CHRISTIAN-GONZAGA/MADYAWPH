@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Mail\OtpVerificationMail;
+use App\Support\MessagingFlags;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Throwable;
@@ -21,6 +22,15 @@ class AppEmailService
         $normalized = strtolower(trim($email));
         if ($normalized === '' || ! filter_var($normalized, FILTER_VALIDATE_EMAIL)) {
             return new EmailSendResult(false, null, $normalized, 'Invalid email address.');
+        }
+
+        if (! MessagingFlags::emailEnabled()) {
+            return new EmailSendResult(
+                false,
+                null,
+                $normalized,
+                'Email messaging is disabled (MESSAGING_EMAIL_ENABLED=false).',
+            );
         }
 
         if (! $this->isConfigured()) {
@@ -62,6 +72,10 @@ class AppEmailService
 
     public function isConfigured(): bool
     {
+        if (! MessagingFlags::emailEnabled()) {
+            return false;
+        }
+
         $mailer = (string) config('mail.default', 'log');
         $from = strtolower(trim((string) config('mail.from.address', '')));
 
@@ -92,6 +106,7 @@ class AppEmailService
     public function status(): array
     {
         return [
+            'enabled' => MessagingFlags::emailEnabled(),
             'configured' => $this->isConfigured(),
             'provider' => $this->providerName(),
             'from' => (string) config('mail.from.address', ''),

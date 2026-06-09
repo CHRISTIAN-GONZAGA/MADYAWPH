@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\AuthenticateGuestPortalToken;
+use App\Http\Middleware\BindHotelTenantFromCustomerRequest;
 use App\Http\Middleware\BindHotelTenantFromSanctumUser;
 use App\Http\Middleware\BindHotelTenantFromWebSession;
 use App\Http\Middleware\DisableHtmlCache;
@@ -13,6 +14,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\TokenMismatchException;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -69,6 +71,17 @@ return Application::configure(basePath: dirname(__DIR__))
             'guest.portal' => AuthenticateGuestPortalToken::class,
             'hotel.tenant' => BindHotelTenantFromSanctumUser::class,
         ]);
+
+        // BelongsToHotel route model binding ({room}, {booking}, …) must run after tenant
+        // context is bound; otherwise STRICT_TENANT_SCOPING=true yields 404 on valid IDs.
+        foreach ([
+            BindHotelTenantFromSanctumUser::class,
+            BindHotelTenantFromCustomerRequest::class,
+            AuthenticateGuestPortalToken::class,
+            BindHotelTenantFromWebSession::class,
+        ] as $tenantMiddleware) {
+            $middleware->prependToPriorityList(SubstituteBindings::class, $tenantMiddleware);
+        }
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->render(function (TokenMismatchException $e, Request $request) {

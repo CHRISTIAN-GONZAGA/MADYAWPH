@@ -4,7 +4,6 @@ namespace App\Support;
 
 use App\Models\Hotel;
 use App\Models\Room;
-use App\Services\GoogleMapsGeocoder;
 
 final class HotelDirectory
 {
@@ -94,7 +93,7 @@ final class HotelDirectory
     /**
      * @return array{data: list<array<string, mixed>>, regions: list<array<string, mixed>>}
      */
-    public static function pickerApiPayload(?GoogleMapsGeocoder $geocoder = null): array
+    public static function pickerApiPayload(): array
     {
         $hotels = Hotel::withoutGlobalScopes()
             ->select(
@@ -112,26 +111,6 @@ final class HotelDirectory
             )
             ->orderBy('name')
             ->get();
-
-        if ($geocoder !== null) {
-            self::backfillMissingCoordinates($hotels, $geocoder);
-            $hotels = Hotel::withoutGlobalScopes()
-                ->select(
-                    'id',
-                    'name',
-                    'location',
-                    'city',
-                    'region',
-                    'province',
-                    'barangay',
-                    'street_address',
-                    'latitude',
-                    'longitude',
-                    'picker_banner_url'
-                )
-                ->orderBy('name')
-                ->get();
-        }
 
         $priceStats = self::priceStatsForHotels(
             $hotels->pluck('id')->map(fn ($id) => (string) $id)->all()
@@ -155,7 +134,6 @@ final class HotelDirectory
                 'price_floor' => $bounds['floor'],
                 'price_ceiling' => $bounds['ceiling'],
                 'has_pricing' => $bounds['has_pricing'],
-                'maps_geocoding_configured' => $geocoder?->isConfigured() ?? false,
                 'hotels_with_coordinates' => count(array_filter(
                     $flat,
                     fn (array $row) => isset($row['latitude'], $row['longitude'])
@@ -183,59 +161,30 @@ final class HotelDirectory
     }
 
     /**
-     * Geocode a limited number of hotels missing coordinates (when API key is set).
+     * @param  array<string, mixed>  $input
+     * @return array{latitude: float|null, longitude: float|null}
      */
-    public static function backfillMissingCoordinates(iterable $hotels, GoogleMapsGeocoder $geocoder): void
+    public static function coordinatesFromInput(array $input): array
     {
-        if (! $geocoder->isConfigured()) {
-            return;
+        if (! isset($input['latitude'], $input['longitude'])) {
+            return ['latitude' => null, 'longitude' => null];
         }
 
-        $limit = max(1, (int) config('services.google_maps.geocode_batch_limit', 5));
-        $done = 0;
+        $lat = (float) $input['latitude'];
+        $lng = (float) $input['longitude'];
 
-        foreach ($hotels as $hotel) {
-            if (! $hotel instanceof Hotel || $done >= $limit) {
-                continue;
-            }
-            if (self::hasCoordinates($hotel)) {
-                continue;
-            }
-            $address = self::formatHotelAddress($hotel);
-            if ($address === '') {
-                continue;
-            }
-            $coords = $geocoder->geocode($address);
-            if ($coords === null) {
-                continue;
-            }
-            Hotel::withoutGlobalScopes()
-                ->where('id', $hotel->id)
-                ->update([
-                    'latitude' => $coords['lat'],
-                    'longitude' => $coords['lng'],
-                ]);
-            $done++;
+        if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+            return ['latitude' => null, 'longitude' => null];
         }
-    }
 
-    public static function assignCoordinates(Hotel $hotel, GoogleMapsGeocoder $geocoder): void
-    {
-        if (! $geocoder->isConfigured() || self::hasCoordinates($hotel)) {
-            return;
+        if (abs($lat) < 0.000001 && abs($lng) < 0.000001) {
+            return ['latitude' => null, 'longitude' => null];
         }
-        $address = self::formatHotelAddress($hotel);
-        if ($address === '') {
-            return;
-        }
-        $coords = $geocoder->geocode($address);
-        if ($coords === null) {
-            return;
-        }
-        $hotel->update([
-            'latitude' => $coords['lat'],
-            'longitude' => $coords['lng'],
-        ]);
+
+        return [
+            'latitude' => round($lat, 7),
+            'longitude' => round($lng, 7),
+        ];
     }
 
     public static function hasCoordinates(Hotel $hotel): bool
