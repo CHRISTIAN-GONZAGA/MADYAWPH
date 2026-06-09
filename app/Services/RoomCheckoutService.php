@@ -11,9 +11,9 @@ use App\Models\Room;
 use App\Models\StaffMember;
 use App\Models\Task;
 use App\Models\User;
+use App\Support\PublicUploadStorage;
 use App\Support\SafeModelAttributes;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class RoomCheckoutService
@@ -340,8 +340,8 @@ class RoomCheckoutService
             $path = $attachmentUrl;
         }
 
-        if ($path !== null && $path !== '' && Storage::disk('public')->exists($path)) {
-            Storage::disk('public')->delete($path);
+        if ($path !== null && $path !== '') {
+            PublicUploadStorage::delete($path);
         }
     }
 

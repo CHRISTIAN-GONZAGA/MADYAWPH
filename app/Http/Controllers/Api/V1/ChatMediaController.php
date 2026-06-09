@@ -3,29 +3,32 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Support\PublicUploadStorage;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\Response;
 
 class ChatMediaController extends Controller
 {
-    /** @var list<string> */
-    private const ALLOWED_PREFIXES = ['chat/', 'categories/', 'rooms/'];
-
     public function show(Request $request): Response
     {
         $path = (string) $request->query('f', '');
         $path = ltrim(str_replace('\\', '/', $path), '/');
 
-        if ($path === '' || str_contains($path, '..') || ! $this->isAllowedPath($path)) {
+        if (! PublicUploadStorage::isAllowedPath($path)) {
             abort(404);
         }
 
-        if (! Storage::disk('public')->exists($path)) {
+        $disk = PublicUploadStorage::resolveDiskForPath($path);
+        if ($disk === null) {
             abort(404);
         }
 
-        $absolute = Storage::disk('public')->path($path);
+        if ($disk === 's3') {
+            return redirect()->away(Storage::disk('s3')->url($path), 302);
+        }
+
+        $absolute = Storage::disk($disk)->path($path);
         $mime = match (strtolower(pathinfo($path, PATHINFO_EXTENSION))) {
             'png' => 'image/png',
             'gif' => 'image/gif',
@@ -37,16 +40,5 @@ class ChatMediaController extends Controller
             'Content-Type' => $mime,
             'Cache-Control' => 'public, max-age=86400',
         ]);
-    }
-
-    private function isAllowedPath(string $path): bool
-    {
-        foreach (self::ALLOWED_PREFIXES as $prefix) {
-            if (str_starts_with($path, $prefix)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }

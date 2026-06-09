@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:geolocator/geolocator.dart';
@@ -8,7 +9,31 @@ class NearbyHotelsService {
 
   static const defaultRadiusKm = 75.0;
 
-  static Future<({double lat, double lng})> currentPosition() async {
+  static LocationSettings _positionSettings({bool forceAndroidManager = false}) {
+    if (Platform.isAndroid) {
+      return AndroidSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 0,
+        forceLocationManager: forceAndroidManager,
+        intervalDuration: const Duration(seconds: 2),
+        timeLimit: const Duration(seconds: 30),
+      );
+    }
+    if (Platform.isIOS) {
+      return AppleSettings(
+        accuracy: LocationAccuracy.high,
+        activityType: ActivityType.other,
+        distanceFilter: 0,
+        timeLimit: const Duration(seconds: 30),
+      );
+    }
+    return const LocationSettings(
+      accuracy: LocationAccuracy.high,
+      timeLimit: Duration(seconds: 30),
+    );
+  }
+
+  static Future<void> ensureLocationPermission() async {
     final enabled = await Geolocator.isLocationServiceEnabled();
     if (!enabled) {
       throw const NearbyHotelsException('location_services_disabled');
@@ -24,15 +49,41 @@ class NearbyHotelsService {
     if (permission == LocationPermission.deniedForever) {
       throw const NearbyHotelsException('permission_denied_forever');
     }
+  }
 
-    final pos = await Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.medium,
-        timeLimit: Duration(seconds: 25),
-      ),
-    );
+  static Future<({double lat, double lng})> currentPosition() async {
+    await ensureLocationPermission();
 
-    return (lat: pos.latitude, lng: pos.longitude);
+    final last = await Geolocator.getLastKnownPosition();
+    if (last != null) {
+      final age = DateTime.now().difference(last.timestamp);
+      final lat = last.latitude;
+      final lng = last.longitude;
+      if (age.inMinutes <= 15 &&
+          lat.abs() > 0.000001 &&
+          lng.abs() > 0.000001) {
+        return (lat: lat, lng: lng);
+      }
+    }
+
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: _positionSettings(),
+      );
+      return (lat: pos.latitude, lng: pos.longitude);
+    } on LocationServiceDisabledException {
+      throw const NearbyHotelsException('location_services_disabled');
+    } on PermissionDeniedException {
+      throw const NearbyHotelsException('permission_denied');
+    } catch (_) {
+      if (Platform.isAndroid) {
+        final pos = await Geolocator.getCurrentPosition(
+          locationSettings: _positionSettings(forceAndroidManager: true),
+        );
+        return (lat: pos.latitude, lng: pos.longitude);
+      }
+      rethrow;
+    }
   }
 
   static double? hotelLatitude(Map<String, dynamic> hotel) {

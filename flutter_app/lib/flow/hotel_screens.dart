@@ -93,6 +93,7 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
             _hotelsWithCoordinates =
                 (decoded['meta']?['hotels_with_coordinates'] as num?)?.toInt() ??
                     0;
+            _hotelsWithCoordinates = _coordinateHotelCount;
             if (mounted) setState(() {});
           }
         }
@@ -134,6 +135,7 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
       _syncCatalogPriceBounds(data?['meta']);
       _hotelsWithCoordinates =
           (data?['meta']?['hotels_with_coordinates'] as num?)?.toInt() ?? 0;
+      _hotelsWithCoordinates = _coordinateHotelCount;
       if (mounted) {
         setState(() {});
       }
@@ -202,7 +204,10 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
       _priceFilterIsNarrowed ||
       _sortBy != 'closest';
 
-  bool get _nearMeAvailable => _hotelsWithCoordinates > 0;
+  int get _coordinateHotelCount {
+    final fromList = NearbyHotelsService.countHotelsWithCoordinates(_allHotels);
+    return math.max(fromList, _hotelsWithCoordinates);
+  }
 
   bool get _priceFilterIsNarrowed =>
       _catalogCeiling > _catalogFloor &&
@@ -359,6 +364,34 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
         _ => context.tr('near_me_location_failed'),
       };
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      if (e.code == 'permission_denied' ||
+          e.code == 'permission_denied_forever' ||
+          e.code == 'location_services_disabled') {
+        final openSettings = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(context.tr('near_me_use')),
+            content: Text(msg),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Open settings'),
+              ),
+            ],
+          ),
+        );
+        if (openSettings == true) {
+          if (e.code == 'location_services_disabled') {
+            await Geolocator.openLocationSettings();
+          } else {
+            await Geolocator.openAppSettings();
+          }
+        }
+      }
       setState(() => _locatingNearMe = false);
     } catch (_) {
       if (!mounted) return;
@@ -680,9 +713,7 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
                     child: FilledButton.tonalIcon(
                       onPressed: _locatingNearMe
                           ? null
-                          : (_nearMeActive
-                              ? _clearNearMe
-                              : (_nearMeAvailable ? _useNearMe : null)),
+                          : (_nearMeActive ? _clearNearMe : _useNearMe),
                       icon: _locatingNearMe
                           ? SizedBox(
                               width: 18,
@@ -707,6 +738,16 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
                 ],
               ),
             ),
+            if (!_nearMeActive && _coordinateHotelCount == 0 && !_loading)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                child: Text(
+                  context.tr('near_me_no_coordinates'),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
             if (_nearMeActive)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
@@ -1585,6 +1626,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
   final _adminEmail = TextEditingController();
   final _totalRooms = TextEditingController(text: '1');
   bool _busy = false;
+  bool _locatingGps = false;
   String? _error;
   ({double lat, double lng})? _previewCoords;
 
@@ -1647,8 +1689,10 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
   }
 
   Future<void> _previewLocation() async {
+    if (_locatingGps) return;
+    HapticFeedback.lightImpact();
     setState(() {
-      _busy = true;
+      _locatingGps = true;
       _error = null;
     });
     try {
@@ -1656,19 +1700,56 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
       if (!mounted) return;
       setState(() {
         _previewCoords = pos;
-        _busy = false;
+        _locatingGps = false;
       });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('GPS location saved for this hotel.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
     } on NearbyHotelsException catch (e) {
       if (!mounted) return;
+      final message = switch (e.code) {
+        'permission_denied' || 'permission_denied_forever' =>
+          'Location permission is required to save GPS coordinates.',
+        'location_services_disabled' =>
+          'Turn on location services, then try again.',
+        _ => 'Could not read GPS. Try again.',
+      };
       setState(() {
-        _busy = false;
-        _error = switch (e.code) {
-          'permission_denied' || 'permission_denied_forever' =>
-            'Location permission is required to save GPS coordinates.',
-          'location_services_disabled' =>
-            'Turn on location services, then try again.',
-          _ => 'Could not read GPS. Try again.',
-        };
+        _locatingGps = false;
+        _error = message;
+      });
+      final openSettings = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Hotel GPS location'),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Open settings'),
+            ),
+          ],
+        ),
+      );
+      if (openSettings == true) {
+        if (e.code == 'location_services_disabled') {
+          await Geolocator.openLocationSettings();
+        } else {
+          await Geolocator.openAppSettings();
+        }
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _locatingGps = false;
+        _error = 'Could not read GPS. Try again.';
       });
     }
   }
@@ -1822,11 +1903,27 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
                 ),
               ],
               const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: _busy ? null : _previewLocation,
-                icon: const Icon(Icons.my_location_outlined, size: 18),
-                label: Text(
-                  _previewCoords == null ? 'Use current location' : 'Refresh GPS',
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.tonalIcon(
+                  onPressed: (_busy || _locatingGps) ? null : _previewLocation,
+                  icon: _locatingGps
+                      ? SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: scheme.primary,
+                          ),
+                        )
+                      : const Icon(Icons.my_location_outlined, size: 18),
+                  label: Text(
+                    _locatingGps
+                        ? 'Getting GPS…'
+                        : (_previewCoords == null
+                            ? 'Use current location'
+                            : 'Refresh GPS'),
+                  ),
                 ),
               ),
             ],

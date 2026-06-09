@@ -53,4 +53,4 @@ RUN chmod -R 775 storage bootstrap/cache
 # =========================
 EXPOSE 10000
 
-CMD ["sh", "-lc", "php artisan optimize:clear && php artisan serve --host=0.0.0.0 --port=${PORT:-10000}"]
+CMD ["sh", "-lc", "php artisan optimize:clear && mkdir -p \"${FILESYSTEM_UPLOAD_ROOT:-/var/data/uploads}\" && php artisan serve --host=0.0.0.0 --port=${PORT:-10000}"]

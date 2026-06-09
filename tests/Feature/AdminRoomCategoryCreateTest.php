@@ -38,7 +38,7 @@ class AdminRoomCategoryCreateTest extends TestCase
 
     public function test_admin_can_create_category_with_image(): void
     {
-        Storage::fake('public');
+        Storage::fake('uploads');
 
         $hotel = Hotel::create(['name' => 'Img Hotel', 'location' => 'City']);
         $admin = User::withoutGlobalScopes()->create([
@@ -68,7 +68,7 @@ class AdminRoomCategoryCreateTest extends TestCase
         $this->assertNotSame('', $imageUrl);
         $this->assertStringContainsString('/api/v1/chat/media', $imageUrl);
 
-        $this->assertNotEmpty(Storage::disk('public')->files('categories'));
+        $this->assertNotEmpty(Storage::disk('uploads')->files('categories'));
     }
 
     public function test_admin_can_create_room_in_category(): void
@@ -103,7 +103,7 @@ class AdminRoomCategoryCreateTest extends TestCase
 
     public function test_admin_can_create_room_with_gallery_image_upload(): void
     {
-        Storage::fake('public');
+        Storage::fake('uploads');
 
         $hotel = Hotel::create(['name' => 'Img Room Hotel', 'location' => 'City']);
         $admin = User::withoutGlobalScopes()->create([
@@ -138,6 +138,6 @@ class AdminRoomCategoryCreateTest extends TestCase
             ->assertJsonPath('room_number', '202')
             ->assertJsonStructure(['image_url']);
 
-        $this->assertNotEmpty(Storage::disk('public')->files('rooms'));
+        $this->assertNotEmpty(Storage::disk('uploads')->files('rooms'));
     }
 }

@@ -5,20 +5,21 @@ namespace App\Support;
 use Illuminate\Support\Facades\Storage;
 
 /**
- * Builds reachable URLs for chat images on mobile (avoids broken localhost /storage links).
+ * Builds reachable URLs for uploaded media on mobile (S3 in production, API proxy locally).
  */
 final class ChatAttachmentUrl
 {
     public static function storeUploadedFile(\Illuminate\Http\UploadedFile $file, string $directory): string
     {
-        return self::forPath($file->store($directory, 'public'));
+        $relative = PublicUploadStorage::store($file, $directory);
+
+        return self::forPath($relative);
     }
 
     public static function forPath(string $relativePath): string
     {
-        $path = ltrim(str_replace('\\', '/', $relativePath), '/');
-
-        return url('/api/v1/chat/media?f='.rawurlencode($path));
+        return PublicUploadStorage::publicUrl($relativePath)
+            ?? url('/api/v1/chat/media?f='.rawurlencode(ltrim($relativePath, '/')));
     }
 
     public static function fromStoredUrl(?string $stored): ?string
@@ -33,25 +34,32 @@ final class ChatAttachmentUrl
             return self::normalizeAppHost($stored);
         }
 
-        if (self::isPublicDiskRelativePath($stored)) {
+        if (self::isDirectObjectUrl($stored)) {
+            return $stored;
+        }
+
+        if (PublicUploadStorage::isRelativeMediaPath($stored)) {
             return self::forPath($stored);
         }
 
         $path = self::extractPublicDiskPath($stored);
-        if ($path !== null && Storage::disk('public')->exists($path)) {
+        if ($path !== null && PublicUploadStorage::exists($path)) {
             return self::forPath($path);
         }
 
         return self::normalizeAppHost($stored);
     }
 
-    private static function isPublicDiskRelativePath(string $path): bool
+    private static function isDirectObjectUrl(string $url): bool
     {
-        return str_starts_with($path, 'chat/')
-            || str_starts_with($path, 'categories/')
-            || str_starts_with($path, 'rooms/')
-            || str_starts_with($path, 'hotel-banners/')
-            || str_starts_with($path, 'reseller-ids/');
+        if (! str_starts_with($url, 'http://') && ! str_starts_with($url, 'https://')) {
+            return false;
+        }
+
+        return str_contains($url, '.amazonaws.com/')
+            || str_contains($url, '://s3.')
+            || (filled(config('filesystems.disks.s3.url'))
+                && str_starts_with($url, rtrim((string) config('filesystems.disks.s3.url'), '/')));
     }
 
     private static function extractPublicDiskPath(string $url): ?string

@@ -22,6 +22,7 @@ use App\Support\PriceRounding;
 use App\Services\SmsService;
 use App\Support\ChatAttachmentUrl;
 use App\Support\EnumHelper;
+use App\Support\PublicUploadStorage;
 use Carbon\Carbon;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
@@ -29,7 +30,6 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -51,7 +51,8 @@ class CustomerPortalApiController extends Controller
         $hotel = Hotel::withoutGlobalScopes()->select('id', 'name', 'location')->find($hotelId);
         $availableValue = RoomStatus::AVAILABLE->value;
 
-        $categories = RoomCategory::query()
+        $categories = RoomCategory::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
             ->orderBy('name')
             ->get(['id', 'name', 'description', 'image_url'])
             ->map(function (RoomCategory $cat) use ($hotelId, $availableValue) {
@@ -70,21 +71,26 @@ class CustomerPortalApiController extends Controller
                 ];
             });
         if ($categories->isEmpty()) {
-            $categories = Room::query()
+            $categories = Room::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
                 ->get()
                 ->groupBy(fn ($room) => strtolower((string) ($room->room_type?->value ?? $room->room_type)))
-                ->map(function ($roomsByType, $type) use ($hotelId, $availableValue) {
+                ->map(function ($roomsByType, $type) use ($availableValue) {
                     $available = $roomsByType->filter(function ($room) use ($availableValue) {
                         $st = $room->status?->value ?? (string) $room->status;
 
                         return $st === $availableValue;
                     })->count();
 
+                    $coverRoom = $roomsByType->first(
+                        fn ($room) => filled($room->image_url)
+                    ) ?? $roomsByType->first();
+
                     return [
                         'id' => $type,
                         'name' => ucfirst((string) $type).' Rooms',
                         'description' => 'Available rooms in this category.',
-                        'image_url' => '',
+                        'image_url' => (string) (ChatAttachmentUrl::fromStoredUrl($coverRoom?->image_url) ?? ''),
                         'available_rooms' => (int) $available,
                     ];
                 })
@@ -102,24 +108,28 @@ class CustomerPortalApiController extends Controller
         }
 
         $hotel = Hotel::withoutGlobalScopes()->select('id', 'name', 'location')->find($hotelId);
-        $category = RoomCategory::query()->find($categoryId);
+        $category = RoomCategory::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where(function ($query) use ($categoryId) {
+                $query->where('id', $categoryId)->orWhere('_id', $categoryId);
+            })
+            ->first();
         $availableValue = RoomStatus::AVAILABLE->value;
-        $rooms = Room::query()
+        $categoryImage = ChatAttachmentUrl::fromStoredUrl($category?->image_url);
+        $rooms = Room::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
             ->where('status', $availableValue)
             ->when(
                 $category,
-                fn ($query) => $query->where('category_id', $categoryId),
+                fn ($query) => $query->where('category_id', (string) $category->id),
                 fn ($query) => $query->where('room_type', ucfirst($categoryId))
             )
             ->limit(30)
             ->get()
-            ->map(function ($room) use ($hotelId, $category, $availableValue) {
+            ->map(function ($room) use ($hotelId, $category, $categoryImage, $availableValue) {
                 $basePrice = (float) $room->price_per_night;
                 $displayPrice = $this->roomPricingService->applySurge((string) $hotelId, $basePrice);
-                $roomImage = ChatAttachmentUrl::fromStoredUrl($room->image_url);
-                if ($roomImage === null && $category !== null) {
-                    $roomImage = ChatAttachmentUrl::fromStoredUrl($category->image_url);
-                }
+                $roomImage = ChatAttachmentUrl::fromStoredUrl($room->image_url) ?? $categoryImage;
 
                 return [
                     'id' => (string) $room->id,
@@ -137,7 +147,11 @@ class CustomerPortalApiController extends Controller
 
         return response()->json([
             'hotel' => $hotel,
-            'category' => ['id' => $categoryId, 'name' => $category?->name ?? 'Rooms'],
+            'category' => [
+                'id' => $categoryId,
+                'name' => $category?->name ?? 'Rooms',
+                'image_url' => (string) ($categoryImage ?? ''),
+            ],
             'rooms' => $rooms,
         ]);
     }
@@ -383,8 +397,11 @@ class CustomerPortalApiController extends Controller
         }
 
         try {
-            $path = $request->file('discount_id_file')->store('bookings/discount-ids', 'public');
-            $idUrl = Storage::disk('public')->url($path);
+            $path = PublicUploadStorage::store(
+                $request->file('discount_id_file'),
+                'bookings/discount-ids'
+            );
+            $idUrl = ChatAttachmentUrl::forPath($path);
         } catch (Throwable $e) {
             Log::warning('Discount ID upload failed', ['message' => $e->getMessage()]);
             throw new HttpResponseException(response()->json([

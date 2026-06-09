@@ -17,6 +17,17 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Hotel / room / chat uploads
+    |--------------------------------------------------------------------------
+    |
+    | Render production: attach a persistent disk and set FILESYSTEM_UPLOAD_ROOT to
+    | the mount path (e.g. /var/data/uploads). Optional: FILESYSTEM_UPLOAD_DISK=s3.
+    |
+    */
+    'uploads_disk' => env('FILESYSTEM_UPLOAD_DISK', 'uploads'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Filesystem Disks
     |--------------------------------------------------------------------------
     |
@@ -41,6 +52,15 @@ return [
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),
+            'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage',
+            'visibility' => 'public',
+            'throw' => false,
+            'report' => false,
+        ],
+
+        'uploads' => [
+            'driver' => 'local',
+            'root' => env('FILESYSTEM_UPLOAD_ROOT', storage_path('app/public')),
             'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage',
             'visibility' => 'public',
             'throw' => false,

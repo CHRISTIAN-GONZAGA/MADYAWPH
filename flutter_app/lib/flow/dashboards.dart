@@ -2361,11 +2361,12 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
     final hotel = _categoriesRes?['hotel'] as Map<String, dynamic>?;
     final hotelName = hotel?['name'] ?? 'Hotel';
     final categories = (_categoriesRes?['categories'] as List<dynamic>?) ?? [];
-    final placeholders = [
-      'https://picsum.photos/seed/hero-1/1200/600',
-      'https://picsum.photos/seed/hero-2/1200/600',
-      'https://picsum.photos/seed/hero-3/1200/600',
-    ];
+    final heroImages = categories
+        .map((c) => ChatAttachment.resolveMediaUrl(
+              '${(c as Map<String, dynamic>)['image_url'] ?? ''}',
+            ))
+        .where((url) => url.isNotEmpty)
+        .toList();
 
     final scheme = Theme.of(context).colorScheme;
     return RefreshIndicator(
@@ -2375,67 +2376,73 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
         children: [
           SizedBox(
             height: 200,
-            child: PageView.builder(
-              itemCount: placeholders.length,
-              itemBuilder: (context, i) {
-                final url = placeholders[i];
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Image.network(
-                          url,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            color: scheme.surfaceContainerHighest,
-                            alignment: Alignment.center,
-                            child: const Icon(Icons.image_outlined, size: 48),
-                          ),
-                        ),
-                        DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Colors.black.withValues(alpha: 0.05),
-                                Colors.black.withValues(alpha: 0.55),
-                              ],
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          left: 16,
-                          right: 16,
-                          bottom: 16,
-                          child: Text(
-                            hotelName,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleLarge
-                                ?.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                  shadows: const [
-                                    Shadow(
-                                      blurRadius: 8,
-                                      color: Colors.black45,
-                                    ),
-                                  ],
+            child: heroImages.isEmpty
+                ? _CustomerHeroFallback(
+                    hotelName: hotelName,
+                    scheme: scheme,
+                  )
+                : PageView.builder(
+                    itemCount: heroImages.length,
+                    itemBuilder: (context, i) {
+                      final url = heroImages[i];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              NetworkMediaImage(
+                                url: url,
+                                fit: BoxFit.cover,
+                                error: Container(
+                                  color: scheme.surfaceContainerHighest,
+                                  alignment: Alignment.center,
+                                  child: const Icon(Icons.image_outlined,
+                                      size: 48),
                                 ),
+                              ),
+                              DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Colors.black.withValues(alpha: 0.05),
+                                      Colors.black.withValues(alpha: 0.55),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              Positioned(
+                                left: 16,
+                                right: 16,
+                                bottom: 16,
+                                child: Text(
+                                  hotelName,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleLarge
+                                      ?.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                        shadows: const [
+                                          Shadow(
+                                            blurRadius: 8,
+                                            color: Colors.black45,
+                                          ),
+                                        ],
+                                      ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
           ),
           Text(
             'Find your room',
@@ -2463,10 +2470,10 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                 ? '1 room available'
                 : '$available rooms available';
             return Padding(
-              padding: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.only(bottom: 14),
               child: Material(
                 color: scheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.circular(20),
                 clipBehavior: Clip.antiAlias,
                 child: InkWell(
                   onTap: () {
@@ -2476,125 +2483,125 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                           hotelId: widget.hotelId,
                           categoryId: id,
                           categoryName: name,
+                          categoryImageUrl: imageUrl,
                         ),
                       ),
                     );
                   },
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (imageUrl.isEmpty)
-                          CircleAvatar(
-                            radius: 32,
-                            backgroundColor:
-                                scheme.primaryContainer.withValues(alpha: 0.6),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (imageUrl.isEmpty)
+                        Container(
+                          height: 140,
+                          color: scheme.surfaceContainerHighest,
+                          alignment: Alignment.center,
+                          child: Icon(
+                            Icons.category_outlined,
+                            size: 48,
+                            color: scheme.outline,
+                          ),
+                        )
+                      else
+                        NetworkMediaImage(
+                          url: imageUrl,
+                          height: 140,
+                          width: double.infinity,
+                          error: Container(
+                            height: 140,
+                            color: scheme.surfaceContainerHighest,
+                            alignment: Alignment.center,
                             child: Icon(
-                              Icons.category_outlined,
-                              color: scheme.onPrimaryContainer,
-                            ),
-                          )
-                        else
-                          NetworkMediaImage(
-                            url: imageUrl,
-                            width: 64,
-                            height: 64,
-                            borderRadius: BorderRadius.circular(14),
-                            error: SizedBox(
-                              width: 64,
-                              height: 64,
-                              child: Icon(
-                                Icons.broken_image_outlined,
-                                color: scheme.outline,
-                              ),
+                              Icons.broken_image_outlined,
+                              color: scheme.outline,
+                              size: 40,
                             ),
                           ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      name,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .titleMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                    ),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    name,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w800,
+                                        ),
                                   ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 5,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: available > 0
-                                          ? scheme.primaryContainer
-                                          : scheme.errorContainer
-                                              .withValues(alpha: 0.5),
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: Text(
-                                      availLabel,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .labelMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w700,
-                                            color: available > 0
-                                                ? scheme.onPrimaryContainer
-                                                : scheme.onErrorContainer,
-                                          ),
-                                    ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 5,
                                   ),
-                                ],
+                                  decoration: BoxDecoration(
+                                    color: available > 0
+                                        ? scheme.primaryContainer
+                                        : scheme.errorContainer
+                                            .withValues(alpha: 0.5),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    availLabel,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                          color: available > 0
+                                              ? scheme.onPrimaryContainer
+                                              : scheme.onErrorContainer,
+                                        ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (desc.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                desc,
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                      color: scheme.onSurfaceVariant,
+                                    ),
                               ),
-                              if (desc.isNotEmpty) ...[
-                                const SizedBox(height: 4),
+                            ],
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.arrow_forward_rounded,
+                                  size: 18,
+                                  color: scheme.primary,
+                                ),
+                                const SizedBox(width: 4),
                                 Text(
-                                  desc,
-                                  maxLines: 3,
-                                  overflow: TextOverflow.ellipsis,
+                                  'See rooms & prices',
                                   style: Theme.of(context)
                                       .textTheme
-                                      .bodySmall
+                                      .labelLarge
                                       ?.copyWith(
-                                        color: scheme.onSurfaceVariant,
+                                        color: scheme.primary,
+                                        fontWeight: FontWeight.w600,
                                       ),
                                 ),
                               ],
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.arrow_forward_rounded,
-                                    size: 18,
-                                    color: scheme.primary,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'See rooms & prices',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelLarge
-                                        ?.copyWith(
-                                          color: scheme.primary,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -2606,17 +2613,54 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
   }
 }
 
+class _CustomerHeroFallback extends StatelessWidget {
+  const _CustomerHeroFallback({
+    required this.hotelName,
+    required this.scheme,
+  });
+
+  final String hotelName;
+  final ColorScheme scheme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          color: scheme.primaryContainer.withValues(alpha: 0.45),
+          alignment: Alignment.center,
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              hotelName,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: scheme.onPrimaryContainer,
+                  ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class CustomerRoomsScreen extends StatefulWidget {
   const CustomerRoomsScreen({
     super.key,
     required this.hotelId,
     required this.categoryId,
     required this.categoryName,
+    this.categoryImageUrl = '',
   });
 
   final String hotelId;
   final String categoryId;
   final String categoryName;
+  final String categoryImageUrl;
 
   @override
   State<CustomerRoomsScreen> createState() => _CustomerRoomsScreenState();
@@ -2954,14 +2998,33 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
       final status = '${r['status'] ?? ''}'.toLowerCase();
       return status == 'available' || status.isEmpty;
     }).toList();
+    final category = _data?['category'] as Map<String, dynamic>?;
+    final categoryBanner = ChatAttachment.resolveMediaUrl(
+      '${category?['image_url'] ?? widget.categoryImageUrl}',
+    );
     final scheme = Theme.of(context).colorScheme;
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-        itemCount: rooms.length,
+        itemCount: rooms.length + (categoryBanner.isEmpty ? 0 : 1),
         itemBuilder: (context, i) {
-          final r = rooms[i] as Map<String, dynamic>;
+          if (categoryBanner.isNotEmpty && i == 0) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: NetworkMediaImage(
+                  url: categoryBanner,
+                  height: 180,
+                  width: double.infinity,
+                  error: const SizedBox.shrink(),
+                ),
+              ),
+            );
+          }
+          final roomIndex = categoryBanner.isEmpty ? i : i - 1;
+          final r = rooms[roomIndex] as Map<String, dynamic>;
           final roomNo = '${r['room_number'] ?? ''}';
           final title = '${r['display_name'] ?? r['room_number']}';
           final price = (r['price_per_night'] as num?)?.toDouble() ?? 0;
