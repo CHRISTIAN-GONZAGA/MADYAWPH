@@ -3,12 +3,13 @@
 /**
  * Guest and unauthenticated API routes (no Sanctum middleware).
  *
- * OTP sends SMS via App\Services\SmsService — configure Semaphore in .env (see .env.example).
+ * OTP sends email via App\Services\AppEmailService (configure MAIL_MAILER=ses).
  */
 
 use App\Http\Controllers\Api\AuthApiController;
 use App\Http\Controllers\Api\BookingController;
-use App\Services\SmsService;
+use App\Services\AppEmailService;
+use App\Support\EmailOtp;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Route;
@@ -18,26 +19,33 @@ Route::post('/bookings', [BookingController::class, 'store'])->name('api.booking
 Route::get('/bookings/{reference}', [BookingController::class, 'show']);
 Route::get('/bookings/{reference}/pdf', [BookingController::class, 'confirmationPdf']);
 Route::get('/my-bookings', [BookingController::class, 'myBookings']);
-Route::post('/otp/send', function (Request $request, SmsService $smsService) {
+Route::post('/otp/send', function (Request $request, AppEmailService $emailService) {
     $validated = $request->validate([
-        'phone' => ['required', 'string', 'max:30'],
+        'email' => ['required', 'email', 'max:255'],
     ]);
-    $otp = (string) random_int(100000, 999999);
-    Cache::put('otp:'.$validated['phone'], $otp, now()->addMinutes(5));
-    $smsService->send($validated['phone'], "Your MADYAW OTP code is {$otp}. It expires in 5 minutes.");
+    $email = strtolower(trim((string) $validated['email']));
+    $ttlMinutes = 10;
+    $otp = EmailOtp::generate();
+    Cache::put('otp_email:'.$email, EmailOtp::hash($otp), now()->addMinutes($ttlMinutes));
+    $mail = $emailService->sendOtp($email, $otp, 'verify your email address', $ttlMinutes);
 
-    return response()->json(['ok' => true, 'expires_in_seconds' => 300]);
+    return response()->json([
+        'ok' => $mail->sent,
+        'expires_in_seconds' => $ttlMinutes * 60,
+        'email' => $mail->toArray(),
+    ], $mail->sent ? 200 : 503);
 });
 Route::post('/otp/verify', function (Request $request) {
     $validated = $request->validate([
-        'phone' => ['required', 'string', 'max:30'],
+        'email' => ['required', 'email', 'max:255'],
         'otp' => ['required', 'string', 'size:6'],
     ]);
-    $cached = (string) Cache::get('otp:'.$validated['phone'], '');
-    if ($cached === '' || ! hash_equals($cached, $validated['otp'])) {
-        return response()->json(['ok' => false, 'message' => 'Invalid OTP code.'], 422);
+    $email = strtolower(trim((string) $validated['email']));
+    $cached = (string) Cache::get('otp_email:'.$email, '');
+    if ($cached === '' || ! EmailOtp::matches((string) $validated['otp'], $cached)) {
+        return response()->json(['ok' => false, 'message' => 'Invalid or expired OTP code.'], 422);
     }
-    Cache::forget('otp:'.$validated['phone']);
+    Cache::forget('otp_email:'.$email);
 
     return response()->json(['ok' => true]);
 });

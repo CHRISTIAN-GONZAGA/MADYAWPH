@@ -68,9 +68,11 @@ Without a key, the button still appears but nearby search explains that a key is
 |------|--------|------|
 | List hotels | GET | `/hotels` |
 | Hotel gate (username/password) | POST | `/hotel/access` |
-| New hotel + admin | POST | `/hotel/register` |
+| New hotel — send email OTP | POST | `/hotel/register/send-code` |
+| New hotel — verify OTP + create | POST | `/hotel/register/verify` |
+| Resend registration OTP | POST | `/hotel/register/resend-code` |
 | Admin/staff login → Bearer token | POST | `/auth/portal-login` |
-| Forgot password SMS | POST | `/auth/forgot/send` |
+| Forgot password email OTP | POST | `/auth/forgot/send` |
 | Reset password | POST | `/auth/forgot/reset` |
 | Guest room login → `guest_token` | POST | `/guest/login` |
 | Guest dashboard | GET | `/guest/dashboard` (Bearer `guest_token`) |

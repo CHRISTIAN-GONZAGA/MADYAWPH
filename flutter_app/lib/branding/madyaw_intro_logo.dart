@@ -59,23 +59,22 @@ class _PremiumLogoPainter extends CustomPainter {
 
   static const _markHeight = 120.0;
 
+  bool _isWaveLayer(String id) =>
+      id == 'wave_back' || id == 'wave_mid' || id == 'wave_front';
+
   @override
   void paint(Canvas canvas, Size size) {
     final w = size.width;
     final h = size.height;
     final cx = w * 0.5;
     final scale = (h * 0.72) / _markHeight;
-    final floatY = reduceMotion ? 0.0 : math.sin(breathe * math.pi * 2) * 1.5;
+    final floatY = reduceMotion ? 0.0 : math.sin(breathe * math.pi * 2) * 1.2;
 
     if (glowStrength > 0.01) {
       final glow = Paint()
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 36)
-        ..color = MadyawBrand.brightBlue.withValues(alpha: 0.22 * glowStrength);
-      canvas.drawCircle(Offset(cx, h * 0.38 + floatY), 56 * scale, glow);
-      final glow2 = Paint()
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 64)
-        ..color = MadyawBrand.brightBlue.withValues(alpha: 0.1 * glowStrength);
-      canvas.drawCircle(Offset(cx, h * 0.38 + floatY), 80 * scale, glow2);
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 32)
+        ..color = MadyawBrand.brightBlue.withValues(alpha: 0.16 * glowStrength);
+      canvas.drawCircle(Offset(cx, h * 0.38 + floatY), 52 * scale, glow);
     }
 
     canvas.save();
@@ -84,6 +83,7 @@ class _PremiumLogoPainter extends CustomPainter {
 
     final layers = MadyawBrand.layers();
     final layerCount = layers.length;
+    final waveBob = reduceMotion ? 0.0 : math.sin(breathe * math.pi * 2) * 0.8;
 
     for (var i = 0; i < layerCount; i++) {
       final layer = layers[i];
@@ -95,11 +95,14 @@ class _PremiumLogoPainter extends CustomPainter {
       final eased = Curves.easeOutCubic.transform(local);
       final parallaxX = reduceMotion
           ? 0.0
-          : layer.parallax * 18 * (1 - eased) * (i.isEven ? -1 : 1);
+          : layer.parallax * 14 * (1 - eased) * (i.isEven ? -1 : 1);
+      final layerScale = 0.93 + 0.07 * eased;
+      final waveY = _isWaveLayer(layer.id) && drawProgress > 0.7 ? waveBob : 0.0;
 
       canvas.save();
-      canvas.translate(parallaxX, 0);
-      _paintTrimmedPath(canvas, layer.path, layer.color, eased);
+      canvas.translate(parallaxX, waveY);
+      canvas.scale(layerScale, layerScale);
+      _paintFilledLayer(canvas, layer.path, layer.color, eased);
       canvas.restore();
     }
 
@@ -110,27 +113,17 @@ class _PremiumLogoPainter extends CustomPainter {
     }
   }
 
-  void _paintTrimmedPath(Canvas canvas, Path path, Color color, double t) {
-    final metrics = path.computeMetrics().toList();
-    if (metrics.isEmpty) return;
-
-    final fill = Paint()
-      ..color = color
+  /// Opacity + scale reveal — avoids partial-path line artifacts.
+  void _paintFilledLayer(Canvas canvas, Path path, Color color, double t) {
+    final paint = Paint()
+      ..color = color.withValues(alpha: t.clamp(0.0, 1.0))
       ..style = PaintingStyle.fill
       ..isAntiAlias = true;
-
-    if (t >= 0.98) {
-      canvas.drawPath(path, fill);
-      return;
-    }
-
-    for (final metric in metrics) {
-      canvas.drawPath(metric.extractPath(0, metric.length * t), fill);
-    }
+    canvas.drawPath(path, paint);
   }
 
   void _paintShine(Canvas canvas, Rect bounds) {
-    final sweepW = bounds.width * 0.55;
+    final sweepW = bounds.width * 0.5;
     final x = ui.lerpDouble(
       bounds.left - sweepW,
       bounds.right + sweepW,
@@ -139,18 +132,18 @@ class _PremiumLogoPainter extends CustomPainter {
 
     canvas.saveLayer(bounds, Paint());
     final shine = Paint()
-      ..blendMode = BlendMode.plus
+      ..blendMode = BlendMode.softLight
       ..shader = LinearGradient(
         begin: Alignment.centerLeft,
         end: Alignment.centerRight,
         colors: [
           Colors.transparent,
-          Colors.white.withValues(alpha: 0.0),
-          Colors.white.withValues(alpha: 0.35),
-          Colors.white.withValues(alpha: 0.0),
+          MadyawBrand.brightBlue.withValues(alpha: 0.0),
+          MadyawBrand.brightBlue.withValues(alpha: 0.22),
+          MadyawBrand.brightBlue.withValues(alpha: 0.0),
           Colors.transparent,
         ],
-        stops: const [0.0, 0.35, 0.5, 0.65, 1.0],
+        stops: const [0.0, 0.38, 0.5, 0.62, 1.0],
       ).createShader(Rect.fromLTWH(x, bounds.top, sweepW, bounds.height));
     canvas.drawRect(bounds, shine);
     canvas.restore();
@@ -170,7 +163,7 @@ class MadyawIntroWordmark extends StatelessWidget {
     super.key,
     required this.progress,
     this.fontSize = 28,
-    this.lightOnDark = true,
+    this.lightOnDark = false,
   });
 
   final double progress;
@@ -181,33 +174,37 @@ class MadyawIntroWordmark extends StatelessWidget {
   Widget build(BuildContext context) {
     final letters = MadyawBrand.wordmark.split('');
     final baseColor = lightOnDark ? Colors.white : MadyawBrand.navy;
+    final spacing = math.min(fontSize * 0.14, 6.0);
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      mainAxisSize: MainAxisSize.min,
-      children: List.generate(letters.length, (i) {
-        final slice = 1 / letters.length;
-        final start = i * slice;
-        final local = ((progress - start) / slice).clamp(0.0, 1.0);
-        final eased = Curves.easeOutCubic.transform(local);
-        final y = 14 * (1 - Curves.easeOutBack.transform(local));
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: List.generate(letters.length, (i) {
+          final slice = 1 / letters.length;
+          final start = i * slice;
+          final local = ((progress - start) / slice).clamp(0.0, 1.0);
+          final eased = Curves.easeOutCubic.transform(local);
+          final y = 12 * (1 - Curves.easeOutBack.transform(local));
 
-        return Transform.translate(
-          offset: Offset(0, y),
-          child: Opacity(
-            opacity: eased,
-            child: Text(
-              letters[i],
-              style: TextStyle(
-                fontSize: fontSize,
-                fontWeight: FontWeight.w600,
-                letterSpacing: fontSize * 0.22,
-                color: baseColor.withValues(alpha: 0.92 * eased),
+          return Transform.translate(
+            offset: Offset(0, y),
+            child: Opacity(
+              opacity: eased,
+              child: Text(
+                letters[i],
+                style: TextStyle(
+                  fontSize: fontSize,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: spacing,
+                  color: baseColor.withValues(alpha: 0.94 * eased),
+                ),
               ),
             ),
-          ),
-        );
-      }),
+          );
+        }),
+      ),
     );
   }
 }

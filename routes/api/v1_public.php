@@ -4,8 +4,10 @@ use App\Http\Controllers\Api\V1\ChatMediaController;
 use App\Http\Controllers\Api\V1\GuestPortalApiController;
 use App\Http\Controllers\Api\V1\PortalAuthController;
 use App\Http\Controllers\Api\BookingController;
+use App\Services\AppEmailService;
 use App\Services\PaymentGatewayService;
 use App\Services\SmsService;
+use App\Support\EmailOtp;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Route;
@@ -63,18 +65,22 @@ Route::post('/integrations/run-test', function (
     ]);
 })->middleware('throttle:3,1');
 
-Route::get('/integrations/status', function (SmsService $smsService) {
+Route::get('/integrations/status', function (SmsService $smsService, AppEmailService $emailService) {
     $apiKey = (string) config('services.semaphore.api_key');
 
     return response()->json([
         'app_url' => (string) config('app.url'),
+        'email' => array_merge($emailService->status(), [
+            'mail_mailer' => (string) config('mail.default'),
+            'hint' => $emailService->isConfigured()
+                ? 'Hotel registration OTP and password reset use this mailer.'
+                : 'Set MAIL_MAILER=ses, MAIL_FROM_ADDRESS, and AWS credentials on Render.',
+        ]),
         'sms' => array_merge($smsService->status(), [
             'semaphore_api_key_present' => $apiKey !== '',
             'semaphore_api_key_length' => strlen($apiKey),
             'semaphore_sender' => (string) config('services.semaphore.sender'),
-            'hint' => $apiKey === ''
-                ? 'Set SEMAPHORE_API_KEY on Render, redeploy, then open this URL again.'
-                : 'If sent is still false on register, check Semaphore credits and approved sender name.',
+            'hint' => 'Legacy optional channel — registration and reset now use email OTP.',
         ]),
         'payments' => [
             'xendit' => (string) config('services.xendit.secret_key') !== '',
@@ -87,7 +93,9 @@ Route::get('/locations/philippines', [PortalAuthController::class, 'philippineLo
     ->middleware('throttle:60,1');
 Route::get('/hotels', [PortalAuthController::class, 'hotels']);
 Route::post('/hotel/access', [PortalAuthController::class, 'hotelAccess'])->middleware('throttle:8,1');
-Route::post('/hotel/register', [PortalAuthController::class, 'hotelRegister'])->middleware('throttle:3,1');
+Route::post('/hotel/register/send-code', [PortalAuthController::class, 'hotelRegisterSendCode'])->middleware('throttle:5,1');
+Route::post('/hotel/register/verify', [PortalAuthController::class, 'hotelRegisterVerify'])->middleware('throttle:10,1');
+Route::post('/hotel/register/resend-code', [PortalAuthController::class, 'hotelRegisterResendCode'])->middleware('throttle:5,1');
 Route::post('/auth/portal-login', [PortalAuthController::class, 'portalLogin'])->middleware('throttle:10,1');
 Route::post('/auth/forgot/send', [PortalAuthController::class, 'forgotSend'])->middleware('throttle:5,1');
 Route::post('/auth/forgot/reset', [PortalAuthController::class, 'forgotReset'])->middleware('throttle:8,1');
@@ -104,25 +112,34 @@ Route::get('/bookings/{reference}', [BookingController::class, 'show'])->middlew
 Route::get('/bookings/{reference}/pdf', [BookingController::class, 'confirmationPdf'])->middleware('throttle:30,1');
 Route::get('/my-bookings', [BookingController::class, 'myBookings'])->middleware('throttle:30,1');
 
-Route::post('/otp/send', function (Request $request, SmsService $smsService) {
+Route::post('/otp/send', function (Request $request, AppEmailService $emailService) {
     $validated = $request->validate([
-        'phone' => ['required', 'string', 'max:30'],
+        'email' => ['required', 'email', 'max:255'],
     ]);
-    $otp = (string) random_int(100000, 999999);
-    Cache::put('otp:'.$validated['phone'], $otp, now()->addMinutes(5));
-    $sms = $smsService->sendDetailed(
-        $validated['phone'],
-        "Your MADYAW OTP code is {$otp}. It expires in 5 minutes."
-    );
+    $email = strtolower(trim((string) $validated['email']));
+    $ttlMinutes = 10;
+    $otp = EmailOtp::generate();
+    Cache::put('otp_email:'.$email, EmailOtp::hash($otp), now()->addMinutes($ttlMinutes));
+
+    $mail = $emailService->sendOtp($email, $otp, 'verify your email address', $ttlMinutes);
 
     $payload = [
-        'ok' => true,
-        'expires_in_seconds' => 300,
-        'sms' => $sms->toArray(),
+        'ok' => $mail->sent,
+        'expires_in_seconds' => $ttlMinutes * 60,
+        'email' => $mail->toArray(),
+        'email_masked' => $emailService->maskEmail($email),
     ];
-    if (! $sms->sent) {
-        $payload['otp'] = $otp;
-        $payload['message'] = 'SMS could not be sent. Use otp from this response or fix SEMAPHORE_API_KEY on the server.';
+    if (! $mail->sent) {
+        $payload['message'] = $mail->error ?? 'Email could not be sent.';
+        if (config('app.debug')) {
+            $payload['debug_code'] = $otp;
+        }
+
+        return response()->json($payload, 503);
+    }
+
+    if (config('app.debug') && config('mail.default') === 'log') {
+        $payload['debug_code'] = $otp;
     }
 
     return response()->json($payload);
@@ -130,14 +147,15 @@ Route::post('/otp/send', function (Request $request, SmsService $smsService) {
 
 Route::post('/otp/verify', function (Request $request) {
     $validated = $request->validate([
-        'phone' => ['required', 'string', 'max:30'],
+        'email' => ['required', 'email', 'max:255'],
         'otp' => ['required', 'string', 'size:6'],
     ]);
-    $cached = (string) Cache::get('otp:'.$validated['phone'], '');
-    if ($cached === '' || ! hash_equals($cached, $validated['otp'])) {
-        return response()->json(['ok' => false, 'message' => 'Invalid OTP code.'], 422);
+    $email = strtolower(trim((string) $validated['email']));
+    $cached = (string) Cache::get('otp_email:'.$email, '');
+    if ($cached === '' || ! EmailOtp::matches((string) $validated['otp'], $cached)) {
+        return response()->json(['ok' => false, 'message' => 'Invalid or expired OTP code.'], 422);
     }
-    Cache::forget('otp:'.$validated['phone']);
+    Cache::forget('otp_email:'.$email);
 
     return response()->json(['ok' => true]);
 })->middleware('throttle:15,1');

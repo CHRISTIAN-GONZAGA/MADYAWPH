@@ -35,7 +35,7 @@ class CustomerToolsScreen extends StatelessWidget {
             child: ListTile(
               leading: const Icon(Icons.sms_outlined),
               title: const Text('OTP verification'),
-              subtitle: const Text('Send OTP via SMS and verify'),
+              subtitle: const Text('Send OTP via email and verify'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.of(context).push<void>(
                 MaterialPageRoute<void>(builder: (_) => const OtpScreen()),
@@ -226,30 +226,30 @@ class OtpScreen extends StatefulWidget {
 }
 
 class _OtpScreenState extends State<OtpScreen> {
-  final _phone = TextEditingController();
+  final _email = TextEditingController();
   final _otp = TextEditingController();
   String? _error;
   bool _busy = false;
 
   @override
   void dispose() {
-    _phone.dispose();
+    _email.dispose();
     _otp.dispose();
     super.dispose();
   }
 
   Future<void> _send() async {
-    final phone = _phone.text.trim();
-    if (phone.isEmpty) return;
+    final email = _email.text.trim();
+    if (email.isEmpty) return;
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      await publicDio().post('/otp/send', data: {'phone': phone});
+      await publicDio().post('/otp/send', data: {'email': email});
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('OTP sent.')));
+          .showSnackBar(const SnackBar(content: Text('OTP sent to your email.')));
     } on DioException catch (e) {
       setState(() => _error = dioErrorMessage(e));
     } finally {
@@ -258,16 +258,16 @@ class _OtpScreenState extends State<OtpScreen> {
   }
 
   Future<void> _verify() async {
-    final phone = _phone.text.trim();
+    final email = _email.text.trim();
     final otp = _otp.text.trim();
-    if (phone.isEmpty || otp.length != 6) return;
+    if (email.isEmpty || otp.length != 6) return;
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
       final res = await publicDio().post<Map<String, dynamic>>('/otp/verify',
-          data: {'phone': phone, 'otp': otp});
+          data: {'email': email, 'otp': otp});
       final ok = res.data?['ok'] == true;
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -288,10 +288,10 @@ class _OtpScreenState extends State<OtpScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           AppInput(
-            controller: _phone,
-            label: 'Phone',
-            hint: 'E.164 e.g. +63917xxxxxxx',
-            keyboardType: TextInputType.phone,
+            controller: _email,
+            label: 'Email',
+            hint: 'you@example.com',
+            keyboardType: TextInputType.emailAddress,
           ),
           const SizedBox(height: 12),
           AppInput(

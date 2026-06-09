@@ -8,10 +8,11 @@ use App\Models\Hotel;
 use App\Models\HotelCredit;
 use App\Models\PersonalAccessToken;
 use App\Models\User;
-use App\Support\HotelRegistrationCredits;
+use App\Services\AppEmailService;
 use App\Services\GoogleMapsGeocoder;
-use App\Services\SmsService;
+use App\Support\EmailOtp;
 use App\Support\HotelDirectory;
+use App\Support\HotelRegistrationCredits;
 use App\Support\PhilippineLocations;
 use App\Support\PortalPassword;
 use Illuminate\Http\JsonResponse;
@@ -26,8 +27,10 @@ class PortalAuthController extends Controller
 {
     public const HOTELS_DIRECTORY_CACHE_KEY = 'api.v1.hotels.directory';
 
+    private const PENDING_REGISTER_PREFIX = 'hotel_register_pending:';
+
     public function __construct(
-        private readonly SmsService $smsService,
+        private readonly AppEmailService $appEmailService,
         private readonly GoogleMapsGeocoder $googleMapsGeocoder,
     ) {}
 
@@ -54,25 +57,12 @@ class PortalAuthController extends Controller
         ], 410);
     }
 
-    public function hotelRegister(Request $request): JsonResponse
+    /**
+     * Step 1 — validate registration details and email a 6-digit OTP to admin_email.
+     */
+    public function hotelRegisterSendCode(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'username' => ['required', 'string', 'max:255', 'unique:users,name'],
-            'password' => ['required', 'string', 'min:6', 'max:64', 'confirmed'],
-            'hotel_name' => ['required', 'string', 'max:255'],
-            'location' => ['nullable', 'string', 'max:500'],
-            'region' => ['required', 'string', 'max:120'],
-            'province' => ['required', 'string', 'max:120'],
-            'city' => ['required', 'string', 'max:120'],
-            'barangay' => ['required', 'string', 'max:120'],
-            'street_address' => ['nullable', 'string', 'max:255'],
-            'contact_number' => ['required', 'string', 'max:30'],
-            'admin_email' => ['required', 'email', 'max:255', 'unique:users,email'],
-            'total_rooms' => ['required', 'integer', 'min:1', 'max:5000'],
-        ]);
-
-        $validated['username'] = trim((string) $validated['username']);
-        $validated['password'] = (string) $validated['password'];
+        $validated = $this->validateRegistrationInput($request);
 
         $operatorLogin = $validated['username'].'_admin';
         if (User::withoutGlobalScopes()->where('name', $operatorLogin)->exists()) {
@@ -82,131 +72,149 @@ class PortalAuthController extends Controller
             ], 422);
         }
 
-        $totalRooms = (int) $validated['total_rooms'];
-        $freeCredits = HotelRegistrationCredits::freeCreditsForRoomCount($totalRooms);
-        $lowBalanceThreshold = (float) config(
-            'services.hotel_credits.low_balance_threshold',
-            3000
+        $email = strtolower(trim((string) $validated['admin_email']));
+        $ttlMinutes = (int) config('services.email_otp.registration_ttl_minutes', 10);
+        $code = EmailOtp::generate();
+        $token = (string) Str::uuid();
+
+        Cache::put(self::PENDING_REGISTER_PREFIX.$token, [
+            'payload' => $validated,
+            'email' => $email,
+            'code_hash' => EmailOtp::hash($code),
+            'expires_at' => now()->addMinutes($ttlMinutes)->toISOString(),
+        ], now()->addMinutes($ttlMinutes));
+
+        $mail = $this->appEmailService->sendOtp(
+            $email,
+            $code,
+            'complete your hotel registration',
+            $ttlMinutes,
         );
 
-        $address = PhilippineLocations::normalizeRegistrationAddress($validated);
+        if (! $mail->sent) {
+            Cache::forget(self::PENDING_REGISTER_PREFIX.$token);
 
-        $hotel = Hotel::withoutGlobalScopes()->create([
-            'name' => $validated['hotel_name'],
-            'location' => $address['location'],
-            'city' => HotelDirectory::normalizeRegionLabel($address['city_label']),
-            'region' => HotelDirectory::normalizeRegionLabel($address['region']),
-            'province' => $address['province'],
-            'barangay' => $address['barangay'],
-            'street_address' => $address['street_address'],
-            'contact_number' => $validated['contact_number'],
-            'access_username' => $validated['username'],
-            'access_password' => Hash::make($validated['password']),
-            'total_rooms' => $totalRooms,
-        ]);
+            $payload = [
+                'ok' => false,
+                'email' => $mail->toArray(),
+                'message' => $mail->error ?? 'Could not send verification email.',
+            ];
+            if (config('app.debug')) {
+                $payload['debug_code'] = $code;
+            }
 
-        HotelDirectory::assignCoordinates($hotel->fresh() ?? $hotel, $this->googleMapsGeocoder);
-
-        HotelCredit::withoutGlobalScopes()->create([
-            'hotel_id' => (string) $hotel->id,
-            'current_credits' => $freeCredits,
-            'warning_threshold' => $lowBalanceThreshold,
-            'custom_markup_percentage' => 10,
-            'total_spent' => 0,
-            'transactions' => [
-                [
-                    'id' => (string) Str::uuid(),
-                    'type' => 'registration_bonus',
-                    'description' => sprintf(
-                        'Welcome credits for %d room(s) (%s tier)',
-                        $totalRooms,
-                        HotelRegistrationCredits::tierRangeLabel($totalRooms)
-                    ),
-                    'amount' => $freeCredits,
-                    'timestamp' => now()->toISOString(),
-                    'balanceAfter' => $freeCredits,
-                    'transactionId' => 'registration-bonus-'.(string) $hotel->id,
-                    'total_rooms' => $totalRooms,
-                ],
-            ],
-        ]);
-
-        Cache::forget(self::HOTELS_DIRECTORY_CACHE_KEY);
-
-        $ownerPassword = (string) $validated['password'];
-
-        $super = User::withoutGlobalScopes()->create([
-            'hotel_id' => (string) $hotel->id,
-            'name' => $validated['username'],
-            'email' => 'super.'.substr(sha1((string) $hotel->id), 0, 12).'@super.local',
-            'password' => $ownerPassword,
-            'role' => UserRole::SUPER_ADMIN,
-        ]);
-
-        $admin = User::withoutGlobalScopes()->create([
-            'hotel_id' => (string) $hotel->id,
-            'name' => $operatorLogin,
-            'email' => $validated['admin_email'],
-            'password' => $ownerPassword,
-            'role' => UserRole::ADMIN,
-        ]);
-
-        $this->ensurePortalPasswordStored($ownerPassword, $super);
-        $this->ensurePortalPasswordStored($ownerPassword, $admin);
-
-        $super->refresh();
-        $admin->refresh();
-        $passwordsVerified = PortalPassword::verify($ownerPassword, $super)
-            && PortalPassword::verify($ownerPassword, $admin);
-
-        $verificationCode = (string) random_int(100000, 999999);
-        Cache::put('hotel_verify:'.(string) $hotel->id, $verificationCode, now()->addHours(24));
-
-        $sms = $this->smsService->sendDetailed(
-            $validated['contact_number'],
-            "MADYAW Hotel verification code: {$verificationCode}. Keep this for your records.",
-            (string) $hotel->id,
-            $admin
-        );
-
-        $token = $admin->createToken('flutter-register')->plainTextToken;
-
-        $payload = [
-            'hotel_id' => (string) $hotel->id,
-            'token' => $token,
-            'user' => $admin,
-            'welcome_credits' => [
-                'total_rooms' => $totalRooms,
-                'free_credits' => $freeCredits,
-                'tier_label' => HotelRegistrationCredits::tierRangeLabel($totalRooms),
-                'credits_per_tier' => HotelRegistrationCredits::CREDITS_PER_TIER,
-                'rooms_per_tier' => HotelRegistrationCredits::ROOMS_PER_TIER,
-            ],
-            'sms' => $sms->toArray(),
-            'message' => $sms->sent
-                ? 'Hotel registered. Verification code sent by SMS to '.$sms->normalizedPhone.'.'
-                : 'Hotel registered. SMS was not delivered — use verification_code below (also check SEMAPHORE_API_KEY on the server).',
-            'registration_password' => $ownerPassword,
-            'passwords_verified' => $passwordsVerified,
-            'portal_accounts' => [
-                'super_admin' => [
-                    'username' => $validated['username'],
-                    'password' => $ownerPassword,
-                    'note' => 'Role menu → Super admin. Password is the one you chose on the registration form.',
-                ],
-                'admin' => [
-                    'username' => $operatorLogin,
-                    'password' => $ownerPassword,
-                    'note' => 'Role menu → Administrator. Same password as registration; username ends with _admin.',
-                ],
-            ],
-        ];
-
-        if (! $sms->sent) {
-            $payload['verification_code'] = $verificationCode;
+            return response()->json($payload, 503);
         }
 
-        return response()->json($payload, 201);
+        $response = [
+            'ok' => true,
+            'registration_token' => $token,
+            'email' => $mail->toArray(),
+            'email_masked' => $this->appEmailService->maskEmail($email),
+            'expires_in_seconds' => $ttlMinutes * 60,
+            'message' => 'Verification code sent to '.$this->appEmailService->maskEmail($email).'.',
+        ];
+
+        if (config('app.debug') && config('mail.default') === 'log') {
+            $response['debug_code'] = $code;
+        }
+
+        return response()->json($response);
+    }
+
+    /**
+     * Step 2 — verify OTP, then create the hotel and portal accounts.
+     */
+    public function hotelRegisterVerify(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'registration_token' => ['required', 'string', 'max:64'],
+            'code' => ['required', 'string', 'size:6'],
+        ]);
+
+        $pending = Cache::get(self::PENDING_REGISTER_PREFIX.$validated['registration_token']);
+        if (! is_array($pending)) {
+            return response()->json([
+                'message' => 'Registration session expired. Please start again and request a new code.',
+            ], 422);
+        }
+
+        $codeHash = (string) ($pending['code_hash'] ?? '');
+        if ($codeHash === '' || ! EmailOtp::matches((string) $validated['code'], $codeHash)) {
+            return response()->json(['message' => 'Invalid or expired verification code.'], 422);
+        }
+
+        $registration = $pending['payload'] ?? null;
+        if (! is_array($registration)) {
+            return response()->json(['message' => 'Registration data is missing. Please start again.'], 422);
+        }
+
+        Cache::forget(self::PENDING_REGISTER_PREFIX.$validated['registration_token']);
+
+        return $this->finalizeHotelRegistration($registration);
+    }
+
+    /**
+     * Resend OTP for an in-progress registration (same token, new code).
+     */
+    public function hotelRegisterResendCode(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'registration_token' => ['required', 'string', 'max:64'],
+        ]);
+
+        $cacheKey = self::PENDING_REGISTER_PREFIX.$validated['registration_token'];
+        $pending = Cache::get($cacheKey);
+        if (! is_array($pending)) {
+            return response()->json([
+                'message' => 'Registration session expired. Please start again.',
+            ], 422);
+        }
+
+        $email = strtolower(trim((string) ($pending['email'] ?? '')));
+        if ($email === '') {
+            return response()->json(['message' => 'Registration data is invalid. Please start again.'], 422);
+        }
+
+        $ttlMinutes = (int) config('services.email_otp.registration_ttl_minutes', 10);
+        $code = EmailOtp::generate();
+        $pending['code_hash'] = EmailOtp::hash($code);
+        $pending['expires_at'] = now()->addMinutes($ttlMinutes)->toISOString();
+        Cache::put($cacheKey, $pending, now()->addMinutes($ttlMinutes));
+
+        $mail = $this->appEmailService->sendOtp(
+            $email,
+            $code,
+            'complete your hotel registration',
+            $ttlMinutes,
+        );
+
+        if (! $mail->sent) {
+            $payload = [
+                'ok' => false,
+                'email' => $mail->toArray(),
+                'message' => $mail->error ?? 'Could not resend verification email.',
+            ];
+            if (config('app.debug')) {
+                $payload['debug_code'] = $code;
+            }
+
+            return response()->json($payload, 503);
+        }
+
+        $response = [
+            'ok' => true,
+            'email' => $mail->toArray(),
+            'email_masked' => $this->appEmailService->maskEmail($email),
+            'expires_in_seconds' => $ttlMinutes * 60,
+            'message' => 'A new verification code was sent.',
+        ];
+
+        if (config('app.debug') && config('mail.default') === 'log') {
+            $response['debug_code'] = $code;
+        }
+
+        return response()->json($response);
     }
 
     public function portalLogin(Request $request): JsonResponse
@@ -322,39 +330,44 @@ class PortalAuthController extends Controller
             return response()->json(['message' => 'No matching account found.'], 422);
         }
 
-        $hotel = Hotel::withoutGlobalScopes()->find((string) $user->hotel_id);
-        $hotelContact = (string) ($hotel?->contact_number ?? '');
-        if ($hotelContact === '') {
-            return response()->json(['message' => 'No hotel contact number found for this username.'], 422);
+        $email = strtolower(trim((string) ($user->email ?? '')));
+        if ($email === '' || str_ends_with($email, '@super.local')) {
+            return response()->json([
+                'message' => 'No email address is on file for this account. Contact your hotel administrator.',
+            ], 422);
         }
 
-        $code = (string) random_int(100000, 999999);
+        $ttlMinutes = (int) config('services.email_otp.password_reset_ttl_minutes', 30);
+        $code = EmailOtp::generate();
+
         Cache::put('password_reset:'.(string) $user->id, [
             'hotel_id' => (string) $user->hotel_id,
             'user_id' => (string) $user->id,
             'role' => $user->roleValue(),
-            'code' => $code,
-        ], now()->addMinutes(30));
+            'code_hash' => EmailOtp::hash($code),
+        ], now()->addMinutes($ttlMinutes));
 
-        $sms = $this->smsService->sendDetailed(
-            $hotelContact,
-            "MADYAW password reset code: {$code}",
-            (string) $user->hotel_id,
-            $user
+        $mail = $this->appEmailService->sendOtp(
+            $email,
+            $code,
+            'reset your MADYAW password',
+            $ttlMinutes,
         );
 
         $payload = [
-            'ok' => true,
-            'sms' => $sms->toArray(),
-            'message' => $sms->sent
-                ? 'Reset code sent to the hotel number ending in '.substr($hotelContact, -4).'.'
-                : 'Reset code could not be sent by SMS. Ask your server admin to configure SEMAPHORE_API_KEY.',
+            'ok' => $mail->sent,
+            'email' => $mail->toArray(),
+            'email_masked' => $this->appEmailService->maskEmail($email),
+            'message' => $mail->sent
+                ? 'Reset code sent to '.$this->appEmailService->maskEmail($email).'.'
+                : ($mail->error ?? 'Reset code could not be sent by email.'),
         ];
-        if (! $sms->sent) {
-            $payload['reset_code'] = $code;
+
+        if (! $mail->sent && config('app.debug')) {
+            $payload['debug_code'] = $code;
         }
 
-        return response()->json($payload);
+        return response()->json($payload, $mail->sent ? 200 : 503);
     }
 
     public function forgotReset(Request $request): JsonResponse
@@ -371,8 +384,13 @@ class PortalAuthController extends Controller
         }
 
         $context = Cache::get('password_reset:'.(string) $user->id);
-        if (! is_array($context) || ! hash_equals((string) ($context['code'] ?? ''), (string) $validated['code'])) {
-            return response()->json(['message' => 'Invalid reset code.'], 422);
+        if (! is_array($context)) {
+            return response()->json(['message' => 'Invalid or expired reset code.'], 422);
+        }
+
+        $codeHash = (string) ($context['code_hash'] ?? '');
+        if ($codeHash === '' || ! EmailOtp::matches((string) $validated['code'], $codeHash)) {
+            return response()->json(['message' => 'Invalid or expired reset code.'], 422);
         }
 
         if ((string) ($context['user_id'] ?? '') !== (string) $user->id) {
@@ -383,6 +401,149 @@ class PortalAuthController extends Controller
         Cache::forget('password_reset:'.(string) $user->id);
 
         return response()->json(['ok' => true, 'message' => 'Password updated. You may now sign in.']);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function validateRegistrationInput(Request $request): array
+    {
+        $validated = $request->validate([
+            'username' => ['required', 'string', 'max:255', 'unique:users,name'],
+            'password' => ['required', 'string', 'min:6', 'max:64', 'confirmed'],
+            'hotel_name' => ['required', 'string', 'max:255'],
+            'location' => ['nullable', 'string', 'max:500'],
+            'region' => ['required', 'string', 'max:120'],
+            'province' => ['required', 'string', 'max:120'],
+            'city' => ['required', 'string', 'max:120'],
+            'barangay' => ['required', 'string', 'max:120'],
+            'street_address' => ['nullable', 'string', 'max:255'],
+            'contact_number' => ['required', 'string', 'max:30'],
+            'admin_email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'total_rooms' => ['required', 'integer', 'min:1', 'max:5000'],
+        ]);
+
+        $validated['username'] = trim((string) $validated['username']);
+        $validated['password'] = (string) $validated['password'];
+        $validated['admin_email'] = strtolower(trim((string) $validated['admin_email']));
+
+        return $validated;
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function finalizeHotelRegistration(array $validated): JsonResponse
+    {
+        $totalRooms = (int) $validated['total_rooms'];
+        $freeCredits = HotelRegistrationCredits::freeCreditsForRoomCount($totalRooms);
+        $lowBalanceThreshold = (float) config(
+            'services.hotel_credits.low_balance_threshold',
+            3000
+        );
+
+        $address = PhilippineLocations::normalizeRegistrationAddress($validated);
+
+        $hotel = Hotel::withoutGlobalScopes()->create([
+            'name' => $validated['hotel_name'],
+            'location' => $address['location'],
+            'city' => HotelDirectory::normalizeRegionLabel($address['city_label']),
+            'region' => HotelDirectory::normalizeRegionLabel($address['region']),
+            'province' => $address['province'],
+            'barangay' => $address['barangay'],
+            'street_address' => $address['street_address'],
+            'contact_number' => $validated['contact_number'],
+            'access_username' => $validated['username'],
+            'access_password' => Hash::make($validated['password']),
+            'total_rooms' => $totalRooms,
+        ]);
+
+        HotelDirectory::assignCoordinates($hotel->fresh() ?? $hotel, $this->googleMapsGeocoder);
+
+        HotelCredit::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'current_credits' => $freeCredits,
+            'warning_threshold' => $lowBalanceThreshold,
+            'custom_markup_percentage' => 10,
+            'total_spent' => 0,
+            'transactions' => [
+                [
+                    'id' => (string) Str::uuid(),
+                    'type' => 'registration_bonus',
+                    'description' => sprintf(
+                        'Welcome credits for %d room(s) (%s tier)',
+                        $totalRooms,
+                        HotelRegistrationCredits::tierRangeLabel($totalRooms)
+                    ),
+                    'amount' => $freeCredits,
+                    'timestamp' => now()->toISOString(),
+                    'balanceAfter' => $freeCredits,
+                    'transactionId' => 'registration-bonus-'.(string) $hotel->id,
+                    'total_rooms' => $totalRooms,
+                ],
+            ],
+        ]);
+
+        Cache::forget(self::HOTELS_DIRECTORY_CACHE_KEY);
+
+        $ownerPassword = (string) $validated['password'];
+        $verifiedAt = now();
+
+        $super = User::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => $validated['username'],
+            'email' => 'super.'.substr(sha1((string) $hotel->id), 0, 12).'@super.local',
+            'password' => $ownerPassword,
+            'role' => UserRole::SUPER_ADMIN,
+        ]);
+
+        $admin = User::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => $validated['username'].'_admin',
+            'email' => $validated['admin_email'],
+            'password' => $ownerPassword,
+            'role' => UserRole::ADMIN,
+            'email_verified_at' => $verifiedAt,
+        ]);
+
+        $this->ensurePortalPasswordStored($ownerPassword, $super);
+        $this->ensurePortalPasswordStored($ownerPassword, $admin);
+
+        $super->refresh();
+        $admin->refresh();
+        $passwordsVerified = PortalPassword::verify($ownerPassword, $super)
+            && PortalPassword::verify($ownerPassword, $admin);
+
+        $token = $admin->createToken('flutter-register')->plainTextToken;
+
+        return response()->json([
+            'hotel_id' => (string) $hotel->id,
+            'token' => $token,
+            'user' => $admin,
+            'email_verified' => true,
+            'welcome_credits' => [
+                'total_rooms' => $totalRooms,
+                'free_credits' => $freeCredits,
+                'tier_label' => HotelRegistrationCredits::tierRangeLabel($totalRooms),
+                'credits_per_tier' => HotelRegistrationCredits::CREDITS_PER_TIER,
+                'rooms_per_tier' => HotelRegistrationCredits::ROOMS_PER_TIER,
+            ],
+            'message' => 'Hotel registered. Your email has been verified.',
+            'registration_password' => $ownerPassword,
+            'passwords_verified' => $passwordsVerified,
+            'portal_accounts' => [
+                'super_admin' => [
+                    'username' => $validated['username'],
+                    'password' => $ownerPassword,
+                    'note' => 'Role menu → Super admin. Password is the one you chose on the registration form.',
+                ],
+                'admin' => [
+                    'username' => $validated['username'].'_admin',
+                    'password' => $ownerPassword,
+                    'note' => 'Role menu → Administrator. Same password as registration; username ends with _admin.',
+                ],
+            ],
+        ], 201);
     }
 
     private function passwordMatchesUser(string $plainPassword, User $user): bool

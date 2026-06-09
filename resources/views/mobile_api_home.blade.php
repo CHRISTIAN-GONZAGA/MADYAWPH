@@ -31,7 +31,8 @@
 
     <h2>Integrations (.env)</h2>
     <ul>
-        <li><strong>SMS:</strong> Semaphore — <code>SEMAPHORE_API_KEY</code>, <code>SEMAPHORE_SENDER_NAME</code></li>
+        <li><strong>Email OTP:</strong> Amazon SES — <code>MAIL_MAILER=ses</code>, <code>MAIL_FROM_ADDRESS</code>, <code>AWS_ACCESS_KEY_ID</code>, <code>AWS_SECRET_ACCESS_KEY</code>, <code>AWS_DEFAULT_REGION</code></li>
+        <li><strong>SMS (legacy):</strong> Semaphore — <code>SEMAPHORE_API_KEY</code></li>
         <li><strong>Payments:</strong> Xendit — <code>XENDIT_SECRET_KEY</code>, webhook <code>POST {{ rtrim($appUrl, '/') }}/webhooks/xendit</code></li>
     </ul>
     <p><small>See <code>.env.example</code> for placeholders and setup steps.</small></p>

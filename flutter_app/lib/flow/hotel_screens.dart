@@ -1605,8 +1605,12 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
   PhilippineAddressSelection _address = const PhilippineAddressSelection();
   final _adminEmail = TextEditingController();
   final _totalRooms = TextEditingController(text: '1');
+  final _otpCode = TextEditingController();
   bool _busy = false;
   String? _error;
+  int _step = 0;
+  String? _registrationToken;
+  String? _emailMasked;
 
   int _estimatedWelcomeCredits() {
     final n = int.tryParse(_totalRooms.text.trim()) ?? 0;
@@ -1623,10 +1627,22 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
     _contact.dispose();
     _adminEmail.dispose();
     _totalRooms.dispose();
+    _otpCode.dispose();
     super.dispose();
   }
 
-  Future<void> _submit() async {
+  Map<String, dynamic> _registrationPayload() => {
+        'username': _username.text.trim(),
+        'password': _password.text,
+        'password_confirmation': _password2.text,
+        'hotel_name': _hotelName.text.trim(),
+        ..._address.toRegisterPayload(),
+        'contact_number': _contact.text.trim(),
+        'admin_email': _adminEmail.text.trim(),
+        'total_rooms': int.tryParse(_totalRooms.text.trim()) ?? 1,
+      };
+
+  Future<void> _sendVerificationCode() async {
     if (!_address.isComplete) {
       setState(() => _error = 'Select region, province, city, and barangay.');
       return;
@@ -1637,21 +1653,98 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
     });
     try {
       final res = await publicDio().post<Map<String, dynamic>>(
-        '/hotel/register',
+        '/hotel/register/send-code',
+        data: _registrationPayload(),
+      );
+      final token = (res.data?['registration_token'] ?? '').toString();
+      if (token.isEmpty) {
+        setState(() {
+          _error = 'Could not start email verification.';
+          _busy = false;
+        });
+        return;
+      }
+      if (!mounted) return;
+      setState(() {
+        _registrationToken = token;
+        _emailMasked = (res.data?['email_masked'] ?? _adminEmail.text.trim())
+            .toString();
+        _step = 1;
+        _busy = false;
+        _otpCode.clear();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Verification code sent to $_emailMasked. Check your inbox.',
+          ),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } on DioException catch (e) {
+      setState(() {
+        _error = dioErrorMessage(e);
+        _busy = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = '$e';
+        _busy = false;
+      });
+    }
+  }
+
+  Future<void> _resendCode() async {
+    final token = _registrationToken;
+    if (token == null || token.isEmpty) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await publicDio().post<Map<String, dynamic>>(
+        '/hotel/register/resend-code',
+        data: {'registration_token': token},
+      );
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('A new verification code was sent.')),
+      );
+    } on DioException catch (e) {
+      setState(() {
+        _error = dioErrorMessage(e);
+        _busy = false;
+      });
+    }
+  }
+
+  Future<void> _verifyAndCreate() async {
+    final token = _registrationToken;
+    final code = _otpCode.text.trim();
+    if (token == null || token.isEmpty) {
+      setState(() => _error = 'Session expired. Go back and try again.');
+      return;
+    }
+    if (code.length != 6) {
+      setState(() => _error = 'Enter the 6-digit code from your email.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final res = await publicDio().post<Map<String, dynamic>>(
+        '/hotel/register/verify',
         data: {
-          'username': _username.text.trim(),
-          'password': _password.text,
-          'password_confirmation': _password2.text,
-          'hotel_name': _hotelName.text.trim(),
-          ..._address.toRegisterPayload(),
-          'contact_number': _contact.text.trim(),
-          'admin_email': _adminEmail.text.trim(),
-          'total_rooms': int.tryParse(_totalRooms.text.trim()) ?? 1,
+          'registration_token': token,
+          'code': code,
         },
       );
       final hid = res.data?['hotel_id'] as String?;
-      final token = res.data?['token'] as String?;
-      if (hid == null || token == null || token.isEmpty) {
+      final authToken = res.data?['token'] as String?;
+      if (hid == null || authToken == null || authToken.isEmpty) {
         setState(() {
           _error = 'Unexpected response.';
           _busy = false;
@@ -1660,34 +1753,16 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
       }
       final name = _hotelName.text.trim();
       await AuthStorage.setHotelContext(id: hid, name: name);
-      await AuthStorage.setPortalAuth(token: token, role: 'admin');
+      await AuthStorage.setPortalAuth(token: authToken, role: 'admin');
       await AuthStorage.clearGuestAuth();
       await AuthStorage.clearHotelsDirectoryCache();
       if (!mounted) return;
-      final sms = res.data?['sms'] as Map<String, dynamic>?;
-      final smsSent = sms?['sent'] == true;
-      final verificationCode =
-          (res.data?['verification_code'] ?? '').toString();
-      if (!smsSent && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              verificationCode.isNotEmpty
-                  ? 'SMS not delivered. Verification code: $verificationCode (also in the next screen).'
-                  : 'SMS not delivered. Check server SEMAPHORE_API_KEY or Semaphore dashboard.',
-            ),
-            duration: const Duration(seconds: 8),
-          ),
-        );
-      }
       await showHotelRegistrationCredentialsDialog(
         context,
         hotelName: name,
         portalAccounts: res.data?['portal_accounts'] as Map<String, dynamic>?,
         welcomeCredits: res.data?['welcome_credits'] as Map<String, dynamic>?,
-        sms: sms,
-        verificationCode:
-            verificationCode.isNotEmpty ? verificationCode : null,
+        verifiedEmail: _adminEmail.text.trim(),
         registrationUsername: _username.text.trim(),
         registrationPassword: _password.text,
       );
@@ -1710,90 +1785,160 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      appBar: AppBar(title: const Text('Create hotel')),
+      appBar: AppBar(
+        title: Text(_step == 0 ? 'Create hotel' : 'Verify email'),
+        leading: _step == 1
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: _busy
+                    ? null
+                    : () => setState(() {
+                          _step = 0;
+                          _error = null;
+                        }),
+              )
+            : null,
+      ),
       body: ListView(
         padding: const EdgeInsets.all(24),
-        children: [
-          TextField(
-            controller: _hotelName,
-            decoration: const InputDecoration(labelText: 'Hotel name', border: OutlineInputBorder()),
-            textInputAction: TextInputAction.next,
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _totalRooms,
-            decoration: InputDecoration(
-              labelText: 'Total number of rooms *',
-              border: const OutlineInputBorder(),
-              helperText:
-                  'Welcome credits: 1–20 rooms → ₱10,000; 21–40 → ₱20,000; '
-                  '41–60 → ₱30,000 (+₱10,000 per 20 rooms). '
-                  'Estimated: ₱${_estimatedWelcomeCredits()}.',
-            ),
-            keyboardType: TextInputType.number,
-            textInputAction: TextInputAction.next,
-            onChanged: (_) => setState(() {}),
-          ),
-          const SizedBox(height: 12),
-          PhilippineAddressPicker(
-            onChanged: (v) => setState(() => _address = v),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _contact,
-            decoration: const InputDecoration(labelText: 'Contact number (SMS)', border: OutlineInputBorder()),
-            keyboardType: TextInputType.phone,
-            textInputAction: TextInputAction.next,
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _adminEmail,
-            decoration: const InputDecoration(labelText: 'Admin email', border: OutlineInputBorder()),
-            keyboardType: TextInputType.emailAddress,
-            textInputAction: TextInputAction.next,
-          ),
-          const SizedBox(height: 16),
-          const Divider(),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _username,
-            decoration: const InputDecoration(
-              labelText: 'Owner username (internal)',
-              border: OutlineInputBorder(),
-              helperText: 'For super admin sign-in; not used on the hotel picker',
-            ),
-            autocorrect: false,
-            textInputAction: TextInputAction.next,
-          ),
-          const SizedBox(height: 12),
-          AppPasswordField(
-            controller: _password,
-            labelText: 'Password',
-            textInputAction: TextInputAction.next,
-          ),
-          const SizedBox(height: 12),
-          AppPasswordField(
-            controller: _password2,
-            labelText: 'Confirm password',
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-          ],
-          const SizedBox(height: 20),
-          FilledButton(
-            onPressed: _busy ? null : _submit,
-            child: _busy
-                ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Create hotel'),
-          ),
-        ],
+        children: _step == 0 ? _buildDetailsStep(context) : _buildOtpStep(context),
       ),
     );
+  }
+
+  List<Widget> _buildDetailsStep(BuildContext context) {
+    return [
+      TextField(
+        controller: _hotelName,
+        decoration: const InputDecoration(labelText: 'Hotel name', border: OutlineInputBorder()),
+        textInputAction: TextInputAction.next,
+      ),
+      const SizedBox(height: 12),
+      TextField(
+        controller: _totalRooms,
+        decoration: InputDecoration(
+          labelText: 'Total number of rooms *',
+          border: const OutlineInputBorder(),
+          helperText:
+              'Welcome credits: 1–20 rooms → ₱10,000; 21–40 → ₱20,000; '
+              '41–60 → ₱30,000 (+₱10,000 per 20 rooms). '
+              'Estimated: ₱${_estimatedWelcomeCredits()}.',
+        ),
+        keyboardType: TextInputType.number,
+        textInputAction: TextInputAction.next,
+        onChanged: (_) => setState(() {}),
+      ),
+      const SizedBox(height: 12),
+      PhilippineAddressPicker(
+        onChanged: (v) => setState(() => _address = v),
+      ),
+      const SizedBox(height: 12),
+      TextField(
+        controller: _contact,
+        decoration: const InputDecoration(labelText: 'Contact number', border: OutlineInputBorder()),
+        keyboardType: TextInputType.phone,
+        textInputAction: TextInputAction.next,
+      ),
+      const SizedBox(height: 12),
+      TextField(
+        controller: _adminEmail,
+        decoration: const InputDecoration(
+          labelText: 'Admin email',
+          helperText: 'We will send a 6-digit verification code to this address.',
+          border: OutlineInputBorder(),
+        ),
+        keyboardType: TextInputType.emailAddress,
+        textInputAction: TextInputAction.next,
+      ),
+      const SizedBox(height: 16),
+      const Divider(),
+      const SizedBox(height: 8),
+      TextField(
+        controller: _username,
+        decoration: const InputDecoration(
+          labelText: 'Owner username (internal)',
+          border: OutlineInputBorder(),
+          helperText: 'For super admin sign-in; not used on the hotel picker',
+        ),
+        autocorrect: false,
+        textInputAction: TextInputAction.next,
+      ),
+      const SizedBox(height: 12),
+      AppPasswordField(
+        controller: _password,
+        labelText: 'Password',
+        textInputAction: TextInputAction.next,
+      ),
+      const SizedBox(height: 12),
+      AppPasswordField(
+        controller: _password2,
+        labelText: 'Confirm password',
+      ),
+      if (_error != null) ...[
+        const SizedBox(height: 12),
+        Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+      ],
+      const SizedBox(height: 20),
+      FilledButton(
+        onPressed: _busy ? null : _sendVerificationCode,
+        child: _busy
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Text('Send verification code'),
+      ),
+    ];
+  }
+
+  List<Widget> _buildOtpStep(BuildContext context) {
+    return [
+      Text(
+        'Enter the 6-digit code sent to ${_emailMasked ?? _adminEmail.text.trim()}.',
+        style: Theme.of(context).textTheme.bodyLarge,
+      ),
+      const SizedBox(height: 8),
+      Text(
+        'The code expires in 10 minutes. Check spam if you do not see it.',
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+      ),
+      const SizedBox(height: 20),
+      TextField(
+        controller: _otpCode,
+        decoration: const InputDecoration(
+          labelText: 'Verification code',
+          border: OutlineInputBorder(),
+          hintText: '000000',
+        ),
+        keyboardType: TextInputType.number,
+        maxLength: 6,
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontSize: 24, letterSpacing: 8, fontWeight: FontWeight.w600),
+      ),
+      if (_error != null) ...[
+        const SizedBox(height: 12),
+        Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+      ],
+      const SizedBox(height: 20),
+      FilledButton(
+        onPressed: _busy ? null : _verifyAndCreate,
+        child: _busy
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Text('Verify & create hotel'),
+      ),
+      const SizedBox(height: 12),
+      TextButton(
+        onPressed: _busy ? null : _resendCode,
+        child: const Text('Resend code'),
+      ),
+    ];
   }
 }
 

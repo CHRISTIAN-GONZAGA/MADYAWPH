@@ -120,7 +120,7 @@ class _HowToSheet extends StatelessWidget {
                   title: '8. Tips & troubleshooting',
                   body:
                       '• Save credentials shown after registration — they are not emailed by default.\n'
-                      '• Forgot admin/staff password? Use forgot-password flow (SMS code to hotel contact number).\n'
+                      '• Forgot admin/staff password? Use forgot-password flow (email code to your account email).\n'
                       '• If reports look empty, confirm bookings are marked paid and dates fall in the selected range.\n'
                       '• Chat images require network access to the API server.\n'
                       '• For support, keep your hotel name, username, and the error message on screen.',
@@ -193,14 +193,11 @@ Future<void> showHotelRegistrationCredentialsDialog(
   required String hotelName,
   required Map<String, dynamic>? portalAccounts,
   Map<String, dynamic>? welcomeCredits,
-  Map<String, dynamic>? sms,
-  String? verificationCode,
+  String? verifiedEmail,
   String? registrationUsername,
   String? registrationPassword,
 }) async {
-  final smsSent = sms?['sent'] == true;
-  final smsPhone = (sms?['phone'] ?? '').toString();
-  final smsError = (sms?['error'] ?? '').toString();
+  final email = (verifiedEmail ?? '').trim();
   final superA = portalAccounts?['super_admin'] as Map<String, dynamic>?;
   final adminA = portalAccounts?['admin'] as Map<String, dynamic>?;
   final ownerUser = (registrationUsername ?? superA?['username'] ?? '').toString().trim();
@@ -274,40 +271,27 @@ Future<void> showHotelRegistrationCredentialsDialog(
               ),
             ],
             const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: smsSent
-                    ? Colors.green.withValues(alpha: 0.12)
-                    : Colors.orange.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    smsSent ? 'SMS sent' : 'SMS not sent',
-                    style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
-                  if (smsPhone.isNotEmpty)
-                    Text('To: $smsPhone', style: Theme.of(ctx).textTheme.bodySmall),
-                  if (!smsSent && smsError.isNotEmpty)
-                    Text(smsError, style: Theme.of(ctx).textTheme.bodySmall),
-                  if (!smsSent && verificationCode != null) ...[
-                    const SizedBox(height: 8),
-                    SelectableText(
-                      'Verification code: $verificationCode',
-                      style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
+            if (email.isNotEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Email verified',
+                      style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
                           ),
                     ),
+                    Text('Verified: $email', style: Theme.of(ctx).textTheme.bodySmall),
                   ],
-                ],
+                ),
               ),
-            ),
             const SizedBox(height: 16),
             _CredentialBlock(
               title: 'Super admin',

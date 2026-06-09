@@ -4,8 +4,9 @@ import 'package:flutter/material.dart';
 abstract final class MadyawBrand {
   static const Color brightBlue = Color(0xFF1E88E5);
   static const Color navy = Color(0xFF1A237E);
-  static const Color introBgTop = Color(0xFF080B12);
-  static const Color introBgBottom = Color(0xFF101828);
+  static const Color introBgTop = Color(0xFFEEF2FA);
+  static const Color introBgBottom = Color(0xFFE3EAF6);
+  static const Color introAccent = Color(0xFFD6E4F7);
   static const String wordmark = 'MADYAW';
 
   /// Layer draw order for staged reveal animations.

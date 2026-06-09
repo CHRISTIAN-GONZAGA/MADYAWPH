@@ -89,6 +89,11 @@ return [
         'max_per_request' => (int) env('TRANSLATION_MAX_PER_REQUEST', 25),
     ],
 
+    'email_otp' => [
+        'registration_ttl_minutes' => (int) env('EMAIL_OTP_REGISTRATION_TTL_MINUTES', 10),
+        'password_reset_ttl_minutes' => (int) env('EMAIL_OTP_RESET_TTL_MINUTES', 30),
+    ],
+
     'google_maps' => [
         /** Enables geocoding hotel addresses for “near me” in the app. */
         'api_key' => trim((string) env('GOOGLE_MAPS_API_KEY', '')),
