@@ -635,6 +635,301 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
     );
   }
 
+  List<Widget> _buildHotelPickerSlivers(
+    BuildContext context, {
+    required ThemeData theme,
+    required AppVisual visual,
+    required ColorScheme scheme,
+    required List<Map<String, dynamic>> regions,
+  }) {
+    if (_loading && _regions.isEmpty) {
+      return const [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ];
+    }
+
+    if (_error != null && _regions.isEmpty) {
+      return [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.cloud_off_outlined, size: 48, color: scheme.error),
+                  const SizedBox(height: 12),
+                  Text(
+                    _error!,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: scheme.error),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: _refreshHotels,
+                    icon: const Icon(Icons.refresh),
+                    label: Text(context.tr('retry')),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ];
+    }
+
+    final slivers = <Widget>[
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: _ChooseHotelHero(
+            hotelCount: _totalHotels,
+            regionCount: regions.length,
+            isRefreshing: _refreshing,
+          ),
+        ),
+      ),
+      SliverPersistentHeader(
+        pinned: true,
+        delegate: _HotelSearchHeaderDelegate(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+            child: Material(
+              elevation: 0,
+              color: scheme.surface,
+              child: TextField(
+                controller: _search,
+                decoration: InputDecoration(
+                  hintText: context.tr('search_hotels'),
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  filled: true,
+                  fillColor:
+                      scheme.surfaceContainerHighest.withValues(alpha: 0.65),
+                  border: OutlineInputBorder(
+                    borderRadius: visual.radiusMd,
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: visual.radiusMd,
+                    borderSide: BorderSide(
+                      color: scheme.outlineVariant.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  isDense: true,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+          child: FilledButton.tonalIcon(
+            onPressed: _locatingNearMe
+                ? null
+                : (_nearMeActive ? _clearNearMe : _useNearMe),
+            icon: _locatingNearMe
+                ? SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: scheme.primary,
+                    ),
+                  )
+                : Icon(
+                    _nearMeActive
+                        ? Icons.near_me_disabled_outlined
+                        : Icons.near_me_rounded,
+                  ),
+            label: Text(
+              _nearMeActive
+                  ? context.tr('near_me_clear')
+                  : context.tr('near_me_use'),
+            ),
+          ),
+        ),
+      ),
+    ];
+
+    if (!_nearMeActive && _coordinateHotelCount == 0 && !_loading) {
+      slivers.add(
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+            child: Text(
+              context.tr('near_me_no_coordinates'),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (_nearMeActive) {
+      slivers.add(
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+            child: Text(
+              context.tr('near_me_active_hint'),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: scheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (_regions.isNotEmpty && _error == null) {
+      slivers.add(
+        SliverToBoxAdapter(
+          child: _HotelFilterPanel(
+            priceRange: _priceRange,
+            catalogFloor: _catalogFloor,
+            catalogCeiling: _catalogCeiling,
+            catalogHasPricing: _catalogHasPricing,
+            priceDivisions: _priceSliderDivisions,
+            sortBy: _sortBy,
+            sortOptions: _sortOptions,
+            regions: _availableRegions,
+            selectedRegion: _selectedRegion,
+            onlyWithPrices: _onlyWithPrices,
+            hasActiveFilters: _hasActiveFilters,
+            onPriceChanged: (v) => setState(() => _priceRange = v),
+            onSortChanged: (v) => setState(() => _sortBy = v),
+            onRegionChanged: (v) => setState(() => _selectedRegion = v),
+            onOnlyWithPricesChanged: (v) =>
+                setState(() => _onlyWithPrices = v),
+            onClearFilters: _resetFilters,
+          ),
+        ),
+      );
+    }
+
+    if (regions.isEmpty) {
+      slivers.add(
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.travel_explore_outlined,
+                      size: 56, color: scheme.outline),
+                  const SizedBox(height: 16),
+                  Text(
+                    _queryTokens.isEmpty && !_hasActiveFilters
+                        ? context.tr('no_hotels')
+                        : context.tr('no_search_results'),
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.titleMedium,
+                  ),
+                  if (_hasActiveFilters) ...[
+                    const SizedBox(height: 16),
+                    FilledButton.tonalIcon(
+                      onPressed: _resetFilters,
+                      icon: const Icon(Icons.filter_alt_off),
+                      label: Text(context.tr('clear_filters')),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      return slivers;
+    }
+
+    if (_error == null) {
+      slivers.add(
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: Row(
+              children: [
+                Icon(Icons.apartment, size: 16, color: scheme.primary),
+                const SizedBox(width: 6),
+                Text(
+                  context.tr('hotels_found').replaceAll('{n}', '$_totalHotels'),
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    for (var i = 0; i < regions.length; i++) {
+      final block = regions[i];
+      final region = (block['region'] ?? 'Other').toString();
+      final hotels = (block['hotels'] as List<dynamic>?) ?? const [];
+      final showRegionHeader = region.isNotEmpty;
+
+      if (showRegionHeader) {
+        slivers.add(
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(16, i == 0 ? 4 : 16, 16, 10),
+              child: _RegionHeader(name: region, count: hotels.length),
+            ),
+          ),
+        );
+      } else if (i == 0) {
+        slivers.add(
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+              child: Text(
+                context.tr('search_results'),
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+
+      for (final raw in hotels.whereType<Map>()) {
+        final hotel = Map<String, dynamic>.from(raw);
+        final hid = (hotel['id'] ?? '').toString();
+        slivers.add(
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: _HotelSelectTile(
+                hotel: hotel,
+                region: region,
+                onTap: () => _selectHotel(hotel),
+                distanceKm: _hotelDistanceKm[hid],
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
+    slivers.add(const SliverPadding(padding: EdgeInsets.only(bottom: 108)));
+    return slivers;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -671,250 +966,21 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
         ],
       ),
       body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: _ChooseHotelHero(
-                hotelCount: (_loading && _regions.isEmpty) ? null : _totalHotels,
-                regionCount: (_loading && _regions.isEmpty) ? null : regions.length,
-                isRefreshing: _refreshing,
-              ),
+        child: RefreshIndicator(
+          onRefresh: _refreshHotels,
+          color: scheme.primary,
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
-              child: TextField(
-                controller: _search,
-                decoration: InputDecoration(
-                  hintText: context.tr('search_hotels'),
-                  prefixIcon: const Icon(Icons.search_rounded),
-                  filled: true,
-                  fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.65),
-                  border: OutlineInputBorder(
-                    borderRadius: visual.radiusMd,
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: visual.radiusMd,
-                    borderSide: BorderSide(
-                      color: scheme.outlineVariant.withValues(alpha: 0.35),
-                    ),
-                  ),
-                  isDense: true,
-                ),
-              ),
+            slivers: _buildHotelPickerSlivers(
+              context,
+              theme: theme,
+              visual: visual,
+              scheme: scheme,
+              regions: regions,
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: FilledButton.tonalIcon(
-                      onPressed: _locatingNearMe
-                          ? null
-                          : (_nearMeActive ? _clearNearMe : _useNearMe),
-                      icon: _locatingNearMe
-                          ? SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: scheme.primary,
-                              ),
-                            )
-                          : Icon(
-                              _nearMeActive
-                                  ? Icons.near_me_disabled_outlined
-                                  : Icons.near_me_rounded,
-                            ),
-                      label: Text(
-                        _nearMeActive
-                            ? context.tr('near_me_clear')
-                            : context.tr('near_me_use'),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (!_nearMeActive && _coordinateHotelCount == 0 && !_loading)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-                child: Text(
-                  context.tr('near_me_no_coordinates'),
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            if (_nearMeActive)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-                child: Text(
-                  context.tr('near_me_active_hint'),
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: scheme.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            if (_regions.isNotEmpty && _error == null)
-              _HotelFilterPanel(
-                priceRange: _priceRange,
-                catalogFloor: _catalogFloor,
-                catalogCeiling: _catalogCeiling,
-                catalogHasPricing: _catalogHasPricing,
-                priceDivisions: _priceSliderDivisions,
-                sortBy: _sortBy,
-                sortOptions: _sortOptions,
-                regions: _availableRegions,
-                selectedRegion: _selectedRegion,
-                onlyWithPrices: _onlyWithPrices,
-                hasActiveFilters: _hasActiveFilters,
-                onPriceChanged: (v) => setState(() => _priceRange = v),
-                onSortChanged: (v) => setState(() => _sortBy = v),
-                onRegionChanged: (v) => setState(() => _selectedRegion = v),
-                onOnlyWithPricesChanged: (v) =>
-                    setState(() => _onlyWithPrices = v),
-                onClearFilters: _resetFilters,
-              ),
-            if (_error == null && regions.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    Icon(Icons.apartment, size: 16, color: scheme.primary),
-                    const SizedBox(width: 6),
-                    Text(
-                      context.tr('hotels_found').replaceAll('{n}', '$_totalHotels'),
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            Expanded(
-              child: (_loading && _regions.isEmpty)
-                  ? const Center(child: CircularProgressIndicator())
-                  : _error != null
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.cloud_off_outlined,
-                                    size: 48, color: scheme.error),
-                                const SizedBox(height: 12),
-                                Text(
-                                  _error!,
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(color: scheme.error),
-                                ),
-                                const SizedBox(height: 16),
-                                FilledButton.icon(
-                                  onPressed: _refreshHotels,
-                                  icon: const Icon(Icons.refresh),
-                                  label: Text(context.tr('retry')),
-                                ),
-                              ],
-                            ),
-                          ),
-                        )
-                      : regions.isEmpty
-                          ? Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(32),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.travel_explore_outlined,
-                                        size: 56,
-                                        color: scheme.outline),
-                                    const SizedBox(height: 16),
-                                    Text(
-                                      _queryTokens.isEmpty &&
-                                              !_hasActiveFilters
-                                          ? context.tr('no_hotels')
-                                          : context.tr('no_search_results'),
-                                      textAlign: TextAlign.center,
-                                      style: theme.textTheme.titleMedium,
-                                    ),
-                                    if (_hasActiveFilters) ...[
-                                      const SizedBox(height: 16),
-                                      FilledButton.tonalIcon(
-                                        onPressed: _resetFilters,
-                                        icon: const Icon(Icons.filter_alt_off),
-                                        label: Text(context.tr('clear_filters')),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            )
-                          : RefreshIndicator(
-                              onRefresh: _refreshHotels,
-                              color: scheme.primary,
-                              child: ListView.builder(
-                                padding: const EdgeInsets.fromLTRB(16, 12, 16, 108),
-                                itemCount: regions.length,
-                                itemBuilder: (context, i) {
-                                  final block = regions[i];
-                                  final region =
-                                      (block['region'] ?? 'Other').toString();
-                                  final hotels =
-                                      (block['hotels'] as List<dynamic>?) ??
-                                          const [];
-                                  final showRegionHeader = region.isNotEmpty;
-                                  return Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      if (showRegionHeader)
-                                        Padding(
-                                          padding: EdgeInsets.only(
-                                            top: i == 0 ? 4 : 16,
-                                            bottom: 10,
-                                          ),
-                                          child: _RegionHeader(
-                                            name: region,
-                                            count: hotels.length,
-                                          ),
-                                        )
-                                      else if (i == 0)
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            bottom: 10,
-                                          ),
-                                          child: Text(
-                                            context.tr('search_results'),
-                                            style: theme.textTheme.titleSmall
-                                                ?.copyWith(
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                          ),
-                                        ),
-                                      ...hotels.whereType<Map>().map((raw) {
-                                        final hotel =
-                                            Map<String, dynamic>.from(raw);
-                                        final hid =
-                                            (hotel['id'] ?? '').toString();
-                                        return _HotelSelectTile(
-                                          hotel: hotel,
-                                          region: region,
-                                          onTap: () => _selectHotel(hotel),
-                                          distanceKm: _hotelDistanceKm[hid],
-                                        );
-                                      }),
-                                    ],
-                                  );
-                                },
-                              ),
-                            ),
-            ),
-          ],
+          ),
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -1133,6 +1199,35 @@ class _HotelFilterPanel extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _HotelSearchHeaderDelegate extends SliverPersistentHeaderDelegate {
+  _HotelSearchHeaderDelegate({required this.child});
+
+  final Widget child;
+
+  @override
+  double get minExtent => 64;
+
+  @override
+  double get maxExtent => 64;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return ColoredBox(
+      color: Theme.of(context).colorScheme.surface,
+      child: child,
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _HotelSearchHeaderDelegate oldDelegate) {
+    return true;
   }
 }
 

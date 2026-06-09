@@ -2361,12 +2361,6 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
     final hotel = _categoriesRes?['hotel'] as Map<String, dynamic>?;
     final hotelName = hotel?['name'] ?? 'Hotel';
     final categories = (_categoriesRes?['categories'] as List<dynamic>?) ?? [];
-    final heroImages = categories
-        .map((c) => ChatAttachment.resolveMediaUrl(
-              '${(c as Map<String, dynamic>)['image_url'] ?? ''}',
-            ))
-        .where((url) => url.isNotEmpty)
-        .toList();
 
     final scheme = Theme.of(context).colorScheme;
     return RefreshIndicator(
@@ -2374,76 +2368,7 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
-          SizedBox(
-            height: 200,
-            child: heroImages.isEmpty
-                ? _CustomerHeroFallback(
-                    hotelName: hotelName,
-                    scheme: scheme,
-                  )
-                : PageView.builder(
-                    itemCount: heroImages.length,
-                    itemBuilder: (context, i) {
-                      final url = heroImages[i];
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(20),
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              NetworkMediaImage(
-                                url: url,
-                                fit: BoxFit.cover,
-                                error: Container(
-                                  color: scheme.surfaceContainerHighest,
-                                  alignment: Alignment.center,
-                                  child: const Icon(Icons.image_outlined,
-                                      size: 48),
-                                ),
-                              ),
-                              DecoratedBox(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      Colors.black.withValues(alpha: 0.05),
-                                      Colors.black.withValues(alpha: 0.55),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              Positioned(
-                                left: 16,
-                                right: 16,
-                                bottom: 16,
-                                child: Text(
-                                  hotelName,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleLarge
-                                      ?.copyWith(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w700,
-                                        shadows: const [
-                                          Shadow(
-                                            blurRadius: 8,
-                                            color: Colors.black45,
-                                          ),
-                                        ],
-                                      ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-          ),
+          _CustomerMadyawHeader(hotelName: hotelName, scheme: scheme),
           Text(
             'Find your room',
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
@@ -2613,8 +2538,9 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
   }
 }
 
-class _CustomerHeroFallback extends StatelessWidget {
-  const _CustomerHeroFallback({
+/// Branded header for the public customer booking flow (MADYAW logo asset).
+class _CustomerMadyawHeader extends StatelessWidget {
+  const _CustomerMadyawHeader({
     required this.hotelName,
     required this.scheme,
   });
@@ -2622,24 +2548,42 @@ class _CustomerHeroFallback extends StatelessWidget {
   final String hotelName;
   final ColorScheme scheme;
 
+  static const _logoBackground = Color(0xFFE0E4E8);
+
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 16),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
-        child: Container(
-          color: scheme.primaryContainer.withValues(alpha: 0.45),
-          alignment: Alignment.center,
+        child: ColoredBox(
+          color: _logoBackground,
           child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(
-              hotelName,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: scheme.onPrimaryContainer,
+            padding: const EdgeInsets.fromLTRB(20, 28, 20, 22),
+            child: Column(
+              children: [
+                Image.asset(
+                  'assets/branding/madyaw_logo.png',
+                  height: 130,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => Icon(
+                    Icons.sailing_outlined,
+                    size: 72,
+                    color: scheme.primary,
                   ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  hotelName,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF1A304D),
+                      ),
+                ),
+              ],
             ),
           ),
         ),
