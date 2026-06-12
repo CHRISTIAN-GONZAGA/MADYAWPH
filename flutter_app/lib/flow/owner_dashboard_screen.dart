@@ -45,8 +45,8 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       body: IndexedStack(
         index: _tab,
         children: const [
-          AdminReportsScreen(),
-          AdminActivityLogsScreen(),
+          AdminReportsScreen(embedded: true),
+          AdminActivityLogsScreen(embedded: true),
         ],
       ),
       bottomNavigationBar: NavigationBar(

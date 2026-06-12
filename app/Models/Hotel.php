@@ -24,6 +24,7 @@ class Hotel extends Model
         'access_username',
         'access_password',
         'picker_banner_url',
+        'guest_portal_qr_token',
         'total_rooms',
     ];
 

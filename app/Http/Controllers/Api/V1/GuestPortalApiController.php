@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\BookingStatus;
+use App\Enums\RoomStatus;
 use App\Http\Controllers\Controller;
 use App\Models\AmenityClaim;
 use App\Models\AmenityMenuItem;
@@ -11,24 +13,38 @@ use App\Models\GuestMessage;
 use App\Models\Hotel;
 use App\Models\Room;
 use App\Models\StayReview;
-use App\Enums\BookingStatus;
-use App\Enums\RoomStatus;
 use App\Services\ActivityLogService;
 use App\Services\FinancialComputationService;
+use App\Services\GuestPortalQrService;
+use App\Services\GuestRoomAccessCodeService;
+use App\Services\MessageTranslationService;
 use App\Services\RoomPricingService;
+use App\Support\ChatAttachmentUrl;
+use App\Support\GuestMessageResource;
 use App\Support\GuestPortalStore;
 use App\Support\RoomBillingSupport;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use App\Services\GuestRoomAccessCodeService;
-use App\Services\MessageTranslationService;
-use App\Support\ChatAttachmentUrl;
-use App\Support\GuestMessageResource;
-use Illuminate\Support\Facades\Storage;
 
 class GuestPortalApiController extends Controller
 {
+    public function resolvePortalQr(Request $request, GuestPortalQrService $guestPortalQrService): JsonResponse
+    {
+        $validated = $request->validate([
+            'payload' => ['required', 'string', 'max:512'],
+        ]);
+
+        $resolved = $guestPortalQrService->resolve((string) $validated['payload']);
+
+        return response()->json([
+            'ok' => true,
+            'hotel_id' => $resolved['hotel_id'],
+            'hotel_name' => $resolved['hotel_name'],
+        ]);
+    }
+
     public function login(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -84,9 +100,12 @@ class GuestPortalApiController extends Controller
     public function dashboard(Request $request): JsonResponse
     {
         $portal = $request->attributes->get('guest_portal');
-        $hotel = Hotel::withoutGlobalScopes()->find($portal['hotel_id']);
+        $hotelId = (string) $portal['hotel_id'];
+        $roomId = (string) $portal['room_id'];
+        $hotel = Hotel::withoutGlobalScopes()->find($hotelId);
         $activeBooking = Booking::query()
-            ->where('room_id', $portal['room_id'])
+            ->where('hotel_id', $hotelId)
+            ->where('room_id', $roomId)
             ->whereNotIn('status', [
                 BookingStatus::COMPLETED->value,
                 BookingStatus::CANCELLED->value,
@@ -97,7 +116,9 @@ class GuestPortalApiController extends Controller
             ? StayReview::query()->where('booking_id', (string) $activeBooking->id)->exists()
             : false;
 
-        $room = Room::query()->find($portal['room_id']);
+        $room = Room::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->find($roomId);
         $billingMode = $room ? RoomBillingSupport::billingMode($room) : RoomBillingSupport::MODE_NIGHTLY;
         $hourlyConfig = $room && RoomBillingSupport::isHourly($room)
             ? RoomBillingSupport::hourlyConfig($room)
@@ -125,7 +146,8 @@ class GuestPortalApiController extends Controller
             ],
             'services' => [],
             'amenityClaims' => AmenityClaim::query()
-                ->where('room_id', $portal['room_id'])
+                ->where('hotel_id', $hotelId)
+                ->where('room_id', $roomId)
                 ->latest('claimed_at')
                 ->limit(25)
                 ->get()
@@ -138,7 +160,7 @@ class GuestPortalApiController extends Controller
                     'claimedAt' => optional($claim->claimed_at)->toISOString(),
                 ]),
             'amenityMenu' => AmenityMenuItem::query()
-                ->where('hotel_id', (string) $portal['hotel_id'])
+                ->where('hotel_id', $hotelId)
                 ->where('is_active', true)
                 ->orderBy('amenity_type')
                 ->orderBy('name')
@@ -176,6 +198,7 @@ class GuestPortalApiController extends Controller
             'claimed_at' => now(),
         ]);
         $booking = Booking::query()
+            ->where('hotel_id', (string) $portal['hotel_id'])
             ->where('room_id', $portal['room_id'])
             ->latest('created_at')
             ->first();
@@ -285,9 +308,14 @@ class GuestPortalApiController extends Controller
             'hours' => ['required_without:nights', 'integer', 'min:1', 'max:720'],
         ]);
 
-        $room = Room::query()->findOrFail($portal['room_id']);
+        $hotelId = (string) $portal['hotel_id'];
+        $roomId = (string) $portal['room_id'];
+        $room = Room::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->findOrFail($roomId);
         $booking = Booking::query()
-            ->where('room_id', $portal['room_id'])
+            ->where('hotel_id', $hotelId)
+            ->where('room_id', $roomId)
             ->latest('created_at')
             ->firstOrFail();
 
@@ -300,7 +328,7 @@ class GuestPortalApiController extends Controller
                 $roomPricingService,
             );
             $extensionFee = $extension['amount'];
-            $checkoutDate = $booking->check_out_date instanceof \Carbon\CarbonInterface
+            $checkoutDate = $booking->check_out_date instanceof CarbonInterface
                 ? $booking->check_out_date->toDateString()
                 : (string) $booking->check_out_date;
             $checkoutBase = Carbon::parse(
@@ -399,6 +427,7 @@ class GuestPortalApiController extends Controller
             'comment' => ['nullable', 'string', 'max:1000'],
         ]);
         $booking = Booking::query()
+            ->where('hotel_id', (string) $portal['hotel_id'])
             ->where('room_id', $portal['room_id'])
             ->findOrFail($validated['booking_id']);
         $review = StayReview::query()->create([

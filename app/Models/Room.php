@@ -2,8 +2,8 @@
 
 namespace App\Models;
 
-use App\Enums\RoomStatus;
-use App\Enums\RoomType;
+use App\Casts\FlexibleRoomStatusCast;
+use App\Casts\FlexibleRoomTypeCast;
 use App\Models\Concerns\BelongsToHotel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -40,8 +40,8 @@ class Room extends Model
     protected function casts(): array
     {
         return [
-            'room_type' => RoomType::class,
-            'status' => RoomStatus::class,
+            'room_type' => FlexibleRoomTypeCast::class,
+            'status' => FlexibleRoomStatusCast::class,
             'amenities' => 'array',
             'price_per_night' => 'decimal:2',
             'price_per_block' => 'decimal:2',

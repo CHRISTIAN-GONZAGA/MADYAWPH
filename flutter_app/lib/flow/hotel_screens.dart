@@ -2510,9 +2510,14 @@ class _PortalLoginScreenState extends State<PortalLoginScreen> {
 }
 
 class GuestRoomLoginScreen extends StatefulWidget {
-  const GuestRoomLoginScreen({super.key, required this.hotelId});
+  const GuestRoomLoginScreen({
+    super.key,
+    required this.hotelId,
+    this.hotelName,
+  });
 
   final String hotelId;
+  final String? hotelName;
 
   @override
   State<GuestRoomLoginScreen> createState() => _GuestRoomLoginScreenState();
@@ -2576,11 +2581,29 @@ class _GuestRoomLoginScreenState extends State<GuestRoomLoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final hotelLabel = (widget.hotelName ?? '').trim();
+
     return AppScaffold(
       appBar: AppBar(title: const Text('Guest sign-in')),
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
+          if (hotelLabel.isNotEmpty) ...[
+            Text(
+              hotelLabel,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Enter your room number and the 4-character password from the front desk.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            const SizedBox(height: 16),
+          ],
           TextField(
             controller: _room,
             decoration: const InputDecoration(labelText: 'Room number', border: OutlineInputBorder()),

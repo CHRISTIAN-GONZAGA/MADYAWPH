@@ -210,10 +210,6 @@ class _ResellersSectionState extends State<ResellersSection>
     double hotelBalance,
   ) async {
     if (!mounted) return;
-    if (!AdminCreditsGate.canPerformActions(context)) {
-      AdminCreditsGate.showActionsBlockedMessage(context);
-      return;
-    }
 
     final amountCtrl = TextEditingController();
     final noteCtrl = TextEditingController();
@@ -237,10 +233,6 @@ class _ResellersSectionState extends State<ResellersSection>
                 'Total commissions paid',
                 '₱${(reseller['total_commissions_paid'] as num?)?.toStringAsFixed(2) ?? '0'}',
               ),
-              _infoRow(
-                'Hotel wallet balance',
-                '₱${hotelBalance.toStringAsFixed(2)}',
-              ),
               if (idUrl.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 ClipRRect(
@@ -257,7 +249,8 @@ class _ResellersSectionState extends State<ResellersSection>
               const Divider(),
               const SizedBox(height: 8),
               Text(
-                'Commission will be deducted from your hotel credits.',
+                'Record how much the hotel paid this partner in cash or bank transfer. '
+                'This is tracked in activity logs and reports — not deducted from your credits wallet.',
                 style: Theme.of(ctx).textTheme.bodySmall,
               ),
               const SizedBox(height: 12),
@@ -287,7 +280,7 @@ class _ResellersSectionState extends State<ResellersSection>
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Pay commission'),
+            child: const Text('Record payment'),
           ),
         ],
       ),
@@ -302,18 +295,15 @@ class _ResellersSectionState extends State<ResellersSection>
 
     setState(() => _busy = true);
     try {
-      final res = await portalDio().post<Map<String, dynamic>>(
+      await portalDio().post<Map<String, dynamic>>(
         '/admin/resellers/$id/commissions',
         data: {'amount': amount, 'note': note},
       );
       if (!mounted) return;
-      final wallet = res.data?['wallet'] as Map<String, dynamic>?;
-      final after = (wallet?['balance_after'] as num?)?.toDouble();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Commission ₱${amount.toStringAsFixed(2)} paid. '
-            '${after != null ? 'Hotel balance: ₱${after.toStringAsFixed(2)}.' : ''}',
+            'Partner commission ₱${amount.toStringAsFixed(2)} recorded for reports.',
           ),
         ),
       );

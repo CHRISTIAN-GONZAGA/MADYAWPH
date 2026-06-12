@@ -20,6 +20,7 @@ import 'customer_tools.dart';
 import '../widgets/chat_attachment.dart';
 import '../widgets/payment_redirect.dart';
 import 'admin/admin_dashboard_shell.dart';
+import 'admin/widgets/hourly_billing.dart';
 // --- Admin ---
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -651,7 +652,9 @@ class AdminRoomSummaryDetailScreen extends StatelessWidget {
 }
 
 class AdminActivityLogsScreen extends StatefulWidget {
-  const AdminActivityLogsScreen({super.key});
+  const AdminActivityLogsScreen({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   State<AdminActivityLogsScreen> createState() => _AdminActivityLogsScreenState();
@@ -661,6 +664,8 @@ class _AdminActivityLogsScreenState extends State<AdminActivityLogsScreen> {
   List<dynamic> _logs = const [];
   bool _loading = true;
   String? _error;
+  static const _pageSize = 25;
+  int _visibleCount = _pageSize;
 
   @override
   void initState() {
@@ -678,6 +683,7 @@ class _AdminActivityLogsScreenState extends State<AdminActivityLogsScreen> {
       final data = (res.data?['data'] as List<dynamic>?) ?? const [];
       setState(() {
         _logs = data;
+        _visibleCount = _pageSize;
         _loading = false;
       });
     } on DioException catch (e) {
@@ -693,36 +699,114 @@ class _AdminActivityLogsScreenState extends State<AdminActivityLogsScreen> {
     }
   }
 
+  Widget _buildLogList() {
+    if (_loading) return const AppLoadingView();
+    if (_error != null) return AppErrorView(message: _error!, onRetry: _load);
+    if (_logs.isEmpty) {
+      return const Center(child: Text('No activity recorded yet.'));
+    }
+
+    final visible = _logs.take(_visibleCount).toList();
+    final hasMore = _visibleCount < _logs.length;
+
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        itemCount: visible.length + (hasMore ? 1 : 0),
+        itemBuilder: (context, i) {
+          if (hasMore && i == visible.length) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: OutlinedButton(
+                onPressed: () => setState(
+                  () => _visibleCount += _pageSize,
+                ),
+                child: Text(
+                  'Load more (${_logs.length - _visibleCount} remaining)',
+                ),
+              ),
+            );
+          }
+          final log = visible[i] as Map<String, dynamic>;
+          final when = (log['created_at'] ?? log['timestamp'] ?? '').toString();
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Card(
+              elevation: 0,
+              color: Theme.of(context).colorScheme.surfaceContainerLow,
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      (log['action'] ?? '').toString(),
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'By ${(log['user_name'] ?? 'System').toString()}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    if (when.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        when,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: Theme.of(context).colorScheme.outline,
+                            ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final body = _buildLogList();
+    if (widget.embedded) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Activity trail',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: _load,
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'Refresh',
+                ),
+              ],
+            ),
+          ),
+          Expanded(child: body),
+        ],
+      );
+    }
     return AppScaffold(
       appBar: AppBar(
         title: const Text('Activity logs'),
         actions: [IconButton(onPressed: _load, icon: const Icon(Icons.refresh))],
       ),
-      body: _loading
-          ? const AppLoadingView()
-          : _error != null
-              ? AppErrorView(message: _error!, onRetry: _load)
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: _logs.length,
-                    itemBuilder: (context, i) {
-                      final log = _logs[i] as Map<String, dynamic>;
-                      return Card(
-                        child: ListTile(
-                          leading: const Icon(Icons.event_note_outlined),
-                          title: Text((log['action'] ?? '').toString()),
-                          subtitle: Text(
-                            'By: ${(log['user_name'] ?? 'System').toString()}',
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
+      body: body,
     );
   }
 }
@@ -3365,7 +3449,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
           final r = rooms[roomIndex] as Map<String, dynamic>;
           final roomNo = '${r['room_number'] ?? ''}';
           final title = '${r['display_name'] ?? r['room_number']}';
-          final price = (r['price_per_night'] as num?)?.toDouble() ?? 0;
+          final priceLabel = HourlyBilling.priceLabel(r);
           final surge = r['base_price_per_night'] != null &&
               r['base_price_per_night'] != r['price_per_night'];
           return Padding(
@@ -3408,7 +3492,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                                 vertical: 6,
                               ),
                               child: Text(
-                                '₱${price.toStringAsFixed(0)} / night',
+                                priceLabel,
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w700,

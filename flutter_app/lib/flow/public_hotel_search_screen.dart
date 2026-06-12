@@ -14,6 +14,7 @@ import '../widgets/language_picker_button.dart';
 import '../widgets/philippine_destination_field.dart';
 import 'customer_search_context.dart';
 import 'hotel_search_results_screen.dart';
+import 'guest_portal_qr_scan_screen.dart';
 import 'hotel_screens.dart';
 
 /// Agoda-style public landing: search hotels, then browse/book as a guest.
@@ -456,6 +457,14 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
     );
   }
 
+  void _openGuestQrScanner() {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => const GuestPortalQrScanScreen(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -470,23 +479,23 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
           child: Column(
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                padding: const EdgeInsets.fromLTRB(16, 10, 12, 0),
                 child: Row(
                   children: [
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Column(
-                        children: [
-                          const MadyawLogoWidget(
-                            size: 108,
-                            glowStrength: 0.85,
-                            showBrandLine: true,
-                            brandReveal: 1,
-                          ),
-                        ],
-                      ),
+                    const MadyawLogoWidget(
+                      size: 52,
+                      glowStrength: 0.15,
+                      showWordmark: true,
+                      showBrandLine: false,
+                      brandReveal: 1,
                     ),
+                    const Spacer(),
                     const LanguagePickerButton(),
+                    IconButton(
+                      tooltip: 'Scan hotel guest QR',
+                      onPressed: _openGuestQrScanner,
+                      icon: const Icon(Icons.qr_code_scanner_outlined),
+                    ),
                     IconButton(
                       tooltip: context.tr('property_sign_in'),
                       onPressed: _openStaffPropertyLogin,

@@ -1,9 +1,9 @@
 <?php
 
+use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\V1\ChatMediaController;
 use App\Http\Controllers\Api\V1\GuestPortalApiController;
 use App\Http\Controllers\Api\V1\PortalAuthController;
-use App\Http\Controllers\Api\BookingController;
 use App\Services\AppEmailService;
 use App\Services\PaymentGatewayService;
 use App\Services\SmsService;
@@ -106,13 +106,13 @@ Route::post('/hotel/register/resend-code', [PortalAuthController::class, 'hotelR
 Route::post('/auth/portal-login', [PortalAuthController::class, 'portalLogin'])->middleware('throttle:10,1');
 Route::post('/auth/forgot/send', [PortalAuthController::class, 'forgotSend'])->middleware('throttle:5,1');
 Route::post('/auth/forgot/reset', [PortalAuthController::class, 'forgotReset'])->middleware('throttle:8,1');
+Route::post('/guest/portal/resolve', [GuestPortalApiController::class, 'resolvePortalQr'])->middleware('throttle:30,1');
 Route::post('/guest/login', [GuestPortalApiController::class, 'login'])->middleware('throttle:8,1');
 
 /**
  * Public customer + utility endpoints under /api/v1/*
  * The mobile app baseUrl is /api/v1, so we mirror legacy /api/* public routes here.
  */
-
 Route::post('/bookings', [BookingController::class, 'store'])
     ->middleware(['throttle:30,1', 'prevent.double.booking']);
 Route::get('/bookings/{reference}', [BookingController::class, 'show'])->middleware('throttle:60,1');

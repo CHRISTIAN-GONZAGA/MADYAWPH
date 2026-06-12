@@ -22,6 +22,15 @@ class AdminTimeSlotField extends StatelessWidget {
     return out;
   }
 
+  /// Snap arbitrary clock time to the nearest 30-minute slot offered in [slots].
+  static TimeOfDay snapToSlot(TimeOfDay time) {
+    final total = time.hour * 60 + time.minute;
+    final snapped = ((total + 15) ~/ 30) * 30;
+    final clamped = snapped % (24 * 60);
+
+    return TimeOfDay(hour: clamped ~/ 60, minute: clamped % 60);
+  }
+
   static String format(TimeOfDay t) {
     final h = t.hourOfPeriod == 0 ? 12 : t.hourOfPeriod;
     final m = t.minute.toString().padLeft(2, '0');
@@ -31,8 +40,9 @@ class AdminTimeSlotField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final selected = value != null
-        ? '${value!.hour.toString().padLeft(2, '0')}:${value!.minute.toString().padLeft(2, '0')}'
+    final slot = value != null ? snapToSlot(value!) : null;
+    final selected = slot != null
+        ? '${slot.hour.toString().padLeft(2, '0')}:${slot.minute.toString().padLeft(2, '0')}'
         : null;
 
     return DropdownButtonFormField<String>(

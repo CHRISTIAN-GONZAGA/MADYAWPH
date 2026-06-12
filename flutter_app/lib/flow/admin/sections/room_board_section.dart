@@ -73,6 +73,31 @@ class RoomBoardSection extends StatelessWidget {
     final grouped = AdminDashboardModels.groupByCategory(rooms);
     final keys = grouped.keys.toList()..sort();
     final scheme = Theme.of(context).colorScheme;
+
+    if (rooms.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Icon(Icons.meeting_room_outlined, size: 56, color: scheme.outline),
+          const SizedBox(height: 12),
+          Text(
+            'No rooms configured yet',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Add rooms in Settings → Categories & rooms, then return here to book walk-in guests.',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+          ),
+        ],
+      );
+    }
     final now = DateTime.now();
     final dateLabel =
         '${_month(now.month)} ${now.day}, ${now.year}';

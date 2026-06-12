@@ -139,10 +139,12 @@ class ResellerService
     }
 
     /**
+     * Record a partner commission payout (hotel-funded cash/off-platform — not deducted from credits wallet).
+     *
      * @return array{
      *     payment: ResellerCommissionPayment,
      *     reseller: Reseller,
-     *     wallet: array{balance_before: float, balance_after: float, amount: float}
+     *     wallet: array{amount: float, hotel_funded: bool}
      * }
      */
     public function payCommission(
@@ -161,7 +163,6 @@ class ResellerService
 
         $resellerId = (string) $reseller->id;
         $paymentId = (string) Str::uuid();
-        $transactionKey = "reseller-commission-{$paymentId}";
 
         return DB::transaction(function () use (
             $hotelId,
@@ -170,85 +171,12 @@ class ResellerService
             $note,
             $actor,
             $paymentId,
-            $transactionKey,
         ): array {
             $locked = Reseller::withoutGlobalScopes()
                 ->where('hotel_id', $hotelId)
                 ->where('id', $resellerId)
                 ->lockForUpdate()
                 ->firstOrFail();
-
-            $lowBalanceThreshold = (float) config(
-                'services.hotel_credits.low_balance_threshold',
-                3000
-            );
-            $credit = HotelCredit::withoutGlobalScopes()
-                ->where('hotel_id', $hotelId)
-                ->lockForUpdate()
-                ->first();
-
-            if (! $credit) {
-                $credit = HotelCredit::withoutGlobalScopes()->create([
-                    'hotel_id' => $hotelId,
-                    'current_credits' => 0,
-                    'warning_threshold' => $lowBalanceThreshold,
-                    'custom_markup_percentage' => 10,
-                    'total_spent' => 0,
-                    'transactions' => [],
-                ]);
-            }
-
-            $balanceBefore = round((float) $credit->current_credits, 2);
-            if ($balanceBefore <= 0) {
-                throw ValidationException::withMessages([
-                    'credits' => sprintf(
-                        'Your hotel credit balance is zero. Top up credits before paying reseller commission (need ₱%s).',
-                        number_format($amount, 2)
-                    ),
-                ]);
-            }
-            if ($balanceBefore < $amount) {
-                throw ValidationException::withMessages([
-                    'credits' => sprintf(
-                        'Insufficient hotel wallet credits. Need ₱%s for this commission. Current balance: ₱%s.',
-                        number_format($amount, 2),
-                        number_format($balanceBefore, 2)
-                    ),
-                ]);
-            }
-
-            $balanceAfter = round($balanceBefore - $amount, 2);
-            $hotelTransactions = collect($credit->transactions ?? []);
-            $alreadyApplied = $hotelTransactions->contains(function (mixed $row) use ($transactionKey): bool {
-                if (! is_array($row)) {
-                    return false;
-                }
-
-                return ($row['transactionId'] ?? $row['transaction_id'] ?? '') === $transactionKey;
-            });
-            if (! $alreadyApplied) {
-                $hotelTransactions = $hotelTransactions->push([
-                    'id' => (string) Str::uuid(),
-                    'type' => 'reseller_commission',
-                    'description' => sprintf(
-                        'Reseller commission to %s (%s)',
-                        (string) $locked->name,
-                        (string) $locked->category
-                    ),
-                    'amount' => -$amount,
-                    'timestamp' => now()->toISOString(),
-                    'balanceAfter' => $balanceAfter,
-                    'transactionId' => $transactionKey,
-                    'reseller_id' => $resellerId,
-                    'note' => $note,
-                ])->values()->all();
-
-                $credit->update([
-                    'current_credits' => $balanceAfter,
-                    'total_spent' => round((float) $credit->total_spent + $amount, 2),
-                    'transactions' => $hotelTransactions,
-                ]);
-            }
 
             $locked->update([
                 'total_commissions_paid' => round((float) $locked->total_commissions_paid + $amount, 2),
@@ -262,8 +190,8 @@ class ResellerService
                 'reseller_category' => (string) $locked->category,
                 'amount' => $amount,
                 'note' => (string) ($note ?? ''),
-                'balance_before' => $balanceBefore,
-                'balance_after' => $balanceAfter,
+                'balance_before' => null,
+                'balance_after' => null,
                 'paid_by_user_id' => $actor ? (string) $actor->id : null,
                 'paid_by_user_name' => $actor ? (string) ($actor->name ?? 'Admin') : 'Admin',
                 'created_at' => now(),
@@ -272,13 +200,13 @@ class ResellerService
             $this->activityLogService->log(
                 $hotelId,
                 $actor,
-                "Paid reseller commission ₱{$amount} to {$locked->name} (deducted from hotel credits)",
+                "Recorded partner commission ₱{$amount} paid to {$locked->name} (hotel-funded, not from credits wallet)",
                 [
                     'reseller_id' => $resellerId,
                     'payment_id' => (string) $payment->id,
                     'amount' => $amount,
-                    'hotel_balance_after' => $balanceAfter,
                     'category' => (string) $locked->category,
+                    'funding' => 'hotel_cash',
                 ]
             );
 
@@ -287,8 +215,7 @@ class ResellerService
                 'reseller' => $locked->fresh(),
                 'wallet' => [
                     'amount' => $amount,
-                    'balance_before' => $balanceBefore,
-                    'balance_after' => $balanceAfter,
+                    'hotel_funded' => true,
                 ],
             ];
         });

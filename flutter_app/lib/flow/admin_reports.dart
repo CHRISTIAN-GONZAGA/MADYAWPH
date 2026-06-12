@@ -9,7 +9,9 @@ import '../widgets/app_state_views.dart';
 
 /// Revenue and operations charts with daily / weekly / monthly / annual granularity.
 class AdminReportsScreen extends StatefulWidget {
-  const AdminReportsScreen({super.key});
+  const AdminReportsScreen({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   State<AdminReportsScreen> createState() => _AdminReportsScreenState();
@@ -92,6 +94,35 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final body = _buildBody();
+    if (widget.embedded) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Financial overview',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: _load,
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'Refresh',
+                ),
+              ],
+            ),
+          ),
+          Expanded(child: body),
+        ],
+      );
+    }
     return AppScaffold(
       appBar: AppBar(
         title: const Text('Reports & analytics'),
@@ -99,7 +130,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
         ],
       ),
-      body: _buildBody(),
+      body: body,
     );
   }
 
@@ -121,7 +152,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(16, widget.embedded ? 8 : 16, 16, 24),
         children: [
           AppSectionCard(
             child: Column(
@@ -236,7 +267,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           Row(
             children: [
               Expanded(

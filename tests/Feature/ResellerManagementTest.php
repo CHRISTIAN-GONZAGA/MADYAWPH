@@ -13,7 +13,7 @@ use Tests\TestCase;
 
 class ResellerManagementTest extends TestCase
 {
-    public function test_admin_can_create_reseller_lookup_and_pay_commission_from_hotel_wallet(): void
+    public function test_admin_can_create_reseller_lookup_and_record_commission_without_wallet_deduction(): void
     {
         $hotel = Hotel::create(['name' => 'Reseller Hotel', 'location' => 'City']);
         $admin = User::create([
@@ -61,11 +61,11 @@ class ResellerManagementTest extends TestCase
             'note' => 'Referral booking',
         ]);
         $pay->assertOk();
-        $pay->assertJsonPath('wallet.balance_after', 4920);
+        $pay->assertJsonPath('wallet.hotel_funded', true);
         $pay->assertJsonPath('payment.amount', 80);
 
         $credit = HotelCredit::withoutGlobalScopes()->where('hotel_id', (string) $hotel->id)->first();
-        $this->assertSame(4920.0, (float) $credit->current_credits);
+        $this->assertSame(5000.0, (float) $credit->current_credits);
 
         $reseller = Reseller::withoutGlobalScopes()->find($resellerId);
         $this->assertSame(80.0, (float) $reseller->total_commissions_paid);
@@ -78,7 +78,7 @@ class ResellerManagementTest extends TestCase
         );
     }
 
-    public function test_commission_rejected_when_hotel_credits_insufficient(): void
+    public function test_commission_records_even_when_hotel_credits_are_low(): void
     {
         $hotel = Hotel::create(['name' => 'Poor Hotel', 'location' => 'City']);
         $admin = User::create([
@@ -113,8 +113,11 @@ class ResellerManagementTest extends TestCase
             ['amount' => 50]
         );
 
-        $response->assertStatus(422);
-        $response->assertJsonValidationErrors(['credits']);
+        $response->assertOk();
+        $response->assertJsonPath('wallet.hotel_funded', true);
+
+        $credit = HotelCredit::withoutGlobalScopes()->where('hotel_id', (string) $hotel->id)->first();
+        $this->assertSame(10.0, (float) $credit->current_credits);
     }
 
     public function test_profit_overview_includes_reseller_commissions(): void

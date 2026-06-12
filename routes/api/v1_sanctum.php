@@ -1,12 +1,11 @@
 <?php
 
+use App\Enums\BookingSource;
 use App\Enums\BookingStatus;
+use App\Enums\BookingType;
+use App\Enums\PaymentMethod;
 use App\Enums\RoomStatus;
 use App\Enums\UserRole;
-use App\Http\Controllers\Api\V1\AdminChatController;
-use App\Http\Controllers\Api\V1\AdminDashboardApiController;
-use App\Http\Controllers\Api\V1\PortalAuthController;
-use App\Http\Controllers\Api\V1\StaffDashboardApiController;
 use App\Http\Controllers\Api\ActivityLogController;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\ReportController;
@@ -15,46 +14,53 @@ use App\Http\Controllers\Api\RoomCategoryController;
 use App\Http\Controllers\Api\RoomController;
 use App\Http\Controllers\Api\StaffController;
 use App\Http\Controllers\Api\TaskController;
+use App\Http\Controllers\Api\V1\AdminChatController;
+use App\Http\Controllers\Api\V1\AdminDashboardApiController;
+use App\Http\Controllers\Api\V1\PortalAuthController;
+use App\Http\Controllers\Api\V1\StaffDashboardApiController;
 use App\Models\AmenityClaim;
 use App\Models\AmenityMenuItem;
-use App\Models\Booking;
 use App\Models\BillingCharge;
+use App\Models\Booking;
 use App\Models\CheckoutReminder;
 use App\Models\ExternalReservation;
 use App\Models\GuestMessage;
 use App\Models\Hotel;
 use App\Models\HotelCredit;
+use App\Models\PersonalAccessToken;
 use App\Models\Room;
-use App\Models\RoomCategory;
 use App\Models\RoomTransfer;
-use App\Models\StaffMember;
 use App\Models\StayReview;
 use App\Models\SystemSetting;
-use App\Models\Task;
 use App\Models\User;
 use App\Models\UserSetting;
-use App\Support\ChatAttachmentUrl;
-use App\Support\HotelScopeGuard;
-use App\Support\RoomImageUploadRules;
-use App\Support\RoomMediaStorage;
-use App\Support\StayManagementPolicy;
-use App\Support\PriceRounding;
 use App\Services\ActivityLogService;
+use App\Services\BookingPaymentService;
 use App\Services\BookingService;
 use App\Services\FinancialComputationService;
+use App\Services\GuestPortalQrService;
+use App\Services\GuestRoomAccessCodeService;
+use App\Services\HotelCreditBookingFeeService;
 use App\Services\PaymentGatewayService;
 use App\Services\ReservationActivationService;
 use App\Services\RoomCheckoutService;
 use App\Services\RoomStatusNotificationService;
 use App\Services\SmsService;
+use App\Services\StayReceiptService;
+use App\Support\AdminBookingPresenter;
+use App\Support\ChatAttachmentUrl;
+use App\Support\HotelScopeGuard;
+use App\Support\PortalPassword;
+use App\Support\PriceRounding;
+use App\Support\RoomImageUploadRules;
+use App\Support\RoomMediaStorage;
+use App\Support\StayManagementPolicy;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use App\Models\PersonalAccessToken;
 
 Route::middleware('role:admin')->group(function (): void {
     Route::get('/admin/dashboard', AdminDashboardApiController::class)->name('api.v1.admin.dashboard');
@@ -80,7 +86,7 @@ Route::middleware('role:admin')->group(function (): void {
         if ((string) $booking->hotel_id !== (string) $request->user()->hotel_id) {
             return response()->json(['message' => 'Booking is outside your hotel scope.'], 403);
         }
-        $built = app(\App\Services\StayReceiptService::class)->build($booking);
+        $built = app(StayReceiptService::class)->build($booking);
 
         return $built['pdf']->download($built['filename']);
     })->middleware('role:admin,staff')->name('api.v1.admin.booking.receipt');
@@ -91,7 +97,7 @@ Route::middleware('role:admin')->group(function (): void {
         }
 
         return response()->json([
-            'receipt' => app(\App\Services\StayReceiptService::class)->summaryFor($booking),
+            'receipt' => app(StayReceiptService::class)->summaryFor($booking),
         ]);
     })->middleware('role:admin,staff')->name('api.v1.admin.booking.receipt-summary');
 
@@ -216,7 +222,7 @@ Route::middleware('role:admin')->group(function (): void {
         ) {
             return response()->json(['message' => 'Invalid SMS verification code.'], 422);
         }
-        \App\Support\PortalPassword::assign($request->user(), (string) $validated['new_password']);
+        PortalPassword::assign($request->user(), (string) $validated['new_password']);
         Cache::forget('admin_pwd_change:'.(string) $request->user()->id);
         app(ActivityLogService::class)->log(
             (string) $request->user()->hotel_id,
@@ -335,7 +341,7 @@ Route::middleware('role:admin')->group(function (): void {
             ? Booking::withoutGlobalScopes()->find($bookingId)
             : null;
         $receipt = $completedBooking
-            ? app(\App\Services\StayReceiptService::class)->summaryFor($completedBooking)
+            ? app(StayReceiptService::class)->summaryFor($completedBooking)
             : null;
 
         return response()->json([
@@ -386,7 +392,7 @@ Route::middleware('role:admin')->group(function (): void {
 
         return response()->json([
             'ok' => true,
-            'booking' => \App\Support\AdminBookingPresenter::present($booking, $room->fresh() ?? $room),
+            'booking' => AdminBookingPresenter::present($booking, $room->fresh() ?? $room),
         ], 201);
     })->middleware(['prevent.double.booking'])->name('api.v1.admin.bookings.store');
 
@@ -471,7 +477,7 @@ Route::middleware('role:admin')->group(function (): void {
             return response()->json(['message' => 'Booking outside hotel scope.'], 403);
         }
 
-        return response()->json(app(\App\Services\BookingPaymentService::class)->billSummary($booking));
+        return response()->json(app(BookingPaymentService::class)->billSummary($booking));
     })->middleware('role:admin,staff')->name('api.v1.admin.bookings.bill-summary');
 
     Route::post('/admin/bookings/{booking}/payment-status', function (Request $request, Booking $booking) {
@@ -503,7 +509,7 @@ Route::middleware('role:admin')->group(function (): void {
         }
 
         return response()->json(
-            app(\App\Services\BookingPaymentService::class)->applyPayment($booking, $request->user(), $validated)
+            app(BookingPaymentService::class)->applyPayment($booking, $request->user(), $validated)
         );
     })->name('api.v1.admin.bookings.payment-status');
 
@@ -736,6 +742,7 @@ Route::post('/billing/charges', function (Request $request, FinancialComputation
         'created_by' => (string) $request->user()->id,
     ]);
     $activityLogService->log((string) $request->user()->hotel_id, $request->user(), "Added charge {$charge->label}", ['charge_id' => (string) $charge->id, 'amount' => $lineTotal]);
+
     return response()->json($charge, 201);
 })->middleware('role:admin,staff');
 
@@ -744,6 +751,7 @@ Route::get('/billing/booking/{bookingId}', function (Request $request, string $b
     $booking = Booking::withoutGlobalScopes()->where('hotel_id', $hotelId)->findOrFail($bookingId);
     $charges = BillingCharge::withoutGlobalScopes()->where('hotel_id', $hotelId)->where('booking_id', $bookingId)->latest()->get();
     $subtotal = (float) $charges->sum(fn ($charge) => (float) $charge->amount);
+
     return response()->json([
         'booking' => $booking,
         'charges' => $charges,
@@ -767,6 +775,7 @@ Route::post('/reservations/external', function (Request $request) {
         'hotel_id' => (string) $request->user()->hotel_id,
         'status' => 'reserved',
     ]);
+
     return response()->json($reservation, 201);
 })->middleware('role:admin,staff');
 
@@ -788,9 +797,9 @@ Route::put('/reservations/{reservation}/assign-room', function (Request $request
         'guest_phone' => $reservation->guest_phone,
         'check_in_date' => optional($reservation->check_in_date)->toDateString(),
         'check_out_date' => optional($reservation->check_out_date)->toDateString(),
-        'payment_method' => $validated['payment_method'] ?? \App\Enums\PaymentMethod::CASH->value,
-        'source' => \App\Enums\BookingSource::WEB->value,
-        'booking_type' => \App\Enums\BookingType::ONLINE->value,
+        'payment_method' => $validated['payment_method'] ?? PaymentMethod::CASH->value,
+        'source' => BookingSource::WEB->value,
+        'booking_type' => BookingType::ONLINE->value,
         'booking_source' => 'website',
     ], $request->user());
 
@@ -799,6 +808,7 @@ Route::put('/reservations/{reservation}/assign-room', function (Request $request
         'booking_id' => (string) $booking->id,
         'status' => 'booked',
     ]);
+
     return response()->json(['reservation' => $reservation->fresh(), 'booking' => $booking]);
 })->middleware('role:admin,staff');
 
@@ -827,6 +837,7 @@ Route::post('/checkouts/{booking}/schedule-reminders', function (Request $reques
             ]));
         }
     }
+
     return response()->json(['reminders' => $created], 201);
 })->middleware('role:admin,staff');
 
@@ -846,6 +857,7 @@ Route::post('/checkouts/process-reminders', function (Request $request, SmsServi
             ->find($reminder->booking_id);
         if (! $booking) {
             $reminder->update(['status' => 'cancelled']);
+
             continue;
         }
 
@@ -891,6 +903,7 @@ Route::post('/reviews', function (Request $request) {
         'hotel_id' => $hotelId,
         'submitted_at' => now(),
     ]);
+
     return response()->json($review, 201);
 })->middleware('role:admin,staff');
 
@@ -984,7 +997,7 @@ Route::post('/room-transfers', function (Request $request, FinancialComputationS
         'current_guest_name' => $booking->guest_name,
         'current_check_in' => $booking->check_in_date,
         'current_check_out' => $booking->check_out_date,
-        'current_access_code' => $existingAccessCode !== '' ? $existingAccessCode : app(\App\Services\GuestRoomAccessCodeService::class)->generateUnique(),
+        'current_access_code' => $existingAccessCode !== '' ? $existingAccessCode : app(GuestRoomAccessCodeService::class)->generateUnique(),
     ]);
     $fromFresh = $fromRoom->fresh() ?? $fromRoom;
     $toFresh = $toRoom->fresh() ?? $toRoom;
@@ -1012,6 +1025,7 @@ Route::post('/room-transfers', function (Request $request, FinancialComputationS
         'to_room_id' => (string) $toRoom->id,
     ]);
     $activityLogService->log((string) $request->user()->hotel_id, $request->user(), "Transferred booking {$booking->booking_reference}", ['transfer_id' => (string) $transfer->id]);
+
     return response()->json(['transfer' => $transfer, 'booking' => $booking->fresh()]);
 })->middleware('role:admin,staff');
 
@@ -1021,6 +1035,7 @@ Route::post('/chat/messages/{message}/read', function (Request $request, GuestMe
         return response()->json(['message' => 'Message is outside your hotel scope.'], 403);
     }
     $message->update(['is_read' => true, 'read_at' => now()]);
+
     return response()->json(['ok' => true]);
 })->middleware('role:admin,staff');
 
@@ -1119,7 +1134,7 @@ Route::post('/admin/reservations/{id}/approve', function (Request $request, stri
         return response()->json(['message' => 'Another reservation overlaps these dates for this room.'], 422);
     }
 
-    $walletFee = app(\App\Services\HotelCreditBookingFeeService::class)->deductForReservationConfirmation(
+    $walletFee = app(HotelCreditBookingFeeService::class)->deductForReservationConfirmation(
         $res,
         $room,
         (string) $request->user()->id,
@@ -1222,6 +1237,22 @@ Route::post('/admin/hotel/picker-banner', function (Request $request) {
         'picker_banner_url' => $url,
     ]);
 })->middleware('role:super_admin')->name('api.v1.admin.hotel.picker-banner.store');
+
+Route::get('/admin/hotel/guest-portal-qr', function (Request $request, GuestPortalQrService $guestPortalQrService) {
+    $hotel = Hotel::withoutGlobalScopes()->findOrFail((string) $request->user()->hotel_id);
+
+    return response()->json($guestPortalQrService->present($hotel));
+})->middleware('role:admin')->name('api.v1.admin.hotel.guest-portal-qr.show');
+
+Route::post('/admin/hotel/guest-portal-qr', function (Request $request, GuestPortalQrService $guestPortalQrService) {
+    $hotel = Hotel::withoutGlobalScopes()->findOrFail((string) $request->user()->hotel_id);
+    $payload = $guestPortalQrService->regenerate($hotel, $request->user());
+
+    return response()->json([
+        'ok' => true,
+        ...$payload,
+    ]);
+})->middleware('role:admin')->name('api.v1.admin.hotel.guest-portal-qr.regenerate');
 
 Route::get('/admin/hotel/payment-qr', function (Request $request) {
     $settings = SystemSetting::withoutGlobalScopes()

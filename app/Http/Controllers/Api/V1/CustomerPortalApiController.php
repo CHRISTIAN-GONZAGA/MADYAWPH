@@ -7,7 +7,6 @@ use App\Enums\BookingStatus;
 use App\Enums\BookingType;
 use App\Enums\PaymentMethod;
 use App\Enums\RoomStatus;
-use App\Enums\RoomType;
 use App\Http\Controllers\Controller;
 use App\Models\BillingCharge;
 use App\Models\Booking;
@@ -17,24 +16,27 @@ use App\Models\Room;
 use App\Models\RoomCategory;
 use App\Models\SystemSetting;
 use App\Services\ActivityLogService;
-use App\Services\HotelAvailabilityService;
 use App\Services\FinancialComputationService;
 use App\Services\GuestRoomAccessCodeService;
+use App\Services\HotelAvailabilityService;
 use App\Services\RoomPricingService;
-use App\Support\PriceRounding;
 use App\Services\SmsService;
 use App\Support\ChatAttachmentUrl;
 use App\Support\EnumHelper;
+use App\Support\PriceRounding;
 use App\Support\PublicUploadStorage;
 use App\Support\RoomBillingSupport;
+use App\Support\SafeModelAttributes;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Throwable;
 
 class CustomerPortalApiController extends Controller
@@ -84,7 +86,7 @@ class CustomerPortalApiController extends Controller
             ->where('hotel_id', $hotelId)
             ->orderBy('name')
             ->get(['id', 'name', 'description', 'image_url'])
-            ->map(function (RoomCategory $cat) use ($hotelId, $availableValue, $dateFilter, $checkIn, $checkOut) {
+            ->map(function (RoomCategory $cat) use ($hotelId, $dateFilter, $checkIn, $checkOut) {
                 $available = $this->countAvailableRoomsInCategory(
                     $hotelId,
                     (string) $cat->id,
@@ -117,7 +119,7 @@ class CustomerPortalApiController extends Controller
                             $checkOut,
                         )
                         : $roomsByType->filter(function ($room) {
-                            $st = $room->status?->value ?? (string) $room->status;
+                            $st = strtolower(SafeModelAttributes::rawString($room, 'status'));
 
                             return $st === RoomStatus::AVAILABLE->value;
                         })->count();
@@ -184,24 +186,20 @@ class CustomerPortalApiController extends Controller
             ))
             ->take(30)
             ->values()
-            ->map(function ($room) use ($hotelId, $categoryImage, $availableValue) {
-                $basePrice = RoomBillingSupport::toFloat($room->price_per_night);
-                $displayPrice = $this->roomPricingService->applySurge((string) $hotelId, $basePrice);
-                $roomImage = ChatAttachmentUrl::fromStoredUrl($room->image_url) ?? $categoryImage;
+            ->map(function (Room $room) use ($hotelId, $categoryImage, $availableValue) {
+                try {
+                    return $this->serializeCustomerRoom($room, $hotelId, $categoryImage, $availableValue);
+                } catch (Throwable $e) {
+                    Log::warning('Skipping customer room row', [
+                        'room_id' => (string) $room->id,
+                        'error' => $e->getMessage(),
+                    ]);
 
-                return [
-                    'id' => (string) $room->id,
-                    'display_name' => (string) ($room->display_name ?? ''),
-                    'room_number' => $room->room_number,
-                    'status' => $availableValue,
-                    'price_per_night' => $displayPrice,
-                    'base_price_per_night' => $basePrice,
-                    'room_type' => $room->room_type?->value ?? (string) $room->room_type,
-                    'category_id' => (string) ($room->category_id ?? ''),
-                    'category_name' => (string) ($room->category_name ?? ''),
-                    'image_url' => (string) ($roomImage ?? ''),
-                ];
-            });
+                    return null;
+                }
+            })
+            ->filter()
+            ->values();
 
         return response()->json([
             'hotel' => $hotel,
@@ -246,7 +244,7 @@ class CustomerPortalApiController extends Controller
         ?Carbon $checkIn,
         ?Carbon $checkOut,
     ): bool {
-        $status = $room->status?->value ?? (string) $room->status;
+        $status = strtolower(SafeModelAttributes::rawString($room, 'status'));
         if ($status === RoomStatus::MAINTENANCE->value) {
             return false;
         }
@@ -509,8 +507,8 @@ class CustomerPortalApiController extends Controller
     }
 
     /**
-     * @param  \Carbon\CarbonInterface  $checkIn
-     * @param  \Carbon\CarbonInterface  $checkOut
+     * @param  CarbonInterface  $checkIn
+     * @param  CarbonInterface  $checkOut
      */
     private function reservationRangeHasConflict(
         string $hotelId,
@@ -647,19 +645,23 @@ class CustomerPortalApiController extends Controller
     }
 
     /**
-     * @return \Illuminate\Support\Collection<int, Room>
+     * @return Collection<int, Room>
      */
     private function roomsInCategoryScope(
         string $hotelId,
         ?RoomCategory $category,
         string $categoryId,
-    ): \Illuminate\Support\Collection {
+    ): Collection {
         $all = Room::withoutGlobalScopes()->where('hotel_id', $hotelId)->get();
 
         if ($category !== null) {
             $catId = (string) $category->id;
 
-            return $all->filter(fn (Room $room) => (string) $room->category_id === $catId)->values();
+            return $all->filter(function (Room $room) use ($catId) {
+                $roomCat = (string) ($room->getAttributes()['category_id'] ?? '');
+
+                return $roomCat !== '' && $roomCat === $catId;
+            })->values();
         }
 
         $typeKey = strtolower($categoryId);
@@ -669,14 +671,47 @@ class CustomerPortalApiController extends Controller
         })->values();
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeCustomerRoom(
+        Room $room,
+        string $hotelId,
+        ?string $categoryImage,
+        string $availableValue,
+    ): array {
+        $attrs = $room->getAttributes();
+        $basePrice = RoomBillingSupport::toFloat($attrs['price_per_night'] ?? 0);
+        $displayPrice = $this->roomPricingService->applySurge($hotelId, $basePrice);
+        $roomImage = ChatAttachmentUrl::fromStoredUrl($room->image_url) ?? $categoryImage;
+        $billingMode = RoomBillingSupport::billingMode($room);
+        $hourly = $billingMode === RoomBillingSupport::MODE_HOURLY
+            ? RoomBillingSupport::hourlyConfig($room)
+            : null;
+        $blockPrice = $hourly !== null
+            ? $this->roomPricingService->applySurge($hotelId, (float) $hourly['price_per_block'])
+            : null;
+
+        return [
+            'id' => (string) $room->id,
+            'display_name' => (string) ($attrs['display_name'] ?? ''),
+            'room_number' => $attrs['room_number'] ?? '',
+            'status' => $availableValue,
+            'price_per_night' => $displayPrice,
+            'base_price_per_night' => $basePrice,
+            'billing_mode' => $billingMode,
+            'price_per_block' => $blockPrice,
+            'block_hours' => $hourly['block_hours'] ?? null,
+            'room_type' => SafeModelAttributes::rawString($room, 'room_type'),
+            'category_id' => (string) ($attrs['category_id'] ?? ''),
+            'category_name' => (string) ($attrs['category_name'] ?? ''),
+            'image_url' => (string) ($roomImage ?? ''),
+        ];
+    }
+
     private function roomTypeKey(Room $room): string
     {
-        $type = $room->room_type;
-        if ($type instanceof RoomType) {
-            return strtolower($type->value);
-        }
-
-        return strtolower((string) $type);
+        return strtolower(SafeModelAttributes::rawString($room, 'room_type'));
     }
 
     private function countAvailableRoomsInCategory(
@@ -699,7 +734,7 @@ class CustomerPortalApiController extends Controller
 
         if ($checkIn === null || $checkOut === null) {
             return (int) $scoped->filter(function (Room $room) {
-                $status = $room->status?->value ?? (string) $room->status;
+                $status = strtolower(SafeModelAttributes::rawString($room, 'status'));
 
                 return $status === RoomStatus::AVAILABLE->value;
             })->count();
@@ -813,7 +848,7 @@ class CustomerPortalApiController extends Controller
 
     private function roomStatusValue(Room $room): string
     {
-        return EnumHelper::toString($room->status);
+        return strtolower(SafeModelAttributes::rawString($room, 'status'));
     }
 
     private function customerErrorResponse(Throwable $e, string $message): JsonResponse

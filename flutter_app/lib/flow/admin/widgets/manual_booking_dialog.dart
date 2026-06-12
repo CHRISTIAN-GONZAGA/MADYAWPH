@@ -15,8 +15,8 @@ Future<bool> showAdminManualBookingDialog({
   final phoneCtrl = TextEditingController();
   var checkInDate = DateTime.now();
   var checkOutDate = DateTime.now().add(const Duration(hours: 3));
-  var checkInTime = TimeOfDay.fromDateTime(checkInDate);
-  var checkOutTime = TimeOfDay.fromDateTime(checkOutDate);
+  var checkInTime = AdminTimeSlotField.snapToSlot(TimeOfDay.fromDateTime(checkInDate));
+  var checkOutTime = AdminTimeSlotField.snapToSlot(TimeOfDay.fromDateTime(checkOutDate));
   var checkInNow = true;
   var busy = false;
   String? error;
@@ -92,190 +92,166 @@ Future<bool> showAdminManualBookingDialog({
           }
         }
 
-        return Dialog(
-          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480, maxHeight: 640),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Book Room $roomNo',
-                    style: Theme.of(ctx).textTheme.titleLarge,
+        return AlertDialog(
+          title: Text('Book Room $roomNo'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  HourlyBilling.priceLabel(room),
+                  style: Theme.of(ctx).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Guest name',
+                    prefixIcon: Icon(Icons.person_outline),
                   ),
-                  Text(
-                    HourlyBilling.priceLabel(room),
-                    style: Theme.of(ctx).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: emailCtrl,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    prefixIcon: Icon(Icons.email_outlined),
                   ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: SingleChildScrollView(
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'Phone',
+                    prefixIcon: Icon(Icons.phone_outlined),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Check-in date'),
+                  subtitle: Text(
+                    '${checkInDate.year}-${checkInDate.month.toString().padLeft(2, '0')}-${checkInDate.day.toString().padLeft(2, '0')}',
+                  ),
+                  trailing: const Icon(Icons.calendar_today),
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: ctx,
+                      firstDate:
+                          DateTime.now().subtract(const Duration(days: 1)),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                      initialDate: checkInDate,
+                    );
+                    if (picked != null) {
+                      setLocal(() => checkInDate = picked);
+                    }
+                  },
+                ),
+                AdminTimeSlotField(
+                  label: 'Check-in time',
+                  value: checkInTime,
+                  onChanged: (t) => setLocal(
+                    () => checkInTime = t ?? checkInTime,
+                  ),
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Check-out date'),
+                  subtitle: Text(
+                    '${checkOutDate.year}-${checkOutDate.month.toString().padLeft(2, '0')}-${checkOutDate.day.toString().padLeft(2, '0')}',
+                  ),
+                  trailing: const Icon(Icons.calendar_today),
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: ctx,
+                      firstDate: checkInDate,
+                      lastDate: checkInDate.add(const Duration(days: 365)),
+                      initialDate: checkOutDate,
+                    );
+                    if (picked != null) {
+                      setLocal(() => checkOutDate = picked);
+                    }
+                  },
+                ),
+                AdminTimeSlotField(
+                  label: 'Check-out time',
+                  value: checkOutTime,
+                  onChanged: (t) => setLocal(
+                    () => checkOutTime = t ?? checkOutTime,
+                  ),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Check in immediately'),
+                  subtitle: const Text(
+                    'Mark guest as checked in after booking',
+                  ),
+                  value: checkInNow,
+                  onChanged: (v) => setLocal(() => checkInNow = v),
+                ),
+                if (validWindow)
+                  Card(
+                    color: Theme.of(ctx)
+                        .colorScheme
+                        .primaryContainer
+                        .withValues(alpha: 0.35),
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
                       child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          TextField(
-                            controller: nameCtrl,
-                            decoration: const InputDecoration(
-                              labelText: 'Guest name',
-                              prefixIcon: Icon(Icons.person_outline),
-                            ),
+                          Text(
+                            'Estimated bill',
+                            style: Theme.of(ctx)
+                                .textTheme
+                                .titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w700),
                           ),
-                          const SizedBox(height: 10),
-                          TextField(
-                            controller: emailCtrl,
-                            keyboardType: TextInputType.emailAddress,
-                            decoration: const InputDecoration(
-                              labelText: 'Email',
-                              prefixIcon: Icon(Icons.email_outlined),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          TextField(
-                            controller: phoneCtrl,
-                            keyboardType: TextInputType.phone,
-                            decoration: const InputDecoration(
-                              labelText: 'Phone',
-                              prefixIcon: Icon(Icons.phone_outlined),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: const Text('Check-in date'),
-                            subtitle: Text(
-                              '${checkInDate.year}-${checkInDate.month.toString().padLeft(2, '0')}-${checkInDate.day.toString().padLeft(2, '0')}',
-                            ),
-                            trailing: const Icon(Icons.calendar_today),
-                            onTap: () async {
-                              final picked = await showDatePicker(
-                                context: ctx,
-                                firstDate: DateTime.now()
-                                    .subtract(const Duration(days: 1)),
-                                lastDate: DateTime.now()
-                                    .add(const Duration(days: 365)),
-                                initialDate: checkInDate,
-                              );
-                              if (picked != null) {
-                                setLocal(() => checkInDate = picked);
-                              }
-                            },
-                          ),
-                          AdminTimeSlotField(
-                            label: 'Check-in time',
-                            value: checkInTime,
-                            onChanged: (t) =>
-                                setLocal(() => checkInTime = t ?? checkInTime),
-                          ),
-                          ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: const Text('Check-out date'),
-                            subtitle: Text(
-                              '${checkOutDate.year}-${checkOutDate.month.toString().padLeft(2, '0')}-${checkOutDate.day.toString().padLeft(2, '0')}',
-                            ),
-                            trailing: const Icon(Icons.calendar_today),
-                            onTap: () async {
-                              final picked = await showDatePicker(
-                                context: ctx,
-                                firstDate: checkInDate,
-                                lastDate: checkInDate
-                                    .add(const Duration(days: 365)),
-                                initialDate: checkOutDate,
-                              );
-                              if (picked != null) {
-                                setLocal(() => checkOutDate = picked);
-                              }
-                            },
-                          ),
-                          AdminTimeSlotField(
-                            label: 'Check-out time',
-                            value: checkOutTime,
-                            onChanged: (t) =>
-                                setLocal(() => checkOutTime = t ?? checkOutTime),
-                          ),
-                          SwitchListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: const Text('Check in immediately'),
-                            subtitle: const Text(
-                              'Mark guest as checked in after booking',
-                            ),
-                            value: checkInNow,
-                            onChanged: (v) => setLocal(() => checkInNow = v),
-                          ),
-                          if (validWindow)
-                            Card(
-                              color: Theme.of(ctx)
-                                  .colorScheme
-                                  .primaryContainer
-                                  .withValues(alpha: 0.35),
-                              child: Padding(
-                                padding: const EdgeInsets.all(14),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Estimated bill',
-                                      style: Theme.of(ctx)
-                                          .textTheme
-                                          .titleSmall
-                                          ?.copyWith(fontWeight: FontWeight.w700),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    if (isHourly)
-                                      Text('$stayHours hour(s) stay'),
-                                    Text(
-                                      '₱${estimated.toStringAsFixed(0)}',
-                                      style: Theme.of(ctx)
-                                          .textTheme
-                                          .headlineSmall
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w800,
-                                            color: Theme.of(ctx).colorScheme.primary,
-                                          ),
-                                    ),
-                                  ],
+                          const SizedBox(height: 6),
+                          if (isHourly) Text('$stayHours hour(s) stay'),
+                          Text(
+                            '₱${estimated.toStringAsFixed(0)}',
+                            style: Theme.of(ctx)
+                                .textTheme
+                                .headlineSmall
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  color: Theme.of(ctx).colorScheme.primary,
                                 ),
-                              ),
-                            ),
-                          if (error != null) ...[
-                            const SizedBox(height: 8),
-                            Text(
-                              error!,
-                              style: TextStyle(
-                                color: Theme.of(ctx).colorScheme.error,
-                              ),
-                            ),
-                          ],
+                          ),
                         ],
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: busy ? null : () => Navigator.pop(ctx, false),
-                        child: const Text('Cancel'),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton(
-                        onPressed: busy ? null : submit,
-                        child: busy
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Text('Create booking'),
-                      ),
-                    ],
+                if (error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    error!,
+                    style: TextStyle(color: Theme.of(ctx).colorScheme.error),
                   ),
                 ],
-              ),
+              ],
             ),
           ),
+          actions: [
+            TextButton(
+              onPressed: busy ? null : () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: busy ? null : submit,
+              child: busy
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Create booking'),
+            ),
+          ],
         );
       },
     ),

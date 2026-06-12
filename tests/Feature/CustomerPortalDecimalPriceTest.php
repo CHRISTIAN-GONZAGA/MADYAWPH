@@ -44,4 +44,31 @@ class CustomerPortalDecimalPriceTest extends TestCase
         $category->delete();
         $hotel->delete();
     }
+
+    public function test_customer_rooms_tolerates_legacy_invalid_room_type(): void
+    {
+        $hotel = Hotel::create(['name' => 'Legacy Type Hotel', 'location' => 'Cebu', 'city' => 'Cebu']);
+        $category = RoomCategory::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'Standard Rooms',
+            'description' => 'Legacy',
+        ]);
+        Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'category_id' => (string) $category->id,
+            'room_number' => '101',
+            'room_type' => 'Standard',
+            'price_per_night' => 1500,
+            'status' => RoomStatus::AVAILABLE->value,
+        ]);
+
+        $rooms = $this->getJson(
+            '/api/v1/customer/categories/'.urlencode((string) $category->id)
+            .'/rooms?hotel_id='.(string) $hotel->id
+        );
+
+        $rooms->assertOk();
+        $rooms->assertJsonCount(1, 'rooms');
+        $rooms->assertJsonPath('rooms.0.room_type', 'Standard');
+    }
 }

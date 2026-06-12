@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ExternalReservation;
 use App\Models\HotelCredit;
 use App\Models\Room;
+use App\Support\RoomBillingSupport;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -27,12 +28,27 @@ class HotelCreditBookingFeeService
         $start = Carbon::parse($checkIn)->startOfDay();
         $end = Carbon::parse($checkOut)->startOfDay();
         $nights = max(1, (int) $start->diffInDays($end));
+        $attrs = $room->getAttributes();
         $nightly = $this->roomPricingService->applySurge(
             (string) $room->hotel_id,
-            (float) $room->price_per_night
+            RoomBillingSupport::toFloat($attrs['price_per_night'] ?? 0)
         );
 
         return $this->financialComputationService->computeRoomCharge($nightly, $nights);
+    }
+
+    public function computeRoomTotalForReservation(ExternalReservation $reservation, Room $room): float
+    {
+        $meta = $reservation->metadata;
+        if (is_array($meta) && isset($meta['estimated_total']) && (float) $meta['estimated_total'] > 0) {
+            return (float) $meta['estimated_total'];
+        }
+
+        return $this->computeRoomTotal(
+            $room,
+            $reservation->check_in_date,
+            $reservation->check_out_date
+        );
     }
 
     public function computeFee(float $roomTotal): float
@@ -74,11 +90,7 @@ class HotelCreditBookingFeeService
             $actorUserId,
             $reservationId,
         ): array {
-            $roomTotal = $this->computeRoomTotal(
-                $room,
-                $reservation->check_in_date,
-                $reservation->check_out_date
-            );
+            $roomTotal = $this->computeRoomTotalForReservation($reservation, $room);
             $fee = $this->computeFee($roomTotal);
 
             if ($fee <= 0) {
