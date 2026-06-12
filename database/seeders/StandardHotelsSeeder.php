@@ -24,6 +24,7 @@ use Illuminate\Support\Str;
 
 /**
  * Demo data: hotel gate `hotel{n}` / `hotel123`, admin login name = `admin{n}@hotel.local` (same as email).
+ * Test property: gate `testhotel` / `TestHotel123` (see hotels array entry with gate_user).
  */
 class StandardHotelsSeeder extends Seeder
 {
@@ -51,30 +52,43 @@ class StandardHotelsSeeder extends Seeder
             ['name' => 'Narra Crown Hotel', 'location' => 'Cagayan de Oro', 'city' => 'Cagayan de Oro'],
             ['name' => 'Madyaw Grand Butuan', 'location' => 'Jose Rizal St, Butuan City', 'city' => 'Butuan'],
             ['name' => 'Agusan River Inn', 'location' => 'Montilla Blvd, Butuan City', 'city' => 'Butuan'],
+            [
+                'name' => 'MADYAW Test Hotel',
+                'location' => 'Demo City',
+                'city' => 'Manila',
+                'gate_user' => 'testhotel',
+                'gate_pass' => 'TestHotel123',
+            ],
         ];
 
         foreach ($hotels as $index => $hotelData) {
             $hotelNumber = $index + 1;
             $adminEmail = "admin{$hotelNumber}@hotel.local";
+            $gateUser = $hotelData['gate_user'] ?? "hotel{$hotelNumber}";
+            $gatePass = $hotelData['gate_pass'] ?? 'hotel123';
+            unset($hotelData['gate_user'], $hotelData['gate_pass']);
 
             $hotel = Hotel::create(array_merge($hotelData, [
-                'access_username' => "hotel{$hotelNumber}",
-                'access_password' => Hash::make('hotel123'),
+                'access_username' => $gateUser,
+                'access_password' => Hash::make($gatePass),
             ]));
+
+            $portalPass = $gatePass;
+            $staffPass = $gateUser === 'testhotel' ? 'TestHotel123' : 'staff123';
 
             $admin = User::create([
                 'hotel_id' => $hotel->id,
-                'name' => $adminEmail,
-                'email' => $adminEmail,
-                'password' => Hash::make('hotel123'),
+                'name' => $gateUser === 'testhotel' ? 'testhotel_admin' : $adminEmail,
+                'email' => $gateUser === 'testhotel' ? 'admin@testhotel.local' : $adminEmail,
+                'password' => Hash::make($portalPass),
                 'role' => UserRole::ADMIN,
             ]);
 
             $staffUser1 = User::create([
                 'hotel_id' => $hotel->id,
-                'name' => "staff1{$hotelNumber}",
-                'email' => "staff1{$hotelNumber}@hotel.local",
-                'password' => Hash::make('staff123'),
+                'name' => $gateUser === 'testhotel' ? 'teststaff' : "staff1{$hotelNumber}",
+                'email' => $gateUser === 'testhotel' ? 'staff@testhotel.local' : "staff1{$hotelNumber}@hotel.local",
+                'password' => Hash::make($staffPass),
                 'role' => UserRole::STAFF,
             ]);
 
@@ -82,9 +96,26 @@ class StandardHotelsSeeder extends Seeder
                 'hotel_id' => $hotel->id,
                 'name' => "staff2{$hotelNumber}",
                 'email' => "staff2{$hotelNumber}@hotel.local",
-                'password' => Hash::make('staff123'),
+                'password' => Hash::make($staffPass),
                 'role' => UserRole::STAFF,
             ]);
+
+            if ($gateUser === 'testhotel') {
+                User::create([
+                    'hotel_id' => $hotel->id,
+                    'name' => 'testhotel',
+                    'email' => 'super@testhotel.local',
+                    'password' => Hash::make('TestHotel123'),
+                    'role' => UserRole::SUPER_ADMIN,
+                ]);
+                User::create([
+                    'hotel_id' => $hotel->id,
+                    'name' => 'testowner',
+                    'email' => 'owner@testhotel.local',
+                    'password' => Hash::make('TestHotel123'),
+                    'role' => UserRole::OWNER,
+                ]);
+            }
 
             $staffMembers = collect([
                 StaffMember::withoutGlobalScopes()->create(['hotel_id' => $hotel->id, 'user_id' => $staffUser1->id, 'name' => $staffUser1->name, 'role' => StaffRole::RECEPTIONIST, 'performance_score' => 78]),

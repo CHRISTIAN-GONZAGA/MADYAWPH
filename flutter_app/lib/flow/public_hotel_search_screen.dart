@@ -2,10 +2,13 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../auth_storage.dart';
 import '../branding/madyaw_logo_widget.dart';
+import '../data/philippine_destination_presets.dart';
 import '../dio_client.dart';
+import '../locale_controller.dart';
 import '../widgets/language_picker_button.dart';
 import 'customer_search_context.dart';
 import 'hotel_search_results_screen.dart';
@@ -25,20 +28,33 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
   bool _loading = true;
   bool _searching = false;
   String? _error;
+  String? _selectedPresetQuery;
   DateTime _checkIn = DateTime.now();
   DateTime _checkOut = DateTime.now().add(const Duration(days: 1));
   int _rooms = 1;
   int _adults = 2;
   int _children = 0;
 
+  static const _heroBlue = Color(0xFF1565C0);
+  static const _heroDeep = Color(0xFF083A7A);
+
   @override
   void initState() {
     super.initState();
+    _destinationCtrl.addListener(_onDestinationEdited);
     _loadHotels();
+  }
+
+  void _onDestinationEdited() {
+    final text = _destinationCtrl.text.trim();
+    if (_selectedPresetQuery != null && text != _selectedPresetQuery) {
+      setState(() => _selectedPresetQuery = null);
+    }
   }
 
   @override
   void dispose() {
+    _destinationCtrl.removeListener(_onDestinationEdited);
     _destinationCtrl.dispose();
     super.dispose();
   }
@@ -109,6 +125,11 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
     }
   }
 
+  int get _nightCount {
+    final nights = _checkOut.difference(_checkIn).inDays;
+    return nights > 0 ? nights : 1;
+  }
+
   String _fmtDate(DateTime d) {
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     const months = [
@@ -116,6 +137,85 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
     ];
     return '${days[d.weekday - 1]}, ${months[d.month - 1]} ${d.day}';
+  }
+
+  void _selectPreset(PhDestinationPreset preset) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      _selectedPresetQuery = preset.searchQuery;
+      _destinationCtrl.text = preset.searchQuery;
+    });
+  }
+
+  Future<void> _openDestinationPicker() async {
+    final grouped = PhilippineDestinationPresets.byRegion;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.72,
+          maxChildSize: 0.92,
+          minChildSize: 0.45,
+          builder: (_, scroll) => SafeArea(
+            child: ListView(
+              controller: scroll,
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+              children: [
+                Text(
+                  'Philippine destinations',
+                  style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Tap a city to set your search',
+                  style: Theme.of(ctx).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 16),
+                ...grouped.entries.map((entry) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8, top: 4),
+                        child: Text(
+                          entry.key,
+                          style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: _heroBlue,
+                              ),
+                        ),
+                      ),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: entry.value.map((preset) {
+                          final selected =
+                              _selectedPresetQuery == preset.searchQuery;
+                          return FilterChip(
+                            label: Text('${preset.icon} ${preset.label}'),
+                            selected: selected,
+                            onSelected: (_) {
+                              _selectPreset(preset);
+                              Navigator.pop(ctx);
+                            },
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _pickDate({required bool checkIn}) async {
@@ -148,66 +248,66 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
     var rooms = _rooms;
     var adults = _adults;
     var children = _children;
-    await showDialog<void>(
+    await showModalBottomSheet<void>(
       context: context,
+      showDragHandle: true,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          title: const Text('Rooms & guests'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _counterRow('Rooms', rooms, (v) => setLocal(() => rooms = v), min: 1),
-              _counterRow('Adults', adults, (v) => setLocal(() => adults = v), min: 1),
-              _counterRow(
-                'Children',
-                children,
-                (v) => setLocal(() => children = v),
-              ),
-            ],
+        builder: (ctx, setLocal) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Rooms & guests',
+                  style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(height: 16),
+                _GuestCounterRow(
+                  label: 'Rooms',
+                  subtitle: 'How many rooms do you need?',
+                  value: rooms,
+                  min: 1,
+                  onChanged: (v) => setLocal(() => rooms = v),
+                ),
+                const Divider(height: 24),
+                _GuestCounterRow(
+                  label: 'Adults',
+                  subtitle: 'Ages 18+',
+                  value: adults,
+                  min: 1,
+                  onChanged: (v) => setLocal(() => adults = v),
+                ),
+                const Divider(height: 24),
+                _GuestCounterRow(
+                  label: 'Children',
+                  subtitle: 'Ages 0–17',
+                  value: children,
+                  onChanged: (v) => setLocal(() => children = v),
+                ),
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: () {
+                    setState(() {
+                      _rooms = rooms;
+                      _adults = adults;
+                      _children = children;
+                    });
+                    Navigator.pop(ctx);
+                  },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _heroBlue,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  child: const Text('Apply'),
+                ),
+              ],
+            ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                setState(() {
-                  _rooms = rooms;
-                  _adults = adults;
-                  _children = children;
-                });
-                Navigator.pop(ctx);
-              },
-              child: const Text('Done'),
-            ),
-          ],
         ),
-      ),
-    );
-  }
-
-  Widget _counterRow(
-    String label,
-    int value,
-    ValueChanged<int> onChanged, {
-    int min = 0,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Expanded(child: Text(label)),
-          IconButton(
-            onPressed: value > min ? () => onChanged(value - 1) : null,
-            icon: const Icon(Icons.remove_circle_outline),
-          ),
-          Text('$value', style: const TextStyle(fontWeight: FontWeight.w700)),
-          IconButton(
-            onPressed: () => onChanged(value + 1),
-            icon: const Icon(Icons.add_circle_outline),
-          ),
-        ],
       ),
     );
   }
@@ -271,6 +371,7 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
   }
 
   Future<void> _search() async {
+    HapticFeedback.mediumImpact();
     setState(() => _searching = true);
     try {
       final result = await _fetchSearchResults();
@@ -296,11 +397,15 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
         );
       }
       await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(
-          builder: (_) => HotelSearchResultsScreen(
-            hotels: hotels,
-            search: search,
+        PageRouteBuilder<void>(
+          pageBuilder: (_, animation, __) => FadeTransition(
+            opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+            child: HotelSearchResultsScreen(
+              hotels: hotels,
+              search: search,
+            ),
           ),
+          transitionDuration: const Duration(milliseconds: 280),
         ),
       );
     } on DioException catch (e) {
@@ -329,6 +434,7 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final destination = _destinationCtrl.text.trim();
 
     return Scaffold(
       body: Stack(
@@ -337,16 +443,27 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
           const DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
                 colors: [
-                  Color(0xFF1565C0),
+                  Color(0xFF1976D2),
+                  _heroBlue,
                   Color(0xFF0D47A1),
-                  Color(0xFF083A7A),
+                  _heroDeep,
                 ],
+                stops: [0.0, 0.35, 0.7, 1.0],
               ),
             ),
             child: SizedBox.expand(),
+          ),
+          Positioned(
+            top: -80,
+            right: -40,
+            child: Icon(
+              Icons.travel_explore,
+              size: 220,
+              color: Colors.white.withValues(alpha: 0.06),
+            ),
           ),
           SafeArea(
             child: Column(
@@ -357,47 +474,78 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                     children: [
                       const SizedBox(width: 8),
                       const Expanded(
-                        child: Center(child: MadyawLogoWidget(size: 72)),
+                        child: Center(child: MadyawLogoWidget(size: 68)),
                       ),
                       const LanguagePickerButton(),
                       IconButton(
-                        tooltip: 'Hotel staff sign in',
+                        tooltip: context.tr('property_sign_in'),
                         onPressed: _openStaffPropertyLogin,
                         icon: const Icon(Icons.badge_outlined, color: Colors.white),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Hotels',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                  child: Column(
+                    children: [
+                      Text(
+                        'Where would you like to go?',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                            ),
                       ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Search stays across the Philippines',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Colors.white.withValues(alpha: 0.85),
+                            ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 16),
                 Expanded(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Material(
-                          elevation: 8,
+                          elevation: 12,
                           shadowColor: Colors.black38,
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(20),
                           color: Colors.white,
                           child: Padding(
-                            padding: const EdgeInsets.all(16),
+                            padding: const EdgeInsets.all(18),
                             child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 TextField(
                                   controller: _destinationCtrl,
                                   decoration: InputDecoration(
-                                    hintText: 'Where would you like to go?',
-                                    prefixIcon: const Icon(Icons.search),
+                                    hintText: 'City, region, or hotel name',
+                                    prefixIcon: const Icon(Icons.location_on_outlined),
+                                    suffixIcon: destination.isNotEmpty
+                                        ? IconButton(
+                                            onPressed: () {
+                                              setState(() {
+                                                _destinationCtrl.clear();
+                                                _selectedPresetQuery = null;
+                                              });
+                                            },
+                                            icon: const Icon(Icons.close, size: 20),
+                                          )
+                                        : IconButton(
+                                            onPressed: _openDestinationPicker,
+                                            icon: const Icon(Icons.map_outlined),
+                                            tooltip: 'Browse cities',
+                                          ),
                                     border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
+                                      borderRadius: BorderRadius.circular(14),
                                     ),
                                     filled: true,
                                     fillColor: scheme.surfaceContainerLowest,
@@ -405,7 +553,52 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                                   textInputAction: TextInputAction.search,
                                   onSubmitted: (_) => _search(),
                                 ),
-                                const SizedBox(height: 12),
+                                const SizedBox(height: 14),
+                                Text(
+                                  'Popular destinations',
+                                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
+                                const SizedBox(height: 10),
+                                SizedBox(
+                                  height: 42,
+                                  child: ListView.separated(
+                                    scrollDirection: Axis.horizontal,
+                                    itemCount: PhilippineDestinationPresets.popular.length + 1,
+                                    separatorBuilder: (_, __) =>
+                                        const SizedBox(width: 8),
+                                    itemBuilder: (context, i) {
+                                      if (i == PhilippineDestinationPresets.popular.length) {
+                                        return ActionChip(
+                                          avatar: const Icon(Icons.grid_view, size: 18),
+                                          label: const Text('All cities'),
+                                          onPressed: _openDestinationPicker,
+                                        );
+                                      }
+                                      final preset =
+                                          PhilippineDestinationPresets.popular[i];
+                                      final selected = _selectedPresetQuery ==
+                                          preset.searchQuery;
+                                      return FilterChip(
+                                        label: Text(
+                                          '${preset.icon} ${preset.label}',
+                                          style: TextStyle(
+                                            fontWeight: selected
+                                                ? FontWeight.w700
+                                                : FontWeight.w500,
+                                          ),
+                                        ),
+                                        selected: selected,
+                                        selectedColor:
+                                            _heroBlue.withValues(alpha: 0.15),
+                                        checkmarkColor: _heroBlue,
+                                        onSelected: (_) => _selectPreset(preset),
+                                      );
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
                                 Row(
                                   children: [
                                     Expanded(
@@ -415,7 +608,34 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                                         onTap: () => _pickDate(checkIn: true),
                                       ),
                                     ),
-                                    const SizedBox(width: 10),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                                      child: Column(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: _heroBlue.withValues(alpha: 0.1),
+                                              borderRadius: BorderRadius.circular(20),
+                                            ),
+                                            child: Text(
+                                              '$_nightCount night${_nightCount == 1 ? '' : 's'}',
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700,
+                                                color: _heroBlue,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Icon(Icons.arrow_forward,
+                                              size: 16, color: scheme.outline),
+                                        ],
+                                      ),
+                                    ),
                                     Expanded(
                                       child: _DateTile(
                                         label: 'Check-out',
@@ -425,10 +645,10 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 12),
+                                const SizedBox(height: 14),
                                 InkWell(
                                   onTap: _pickGuests,
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(14),
                                   child: Container(
                                     width: double.infinity,
                                     padding: const EdgeInsets.symmetric(
@@ -436,21 +656,40 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                                       vertical: 14,
                                     ),
                                     decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(12),
+                                      borderRadius: BorderRadius.circular(14),
                                       border: Border.all(
                                         color: scheme.outlineVariant,
                                       ),
+                                      color: scheme.surfaceContainerLowest,
                                     ),
                                     child: Row(
                                       children: [
-                                        Icon(Icons.person_outline,
+                                        Icon(Icons.people_outline,
                                             color: scheme.primary),
                                         const SizedBox(width: 10),
                                         Expanded(
-                                          child: Text(
-                                            '$_rooms Room${_rooms == 1 ? '' : 's'}, '
-                                            '$_adults Adult${_adults == 1 ? '' : 's'}, '
-                                            '$_children Child${_children == 1 ? '' : 'ren'}',
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'Guests',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .labelSmall
+                                                    ?.copyWith(
+                                                      color: scheme.onSurfaceVariant,
+                                                    ),
+                                              ),
+                                              Text(
+                                                '$_rooms room${_rooms == 1 ? '' : 's'} · '
+                                                '$_adults adult${_adults == 1 ? '' : 's'} · '
+                                                '$_children child${_children == 1 ? '' : 'ren'}',
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                         Icon(Icons.chevron_right,
@@ -459,34 +698,45 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                                     ),
                                   ),
                                 ),
-                                const SizedBox(height: 16),
+                                const SizedBox(height: 18),
                                 SizedBox(
-                                  width: double.infinity,
-                                  height: 52,
+                                  height: 54,
                                   child: FilledButton(
                                     onPressed:
                                         (_loading || _searching) ? null : _search,
                                     style: FilledButton.styleFrom(
-                                      backgroundColor: const Color(0xFF1565C0),
+                                      backgroundColor: _heroBlue,
+                                      disabledBackgroundColor:
+                                          _heroBlue.withValues(alpha: 0.5),
                                       shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
+                                        borderRadius: BorderRadius.circular(14),
                                       ),
+                                      elevation: 2,
                                     ),
                                     child: (_loading || _searching)
                                         ? const SizedBox(
-                                            width: 22,
-                                            height: 22,
+                                            width: 24,
+                                            height: 24,
                                             child: CircularProgressIndicator(
-                                              strokeWidth: 2,
+                                              strokeWidth: 2.5,
                                               color: Colors.white,
                                             ),
                                           )
-                                        : const Text(
-                                            'SEARCH',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w800,
-                                              letterSpacing: 1.2,
-                                            ),
+                                        : const Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              Icon(Icons.search, size: 22),
+                                              SizedBox(width: 10),
+                                              Text(
+                                                'SEARCH HOTELS',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w800,
+                                                  letterSpacing: 1.1,
+                                                  fontSize: 15,
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                   ),
                                 ),
@@ -510,11 +760,19 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                           ),
                         ],
                         const SizedBox(height: 20),
-                        Text(
-                          '${_allHotels.length} properties in the Philippines',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Colors.white70,
-                              ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.apartment,
+                                size: 16, color: Colors.white.withValues(alpha: 0.7)),
+                            const SizedBox(width: 6),
+                            Text(
+                              '${_allHotels.length} properties nationwide',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Colors.white.withValues(alpha: 0.75),
+                                  ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -525,6 +783,54 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _GuestCounterRow extends StatelessWidget {
+  const _GuestCounterRow({
+    required this.label,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+    this.min = 0,
+  });
+
+  final String label;
+  final String subtitle;
+  final int value;
+  final int min;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+              Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+            ],
+          ),
+        ),
+        IconButton.filledTonal(
+          onPressed: value > min ? () => onChanged(value - 1) : null,
+          icon: const Icon(Icons.remove),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text(
+            '$value',
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+          ),
+        ),
+        IconButton.filledTonal(
+          onPressed: () => onChanged(value + 1),
+          icon: const Icon(Icons.add),
+        ),
+      ],
     );
   }
 }
@@ -545,12 +851,13 @@ class _DateTile extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(14),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(color: scheme.outlineVariant),
+          color: scheme.surfaceContainerLowest,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -582,4 +889,3 @@ class _DateTile extends StatelessWidget {
     );
   }
 }
-

@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import '../../../widgets/room_status_label.dart';
 import '../admin_dashboard_models.dart';
 import '../widgets/booking_overview_cards.dart';
-import 'room_board_section.dart';
 import '../../admin_rooms.dart';
 
 class RoomSummarySection extends StatelessWidget {
@@ -251,12 +250,6 @@ class RoomSummarySection extends StatelessWidget {
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
       children: [
-        RoomBoardSection(
-          rooms: rooms,
-          hotelName: hotelName,
-          onChanged: onRefresh,
-        ),
-        const SizedBox(height: 20),
         BookingOverviewCards(
           localTotal: localBookingsTotal,
           onlineTotal: onlineBookingsTotal,

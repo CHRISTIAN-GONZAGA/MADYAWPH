@@ -88,9 +88,35 @@ class PortalAuthController extends Controller
 
     public function hotelAccess(Request $request): JsonResponse
     {
+        $validated = $request->validate([
+            'username' => ['required', 'string', 'max:255'],
+            'password' => ['required', 'string', 'max:128'],
+        ]);
+
+        $username = trim((string) $validated['username']);
+        $hotel = Hotel::withoutGlobalScopes()
+            ->where('access_username', $username)
+            ->first();
+
+        if ($hotel === null) {
+            return response()->json([
+                'message' => 'Invalid property username or password.',
+            ], 422);
+        }
+
+        $gateHash = $hotel->access_password;
+        if (! is_string($gateHash) || trim($gateHash) === ''
+            || ! Hash::check((string) $validated['password'], $gateHash)) {
+            return response()->json([
+                'message' => 'Invalid property username or password.',
+            ], 422);
+        }
+
         return response()->json([
-            'message' => 'Hotel gate login is disabled. Choose your property from the hotel directory in the app.',
-        ], 410);
+            'ok' => true,
+            'hotel_id' => (string) $hotel->id,
+            'hotel_name' => (string) $hotel->name,
+        ]);
     }
 
     /**
@@ -325,7 +351,7 @@ class PortalAuthController extends Controller
         $userHotelId = $this->normalizeHotelId($user->hotel_id);
         $activeHotelId = $this->normalizeHotelId($validated['hotel_id']);
         if ($activeHotelId === '') {
-            return response()->json(['message' => 'Select a hotel from the directory first.'], 422);
+            return response()->json(['message' => 'Sign in to your property first.'], 422);
         }
 
         if ($userHotelId !== $activeHotelId) {

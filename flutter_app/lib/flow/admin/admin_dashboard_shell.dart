@@ -14,6 +14,7 @@ import 'sections/amenities_section.dart';
 import 'sections/bookings_section.dart';
 import 'sections/checkout_section.dart';
 import 'sections/guest_portfolio_section.dart';
+import 'sections/manual_booking_section.dart';
 import 'sections/room_summary_section.dart';
 import 'sections/resellers_section.dart';
 import 'sections/settings_section.dart';
@@ -91,6 +92,11 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         badgeCount: pendingRes,
         badgeColor: const Color(0xFF6A1B9A),
       ),
+      const AdminNavItem(
+        label: 'Walk-in',
+        shortLabel: 'Walk-in',
+        icon: Icons.meeting_room_outlined,
+      ),
       AdminNavItem(
         label: 'Amenities',
         shortLabel: 'Store',
@@ -146,7 +152,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     }
   }
 
-  int _settingsTabIndex(Map<String, dynamic> d) => 6;
+  int _settingsTabIndex(Map<String, dynamic> d) => 7;
 
   void _maybeRedirectToCreditsTab(
     Map<String, dynamic> oldData,
@@ -370,20 +376,29 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         3,
       ),
       wrapTab(
+        ManualBookingSection(
+          key: refreshKey,
+          rooms: _rooms,
+          hotelName: hotelName,
+          onChanged: widget.onRefresh,
+        ),
+        4,
+      ),
+      wrapTab(
         AmenitiesSection(
           key: refreshKey,
           claims: claims,
           onAddProduct: widget.onAmenityAddProduct,
           onRefresh: widget.onRefresh,
         ),
-        4,
+        5,
       ),
       wrapTab(
         ResellersSection(
           key: refreshKey,
           onRefresh: widget.onRefresh,
         ),
-        5,
+        6,
       ),
       SettingsSection(
         creditBalance: balance,

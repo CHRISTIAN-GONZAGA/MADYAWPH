@@ -7,6 +7,7 @@ use App\Enums\BookingStatus;
 use App\Enums\BookingType;
 use App\Enums\PaymentMethod;
 use App\Enums\RoomStatus;
+use App\Enums\RoomType;
 use App\Http\Controllers\Controller;
 use App\Models\BillingCharge;
 use App\Models\Booking;
@@ -113,6 +114,12 @@ class CustomerPortalApiController extends Controller
                 ->values();
         }
 
+        if ($dateFilter) {
+            $categories = $categories->filter(
+                fn (array $cat) => ((int) ($cat['available_rooms'] ?? 0)) > 0
+            )->values();
+        }
+
         return response()->json(['hotel' => $hotel, 'categories' => $categories]);
     }
 
@@ -136,24 +143,14 @@ class CustomerPortalApiController extends Controller
         $availableValue = RoomStatus::AVAILABLE->value;
         $categoryImage = ChatAttachmentUrl::fromStoredUrl($category?->image_url);
 
-        $roomQuery = Room::withoutGlobalScopes()
-            ->where('hotel_id', $hotelId)
-            ->when(
-                $category,
-                fn ($query) => $query->where('category_id', (string) $category->id),
-                fn ($query) => $query->where('room_type', ucfirst($categoryId))
-            );
+        $scopedRooms = $this->roomsInCategoryScope($hotelId, $category, $categoryId);
 
-        if (! $dateFilter) {
-            $roomQuery->where('status', $availableValue);
-        }
-
-        $rooms = $roomQuery
-            ->limit(60)
-            ->get()
+        $rooms = $scopedRooms
             ->filter(function ($room) use ($hotelId, $dateFilter, $checkIn, $checkOut, $availableValue) {
                 if (! $dateFilter) {
-                    return true;
+                    $status = $room->status?->value ?? (string) $room->status;
+
+                    return $status === $availableValue;
                 }
                 $status = $room->status?->value ?? (string) $room->status;
                 if ($status !== $availableValue) {
@@ -169,6 +166,7 @@ class CustomerPortalApiController extends Controller
                 );
             })
             ->take(30)
+            ->values()
             ->map(function ($room) use ($hotelId, $category, $categoryImage, $availableValue) {
                 $basePrice = (float) $room->price_per_night;
                 $displayPrice = $this->roomPricingService->applySurge((string) $hotelId, $basePrice);
@@ -581,6 +579,39 @@ class CustomerPortalApiController extends Controller
         return $validated;
     }
 
+    /**
+     * @return \Illuminate\Support\Collection<int, Room>
+     */
+    private function roomsInCategoryScope(
+        string $hotelId,
+        ?RoomCategory $category,
+        string $categoryId,
+    ): \Illuminate\Support\Collection {
+        $all = Room::withoutGlobalScopes()->where('hotel_id', $hotelId)->get();
+
+        if ($category !== null) {
+            $catId = (string) $category->id;
+
+            return $all->filter(fn (Room $room) => (string) $room->category_id === $catId)->values();
+        }
+
+        $typeKey = strtolower($categoryId);
+
+        return $all->filter(function (Room $room) use ($typeKey) {
+            return $this->roomTypeKey($room) === $typeKey;
+        })->values();
+    }
+
+    private function roomTypeKey(Room $room): string
+    {
+        $type = $room->room_type;
+        if ($type instanceof RoomType) {
+            return strtolower($type->value);
+        }
+
+        return strtolower((string) $type);
+    }
+
     private function countAvailableRoomsInCategory(
         string $hotelId,
         ?string $categoryId,
@@ -588,19 +619,27 @@ class CustomerPortalApiController extends Controller
         ?Carbon $checkIn,
         ?Carbon $checkOut,
     ): int {
-        $query = Room::withoutGlobalScopes()->where('hotel_id', $hotelId);
         if ($categoryId !== null) {
-            $query->where('category_id', $categoryId);
+            $scoped = Room::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
+                ->where('category_id', $categoryId)
+                ->get();
         } elseif ($roomType !== null) {
-            $query->where('room_type', $roomType);
+            $scoped = $this->roomsInCategoryScope($hotelId, null, strtolower($roomType));
+        } else {
+            $scoped = Room::withoutGlobalScopes()->where('hotel_id', $hotelId)->get();
         }
 
         if ($checkIn === null || $checkOut === null) {
-            return (int) $query->where('status', RoomStatus::AVAILABLE->value)->count();
+            return (int) $scoped->filter(function (Room $room) {
+                $status = $room->status?->value ?? (string) $room->status;
+
+                return $status === RoomStatus::AVAILABLE->value;
+            })->count();
         }
 
         $count = 0;
-        foreach ($query->get(['id', 'status']) as $room) {
+        foreach ($scoped as $room) {
             $status = $room->status?->value ?? (string) $room->status;
             if ($status !== RoomStatus::AVAILABLE->value) {
                 continue;

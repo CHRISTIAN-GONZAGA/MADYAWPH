@@ -19,18 +19,26 @@ import '../data/philippine_locations.dart';
 import '../widgets/app_input.dart';
 import '../widgets/chat_attachment.dart';
 import '../widgets/philippine_address_picker.dart';
-import 'dashboards.dart';
 import 'flow_state.dart';
-import 'owner_dashboard_screen.dart';
-// --- Choose hotel (by city/region) → role menu ---
+import 'hotel_property_login_screen.dart';
+import 'system_access_screen.dart';
+// --- Choose hotel (by city/region) → system access ---
 
-/// Staff / property login: pick hotel → role menu (scoped to that property).
+/// Staff / property login: hotel gate credentials → system access.
 class PropertyStaffEntryScreen extends StatelessWidget {
   const PropertyStaffEntryScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const ChooseHotelScreen(staffEntry: true);
+    return HotelPropertyLoginScreen(
+      onRegisterHotel: () {
+        Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => const HotelRegisterScreen(),
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -636,7 +644,7 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
     if (widget.staffEntry) {
       await Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
-          builder: (_) => RoleMenuScreen(session: session),
+          builder: (_) => SystemAccessScreen(session: session),
         ),
       );
     }
@@ -2045,7 +2053,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
     if (!mounted) return;
     await Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
-        builder: (_) => RoleMenuScreen(session: session),
+        builder: (_) => SystemAccessScreen(session: session),
       ),
     );
   }
@@ -2358,347 +2366,14 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
 
 // --- Role menu ---
 
+/// Legacy alias — property staff now use [SystemAccessScreen].
 class RoleMenuScreen extends StatelessWidget {
   const RoleMenuScreen({super.key, required this.session});
 
   final HotelSession session;
 
-  Future<void> _switchHotel(BuildContext context) async {
-    await AuthStorage.clearAll();
-    hotelSessionNotifier.value = null;
-    if (!context.mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute<void>(
-        builder: (_) => const PropertyStaffEntryScreen(),
-      ),
-      (_) => false,
-    );
-  }
-
-  Future<bool> _portalLoginThenDashboard(
-    BuildContext context, {
-    required String role,
-    required Widget Function(bool isSuperAdmin) dashboard,
-  }) async {
-    final ok = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
-        builder: (_) => PortalLoginScreen(role: role),
-      ),
-    );
-    if (ok != true || !context.mounted) return false;
-    final savedRole = await AuthStorage.portalRole();
-    if (!context.mounted) return false;
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => dashboard(savedRole == 'super_admin'),
-      ),
-    );
-    return true;
-  }
-
-  Future<void> _openAdmin(BuildContext context) async {
-    final token = await AuthStorage.portalToken();
-    final role = await AuthStorage.portalRole();
-    if (token != null &&
-        token.isNotEmpty &&
-        (role == 'admin' || role == 'super_admin')) {
-      if (!context.mounted) return;
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(
-          builder: (_) => AdminDashboardScreen(isSuperAdmin: role == 'super_admin'),
-        ),
-      );
-      return;
-    }
-    if (!context.mounted) return;
-    await _portalLoginThenDashboard(
-      context,
-      role: 'admin',
-      dashboard: (isSuper) => AdminDashboardScreen(isSuperAdmin: isSuper),
-    );
-  }
-
-  Future<void> _openSuperAdmin(BuildContext context) async {
-    final token = await AuthStorage.portalToken();
-    final role = await AuthStorage.portalRole();
-    if (token != null && token.isNotEmpty && role == 'super_admin') {
-      if (!context.mounted) return;
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(
-          builder: (_) => const AdminDashboardScreen(isSuperAdmin: true),
-        ),
-      );
-      return;
-    }
-    if (!context.mounted) return;
-    await _portalLoginThenDashboard(
-      context,
-      role: 'super_admin',
-      dashboard: (_) => const AdminDashboardScreen(isSuperAdmin: true),
-    );
-  }
-
-  Future<void> _openStaff(BuildContext context) async {
-    final ok = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
-        builder: (_) => const PortalLoginScreen(role: 'staff'),
-      ),
-    );
-    if (ok == true && context.mounted) {
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(builder: (_) => const StaffDashboardScreen()),
-      );
-    }
-  }
-
-  Future<void> _openCustomer(BuildContext context) async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => CustomerDashboardScreen(hotelId: session.hotelId),
-      ),
-    );
-  }
-
-  Future<void> _openGuest(BuildContext context) async {
-    final ok = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
-        builder: (_) => GuestRoomLoginScreen(hotelId: session.hotelId),
-      ),
-    );
-    if (ok == true && context.mounted) {
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(builder: (_) => const GuestDashboardScreen()),
-      );
-    }
-  }
-
-  Future<void> _openOwner(BuildContext context) async {
-    final ok = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
-        builder: (_) => const PortalLoginScreen(role: 'owner'),
-      ),
-    );
-    if (ok == true && context.mounted) {
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(builder: (_) => const OwnerDashboardScreen()),
-      );
-    }
-  }
-
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final visual = AppVisual.of(context);
-
-    return AppScaffold(
-      appBar: AppBar(
-        title: Text(context.tr('app_title')),
-        actions: [
-          const LanguagePickerButton(),
-          TextButton.icon(
-            onPressed: () => _switchHotel(context),
-            icon: const Icon(Icons.swap_horiz, size: 18),
-            label: Text(context.tr('switch_hotel')),
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: visual.radiusLg,
-              gradient: LinearGradient(
-                colors: [
-                  scheme.primaryContainer,
-                  scheme.surface,
-                ],
-              ),
-              boxShadow: visual.cardShadow,
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 28,
-                    backgroundColor: scheme.primary,
-                    child: const Icon(Icons.apartment, color: Colors.white),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          session.hotelName,
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          context.tr('choose_role_hint'),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 8),
-            child: Row(
-              children: [
-                Icon(Icons.lock_outline, size: 16, color: scheme.primary),
-                const SizedBox(width: 6),
-                Text(
-                  context.tr('sign_in_required'),
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          _RoleCard(
-            icon: Icons.admin_panel_settings_outlined,
-            title: context.tr('admin_frontdesk'),
-            subtitle: context.tr('administrator_sub'),
-            color: scheme.primaryContainer,
-            requiresSignIn: true,
-            onTap: () => _openAdmin(context),
-          ),
-          const SizedBox(height: 12),
-          _RoleCard(
-            icon: Icons.business_center_outlined,
-            title: context.tr('hotel_owner'),
-            subtitle: context.tr('hotel_owner_sub'),
-            color: scheme.tertiaryContainer,
-            requiresSignIn: true,
-            onTap: () => _openOwner(context),
-          ),
-          const SizedBox(height: 12),
-          _RoleCard(
-            icon: Icons.shield_outlined,
-            title: context.tr('super_admin'),
-            subtitle: context.tr('super_admin_sub'),
-            color: scheme.errorContainer,
-            requiresSignIn: true,
-            onTap: () => _openSuperAdmin(context),
-          ),
-          const SizedBox(height: 12),
-          _RoleCard(
-            icon: Icons.support_agent_outlined,
-            title: context.tr('staff'),
-            subtitle: context.tr('staff_sub'),
-            color: scheme.secondaryContainer,
-            requiresSignIn: true,
-            onTap: () => _openStaff(context),
-          ),
-          const SizedBox(height: 12),
-          _RoleCard(
-            icon: Icons.storefront_outlined,
-            title: context.tr('public_customer'),
-            subtitle: context.tr('public_customer_sub'),
-            color: scheme.surfaceContainerHighest,
-            onTap: () => _openCustomer(context),
-          ),
-          const SizedBox(height: 16),
-          Center(
-            child: TextButton.icon(
-              onPressed: () => _openGuest(context),
-              icon: const Icon(Icons.hotel_class_outlined, size: 18),
-              label: Text(context.tr('guest')),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RoleCard extends StatelessWidget {
-  const _RoleCard({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.color,
-    required this.onTap,
-    this.requiresSignIn = false,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final Color color;
-  final VoidCallback onTap;
-  final bool requiresSignIn;
-
-  @override
-  Widget build(BuildContext context) {
-    final visual = AppVisual.of(context);
-    final scheme = Theme.of(context).colorScheme;
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: visual.radiusLg,
-        boxShadow: visual.cardShadow,
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
-      ),
-      child: ClipRRect(
-        borderRadius: visual.radiusLg,
-        child: Material(
-          color: color,
-          child: InkWell(
-            onTap: onTap,
-            splashColor: scheme.primary.withValues(alpha: 0.12),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Row(
-                children: [
-                  Hero(
-                    tag: 'role_$title',
-                    child: Icon(icon, size: 40),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(title,
-                            style: Theme.of(context).textTheme.titleMedium),
-                        const SizedBox(height: 4),
-                        Text(subtitle,
-                            style: Theme.of(context).textTheme.bodySmall),
-                      ],
-                    ),
-                  ),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (requiresSignIn)
-                        Icon(Icons.login_rounded,
-                            size: 18, color: scheme.primary),
-                      const SizedBox(height: 4),
-                      Icon(Icons.chevron_right_rounded, color: scheme.outline),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => SystemAccessScreen(session: session);
 }
 
 class PortalLoginScreen extends StatefulWidget {
@@ -2726,7 +2401,7 @@ class _PortalLoginScreenState extends State<PortalLoginScreen> {
   Future<void> _submit() async {
     final hotelId = await AuthStorage.hotelId();
     if (hotelId == null || hotelId.isEmpty) {
-      setState(() => _error = context.tr('select_hotel_first'));
+      setState(() => _error = context.tr('sign_in_property_first'));
       return;
     }
     setState(() {
