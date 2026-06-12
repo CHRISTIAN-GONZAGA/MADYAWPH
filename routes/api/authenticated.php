@@ -409,5 +409,5 @@ Route::get('/reports/activity/timeline', [ReportController::class, 'activityTime
 Route::get('/reports/transfers', [ReportController::class, 'transferSummary'])->middleware('role:admin,staff');
 Route::get('/reports/tasks/performance', [ReportController::class, 'taskPerformance'])->middleware('role:admin,staff');
 
-Route::get('/activity-logs', [ActivityLogController::class, 'index'])->middleware('role:admin');
+Route::get('/activity-logs', [ActivityLogController::class, 'index'])->middleware('role:admin,owner');
 Route::post('/activity-logs', [ActivityLogController::class, 'store'])->middleware('role:admin,staff');

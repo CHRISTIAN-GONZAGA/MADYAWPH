@@ -15,7 +15,10 @@ use App\Enums\BookingStatus;
 use App\Enums\RoomStatus;
 use App\Services\ActivityLogService;
 use App\Services\FinancialComputationService;
+use App\Services\RoomPricingService;
 use App\Support\GuestPortalStore;
+use App\Support\RoomBillingSupport;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use App\Services\GuestRoomAccessCodeService;
@@ -94,6 +97,12 @@ class GuestPortalApiController extends Controller
             ? StayReview::query()->where('booking_id', (string) $activeBooking->id)->exists()
             : false;
 
+        $room = Room::query()->find($portal['room_id']);
+        $billingMode = $room ? RoomBillingSupport::billingMode($room) : RoomBillingSupport::MODE_NIGHTLY;
+        $hourlyConfig = $room && RoomBillingSupport::isHourly($room)
+            ? RoomBillingSupport::hourlyConfig($room)
+            : null;
+
         return response()->json([
             'auth' => ['user' => [
                 'name' => 'In-House Guest',
@@ -103,10 +112,16 @@ class GuestPortalApiController extends Controller
             'roomInfo' => [
                 'roomId' => $portal['room_id'],
                 'roomNumber' => $portal['room_number'],
-                'checkOutAt' => optional(Room::query()->find($portal['room_id'])?->current_check_out)->toDateString(),
+                'checkOutAt' => optional($room?->current_check_out)->toDateString(),
                 'activeBookingId' => $activeBooking ? (string) $activeBooking->id : null,
                 'guestName' => $activeBooking?->guest_name ?? 'In-House Guest',
                 'showReviewPrompt' => (bool) ($activeBooking && ($activeBooking->status?->value ?? (string) $activeBooking->status) === 'completed' && ! $hasReview),
+                'billingMode' => $billingMode,
+                'blockHours' => $hourlyConfig['block_hours'] ?? null,
+                'pricePerBlock' => $hourlyConfig['price_per_block'] ?? null,
+                'extendHourOptions' => $room
+                    ? RoomBillingSupport::extensionHourOptions($room)
+                    : [],
             ],
             'services' => [],
             'amenityClaims' => AmenityClaim::query()
@@ -259,11 +274,15 @@ class GuestPortalApiController extends Controller
         ]);
     }
 
-    public function extendStay(Request $request, FinancialComputationService $financialComputationService): JsonResponse
-    {
+    public function extendStay(
+        Request $request,
+        FinancialComputationService $financialComputationService,
+        RoomPricingService $roomPricingService,
+    ): JsonResponse {
         $portal = $request->attributes->get('guest_portal');
         $validated = $request->validate([
-            'nights' => ['required', 'integer', 'min:1', 'max:30'],
+            'nights' => ['required_without:hours', 'integer', 'min:1', 'max:30'],
+            'hours' => ['required_without:nights', 'integer', 'min:1', 'max:720'],
         ]);
 
         $room = Room::query()->findOrFail($portal['room_id']);
@@ -272,14 +291,75 @@ class GuestPortalApiController extends Controller
             ->latest('created_at')
             ->firstOrFail();
 
+        if (RoomBillingSupport::isHourly($room)) {
+            $hours = (int) ($validated['hours'] ?? 0);
+            $extension = RoomBillingSupport::computeExtensionCharge(
+                $room,
+                $hours,
+                $financialComputationService,
+                $roomPricingService,
+            );
+            $extensionFee = $extension['amount'];
+            $checkoutDate = $booking->check_out_date instanceof \Carbon\CarbonInterface
+                ? $booking->check_out_date->toDateString()
+                : (string) $booking->check_out_date;
+            $checkoutBase = Carbon::parse(
+                $checkoutDate.' '.($booking->check_out_time ?? '11:00')
+            );
+            $newCheckout = $checkoutBase->copy()->addHours($hours);
+            $newTotal = $financialComputationService->computeTotal(
+                RoomBillingSupport::toFloat($booking->total_amount),
+                $extensionFee
+            );
+
+            $booking->update([
+                'check_out_date' => $newCheckout->toDateString(),
+                'check_out_time' => $newCheckout->format('H:i'),
+                'stay_hours' => (int) ($booking->stay_hours ?? 0) + $hours,
+                'total_amount' => $newTotal,
+            ]);
+            $room->update(['current_check_out' => $newCheckout->toDateString()]);
+
+            BillingCharge::query()->create([
+                'hotel_id' => (string) $portal['hotel_id'],
+                'booking_id' => (string) $booking->id,
+                'room_id' => $portal['room_id'],
+                'type' => 'extend-stay',
+                'label' => "Extend stay ({$hours} hr".($hours !== 1 ? 's' : '').')',
+                'amount' => $extensionFee,
+                'quantity' => 1,
+                'is_manual' => false,
+                'metadata' => [
+                    'hours' => $hours,
+                    'blocks' => $extension['blocks'],
+                    'block_hours' => $extension['block_hours'],
+                ],
+            ]);
+            app(ActivityLogService::class)->log(
+                $portal['hotel_id'],
+                null,
+                "Guest requested stay extension for room {$portal['room_number']}",
+                ['booking_id' => (string) $booking->id, 'hours' => $hours]
+            );
+
+            return response()->json([
+                'ok' => true,
+                'new_checkout_date' => $newCheckout->toDateString(),
+                'new_checkout_time' => $newCheckout->format('H:i'),
+                'extension_fee' => $extensionFee,
+                'new_total_amount' => $newTotal,
+            ]);
+        }
+
+        $nights = (int) ($validated['nights'] ?? 1);
         $currentCheckout = now()->parse($booking->check_out_date);
-        $newCheckout = $currentCheckout->copy()->addDays((int) $validated['nights']);
-        $extensionFee = $financialComputationService->computeRoomCharge((float) $room->price_per_night, (int) $validated['nights']);
+        $newCheckout = $currentCheckout->copy()->addDays($nights);
+        $extensionFee = $financialComputationService->computeRoomCharge((float) $room->price_per_night, $nights);
         $newTotal = $financialComputationService->computeTotal((float) $booking->total_amount, $extensionFee);
 
         $booking->update([
             'check_out_date' => $newCheckout->toDateString(),
-            'nights' => (int) $booking->nights + (int) $validated['nights'],
+            'nights' => (int) $booking->nights + $nights,
             'total_amount' => $newTotal,
         ]);
         $room->update(['current_check_out' => $newCheckout->toDateString()]);
@@ -293,13 +373,13 @@ class GuestPortalApiController extends Controller
             'amount' => $extensionFee,
             'quantity' => 1,
             'is_manual' => false,
-            'metadata' => ['nights' => (int) $validated['nights']],
+            'metadata' => ['nights' => $nights],
         ]);
         app(ActivityLogService::class)->log(
             $portal['hotel_id'],
             null,
             "Guest requested stay extension for room {$portal['room_number']}",
-            ['booking_id' => (string) $booking->id, 'nights' => (int) $validated['nights']]
+            ['booking_id' => (string) $booking->id, 'nights' => $nights]
         );
 
         return response()->json([

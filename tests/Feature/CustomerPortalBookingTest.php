@@ -164,4 +164,48 @@ class CustomerPortalBookingTest extends TestCase
         $response->assertJsonPath('ok', true);
         $response->assertJsonStructure(['reservation' => ['external_reference']]);
     }
+
+    public function test_customer_online_reservation_includes_payment_reference(): void
+    {
+        $hotel = Hotel::create(['name' => 'Online Pay Hotel', 'location' => 'Loc']);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '305',
+            'room_type' => 'Double',
+            'price_per_night' => 2200,
+            'status' => RoomStatus::AVAILABLE->value,
+        ]);
+
+        $checkIn = Carbon::today()->addDays(2)->toDateString();
+        $checkOut = Carbon::today()->addDays(4)->toDateString();
+
+        $response = $this->postJson('/api/v1/customer/reservations', [
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'guest_name' => 'Online Guest',
+            'guest_email' => 'online@example.com',
+            'guest_phone' => '09175551234',
+            'check_in' => $checkIn,
+            'check_out' => $checkOut,
+            'discount_type' => 'none',
+            'payment_method' => 'Online',
+            'rooms' => 1,
+            'adults' => 2,
+            'children' => 0,
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('reservation.payment_method', 'Online');
+        $paymentRef = (string) $response->json('reservation.payment_reference');
+        $this->assertStringStartsWith('PAY', $paymentRef);
+        $this->assertGreaterThan(0, (float) $response->json('reservation.estimated_total'));
+
+        $show = $this->getJson('/api/v1/customer/reservations/'.$response->json('reservation.external_reference').'?'.http_build_query([
+            'hotel_id' => (string) $hotel->id,
+            'guest_email' => 'online@example.com',
+        ]));
+        $show->assertOk();
+        $show->assertJsonPath('reservation.payment_reference', $paymentRef);
+        $show->assertJsonPath('reservation.hotel_id', (string) $hotel->id);
+    }
 }

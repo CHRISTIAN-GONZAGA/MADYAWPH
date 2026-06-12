@@ -18,5 +18,6 @@ class SystemSetting extends Model
         'surge_pricing_enabled',
         'surge_threshold_percent',
         'surge_markup_percent',
+        'payment_qr_url',
     ];
 }

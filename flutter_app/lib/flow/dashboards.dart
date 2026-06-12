@@ -14,6 +14,8 @@ import '../widgets/app_scaffold.dart';
 import '../widgets/app_state_views.dart';
 import '../widgets/dashboard_clock.dart';
 import 'admin_rooms.dart';
+import 'customer_booking_status_screen.dart';
+import 'customer_search_context.dart';
 import 'customer_tools.dart';
 import '../widgets/chat_attachment.dart';
 import '../widgets/payment_redirect.dart';
@@ -1680,38 +1682,122 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
   }
 
   Future<void> _extendStay() async {
-    final ctrl = TextEditingController(text: '1');
-    final nights = await showDialog<int>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Extend Stay'),
-        content: TextField(
-          controller: ctrl,
-          decoration: const InputDecoration(
-            labelText: 'Additional nights',
-            border: OutlineInputBorder(),
+    final roomInfo = _data?['roomInfo'] as Map<String, dynamic>?;
+    final billingMode =
+        (roomInfo?['billingMode'] ?? 'nightly').toString().toLowerCase();
+    final isHourly = billingMode == 'hourly';
+    final hourOptions = (roomInfo?['extendHourOptions'] as List<dynamic>? ?? [])
+        .map((e) => (e as num).toInt())
+        .where((h) => h > 0)
+        .toList();
+    final blockHours = (roomInfo?['blockHours'] as num?)?.toInt() ?? 3;
+    final pricePerBlock =
+        (roomInfo?['pricePerBlock'] as num?)?.toDouble() ?? 0;
+
+    if (isHourly && hourOptions.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Hourly extension options are not available.'),
+        ),
+      );
+      return;
+    }
+
+    int? nights;
+    int? hours;
+    if (isHourly) {
+      var selectedHours = hourOptions.first;
+      final picked = await showDialog<int>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setLocal) => AlertDialog(
+            title: const Text('Extend Stay'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Extend by multiples of $blockHours hour(s)',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  key: ValueKey<int>(selectedHours),
+                  initialValue: selectedHours,
+                  items: hourOptions
+                      .map(
+                        (h) => DropdownMenuItem(
+                          value: h,
+                          child: Text(
+                            '$h hours — ₱${((h / blockHours) * pricePerBlock).toStringAsFixed(0)}',
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) =>
+                      setLocal(() => selectedHours = v ?? selectedHours),
+                  decoration: const InputDecoration(
+                    labelText: 'Additional hours',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(selectedHours),
+                child: const Text('Submit'),
+              ),
+            ],
           ),
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () =>
-                Navigator.of(context).pop(int.tryParse(ctrl.text.trim()) ?? 1),
-            child: const Text('Submit'),
+      );
+      hours = picked;
+      if (hours == null || hours < 1) return;
+    } else {
+      final ctrl = TextEditingController(text: '1');
+      nights = await showDialog<int>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Extend Stay'),
+          content: TextField(
+            controller: ctrl,
+            decoration: const InputDecoration(
+              labelText: 'Additional nights',
+              border: OutlineInputBorder(),
+            ),
           ),
-        ],
-      ),
-    );
-    if (nights == null || nights < 1) return;
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(int.tryParse(ctrl.text.trim()) ?? 1),
+              child: const Text('Submit'),
+            ),
+          ],
+        ),
+      );
+      ctrl.dispose();
+      if (nights == null || nights < 1) return;
+    }
+
     await _runGuestAction('Extend stay', () async {
       final res = await guestDio().post<Map<String, dynamic>>(
-          '/guest/extend-stay',
-          data: {'nights': nights});
+        '/guest/extend-stay',
+        data: isHourly ? {'hours': hours} : {'nights': nights},
+      );
+      final checkout = res.data?['new_checkout_date'] ?? '-';
+      final checkoutTime = res.data?['new_checkout_time'];
+      final when = checkoutTime != null ? '$checkout $checkoutTime' : checkout;
       return {
         'message':
-            'Extended stay. New checkout: ${res.data?['new_checkout_date'] ?? '-'}, additional fee: ${res.data?['extension_fee'] ?? '-'}',
+            'Extended stay. New checkout: $when, additional fee: ${res.data?['extension_fee'] ?? '-'}',
       };
     });
   }
@@ -1868,7 +1954,7 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
                 ),
                 AppActionTile(
                   title: 'Extend stay',
-                  subtitle: 'Request extra nights with updated billing',
+                  subtitle: 'Extend by hotel minimum hours or nights',
                   icon: Icons.calendar_month_outlined,
                   onTap: _extendStay,
                 ),
@@ -2272,9 +2358,14 @@ class _AdminAccountSettingsScreenState extends State<AdminAccountSettingsScreen>
 // --- Public customer ---
 
 class CustomerDashboardScreen extends StatefulWidget {
-  const CustomerDashboardScreen({super.key, required this.hotelId});
+  const CustomerDashboardScreen({
+    super.key,
+    required this.hotelId,
+    this.searchContext,
+  });
 
   final String hotelId;
+  final CustomerSearchContext? searchContext;
 
   @override
   State<CustomerDashboardScreen> createState() =>
@@ -2298,9 +2389,13 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
       _error = null;
     });
     try {
+      final params = <String, dynamic>{'hotel_id': widget.hotelId};
+      if (widget.searchContext != null) {
+        params.addAll(widget.searchContext!.queryParams);
+      }
       final res = await publicDio().get<Map<String, dynamic>>(
         '/customer/categories',
-        queryParameters: {'hotel_id': widget.hotelId},
+        queryParameters: params,
       );
       setState(() {
         _categoriesRes = res.data;
@@ -2360,15 +2455,48 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
     }
     final hotel = _categoriesRes?['hotel'] as Map<String, dynamic>?;
     final hotelName = hotel?['name'] ?? 'Hotel';
-    final categories = (_categoriesRes?['categories'] as List<dynamic>?) ?? [];
+    var categories = (_categoriesRes?['categories'] as List<dynamic>?) ?? [];
+    if (widget.searchContext != null) {
+      categories = categories.where((c) {
+        final m = c as Map<String, dynamic>;
+        return ((m['available_rooms'] as num?)?.toInt() ?? 0) > 0;
+      }).toList();
+    }
 
     final scheme = Theme.of(context).colorScheme;
+    final search = widget.searchContext;
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
           _CustomerMadyawHeader(hotelName: hotelName, scheme: scheme),
+          if (search != null) ...[
+            Card(
+              color: scheme.primaryContainer.withValues(alpha: 0.35),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  children: [
+                    Icon(Icons.event_available, color: scheme.primary),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Your stay: ${search.checkInIso} → ${search.checkOutIso}\n'
+                        '${search.rooms} room${search.rooms == 1 ? '' : 's'}, '
+                        '${search.adults} adult${search.adults == 1 ? '' : 's'}'
+                        '${search.children > 0 ? ', ${search.children} child${search.children == 1 ? '' : 'ren'}' : ''}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           Text(
             'Find your room',
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
@@ -2383,6 +2511,37 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                 ),
           ),
           const SizedBox(height: 20),
+          if (categories.isEmpty) ...[
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  children: [
+                    Icon(Icons.event_busy_outlined,
+                        size: 48, color: scheme.outline),
+                    const SizedBox(height: 12),
+                    Text(
+                      search != null
+                          ? 'No rooms available for your dates at this hotel.'
+                          : 'No room categories are available right now.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    if (search != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Try different dates from the search screen, or contact the hotel.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
           ...categories.map((c) {
             final m = c as Map<String, dynamic>;
             final id = '${m['id']}';
@@ -2409,6 +2568,8 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                           categoryId: id,
                           categoryName: name,
                           categoryImageUrl: imageUrl,
+                          searchContext: widget.searchContext,
+                          hotelName: hotelName,
                         ),
                       ),
                     );
@@ -2599,12 +2760,16 @@ class CustomerRoomsScreen extends StatefulWidget {
     required this.categoryId,
     required this.categoryName,
     this.categoryImageUrl = '',
+    this.searchContext,
+    this.hotelName = 'Hotel',
   });
 
   final String hotelId;
   final String categoryId;
   final String categoryName;
   final String categoryImageUrl;
+  final CustomerSearchContext? searchContext;
+  final String hotelName;
 
   @override
   State<CustomerRoomsScreen> createState() => _CustomerRoomsScreenState();
@@ -2628,9 +2793,13 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
       _error = null;
     });
     try {
+      final params = <String, dynamic>{'hotel_id': widget.hotelId};
+      if (widget.searchContext != null) {
+        params.addAll(widget.searchContext!.queryParams);
+      }
       final res = await publicDio().get<Map<String, dynamic>>(
         '/customer/categories/${widget.categoryId}/rooms',
-        queryParameters: {'hotel_id': widget.hotelId},
+        queryParameters: params,
       );
       setState(() {
         _data = res.data;
@@ -2653,16 +2822,42 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     Map<String, dynamic> room, {
     required bool reserve,
   }) async {
+    final fromSearch = widget.searchContext != null;
+    final forceReserve = fromSearch || reserve;
+
     final nameCtrl = TextEditingController();
     final emailCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
     final checkInCtrl = TextEditingController();
     final checkOutCtrl = TextEditingController();
     final pricePerNight = (room['price_per_night'] as num?)?.toDouble() ?? 0;
-    DateTime? checkInDate;
-    DateTime? checkOutDate;
+    DateTime? checkInDate = fromSearch ? widget.searchContext!.checkIn : null;
+    DateTime? checkOutDate = fromSearch ? widget.searchContext!.checkOut : null;
+    if (fromSearch) {
+      checkInCtrl.text = widget.searchContext!.checkInIso;
+      checkOutCtrl.text = widget.searchContext!.checkOutIso;
+    }
     var discountType = 'none';
+    var paymentMethod = 'Cash';
     XFile? discountIdFile;
+    XFile? guestIdFile;
+    String paymentQrUrl = '';
+    var qrLoading = false;
+
+    Future<void> loadPaymentQr(void Function(void Function()) setLocal) async {
+      setLocal(() => qrLoading = true);
+      try {
+        final res = await publicDio().get<Map<String, dynamic>>(
+          '/customer/payment-qr',
+          queryParameters: {'hotel_id': widget.hotelId},
+        );
+        paymentQrUrl = (res.data?['qr_url'] ?? '').toString();
+      } catch (_) {
+        paymentQrUrl = '';
+      } finally {
+        setLocal(() => qrLoading = false);
+      }
+    }
 
     final payload = await showDialog<Map<String, dynamic>>(
       context: context,
@@ -2678,15 +2873,15 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
             'senior' => 20.0,
             _ => 0.0,
           };
-          final estAfterDiscount =
-              estTotal * (1 - (discountPct / 100));
+          final estAfterDiscount = estTotal * (1 - (discountPct / 100));
 
           final now = DateTime.now();
           final today = DateTime(now.year, now.month, now.day);
           final firstCheckIn =
-              reserve ? today.add(const Duration(days: 1)) : today;
+              forceReserve ? today.add(const Duration(days: 1)) : today;
 
           Future<void> pickCheckIn() async {
+            if (fromSearch) return;
             final picked = await showDatePicker(
               context: context,
               firstDate: firstCheckIn,
@@ -2704,6 +2899,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
           }
 
           Future<void> pickCheckOut() async {
+            if (fromSearch) return;
             if (checkInDate == null) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Select check-in first.')),
@@ -2714,8 +2910,8 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
               context: context,
               firstDate: checkInDate!.add(const Duration(days: 1)),
               lastDate: checkInDate!.add(const Duration(days: 365)),
-              initialDate: checkOutDate ??
-                  checkInDate!.add(const Duration(days: 1)),
+              initialDate:
+                  checkOutDate ?? checkInDate!.add(const Duration(days: 1)),
             );
             if (picked == null) return;
             checkOutDate = picked;
@@ -2724,26 +2920,36 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
           }
 
           return AlertDialog(
-            title: Text(reserve ? 'Request reservation' : 'Book room'),
+            title: Text(fromSearch ? 'Complete your booking' : (forceReserve ? 'Request reservation' : 'Book room')),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  AppInput(
-                    controller: nameCtrl,
-                    label: 'Full name',
-                  ),
+                  AppInput(controller: nameCtrl, label: 'Full name'),
                   const SizedBox(height: 8),
                   AppInput(
                     controller: emailCtrl,
-                    label: 'Email',
+                    label: 'Email (Gmail)',
                     keyboardType: TextInputType.emailAddress,
                   ),
                   const SizedBox(height: 8),
                   AppInput(
                     controller: phoneCtrl,
-                    label: 'Phone',
+                    label: 'Phone number',
                     keyboardType: TextInputType.phone,
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final file = await ChatAttachment.pick(context);
+                      if (file != null) setLocal(() => guestIdFile = file);
+                    },
+                    icon: const Icon(Icons.credit_card_outlined),
+                    label: Text(
+                      guestIdFile == null
+                          ? 'Upload government ID *'
+                          : 'ID attached — tap to replace',
+                    ),
                   ),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
@@ -2753,14 +2959,8 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                       border: OutlineInputBorder(),
                     ),
                     items: const [
-                      DropdownMenuItem(
-                        value: 'none',
-                        child: Text('No discount'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'pwd',
-                        child: Text('PWD (20% off)'),
-                      ),
+                      DropdownMenuItem(value: 'none', child: Text('No discount')),
+                      DropdownMenuItem(value: 'pwd', child: Text('PWD (20% off)')),
                       DropdownMenuItem(
                         value: 'senior',
                         child: Text('Senior citizen (20% off)'),
@@ -2776,47 +2976,101 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                     OutlinedButton.icon(
                       onPressed: () async {
                         final file = await ChatAttachment.pick(context);
-                        if (file != null) {
-                          setLocal(() => discountIdFile = file);
-                        }
+                        if (file != null) setLocal(() => discountIdFile = file);
                       },
                       icon: const Icon(Icons.badge_outlined),
                       label: Text(
                         discountIdFile == null
-                            ? 'Upload valid ID photo'
-                            : 'ID photo attached — tap to replace',
+                            ? 'Upload discount ID photo'
+                            : 'Discount ID attached — tap to replace',
                       ),
                     ),
                   ],
                   const SizedBox(height: 8),
                   AppInput(
                     controller: checkInCtrl,
-                    label: reserve
-                        ? 'Check-in (from tomorrow)'
-                        : 'Check-in (today for walk-in)',
-                    hint: 'Tap to open calendar',
+                    label: fromSearch
+                        ? 'Check-in'
+                        : (forceReserve
+                            ? 'Check-in (from tomorrow)'
+                            : 'Check-in (today for walk-in)'),
+                    hint: fromSearch ? null : 'Tap to open calendar',
                     readOnly: true,
-                    onTap: pickCheckIn,
+                    onTap: fromSearch ? null : pickCheckIn,
                     suffixIcon: const Icon(Icons.calendar_month_outlined),
                   ),
                   const SizedBox(height: 8),
                   AppInput(
                     controller: checkOutCtrl,
                     label: 'Check-out date',
-                    hint: 'Tap to open calendar',
+                    hint: fromSearch ? null : 'Tap to open calendar',
                     readOnly: true,
-                    onTap: pickCheckOut,
+                    onTap: fromSearch ? null : pickCheckOut,
                     suffixIcon: const Icon(Icons.calendar_month_outlined),
                   ),
+                  if (fromSearch) ...[
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: paymentMethod,
+                      decoration: const InputDecoration(
+                        labelText: 'Payment method',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'Cash', child: Text('Cash at hotel')),
+                        DropdownMenuItem(value: 'Online', child: Text('Online (QR Ph)')),
+                      ],
+                      onChanged: (v) async {
+                        final next = v ?? 'Cash';
+                        setLocal(() => paymentMethod = next);
+                        if (next == 'Online' && paymentQrUrl.isEmpty) {
+                          await loadPaymentQr(setLocal);
+                        }
+                      },
+                    ),
+                    if (paymentMethod == 'Online') ...[
+                      const SizedBox(height: 12),
+                      if (qrLoading)
+                        const Center(child: CircularProgressIndicator())
+                      else if (paymentQrUrl.isEmpty)
+                        const Text(
+                          'Hotel has not uploaded a payment QR yet. You may still submit — pay at the desk if needed.',
+                          style: TextStyle(fontSize: 12),
+                        )
+                      else
+                        Center(
+                          child: Column(
+                            children: [
+                              const Text(
+                                'Scan to pay via GCash / Maya / QR Ph',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(height: 8),
+                              NetworkMediaImage(
+                                url: paymentQrUrl,
+                                width: 200,
+                                height: 200,
+                                fit: BoxFit.contain,
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ],
                   const SizedBox(height: 10),
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      reserve
-                          ? 'The hotel will approve your dates. You will be notified when the stay is activated on check-in day.'
-                          : 'Duration: $safeNights night${safeNights == 1 ? '' : 's'}\n'
+                      fromSearch
+                          ? 'Duration: $safeNights night${safeNights == 1 ? '' : 's'}\n'
                               'Estimated: ₱${estTotal.toStringAsFixed(2)}'
-                              '${discountPct > 0 ? ' → ₱${estAfterDiscount.toStringAsFixed(2)} after discount' : ''}',
+                              '${discountPct > 0 ? ' → ₱${estAfterDiscount.toStringAsFixed(2)} after discount' : ''}\n'
+                              'Your request will be reviewed by the hotel.'
+                          : forceReserve
+                              ? 'The hotel will approve your dates. You will be notified when the stay is activated on check-in day.'
+                              : 'Duration: $safeNights night${safeNights == 1 ? '' : 's'}\n'
+                                  'Estimated: ₱${estTotal.toStringAsFixed(2)}'
+                                  '${discountPct > 0 ? ' → ₱${estAfterDiscount.toStringAsFixed(2)} after discount' : ''}',
                     ),
                   ),
                 ],
@@ -2828,13 +3082,49 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                 child: const Text('Cancel'),
               ),
               AppPrimaryButton(
-                label: reserve ? 'Submit request' : 'Book now',
+                label: fromSearch
+                    ? 'Submit booking'
+                    : (forceReserve ? 'Submit request' : 'Book now'),
                 onPressed: () {
+                  final name = nameCtrl.text.trim();
+                  final email = emailCtrl.text.trim();
+                  final phone = phoneCtrl.text.trim();
+                  if (name.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Enter your full name.')),
+                    );
+                    return;
+                  }
+                  if (email.isEmpty || !email.contains('@')) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Enter a valid email address.')),
+                    );
+                    return;
+                  }
+                  if (phone.length < 7) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Enter a valid phone number.')),
+                    );
+                    return;
+                  }
+                  if (fromSearch && guestIdFile == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Upload your government ID.')),
+                    );
+                    return;
+                  }
                   if (discountType != 'none' && discountIdFile == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text('Upload a photo of your discount ID.'),
                       ),
+                    );
+                    return;
+                  }
+                  if (checkInCtrl.text.trim().isEmpty ||
+                      checkOutCtrl.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Select check-in and check-out.')),
                     );
                     return;
                   }
@@ -2846,6 +3136,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                     'check_in': checkInCtrl.text.trim(),
                     'check_out': checkOutCtrl.text.trim(),
                     'discount_type': discountType,
+                    if (fromSearch) 'payment_method': paymentMethod,
                   });
                 },
               ),
@@ -2857,40 +3148,82 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     if (payload == null || _booking) return;
     setState(() => _booking = true);
     try {
-      final path =
-          reserve ? '/customer/reservations' : '/customer/bookings';
+      final path = forceReserve ? '/customer/reservations' : '/customer/bookings';
       final discount = (payload['discount_type'] ?? 'none').toString();
       final Map<String, dynamic> body = {
         'hotel_id': widget.hotelId,
         ...payload,
       };
+      if (fromSearch) {
+        body['rooms'] = widget.searchContext!.rooms;
+        body['adults'] = widget.searchContext!.adults;
+        body['children'] = widget.searchContext!.children;
+      }
 
       final Response<Map<String, dynamic>> res;
-      if (discount != 'none' && discountIdFile != null) {
+      final hasDiscountFile = discount != 'none' && discountIdFile != null;
+      final hasGuestId = guestIdFile != null;
+
+      if (hasDiscountFile || hasGuestId) {
         body.remove('discount_type');
-        final form = await ChatAttachment.formWithImage(
-          fields: {
-            ...body,
-            'discount_type': discount,
-          },
-          file: discountIdFile!,
-          fileField: 'discount_id_file',
+        final map = <String, dynamic>{};
+        for (final entry in body.entries) {
+          final v = entry.value;
+          if (v != null) {
+            map[entry.key] = v is num || v is bool ? v.toString() : v;
+          }
+        }
+        if (discount != 'none') map['discount_type'] = discount;
+        if (hasGuestId) {
+          map['guest_id_file'] = await MultipartFile.fromFile(
+            guestIdFile!.path,
+            filename: guestIdFile!.name.isNotEmpty ? guestIdFile!.name : 'guest_id.jpg',
+          );
+        }
+        if (hasDiscountFile) {
+          map['discount_id_file'] = await MultipartFile.fromFile(
+            discountIdFile!.path,
+            filename: discountIdFile!.name.isNotEmpty ? discountIdFile!.name : 'discount_id.jpg',
+          );
+        }
+        res = await publicDio().post<Map<String, dynamic>>(
+          path,
+          data: FormData.fromMap(map),
         );
-        res = await publicDio().post<Map<String, dynamic>>(path, data: form);
       } else {
         res = await publicDio().post<Map<String, dynamic>>(path, data: body);
       }
       if (!mounted) return;
       final booking = res.data?['booking'] as Map<String, dynamic>?;
       final reservation = res.data?['reservation'] as Map<String, dynamic>?;
-      final ref = (booking?['booking_reference'] ??
-              reservation?['external_reference'] ??
+      final ref = (reservation?['external_reference'] ??
+              booking?['booking_reference'] ??
               '')
           .toString();
+      final guestEmail = (payload['guest_email'] ?? '').toString();
+
+      if (fromSearch && ref.isNotEmpty) {
+        if (!mounted) return;
+        await Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(
+            builder: (_) => CustomerBookingStatusScreen(
+              hotelId: widget.hotelId,
+              hotelName: widget.hotelName,
+              reference: ref,
+              guestEmail: guestEmail,
+              initialReservation: reservation != null
+                  ? Map<String, dynamic>.from(reservation)
+                  : null,
+            ),
+          ),
+        );
+        return;
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            reserve
+            forceReserve
                 ? 'Request sent (ref ${ref.isEmpty ? 'pending' : ref}). Awaiting hotel approval.'
                 : 'Booking submitted: ${ref.isEmpty ? 'Reference generated' : ref}',
           ),
@@ -2947,6 +3280,46 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
       '${category?['image_url'] ?? widget.categoryImageUrl}',
     );
     final scheme = Theme.of(context).colorScheme;
+    if (rooms.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(24),
+          children: [
+            if (categoryBanner.isNotEmpty) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: NetworkMediaImage(
+                  url: categoryBanner,
+                  height: 180,
+                  width: double.infinity,
+                  error: const SizedBox.shrink(),
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
+            Icon(Icons.bed_outlined, size: 56, color: scheme.outline),
+            const SizedBox(height: 16),
+            Text(
+              widget.searchContext != null
+                  ? 'No rooms free for your dates in this category.'
+                  : 'No rooms available in this category.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Try another category or adjust your stay dates.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
+        ),
+      );
+    }
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView.builder(
@@ -3064,27 +3437,38 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                                 ?.copyWith(color: scheme.onSurfaceVariant),
                           ),
                           const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton(
-                                  onPressed: _booking
-                                      ? null
-                                      : () => _bookRoom(r, reserve: true),
-                                  child: const Text('Reserve'),
-                                ),
+                          if (widget.searchContext != null)
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton(
+                                onPressed: _booking
+                                    ? null
+                                    : () => _bookRoom(r, reserve: true),
+                                child: const Text('Book this room'),
                               ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: FilledButton(
-                                  onPressed: _booking
-                                      ? null
-                                      : () => _bookRoom(r, reserve: false),
-                                  child: const Text('Book'),
+                            )
+                          else
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: _booking
+                                        ? null
+                                        : () => _bookRoom(r, reserve: true),
+                                    child: const Text('Reserve'),
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: FilledButton(
+                                    onPressed: _booking
+                                        ? null
+                                        : () => _bookRoom(r, reserve: false),
+                                    child: const Text('Book'),
+                                  ),
+                                ),
+                              ],
+                            ),
                         ],
                       ),
                     ),

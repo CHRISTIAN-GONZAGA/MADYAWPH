@@ -349,6 +349,47 @@ Route::middleware('role:admin')->group(function (): void {
         ]);
     })->name('api.v1.admin.rooms.status');
 
+    Route::post('/admin/bookings', function (
+        Request $request,
+        BookingService $bookingService,
+        RoomCheckoutService $roomCheckoutService,
+    ) {
+        $validated = $request->validate([
+            'room_id' => ['required', 'string'],
+            'guest_name' => ['required', 'string', 'max:255'],
+            'guest_email' => ['required', 'email', 'max:255'],
+            'guest_phone' => ['required', 'string', 'max:50'],
+            'check_in_at' => ['required', 'date'],
+            'check_out_at' => ['required', 'date', 'after:check_in_at'],
+            'payment_method' => ['required', 'in:Cash,GCash,PayMaya,Credit Card'],
+            'check_in_now' => ['nullable', 'boolean'],
+        ]);
+
+        $room = Room::query()->findOrFail($validated['room_id']);
+        if ((string) $room->hotel_id !== (string) $request->user()->hotel_id) {
+            return response()->json(['message' => 'Room outside hotel scope.'], 403);
+        }
+
+        $booking = $bookingService->create([
+            ...$validated,
+            'hotel_id' => (string) $room->hotel_id,
+            'source' => 'admin',
+        ], $request->user());
+
+        if ($request->boolean('check_in_now')) {
+            $checkIn = Carbon::parse($validated['check_in_at']);
+            $checkOut = Carbon::parse($validated['check_out_at']);
+            $roomCheckoutService->checkInRoom($room->fresh() ?? $room, $request->user(), $checkIn, $checkOut);
+            $booking->refresh();
+            $room->refresh();
+        }
+
+        return response()->json([
+            'ok' => true,
+            'booking' => \App\Support\AdminBookingPresenter::present($booking, $room->fresh() ?? $room),
+        ], 201);
+    })->middleware(['prevent.double.booking'])->name('api.v1.admin.bookings.store');
+
     Route::post('/admin/theme', function (Request $request) {
         $validated = $request->validate([
             'theme_color' => ['required', 'regex:/^#([A-Fa-f0-9]{6})$/'],
@@ -1019,7 +1060,7 @@ Route::get('/admin/resellers/{id}', [ResellerController::class, 'show'])->middle
 Route::post('/admin/resellers/{id}/commissions', [ResellerController::class, 'payCommission'])->middleware('role:admin');
 
 // Activity logs
-Route::get('/activity-logs', [ActivityLogController::class, 'index'])->middleware('role:admin');
+Route::get('/activity-logs', [ActivityLogController::class, 'index'])->middleware('role:admin,owner');
 Route::post('/activity-logs', [ActivityLogController::class, 'store'])->middleware('role:admin,staff');
 
 Route::get('/admin/guest-history', function (Request $request) {
@@ -1181,6 +1222,97 @@ Route::post('/admin/hotel/picker-banner', function (Request $request) {
         'picker_banner_url' => $url,
     ]);
 })->middleware('role:super_admin')->name('api.v1.admin.hotel.picker-banner.store');
+
+Route::get('/admin/hotel/payment-qr', function (Request $request) {
+    $settings = SystemSetting::withoutGlobalScopes()
+        ->where('hotel_id', (string) $request->user()->hotel_id)
+        ->first();
+    $stored = (string) ($settings?->payment_qr_url ?? '');
+
+    return response()->json([
+        'qr_url' => ChatAttachmentUrl::fromStoredUrl($stored) ?? '',
+        'payment_qr_url' => $stored,
+    ]);
+})->middleware('role:admin')->name('api.v1.admin.hotel.payment-qr.show');
+
+Route::post('/admin/hotel/payment-qr', function (Request $request) {
+    $validated = $request->validate([
+        'image_file' => array_merge(['required'], array_slice(RoomImageUploadRules::fileRules(), 1)),
+    ]);
+    $hotelId = (string) $request->user()->hotel_id;
+    $url = RoomMediaStorage::store($request->file('image_file'), 'payment-qr');
+    SystemSetting::withoutGlobalScopes()->updateOrCreate(
+        ['hotel_id' => $hotelId],
+        ['payment_qr_url' => $url]
+    );
+    app(ActivityLogService::class)->log(
+        $hotelId,
+        $request->user(),
+        'Updated online payment QR code',
+        ['payment_qr_url' => $url]
+    );
+
+    return response()->json([
+        'ok' => true,
+        'qr_url' => ChatAttachmentUrl::fromStoredUrl($url),
+    ]);
+})->middleware('role:admin')->name('api.v1.admin.hotel.payment-qr.store');
+
+Route::get('/admin/payment-references/search', function (Request $request) {
+    $validated = $request->validate([
+        'q' => ['required', 'string', 'min:3', 'max:120'],
+    ]);
+    $hotelId = (string) $request->user()->hotel_id;
+    $needle = strtoupper(trim($validated['q']));
+
+    $fromBookings = Booking::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->where('payment_reference', 'like', '%'.$needle.'%')
+        ->latest('created_at')
+        ->limit(20)
+        ->get()
+        ->map(fn (Booking $b) => [
+            'type' => 'booking',
+            'reference' => (string) ($b->payment_reference ?? ''),
+            'booking_reference' => (string) $b->booking_reference,
+            'guest_name' => (string) $b->guest_name,
+            'payment_method' => (string) ($b->payment_method?->value ?? $b->payment_method ?? ''),
+            'payment_status' => (string) ($b->payment_status ?? ''),
+            'total_amount' => (float) $b->total_amount,
+            'created_at' => optional($b->created_at)->toISOString(),
+        ]);
+
+    $fromReservations = ExternalReservation::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->latest('created_at')
+        ->limit(200)
+        ->get()
+        ->filter(function (ExternalReservation $res) use ($needle) {
+            $meta = is_array($res->metadata) ? $res->metadata : '';
+            $ref = strtoupper((string) ($meta['payment_reference'] ?? ''));
+
+            return $ref !== '' && str_contains($ref, $needle);
+        })
+        ->take(20)
+        ->map(function (ExternalReservation $res) {
+            $meta = is_array($res->metadata) ? $res->metadata : [];
+
+            return [
+                'type' => 'reservation',
+                'reference' => (string) ($meta['payment_reference'] ?? ''),
+                'booking_reference' => (string) $res->external_reference,
+                'guest_name' => (string) $res->guest_name,
+                'payment_method' => (string) ($meta['payment_method'] ?? ''),
+                'payment_status' => (string) $res->status,
+                'total_amount' => (float) ($meta['estimated_total'] ?? 0),
+                'created_at' => optional($res->created_at)->toISOString(),
+            ];
+        });
+
+    return response()->json([
+        'results' => $fromBookings->concat($fromReservations)->values(),
+    ]);
+})->middleware('role:admin')->name('api.v1.admin.payment-references.search');
 
 Route::post('/admin/portal-users', function (Request $request) {
     $actor = $request->user();

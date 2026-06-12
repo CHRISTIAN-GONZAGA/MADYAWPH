@@ -8,6 +8,7 @@ import '../dio_client.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/app_state_views.dart';
 import '../widgets/chat_attachment.dart';
+import 'admin/widgets/hourly_price_picker.dart';
 
 class AdminCategoriesScreen extends StatefulWidget {
   const AdminCategoriesScreen({super.key});
@@ -149,6 +150,12 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
   Future<void> _create() async {
     final nameCtrl = TextEditingController();
     final descCtrl = TextEditingController();
+    final nightlyCtrl = TextEditingController(text: '0');
+    final blockPriceCtrl = TextEditingController(text: '1000');
+    var catBillingMode = 'hourly';
+    var catPricePerNight = 0.0;
+    var catPricePerBlock = 1000.0;
+    var catBlockHours = 3;
     XFile? pickedImage;
     final payload = await showDialog<Map<String, dynamic>>(
       context: context,
@@ -197,6 +204,28 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                       },
                       onClear: () => setLocal(() => pickedImage = null),
                     ),
+                    const SizedBox(height: 16),
+                    RoomPricingFields(
+                      billingMode: catBillingMode,
+                      pricePerNight: catPricePerNight,
+                      pricePerBlock: catPricePerBlock,
+                      blockHours: catBlockHours,
+                      nightlyController: nightlyCtrl,
+                      blockPriceController: blockPriceCtrl,
+                      onChanged: ({
+                        required String billingMode,
+                        required double pricePerNight,
+                        required double pricePerBlock,
+                        required int blockHours,
+                      }) {
+                        setLocal(() {
+                          catBillingMode = billingMode;
+                          catPricePerNight = pricePerNight;
+                          catPricePerBlock = pricePerBlock;
+                          catBlockHours = blockHours;
+                        });
+                      },
+                    ),
                     const SizedBox(height: 24),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
@@ -210,6 +239,12 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                           onPressed: () => Navigator.of(context).pop({
                             'name': nameCtrl.text.trim(),
                             'description': descCtrl.text.trim(),
+                            'billing_mode': catBillingMode,
+                            'default_price': catBillingMode == 'nightly'
+                                ? catPricePerNight
+                                : catPricePerBlock,
+                            'price_per_block': catPricePerBlock,
+                            'block_hours': catBlockHours,
                             '__image': pickedImage,
                           }),
                           child: const Text('Create'),
@@ -259,8 +294,19 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
 
     final nameCtrl = TextEditingController();
     final roomNoCtrl = TextEditingController();
-    final priceCtrl = TextEditingController(
-        text: '${(category['default_price'] as num?)?.toDouble() ?? 0}');
+    final nightlyCtrl = TextEditingController(
+      text: '${(category['default_price'] as num?)?.toDouble() ?? 0}',
+    );
+    final blockPriceCtrl = TextEditingController(
+      text: '${(category['price_per_block'] as num?)?.toDouble() ?? (category['default_price'] as num?)?.toDouble() ?? 1000}',
+    );
+    var roomBillingMode =
+        (category['billing_mode'] ?? 'nightly').toString().toLowerCase();
+    var roomPricePerNight =
+        (category['default_price'] as num?)?.toDouble() ?? 0;
+    var roomPricePerBlock =
+        (category['price_per_block'] as num?)?.toDouble() ?? roomPricePerNight;
+    var roomBlockHours = (category['block_hours'] as num?)?.toInt() ?? 3;
     String roomType = 'Single';
     String status = 'available';
     XFile? pickedImage;
@@ -321,14 +367,26 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                           setLocal(() => roomType = v ?? roomType),
                     ),
                     const SizedBox(height: 14),
-                    TextField(
-                      controller: priceCtrl,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(
-                        labelText: 'Price per night (PHP)',
-                        prefixIcon: Icon(Icons.payments_outlined),
-                      ),
+                    RoomPricingFields(
+                      billingMode: roomBillingMode,
+                      pricePerNight: roomPricePerNight,
+                      pricePerBlock: roomPricePerBlock,
+                      blockHours: roomBlockHours,
+                      nightlyController: nightlyCtrl,
+                      blockPriceController: blockPriceCtrl,
+                      onChanged: ({
+                        required String billingMode,
+                        required double pricePerNight,
+                        required double pricePerBlock,
+                        required int blockHours,
+                      }) {
+                        setLocal(() {
+                          roomBillingMode = billingMode;
+                          roomPricePerNight = pricePerNight;
+                          roomPricePerBlock = pricePerBlock;
+                          roomBlockHours = blockHours;
+                        });
+                      },
                     ),
                     const SizedBox(height: 14),
                     DropdownButtonFormField<String>(
@@ -414,8 +472,10 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                               'display_name': nameCtrl.text.trim(),
                               'room_number': roomNoCtrl.text.trim(),
                               'room_type': roomType,
-                              'price_per_night':
-                                  double.tryParse(priceCtrl.text.trim()) ?? 0,
+                              'billing_mode': roomBillingMode,
+                              'price_per_night': roomPricePerNight,
+                              'price_per_block': roomPricePerBlock,
+                              'block_hours': roomBlockHours,
                               'status': status,
                               '__image': pickedImage,
                             });
@@ -434,7 +494,8 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     );
     nameCtrl.dispose();
     roomNoCtrl.dispose();
-    priceCtrl.dispose();
+    nightlyCtrl.dispose();
+    blockPriceCtrl.dispose();
     if (payload == null) return;
 
     final image = payload.remove('__image') as XFile?;

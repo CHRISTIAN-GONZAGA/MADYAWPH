@@ -10,7 +10,9 @@ use App\Models\PersonalAccessToken;
 use App\Models\User;
 use App\Services\AppEmailService;
 use App\Support\EmailOtp;
+use App\Services\HotelAvailabilityService;
 use App\Support\HotelDirectory;
+use Carbon\Carbon;
 use App\Support\MessagingFlags;
 use App\Support\HotelRegistrationCredits;
 use App\Support\PhilippineLocations;
@@ -42,6 +44,41 @@ class PortalAuthController extends Controller
         );
 
         return response()->json($payload);
+    }
+
+    public function searchHotels(Request $request, HotelAvailabilityService $availability): JsonResponse
+    {
+        $validated = $request->validate([
+            'q' => ['nullable', 'string', 'max:120'],
+            'check_in' => ['required', 'date'],
+            'check_out' => ['required', 'date', 'after:check_in'],
+            'rooms' => ['nullable', 'integer', 'min:1', 'max:10'],
+            'adults' => ['nullable', 'integer', 'min:1', 'max:30'],
+            'children' => ['nullable', 'integer', 'min:0', 'max:20'],
+        ]);
+
+        $checkIn = Carbon::parse($validated['check_in'])->startOfDay();
+        $checkOut = Carbon::parse($validated['check_out'])->startOfDay();
+        $roomsNeeded = max(1, (int) ($validated['rooms'] ?? 1));
+
+        $hotels = $availability->searchAccommodatingHotels(
+            $checkIn,
+            $checkOut,
+            $roomsNeeded,
+            $validated['q'] ?? null,
+        );
+
+        return response()->json([
+            'hotels' => $hotels,
+            'meta' => [
+                'check_in' => $checkIn->toDateString(),
+                'check_out' => $checkOut->toDateString(),
+                'rooms' => $roomsNeeded,
+                'adults' => (int) ($validated['adults'] ?? 2),
+                'children' => (int) ($validated['children'] ?? 0),
+                'count' => count($hotels),
+            ],
+        ]);
     }
 
     public function philippineLocations(): JsonResponse
@@ -255,7 +292,7 @@ class PortalAuthController extends Controller
     public function portalLogin(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'role' => ['required', 'in:admin,staff,super_admin'],
+            'role' => ['required', 'in:admin,staff,super_admin,owner'],
             'username' => ['required_without:email', 'string', 'max:255'],
             'email' => ['required_without:username', 'email', 'max:255'],
             'password' => ['required', 'string'],
@@ -276,9 +313,13 @@ class PortalAuthController extends Controller
 
         $userRole = $user->roleValue();
         $roleMatches = $userRole === $role
-            || ($role === UserRole::ADMIN->value && $userRole === UserRole::SUPER_ADMIN->value);
+            || ($role === UserRole::ADMIN->value && $userRole === UserRole::SUPER_ADMIN->value)
+            || ($role === UserRole::OWNER->value && in_array($userRole, [
+                UserRole::OWNER->value,
+                UserRole::SUPER_ADMIN->value,
+            ], true));
         if (! $roleMatches) {
-            return response()->json(['message' => 'Use the role that matches this account (admin, super admin, or staff).'], 422);
+            return response()->json(['message' => 'Use the role that matches this account (admin, owner, super admin, or staff).'], 422);
         }
 
         $userHotelId = $this->normalizeHotelId($user->hotel_id);

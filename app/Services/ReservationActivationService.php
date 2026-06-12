@@ -55,6 +55,15 @@ class ReservationActivationService
         $nightly = $this->roomPricingService->applySurge($hotelId, (float) $room->price_per_night);
         $total = $this->financialComputationService->computeRoomCharge($nightly, $nights);
 
+        $meta = is_array($res->metadata) ? $res->metadata : [];
+        $paymentMethod = strcasecmp((string) ($meta['payment_method'] ?? ''), 'Online') === 0
+            ? PaymentMethod::GCASH->value
+            : PaymentMethod::CASH->value;
+        $paymentRef = (string) ($meta['payment_reference'] ?? '');
+        if ($paymentRef === '' && isset($meta['estimated_total'])) {
+            $total = (float) $meta['estimated_total'];
+        }
+
         $booking = Booking::withoutGlobalScopes()->create([
             'hotel_id' => $hotelId,
             'booking_reference' => 'BK'.now()->format('YmdHis').strtoupper(Str::random(4)),
@@ -65,7 +74,8 @@ class ReservationActivationService
             'check_in_date' => $checkIn->toDateString(),
             'check_out_date' => $checkOut->toDateString(),
             'nights' => $nights,
-            'payment_method' => PaymentMethod::CASH->value,
+            'payment_method' => $paymentMethod,
+            'payment_reference' => $paymentRef !== '' ? $paymentRef : null,
             'payment_status' => 'unpaid',
             'total_amount' => $total,
             'source' => BookingSource::KIOSK->value,

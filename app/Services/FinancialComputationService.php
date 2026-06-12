@@ -33,6 +33,32 @@ class FinancialComputationService
         return PriceRounding::nearest50($nightly * $nights);
     }
 
+    public function computeStayHours(CarbonInterface $checkIn, CarbonInterface $checkOut): int
+    {
+        $minutes = $checkIn->diffInMinutes($checkOut);
+        $hours = (int) ceil($minutes / 60);
+        if ($hours <= 0) {
+            throw ValidationException::withMessages([
+                'check_out_at' => 'Check-out must be after check-in.',
+            ]);
+        }
+
+        return $hours;
+    }
+
+    public function computeHourlyRoomCharge(float $pricePerBlock, int $blocks): float
+    {
+        if ($pricePerBlock < 0 || $blocks < 1) {
+            throw ValidationException::withMessages([
+                'amount' => 'Financial values cannot be negative.',
+            ]);
+        }
+
+        $blockPrice = PriceRounding::nearest50($pricePerBlock);
+
+        return PriceRounding::nearest50($blockPrice * $blocks);
+    }
+
     public function computeTotal(float $baseAmount, float $extraCharges = 0.0): float
     {
         if ($baseAmount < 0 || $extraCharges < 0) {

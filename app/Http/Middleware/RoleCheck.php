@@ -23,7 +23,9 @@ class RoleCheck
 
         $userRole = $user->roleValue();
         $allowed = in_array($userRole, $roles, true)
-            || ($userRole === 'super_admin' && in_array('admin', $roles, true));
+            || ($userRole === 'super_admin' && in_array('admin', $roles, true))
+            || ($userRole === 'owner' && in_array('admin', $roles, true))
+            || ($userRole === 'super_admin' && in_array('owner', $roles, true));
 
         if (! $allowed) {
             Log::info('Role check failed', ['user_id' => $user->id, 'role' => $userRole, 'roles' => $roles]);

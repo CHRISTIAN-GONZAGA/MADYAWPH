@@ -14,7 +14,9 @@ use App\Models\ExternalReservation;
 use App\Models\Hotel;
 use App\Models\Room;
 use App\Models\RoomCategory;
+use App\Models\SystemSetting;
 use App\Services\ActivityLogService;
+use App\Services\HotelAvailabilityService;
 use App\Services\FinancialComputationService;
 use App\Services\GuestRoomAccessCodeService;
 use App\Services\RoomPricingService;
@@ -39,6 +41,7 @@ class CustomerPortalApiController extends Controller
         private readonly RoomPricingService $roomPricingService,
         private readonly GuestRoomAccessCodeService $guestRoomAccessCodeService,
         private readonly FinancialComputationService $financialComputationService,
+        private readonly HotelAvailabilityService $hotelAvailabilityService,
     ) {}
 
     public function categories(Request $request): JsonResponse
@@ -49,18 +52,23 @@ class CustomerPortalApiController extends Controller
         }
 
         $hotel = Hotel::withoutGlobalScopes()->select('id', 'name', 'location')->find($hotelId);
+        $checkIn = $request->query('check_in');
+        $checkOut = $request->query('check_out');
+        $dateFilter = filled($checkIn) && filled($checkOut);
         $availableValue = RoomStatus::AVAILABLE->value;
 
         $categories = RoomCategory::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
             ->orderBy('name')
             ->get(['id', 'name', 'description', 'image_url'])
-            ->map(function (RoomCategory $cat) use ($hotelId, $availableValue) {
-                $available = Room::withoutGlobalScopes()
-                    ->where('hotel_id', $hotelId)
-                    ->where('category_id', (string) $cat->id)
-                    ->where('status', $availableValue)
-                    ->count();
+            ->map(function (RoomCategory $cat) use ($hotelId, $availableValue, $dateFilter, $checkIn, $checkOut) {
+                $available = $this->countAvailableRoomsInCategory(
+                    $hotelId,
+                    (string) $cat->id,
+                    null,
+                    $dateFilter ? Carbon::parse($checkIn) : null,
+                    $dateFilter ? Carbon::parse($checkOut) : null,
+                );
 
                 return [
                     'id' => (string) $cat->id,
@@ -75,12 +83,20 @@ class CustomerPortalApiController extends Controller
                 ->where('hotel_id', $hotelId)
                 ->get()
                 ->groupBy(fn ($room) => strtolower((string) ($room->room_type?->value ?? $room->room_type)))
-                ->map(function ($roomsByType, $type) use ($availableValue) {
-                    $available = $roomsByType->filter(function ($room) use ($availableValue) {
-                        $st = $room->status?->value ?? (string) $room->status;
+                ->map(function ($roomsByType, $type) use ($hotelId, $dateFilter, $checkIn, $checkOut) {
+                    $available = $dateFilter
+                        ? $this->countAvailableRoomsInCategory(
+                            $hotelId,
+                            null,
+                            ucfirst((string) $type),
+                            Carbon::parse($checkIn),
+                            Carbon::parse($checkOut),
+                        )
+                        : $roomsByType->filter(function ($room) {
+                            $st = $room->status?->value ?? (string) $room->status;
 
-                        return $st === $availableValue;
-                    })->count();
+                            return $st === RoomStatus::AVAILABLE->value;
+                        })->count();
 
                     $coverRoom = $roomsByType->first(
                         fn ($room) => filled($room->image_url)
@@ -114,18 +130,45 @@ class CustomerPortalApiController extends Controller
                 $query->where('id', $categoryId)->orWhere('_id', $categoryId);
             })
             ->first();
+        $checkIn = $request->query('check_in');
+        $checkOut = $request->query('check_out');
+        $dateFilter = filled($checkIn) && filled($checkOut);
         $availableValue = RoomStatus::AVAILABLE->value;
         $categoryImage = ChatAttachmentUrl::fromStoredUrl($category?->image_url);
-        $rooms = Room::withoutGlobalScopes()
+
+        $roomQuery = Room::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
-            ->where('status', $availableValue)
             ->when(
                 $category,
                 fn ($query) => $query->where('category_id', (string) $category->id),
                 fn ($query) => $query->where('room_type', ucfirst($categoryId))
-            )
-            ->limit(30)
+            );
+
+        if (! $dateFilter) {
+            $roomQuery->where('status', $availableValue);
+        }
+
+        $rooms = $roomQuery
+            ->limit(60)
             ->get()
+            ->filter(function ($room) use ($hotelId, $dateFilter, $checkIn, $checkOut, $availableValue) {
+                if (! $dateFilter) {
+                    return true;
+                }
+                $status = $room->status?->value ?? (string) $room->status;
+                if ($status !== $availableValue) {
+                    return false;
+                }
+
+                return ! $this->hotelAvailabilityService->roomHasStayConflict(
+                    (string) $room->id,
+                    $hotelId,
+                    Carbon::parse($checkIn)->toDateString(),
+                    Carbon::parse($checkOut)->toDateString(),
+                    null,
+                );
+            })
+            ->take(30)
             ->map(function ($room) use ($hotelId, $category, $categoryImage, $availableValue) {
                 $basePrice = (float) $room->price_per_night;
                 $displayPrice = $this->roomPricingService->applySurge((string) $hotelId, $basePrice);
@@ -156,11 +199,58 @@ class CustomerPortalApiController extends Controller
         ]);
     }
 
+    public function paymentQr(Request $request): JsonResponse
+    {
+        $hotelId = $this->resolveHotelId($request);
+        if ($hotelId === '') {
+            return response()->json(['message' => 'Hotel context required (hotel_id).'], 422);
+        }
+
+        $settings = SystemSetting::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->first();
+        $stored = (string) ($settings?->payment_qr_url ?? '');
+
+        return response()->json([
+            'qr_url' => ChatAttachmentUrl::fromStoredUrl($stored) ?? '',
+            'has_qr' => $stored !== '',
+        ]);
+    }
+
+    public function showReservation(Request $request, string $reference): JsonResponse
+    {
+        $validated = $request->validate([
+            'hotel_id' => ['required', 'string'],
+            'guest_email' => ['required', 'email'],
+        ]);
+
+        $reservation = ExternalReservation::withoutGlobalScopes()
+            ->where('hotel_id', (string) $validated['hotel_id'])
+            ->where('external_reference', strtoupper(trim($reference)))
+            ->where('guest_email', $validated['guest_email'])
+            ->first();
+
+        if (! $reservation) {
+            return response()->json(['message' => 'Reservation not found.'], 404);
+        }
+
+        $room = Room::withoutGlobalScopes()->find($reservation->assigned_room_id);
+        $booking = filled($reservation->booking_id ?? null)
+            ? Booking::withoutGlobalScopes()->find($reservation->booking_id)
+            : null;
+
+        return response()->json([
+            'reservation' => $this->serializeReservation($reservation, $room, $booking),
+        ]);
+    }
+
     public function storeReservation(Request $request): JsonResponse
     {
         try {
             $validated = $this->validateCustomerStay($request);
             $validated = $this->mergeDiscountIntoValidated($request, $validated);
+            $validated = $this->mergeGuestIdIntoValidated($request, $validated);
+            $validated = $this->mergePaymentIntoValidated($validated);
 
             return $this->createFutureReservation($validated);
         } catch (HttpResponseException|ValidationException $e) {
@@ -294,19 +384,25 @@ class CustomerPortalApiController extends Controller
 
         $checkIn = Carbon::parse($validated['check_in'])->startOfDay();
         $checkOut = Carbon::parse($validated['check_out'])->startOfDay();
-        if ($checkIn->lessThanOrEqualTo(Carbon::today())) {
-            return response()->json([
-                'message' => 'For today’s arrival use instant booking (short stay flow).',
-            ], 422);
-        }
 
         if ($this->roomStatusValue($room) !== RoomStatus::AVAILABLE->value) {
             return response()->json(['message' => 'This room cannot be reserved for those dates right now.'], 422);
         }
 
-        if ($this->reservationRangeHasConflict($hotelId, (string) $room->id, $checkIn, $checkOut, null)) {
+        if ($this->hotelAvailabilityService->roomHasStayConflict(
+            (string) $room->id,
+            $hotelId,
+            $checkIn->toDateString(),
+            $checkOut->toDateString(),
+            null,
+        )) {
             return response()->json(['message' => 'Room already has a reservation overlapping these dates.'], 422);
         }
+
+        $nights = max(1, $checkIn->diffInDays($checkOut));
+        $nightly = $this->roomPricingService->applySurge($hotelId, (float) $room->price_per_night);
+        $gross = $this->financialComputationService->computeRoomCharge($nightly, $nights);
+        $total = $this->applyDiscountToTotal($gross, (float) ($validated['discount_percent'] ?? 0));
 
         $reservation = ExternalReservation::query()->create([
             'hotel_id' => $hotelId,
@@ -323,6 +419,13 @@ class CustomerPortalApiController extends Controller
                 'discount_type' => ($validated['discount_type'] ?? 'none') !== 'none' ? $validated['discount_type'] : null,
                 'discount_percent' => (float) ($validated['discount_percent'] ?? 0) > 0 ? (float) $validated['discount_percent'] : null,
                 'discount_id_url' => $validated['discount_id_url'] ?? null,
+                'guest_id_url' => $validated['guest_id_url'] ?? null,
+                'payment_method' => $validated['payment_method'] ?? 'Cash',
+                'payment_reference' => $validated['payment_reference'] ?? null,
+                'estimated_total' => $total,
+                'rooms' => (int) ($validated['rooms'] ?? 1),
+                'adults' => (int) ($validated['adults'] ?? 2),
+                'children' => (int) ($validated['children'] ?? 0),
             ]),
         ]);
         app(ActivityLogService::class)->log(
@@ -332,9 +435,11 @@ class CustomerPortalApiController extends Controller
             ['reservation_id' => (string) $reservation->id, 'room_id' => (string) $room->id]
         );
 
+        $room = Room::withoutGlobalScopes()->find($reservation->assigned_room_id);
+
         return response()->json([
             'ok' => true,
-            'reservation' => $this->serializeReservation($reservation),
+            'reservation' => $this->serializeReservation($reservation, $room),
         ]);
     }
 
@@ -427,7 +532,92 @@ class CustomerPortalApiController extends Controller
             'check_out' => ['required', 'date', 'after:check_in'],
             'discount_type' => ['nullable', 'string', 'in:none,pwd,senior'],
             'discount_id_file' => ['nullable', 'image', 'max:5120'],
+            'guest_id_file' => ['nullable', 'image', 'max:5120'],
+            'payment_method' => ['nullable', 'string', 'in:Cash,Online'],
+            'rooms' => ['nullable', 'integer', 'min:1', 'max:10'],
+            'adults' => ['nullable', 'integer', 'min:1', 'max:30'],
+            'children' => ['nullable', 'integer', 'min:0', 'max:20'],
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return array<string, mixed>
+     */
+    private function mergeGuestIdIntoValidated(Request $request, array $validated): array
+    {
+        if (! $request->hasFile('guest_id_file')) {
+            return $validated;
+        }
+
+        try {
+            $path = PublicUploadStorage::store(
+                $request->file('guest_id_file'),
+                'bookings/guest-ids'
+            );
+            $validated['guest_id_url'] = ChatAttachmentUrl::forPath($path);
+        } catch (Throwable $e) {
+            Log::warning('Guest ID upload failed', ['message' => $e->getMessage()]);
+        }
+
+        return $validated;
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return array<string, mixed>
+     */
+    private function mergePaymentIntoValidated(array $validated): array
+    {
+        $method = trim((string) ($validated['payment_method'] ?? 'Cash'));
+        if ($method === '') {
+            $method = 'Cash';
+        }
+        $validated['payment_method'] = $method;
+        if (strcasecmp($method, 'Online') === 0) {
+            $validated['payment_reference'] = 'PAY'.now()->format('YmdHis').strtoupper(Str::random(5));
+        }
+
+        return $validated;
+    }
+
+    private function countAvailableRoomsInCategory(
+        string $hotelId,
+        ?string $categoryId,
+        ?string $roomType,
+        ?Carbon $checkIn,
+        ?Carbon $checkOut,
+    ): int {
+        $query = Room::withoutGlobalScopes()->where('hotel_id', $hotelId);
+        if ($categoryId !== null) {
+            $query->where('category_id', $categoryId);
+        } elseif ($roomType !== null) {
+            $query->where('room_type', $roomType);
+        }
+
+        if ($checkIn === null || $checkOut === null) {
+            return (int) $query->where('status', RoomStatus::AVAILABLE->value)->count();
+        }
+
+        $count = 0;
+        foreach ($query->get(['id', 'status']) as $room) {
+            $status = $room->status?->value ?? (string) $room->status;
+            if ($status !== RoomStatus::AVAILABLE->value) {
+                continue;
+            }
+            if ($this->hotelAvailabilityService->roomHasStayConflict(
+                (string) $room->id,
+                $hotelId,
+                $checkIn->toDateString(),
+                $checkOut->toDateString(),
+                null,
+            )) {
+                continue;
+            }
+            $count++;
+        }
+
+        return $count;
     }
 
     /**
@@ -496,9 +686,34 @@ class CustomerPortalApiController extends Controller
         ]);
     }
 
-    private function serializeReservation(ExternalReservation $reservation): array
-    {
-        return $reservation->fresh()->toArray();
+    private function serializeReservation(
+        ExternalReservation $reservation,
+        ?Room $room = null,
+        ?Booking $booking = null,
+    ): array {
+        $meta = is_array($reservation->metadata) ? $reservation->metadata : [];
+        $room ??= Room::withoutGlobalScopes()->find($reservation->assigned_room_id);
+
+        return [
+            'id' => (string) $reservation->id,
+            'hotel_id' => (string) $reservation->hotel_id,
+            'external_reference' => (string) $reservation->external_reference,
+            'status' => (string) $reservation->status,
+            'guest_name' => (string) $reservation->guest_name,
+            'guest_email' => (string) $reservation->guest_email,
+            'guest_phone' => (string) $reservation->guest_phone,
+            'check_in_date' => optional($reservation->check_in_date)->toDateString(),
+            'check_out_date' => optional($reservation->check_out_date)->toDateString(),
+            'room_id' => (string) ($reservation->assigned_room_id ?? ''),
+            'room_number' => $room ? (string) $room->room_number : '',
+            'room_display_name' => $room ? (string) ($room->display_name ?? '') : '',
+            'booking_id' => (string) ($reservation->booking_id ?? ''),
+            'booking_reference' => $booking ? (string) $booking->booking_reference : '',
+            'payment_method' => (string) ($meta['payment_method'] ?? 'Cash'),
+            'payment_reference' => (string) ($meta['payment_reference'] ?? ''),
+            'estimated_total' => (float) ($meta['estimated_total'] ?? 0),
+            'metadata' => $meta,
+        ];
     }
 
     private function roomStatusValue(Room $room): string

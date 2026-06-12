@@ -9,6 +9,7 @@ import '../../admin_rooms.dart';
 import '../../admin_staff.dart';
 import '../../admin_tasks.dart';
 import '../../guest_list_history.dart';
+import '../admin_online_payment_screen.dart';
 
 class SettingsSection extends StatelessWidget {
   const SettingsSection({
@@ -140,6 +141,19 @@ class SettingsSection extends StatelessWidget {
               subtitle: 'Weekend, peak, emergency surge toggles',
               enabled: !creditsLocked,
               onTap: onSurgePricing,
+            ),
+            _SettingsTile(
+              icon: Icons.qr_code_scanner_outlined,
+              title: 'Online payment (QR Ph)',
+              subtitle: 'Upload QR for guest online payments & verify refs',
+              enabled: !creditsLocked,
+              onTap: () {
+                Navigator.of(context).push<void>(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AdminOnlinePaymentScreen(),
+                  ),
+                );
+              },
             ),
           ],
         ),

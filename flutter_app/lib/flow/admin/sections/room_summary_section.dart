@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../../widgets/room_status_label.dart';
 import '../admin_dashboard_models.dart';
 import '../widgets/booking_overview_cards.dart';
+import 'room_board_section.dart';
 import '../../admin_rooms.dart';
 
 class RoomSummarySection extends StatelessWidget {
@@ -11,18 +12,22 @@ class RoomSummarySection extends StatelessWidget {
     super.key,
     required this.rooms,
     required this.tasks,
+    required this.hotelName,
     required this.localBookingsTotal,
     required this.onlineBookingsTotal,
     required this.onOpenLocalBookings,
     required this.onOpenOnlineBookings,
+    required this.onRefresh,
   });
 
   final List<Map<String, dynamic>> rooms;
   final List<dynamic> tasks;
+  final String hotelName;
   final int localBookingsTotal;
   final int onlineBookingsTotal;
   final VoidCallback onOpenLocalBookings;
   final VoidCallback onOpenOnlineBookings;
+  final Future<void> Function() onRefresh;
 
   List<Map<String, dynamic>> _filterByStatuses(Set<String> statuses) {
     return rooms
@@ -246,6 +251,12 @@ class RoomSummarySection extends StatelessWidget {
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
       children: [
+        RoomBoardSection(
+          rooms: rooms,
+          hotelName: hotelName,
+          onChanged: onRefresh,
+        ),
+        const SizedBox(height: 20),
         BookingOverviewCards(
           localTotal: localBookingsTotal,
           onlineTotal: onlineBookingsTotal,

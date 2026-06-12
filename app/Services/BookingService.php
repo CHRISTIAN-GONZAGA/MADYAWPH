@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\BookingStatus;
 use App\Enums\RoomStatus;
 use App\Support\BookingTypeResolver;
+use App\Support\RoomBillingSupport;
 use App\Models\BillingCharge;
 use App\Models\Booking;
 use App\Models\Room;
@@ -37,6 +38,52 @@ class BookingService
         return $data;
     }
 
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function resolveStayWindow(array $data): array
+    {
+        if (! empty($data['check_in_at']) && ! empty($data['check_out_at'])) {
+            $checkIn = Carbon::parse((string) $data['check_in_at']);
+            $checkOut = Carbon::parse((string) $data['check_out_at']);
+
+            return [
+                'check_in' => $checkIn,
+                'check_out' => $checkOut,
+                'check_in_date' => $checkIn->toDateString(),
+                'check_out_date' => $checkOut->toDateString(),
+                'check_in_time' => $checkIn->format('H:i'),
+                'check_out_time' => $checkOut->format('H:i'),
+            ];
+        }
+
+        $checkIn = Carbon::parse((string) ($data['check_in_date'] ?? $data['check_in'] ?? ''));
+        $checkOut = Carbon::parse((string) ($data['check_out_date'] ?? $data['check_out'] ?? ''));
+
+        if (! empty($data['check_in_time'])) {
+            $parts = explode(':', (string) $data['check_in_time']);
+            $checkIn = $checkIn->copy()->setTime((int) ($parts[0] ?? 14), (int) ($parts[1] ?? 0));
+        } elseif (RoomBillingSupport::MODE_HOURLY === strtolower((string) ($data['billing_mode_hint'] ?? ''))) {
+            $checkIn = $checkIn->copy()->setTime(14, 0);
+        }
+
+        if (! empty($data['check_out_time'])) {
+            $parts = explode(':', (string) $data['check_out_time']);
+            $checkOut = $checkOut->copy()->setTime((int) ($parts[0] ?? 11), (int) ($parts[1] ?? 0));
+        } elseif (RoomBillingSupport::MODE_HOURLY === strtolower((string) ($data['billing_mode_hint'] ?? ''))) {
+            $checkOut = $checkOut->copy()->setTime(11, 0);
+        }
+
+        return [
+            'check_in' => $checkIn,
+            'check_out' => $checkOut,
+            'check_in_date' => $checkIn->toDateString(),
+            'check_out_date' => $checkOut->toDateString(),
+            'check_in_time' => $data['check_in_time'] ?? null,
+            'check_out_time' => $data['check_out_time'] ?? null,
+        ];
+    }
+
     public function create(array $data, ?User $actor = null): Booking
     {
         return DB::transaction(function () use ($data, $actor): Booking {
@@ -48,39 +95,50 @@ class BookingService
             $this->domainGuardService->ensureRoomBelongsToHotel($room, $data['hotel_id'] ?? null);
             $this->domainGuardService->ensureRoomCanBeBooked($room);
 
-            $checkIn = Carbon::parse($data['check_in_date']);
-            $checkOut = Carbon::parse($data['check_out_date']);
-            $nights = $this->financialComputationService->computeNights($checkIn, $checkOut);
-            $adjustedNightly = $this->roomPricingService->applySurge((string) $room->hotel_id, (float) $room->price_per_night);
-            $baseRoomCharge = $this->financialComputationService->computeRoomCharge($adjustedNightly, $nights);
+            $stay = $this->resolveStayWindow($data);
+            $charge = RoomBillingSupport::computeStayCharge(
+                $room,
+                $stay['check_in'],
+                $stay['check_out'],
+                $this->financialComputationService,
+                $this->roomPricingService,
+            );
             $extraCharges = isset($data['extra_charges']) ? (float) $data['extra_charges'] : 0.0;
-            $totalAmount = $this->financialComputationService->computeTotal($baseRoomCharge, $extraCharges);
+            $totalAmount = $this->financialComputationService->computeTotal($charge['amount'], $extraCharges);
 
-            $booking = Booking::withoutGlobalScopes()->create(
-                $this->withBookingChannel([
+            $bookingPayload = $this->withBookingChannel([
                 ...$data,
                 'hotel_id' => $room->hotel_id,
                 'booking_reference' => 'BK'.now()->format('YmdHis').random_int(100, 999),
-                'nights' => $nights,
+                'check_in_date' => $stay['check_in_date'],
+                'check_out_date' => $stay['check_out_date'],
+                'check_in_time' => $stay['check_in_time'],
+                'check_out_time' => $stay['check_out_time'],
+                'nights' => $charge['nights'],
+                'billing_mode' => $charge['billing_mode'],
                 'payment_status' => 'unpaid',
                 'paid_at' => null,
                 'total_amount' => $totalAmount,
                 'status' => BookingStatus::BOOKED->value,
-            ]));
+            ]);
+            if ($charge['billing_mode'] === RoomBillingSupport::MODE_HOURLY) {
+                $bookingPayload['stay_hours'] = $charge['stay_hours'];
+                $bookingPayload['block_hours'] = $charge['block_hours'];
+                $bookingPayload['price_per_block'] = $charge['price_per_block'];
+            }
+
+            $booking = Booking::withoutGlobalScopes()->create($bookingPayload);
             BillingCharge::withoutGlobalScopes()->create([
                 'hotel_id' => (string) $room->hotel_id,
                 'booking_id' => (string) $booking->id,
                 'room_id' => (string) $room->id,
                 'type' => 'room',
-                'label' => "Room charge ({$nights} night".($nights > 1 ? 's' : '').')',
-                'amount' => $baseRoomCharge,
+                'label' => $charge['label'],
+                'amount' => $charge['amount'],
                 'quantity' => 1,
                 'is_manual' => false,
                 'created_by' => (string) ($actor?->id ?? ''),
-                'metadata' => [
-                    'nightly_rate' => $adjustedNightly,
-                    'nights' => $nights,
-                ],
+                'metadata' => $charge['metadata'],
             ]);
             $generatedPassword = $this->guestRoomAccessCodeService->generateUnique();
 
@@ -100,8 +158,10 @@ class BookingService
                     'booking_reference' => $booking->booking_reference,
                     'room_id' => (string) $room->id,
                     'guest_name' => $booking->guest_name,
-                    'nights' => $nights,
-                    'base_room_charge' => $baseRoomCharge,
+                    'nights' => $charge['nights'],
+                    'stay_hours' => $charge['stay_hours'],
+                    'billing_mode' => $charge['billing_mode'],
+                    'base_room_charge' => $charge['amount'],
                     'extra_charges' => $extraCharges,
                     'total_amount' => $totalAmount,
                     'access_code' => $generatedPassword,

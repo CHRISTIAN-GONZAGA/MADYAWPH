@@ -263,6 +263,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
                         index: safeTab,
                         children: _allSections(
                           d,
+                          hotelName,
                           balance,
                           creditAmount,
                           settingsTab,
@@ -302,6 +303,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
 
   List<Widget> _allSections(
     Map<String, dynamic> d,
+    String hotelName,
     String balance,
     double creditAmount,
     int settingsTab,
@@ -339,8 +341,10 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           key: refreshKey,
           rooms: _rooms,
           tasks: tasks,
+          hotelName: hotelName,
           localBookingsTotal: localTotal,
           onlineBookingsTotal: onlineTotal,
+          onRefresh: widget.onRefresh,
           onOpenLocalBookings: creditsLocked
               ? () => AdminCreditsGate.showActionsBlockedMessage(context)
               : () => _openBookingsTab('local'),

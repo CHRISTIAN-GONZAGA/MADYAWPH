@@ -25,6 +25,9 @@ class RoomCategoryController extends Controller
                 'name' => (string) $category->name,
                 'description' => (string) ($category->description ?? ''),
                 'default_price' => (float) ($category->default_price ?? 0),
+                'billing_mode' => (string) ($category->billing_mode ?? 'nightly'),
+                'price_per_block' => (float) ($category->price_per_block ?? 0),
+                'block_hours' => (int) ($category->block_hours ?? 3),
                 'image_url' => (string) (ChatAttachmentUrl::fromStoredUrl($category->image_url) ?? ''),
             ]);
 
@@ -39,6 +42,9 @@ class RoomCategoryController extends Controller
             'name' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string', 'max:300'],
             'default_price' => ['nullable', 'numeric', 'min:0'],
+            'billing_mode' => ['nullable', 'in:nightly,hourly'],
+            'price_per_block' => ['nullable', 'numeric', 'min:0'],
+            'block_hours' => ['nullable', 'integer', 'min:1', 'max:48'],
             'image_file' => RoomImageUploadRules::fileRules(),
         ]);
 
@@ -46,6 +52,15 @@ class RoomCategoryController extends Controller
 
         if (isset($payload['default_price'])) {
             $payload['default_price'] = PriceRounding::nearest50((float) $payload['default_price']);
+        }
+        if (isset($payload['price_per_block'])) {
+            $payload['price_per_block'] = PriceRounding::nearest50((float) $payload['price_per_block']);
+        }
+        $payload['billing_mode'] = strtolower((string) ($payload['billing_mode'] ?? 'nightly')) === 'hourly'
+            ? 'hourly'
+            : 'nightly';
+        if ($payload['billing_mode'] === 'hourly') {
+            $payload['block_hours'] = max(1, (int) ($payload['block_hours'] ?? 3));
         }
 
         if ($request->hasFile('image_file')) {
@@ -62,6 +77,9 @@ class RoomCategoryController extends Controller
             'name' => (string) $category->name,
             'description' => (string) ($category->description ?? ''),
             'default_price' => (float) ($category->default_price ?? 0),
+            'billing_mode' => (string) ($category->billing_mode ?? 'nightly'),
+            'price_per_block' => (float) ($category->price_per_block ?? 0),
+            'block_hours' => (int) ($category->block_hours ?? 3),
             'image_url' => (string) (ChatAttachmentUrl::fromStoredUrl($category->image_url) ?? ''),
         ], 201);
     }

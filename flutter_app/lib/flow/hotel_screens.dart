@@ -21,14 +21,27 @@ import '../widgets/chat_attachment.dart';
 import '../widgets/philippine_address_picker.dart';
 import 'dashboards.dart';
 import 'flow_state.dart';
-
+import 'owner_dashboard_screen.dart';
 // --- Choose hotel (by city/region) → role menu ---
+
+/// Staff / property login: pick hotel → role menu (scoped to that property).
+class PropertyStaffEntryScreen extends StatelessWidget {
+  const PropertyStaffEntryScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const ChooseHotelScreen(staffEntry: true);
+  }
+}
 
 const _kHotelPriceFallbackMin = 0.0;
 const _kHotelPriceFallbackMax = 50000.0;
 
 class ChooseHotelScreen extends StatefulWidget {
-  const ChooseHotelScreen({super.key});
+  const ChooseHotelScreen({super.key, this.staffEntry = false});
+
+  /// When true, selecting a hotel opens the property role menu (staff login flow).
+  final bool staffEntry;
 
   @override
   State<ChooseHotelScreen> createState() => _ChooseHotelScreenState();
@@ -618,7 +631,15 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
       await AuthStorage.clearGuestAuth();
     }
     if (!mounted) return;
-    hotelSessionNotifier.value = HotelSession(hotelId: hid, hotelName: hname);
+    final session = HotelSession(hotelId: hid, hotelName: hname);
+    hotelSessionNotifier.value = session;
+    if (widget.staffEntry) {
+      await Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => RoleMenuScreen(session: session),
+        ),
+      );
+    }
   }
 
   int get _totalHotels {
@@ -631,8 +652,11 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
 
   Future<void> _openRegister() async {
     await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(builder: (_) => const HotelRegisterScreen()),
+      MaterialPageRoute<void>(
+        builder: (_) => HotelRegisterScreen(fromStaffEntry: widget.staffEntry),
+      ),
     );
+    if (mounted) await _refreshHotels();
   }
 
   List<Widget> _buildHotelPickerSlivers(
@@ -690,9 +714,18 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
             hotelCount: _totalHotels,
             regionCount: regions.length,
             isRefreshing: _refreshing,
+            staffEntry: widget.staffEntry,
+            onRegister: _openRegister,
           ),
         ),
       ),
+      if (widget.staffEntry)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+            child: _RegisterHotelCard(onTap: _openRegister),
+          ),
+        ),
       SliverPersistentHeader(
         pinned: true,
         delegate: _HotelSearchHeaderDelegate(
@@ -844,6 +877,14 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
                       label: Text(context.tr('clear_filters')),
                     ),
                   ],
+                  if (_queryTokens.isEmpty && !_hasActiveFilters) ...[
+                    const SizedBox(height: 20),
+                    FilledButton.icon(
+                      onPressed: _openRegister,
+                      icon: const Icon(Icons.add_business_outlined),
+                      label: Text(context.tr('register_hotel_cta')),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -941,7 +982,12 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
       appBar: AppBar(
         elevation: 0,
         scrolledUnderElevation: 2,
-        title: Text(context.tr('choose_hotel')),
+        leading: widget.staffEntry ? const BackButton() : null,
+        title: Text(
+          widget.staffEntry
+              ? context.tr('property_sign_in')
+              : context.tr('choose_hotel'),
+        ),
         actions: [
           IconButton(
             tooltip: context.tr('refresh_hotels'),
@@ -1231,16 +1277,80 @@ class _HotelSearchHeaderDelegate extends SliverPersistentHeaderDelegate {
   }
 }
 
+class _RegisterHotelCard extends StatelessWidget {
+  const _RegisterHotelCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final visual = AppVisual.of(context);
+
+    return Material(
+      elevation: 0,
+      color: scheme.primaryContainer.withValues(alpha: 0.45),
+      borderRadius: visual.radiusMd,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: scheme.primary,
+                  borderRadius: visual.radiusSm,
+                ),
+                child: const Icon(Icons.add_business_outlined, color: Colors.white),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      context.tr('register_hotel_cta'),
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      context.tr('register_hotel_hint'),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                            height: 1.35,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, color: scheme.primary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ChooseHotelHero extends StatelessWidget {
   const _ChooseHotelHero({
     this.hotelCount,
     this.regionCount,
     this.isRefreshing = false,
+    this.staffEntry = false,
+    this.onRegister,
   });
 
   final int? hotelCount;
   final int? regionCount;
   final bool isRefreshing;
+  final bool staffEntry;
+  final VoidCallback? onRegister;
 
   @override
   Widget build(BuildContext context) {
@@ -1705,7 +1815,10 @@ class _HotelSelectTile extends StatelessWidget {
 }
 
 class HotelRegisterScreen extends StatefulWidget {
-  const HotelRegisterScreen({super.key});
+  const HotelRegisterScreen({super.key, this.fromStaffEntry = false});
+
+  /// Opened from property sign-in / staff hotel picker.
+  final bool fromStaffEntry;
 
   @override
   State<HotelRegisterScreen> createState() => _HotelRegisterScreenState();
@@ -1849,9 +1962,175 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
     }
   }
 
-  Future<void> _submit() async {
+  String? _validateForm() {
+    final hotelName = _hotelName.text.trim();
+    if (hotelName.isEmpty) return 'Enter your hotel name.';
+    final rooms = int.tryParse(_totalRooms.text.trim()) ?? 0;
+    if (rooms < 1) return 'Enter the total number of rooms (at least 1).';
     if (!_address.isComplete) {
-      setState(() => _error = 'Select region, province, city, and barangay.');
+      return 'Select region, province, city, and barangay.';
+    }
+    final contact = _contact.text.trim();
+    if (contact.isEmpty) return 'Enter a contact number.';
+    final email = _adminEmail.text.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      return 'Enter a valid admin email address.';
+    }
+    final username = _username.text.trim();
+    if (username.isEmpty) return 'Choose an owner username.';
+    if (username.contains(' ')) {
+      return 'Username cannot contain spaces.';
+    }
+    if (_password.text.length < 6) {
+      return 'Password must be at least 6 characters.';
+    }
+    if (_password.text != _password2.text) {
+      return 'Passwords do not match.';
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>> _buildRegistrationPayload() async {
+    final coords = _previewCoords ?? await _resolveRegistrationCoordinates();
+    if (mounted && coords != null) {
+      setState(() => _previewCoords = coords);
+    }
+
+    final payload = <String, dynamic>{
+      'username': _username.text.trim(),
+      'password': _password.text,
+      'password_confirmation': _password2.text,
+      'hotel_name': _hotelName.text.trim(),
+      ..._address.toRegisterPayload(),
+      'contact_number': _contact.text.trim(),
+      'admin_email': _adminEmail.text.trim().toLowerCase(),
+      'total_rooms': int.tryParse(_totalRooms.text.trim()) ?? 1,
+    };
+    if (coords != null) {
+      payload['latitude'] = coords.lat;
+      payload['longitude'] = coords.lng;
+    }
+    return payload;
+  }
+
+  Future<void> _finishRegistration(Map<String, dynamic>? data) async {
+    final hid = data?['hotel_id']?.toString();
+    final token = data?['token']?.toString();
+    if (hid == null || hid.isEmpty || token == null || token.isEmpty) {
+      setState(() {
+        _error = 'Unexpected response from server.';
+        _busy = false;
+      });
+      return;
+    }
+    final name = _hotelName.text.trim();
+    await AuthStorage.setHotelContext(id: hid, name: name);
+    await AuthStorage.setPortalAuth(token: token, role: 'admin');
+    await AuthStorage.clearGuestAuth();
+    await AuthStorage.clearHotelsDirectoryCache();
+    if (!mounted) return;
+    await showHotelRegistrationCredentialsDialog(
+      context,
+      hotelName: name,
+      portalAccounts: data?['portal_accounts'] as Map<String, dynamic>?,
+      welcomeCredits: data?['welcome_credits'] as Map<String, dynamic>?,
+      verifiedEmail: (data?['email_verified'] == true) ? _adminEmail.text.trim() : null,
+      registrationUsername: _username.text.trim(),
+      registrationPassword: _password.text,
+    );
+    if (!mounted) return;
+    final session = HotelSession(hotelId: hid, hotelName: name);
+    hotelSessionNotifier.value = session;
+    Navigator.of(context).pop();
+    if (!mounted) return;
+    await Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => RoleMenuScreen(session: session),
+      ),
+    );
+  }
+
+  Future<void> _submitWithEmailOtp(Map<String, dynamic> payload) async {
+    final sendRes = await publicDio().post<Map<String, dynamic>>(
+      '/hotel/register/send-code',
+      data: payload,
+    );
+    final token = (sendRes.data?['registration_token'] ?? '').toString();
+    if (token.isEmpty) {
+      setState(() {
+        _error = 'Could not start email verification.';
+        _busy = false;
+      });
+      return;
+    }
+    final masked = (sendRes.data?['email_masked'] ?? _adminEmail.text.trim()).toString();
+    if (!mounted) return;
+
+    final otpCtrl = TextEditingController();
+    final verified = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Verify your email'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Enter the 6-digit code sent to $masked.'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: otpCtrl,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              decoration: const InputDecoration(
+                labelText: 'Verification code',
+                border: OutlineInputBorder(),
+                counterText: '',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (otpCtrl.text.trim().length != 6) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('Enter the 6-digit code.')),
+                );
+                return;
+              }
+              Navigator.of(ctx).pop(true);
+            },
+            child: const Text('Verify & create hotel'),
+          ),
+        ],
+      ),
+    );
+    final code = otpCtrl.text.trim();
+    otpCtrl.dispose();
+    if (verified != true || !mounted) {
+      setState(() => _busy = false);
+      return;
+    }
+
+    final verifyRes = await publicDio().post<Map<String, dynamic>>(
+      '/hotel/register/verify',
+      data: {
+        'registration_token': token,
+        'code': code,
+      },
+    );
+    await _finishRegistration(verifyRes.data);
+  }
+
+  Future<void> _submit() async {
+    final validationError = _validateForm();
+    if (validationError != null) {
+      setState(() => _error = validationError);
       return;
     }
     setState(() {
@@ -1859,68 +2138,44 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
       _error = null;
     });
     try {
-      final coords = _previewCoords ?? await _resolveRegistrationCoordinates();
-      if (mounted && coords != null) {
-        setState(() => _previewCoords = coords);
-      }
+      final payload = await _buildRegistrationPayload();
 
-      final payload = <String, dynamic>{
-        'username': _username.text.trim(),
-        'password': _password.text,
-        'password_confirmation': _password2.text,
-        'hotel_name': _hotelName.text.trim(),
-        ..._address.toRegisterPayload(),
-        'contact_number': _contact.text.trim(),
-        'admin_email': _adminEmail.text.trim(),
-        'total_rooms': int.tryParse(_totalRooms.text.trim()) ?? 1,
-      };
-      if (coords != null) {
-        payload['latitude'] = coords.lat;
-        payload['longitude'] = coords.lng;
+      try {
+        final res = await publicDio().post<Map<String, dynamic>>(
+          '/hotel/register',
+          data: payload,
+        );
+        await _finishRegistration(res.data);
+      } on DioException catch (e) {
+        if (e.response?.statusCode == 400) {
+          final msg = (e.response?.data is Map
+                  ? (e.response!.data as Map)['message']
+                  : '')
+              .toString();
+          if (msg.toLowerCase().contains('send-code') ||
+              msg.toLowerCase().contains('verification')) {
+            await _submitWithEmailOtp(payload);
+            return;
+          }
+        }
+        rethrow;
       }
-
-      final res = await publicDio().post<Map<String, dynamic>>(
-        '/hotel/register',
-        data: payload,
-      );
-      final hid = res.data?['hotel_id'] as String?;
-      final token = res.data?['token'] as String?;
-      if (hid == null || token == null || token.isEmpty) {
+    } on NearbyHotelsException {
+      if (mounted) setState(() => _busy = false);
+    } on DioException catch (e) {
+      if (mounted) {
         setState(() {
-          _error = 'Unexpected response.';
+          _error = dioErrorMessage(e);
           _busy = false;
         });
-        return;
       }
-      final name = _hotelName.text.trim();
-      await AuthStorage.setHotelContext(id: hid, name: name);
-      await AuthStorage.setPortalAuth(token: token, role: 'admin');
-      await AuthStorage.clearGuestAuth();
-      await AuthStorage.clearHotelsDirectoryCache();
-      if (!mounted) return;
-      await showHotelRegistrationCredentialsDialog(
-        context,
-        hotelName: name,
-        portalAccounts: res.data?['portal_accounts'] as Map<String, dynamic>?,
-        welcomeCredits: res.data?['welcome_credits'] as Map<String, dynamic>?,
-        registrationUsername: _username.text.trim(),
-        registrationPassword: _password.text,
-      );
-      if (!mounted) return;
-      Navigator.of(context).pop();
-      hotelSessionNotifier.value = HotelSession(hotelId: hid, hotelName: name);
-    } on NearbyHotelsException {
-      setState(() => _busy = false);
-    } on DioException catch (e) {
-      setState(() {
-        _error = dioErrorMessage(e);
-        _busy = false;
-      });
     } catch (e) {
-      setState(() {
-        _error = '$e';
-        _busy = false;
-      });
+      if (mounted) {
+        setState(() {
+          _error = '$e';
+          _busy = false;
+        });
+      }
     }
   }
 
@@ -1928,10 +2183,24 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return AppScaffold(
-      appBar: AppBar(title: const Text('Create hotel')),
+      appBar: AppBar(
+        title: Text(
+          widget.fromStaffEntry ? 'Register your property' : 'Create hotel',
+        ),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
+      if (widget.fromStaffEntry) ...[
+        Text(
+          'Your hotel will appear in the property list after registration. '
+          'All details are saved to your MADYAWPH account.',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+        ),
+        const SizedBox(height: 16),
+      ],
       TextField(
         controller: _hotelName,
         decoration: const InputDecoration(labelText: 'Hotel name', border: OutlineInputBorder()),
@@ -2097,6 +2366,13 @@ class RoleMenuScreen extends StatelessWidget {
   Future<void> _switchHotel(BuildContext context) async {
     await AuthStorage.clearAll();
     hotelSessionNotifier.value = null;
+    if (!context.mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(
+        builder: (_) => const PropertyStaffEntryScreen(),
+      ),
+      (_) => false,
+    );
   }
 
   Future<bool> _portalLoginThenDashboard(
@@ -2134,6 +2410,7 @@ class RoleMenuScreen extends StatelessWidget {
       );
       return;
     }
+    if (!context.mounted) return;
     await _portalLoginThenDashboard(
       context,
       role: 'admin',
@@ -2153,6 +2430,7 @@ class RoleMenuScreen extends StatelessWidget {
       );
       return;
     }
+    if (!context.mounted) return;
     await _portalLoginThenDashboard(
       context,
       role: 'super_admin',
@@ -2190,6 +2468,19 @@ class RoleMenuScreen extends StatelessWidget {
     if (ok == true && context.mounted) {
       await Navigator.of(context).push<void>(
         MaterialPageRoute<void>(builder: (_) => const GuestDashboardScreen()),
+      );
+    }
+  }
+
+  Future<void> _openOwner(BuildContext context) async {
+    final ok = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => const PortalLoginScreen(role: 'owner'),
+      ),
+    );
+    if (ok == true && context.mounted) {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(builder: (_) => const OwnerDashboardScreen()),
       );
     }
   }
@@ -2279,11 +2570,20 @@ class RoleMenuScreen extends StatelessWidget {
           ),
           _RoleCard(
             icon: Icons.admin_panel_settings_outlined,
-            title: context.tr('administrator'),
+            title: context.tr('admin_frontdesk'),
             subtitle: context.tr('administrator_sub'),
             color: scheme.primaryContainer,
             requiresSignIn: true,
             onTap: () => _openAdmin(context),
+          ),
+          const SizedBox(height: 12),
+          _RoleCard(
+            icon: Icons.business_center_outlined,
+            title: context.tr('hotel_owner'),
+            subtitle: context.tr('hotel_owner_sub'),
+            color: scheme.tertiaryContainer,
+            requiresSignIn: true,
+            onTap: () => _openOwner(context),
           ),
           const SizedBox(height: 12),
           _RoleCard(
@@ -2308,17 +2608,16 @@ class RoleMenuScreen extends StatelessWidget {
             icon: Icons.storefront_outlined,
             title: context.tr('public_customer'),
             subtitle: context.tr('public_customer_sub'),
-            color: scheme.tertiaryContainer,
+            color: scheme.surfaceContainerHighest,
             onTap: () => _openCustomer(context),
           ),
-          const SizedBox(height: 12),
-          _RoleCard(
-            icon: Icons.hotel_class_outlined,
-            title: context.tr('guest'),
-            subtitle: context.tr('guest_sub'),
-            color: scheme.surfaceContainerHighest,
-            requiresSignIn: true,
-            onTap: () => _openGuest(context),
+          const SizedBox(height: 16),
+          Center(
+            child: TextButton.icon(
+              onPressed: () => _openGuest(context),
+              icon: const Icon(Icons.hotel_class_outlined, size: 18),
+              label: Text(context.tr('guest')),
+            ),
           ),
         ],
       ),
@@ -2479,7 +2778,8 @@ class _PortalLoginScreenState extends State<PortalLoginScreen> {
   Widget build(BuildContext context) {
     final label = switch (widget.role) {
       'super_admin' => 'Super administrator',
-      'admin' => 'Administrator',
+      'admin' => 'Admin / Front desk',
+      'owner' => 'Hotel owner',
       _ => 'Staff',
     };
     return AppScaffold(
@@ -2488,7 +2788,9 @@ class _PortalLoginScreenState extends State<PortalLoginScreen> {
         padding: const EdgeInsets.all(24),
         children: [
           Text(
-            widget.role == 'admin'
+            widget.role == 'owner'
+                ? 'Use your owner or super-admin username and registration password.'
+                : widget.role == 'admin'
                 ? 'Use your administrator username (often ends with _admin), '
                     'or your super-admin username, and the password from hotel registration.'
                 : widget.role == 'super_admin'

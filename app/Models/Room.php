@@ -21,6 +21,9 @@ class Room extends Model
         'room_number',
         'room_type',
         'price_per_night',
+        'billing_mode',
+        'price_per_block',
+        'block_hours',
         'status',
         'amenities',
         'image_url',
@@ -41,6 +44,8 @@ class Room extends Model
             'status' => RoomStatus::class,
             'amenities' => 'array',
             'price_per_night' => 'decimal:2',
+            'price_per_block' => 'decimal:2',
+            'block_hours' => 'integer',
             'current_check_in' => 'date',
             'current_check_out' => 'date',
         ];

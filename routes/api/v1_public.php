@@ -97,6 +97,7 @@ Route::get('/integrations/status', function (SmsService $smsService, AppEmailSer
 Route::get('/locations/philippines', [PortalAuthController::class, 'philippineLocations'])
     ->middleware('throttle:60,1');
 Route::get('/hotels', [PortalAuthController::class, 'hotels']);
+Route::get('/hotels/search', [PortalAuthController::class, 'searchHotels'])->middleware('throttle:60,1');
 Route::post('/hotel/access', [PortalAuthController::class, 'hotelAccess'])->middleware('throttle:8,1');
 Route::post('/hotel/register', [PortalAuthController::class, 'hotelRegister'])->middleware('throttle:3,1');
 Route::post('/hotel/register/send-code', [PortalAuthController::class, 'hotelRegisterSendCode'])->middleware('throttle:5,1');

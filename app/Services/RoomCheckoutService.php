@@ -6,13 +6,17 @@ use App\Enums\BookingStatus;
 use App\Enums\RoomStatus;
 use App\Models\Booking;
 use App\Models\CheckoutReminder;
+use App\Services\FinancialComputationService;
+use App\Services\RoomPricingService;
 use App\Models\GuestMessage;
 use App\Models\Room;
 use App\Models\StaffMember;
 use App\Models\Task;
 use App\Models\User;
 use App\Support\PublicUploadStorage;
+use App\Support\RoomBillingSupport;
 use App\Support\SafeModelAttributes;
+use App\Models\BillingCharge;
 use Carbon\Carbon;
 use Illuminate\Validation\ValidationException;
 
@@ -22,6 +26,8 @@ class RoomCheckoutService
         private readonly ActivityLogService $activityLogService,
         private readonly StayTimingFeeService $stayTimingFeeService,
         private readonly RoomStatusNotificationService $roomStatusNotificationService,
+        private readonly FinancialComputationService $financialComputationService,
+        private readonly RoomPricingService $roomPricingService,
     ) {}
 
     /**
@@ -98,32 +104,28 @@ class RoomCheckoutService
         $hotelId = (string) $room->hotel_id;
         $booking = $this->findActiveBooking($hotelId, (string) $room->id);
 
-        if ($checkInAt) {
+        if ($booking && $checkInAt && $checkOutAt) {
+            $this->applyStayScheduleToBooking($booking, $room, $checkInAt, $checkOutAt, $actor);
+        } elseif ($checkInAt) {
             $inDate = $checkInAt->copy()->startOfDay();
             if ($booking) {
                 $booking->update(['check_in_date' => $inDate->toDateString()]);
             }
             $room->forceFill(['current_check_in' => $inDate->toDateString()]);
-        }
-
-        if ($checkOutAt) {
+            if ($booking) {
+                $booking->forceFill(['check_in_time' => $checkInAt->format('H:i')])->save();
+            }
+            $this->stayTimingFeeService->applyEarlyCheckInFeeIfNeeded($booking, $room, $checkInAt, $actor);
+            $booking?->refresh();
+        } elseif ($checkOutAt) {
             $outDate = $checkOutAt->copy()->startOfDay();
             if ($booking) {
                 $booking->update(['check_out_date' => $outDate->toDateString()]);
             }
             $room->forceFill(['current_check_out' => $outDate->toDateString()]);
-        }
-
-        if ($booking && ($checkInAt || $checkOutAt)) {
-            $booking->forceFill(array_filter([
-                'check_in_time' => $checkInAt?->format('H:i'),
-                'check_out_time' => $checkOutAt?->format('H:i'),
-            ]))->save();
-        }
-
-        if ($booking && $checkInAt) {
-            $this->stayTimingFeeService->applyEarlyCheckInFeeIfNeeded($booking, $room, $checkInAt, $actor);
-            $booking->refresh();
+            if ($booking) {
+                $booking->forceFill(['check_out_time' => $checkOutAt->format('H:i')])->save();
+            }
         }
 
         $room->forceFill(['status' => RoomStatus::CHECKED_IN->value])->save();
@@ -343,6 +345,64 @@ class RoomCheckoutService
         if ($path !== null && $path !== '') {
             PublicUploadStorage::delete($path);
         }
+    }
+
+    private function applyStayScheduleToBooking(
+        Booking $booking,
+        Room $room,
+        Carbon $checkInAt,
+        Carbon $checkOutAt,
+        User $actor,
+    ): void {
+        $charge = RoomBillingSupport::computeStayCharge(
+            $room,
+            $checkInAt,
+            $checkOutAt,
+            $this->financialComputationService,
+            $this->roomPricingService,
+        );
+
+        $updates = [
+            'check_in_date' => $checkInAt->toDateString(),
+            'check_out_date' => $checkOutAt->toDateString(),
+            'check_in_time' => $checkInAt->format('H:i'),
+            'check_out_time' => $checkOutAt->format('H:i'),
+            'nights' => $charge['nights'],
+            'billing_mode' => $charge['billing_mode'],
+            'total_amount' => $charge['amount'],
+        ];
+        if ($charge['billing_mode'] === RoomBillingSupport::MODE_HOURLY) {
+            $updates['stay_hours'] = $charge['stay_hours'];
+            $updates['block_hours'] = $charge['block_hours'];
+            $updates['price_per_block'] = $charge['price_per_block'];
+        }
+        $booking->forceFill($updates)->save();
+
+        BillingCharge::withoutGlobalScopes()
+            ->where('booking_id', (string) $booking->id)
+            ->where('type', 'room')
+            ->latest('created_at')
+            ->limit(1)
+            ->get()
+            ->each(function (BillingCharge $roomCharge) use ($charge): void {
+                $roomCharge->update([
+                    'label' => $charge['label'],
+                    'amount' => $charge['amount'],
+                    'metadata' => $charge['metadata'],
+                ]);
+            });
+
+        $room->forceFill([
+            'current_check_in' => $checkInAt->toDateString(),
+            'current_check_out' => $checkOutAt->toDateString(),
+        ])->save();
+
+        if (RoomBillingSupport::isHourly($room)) {
+            return;
+        }
+
+        $this->stayTimingFeeService->applyEarlyCheckInFeeIfNeeded($booking, $room, $checkInAt, $actor);
+        $booking->refresh();
     }
 
     private function createAutoMaintenanceTask(User $actor, Room $room): void
