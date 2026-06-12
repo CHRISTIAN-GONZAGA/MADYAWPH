@@ -7,6 +7,7 @@ use App\Models\CreditWalletRequest;
 use App\Models\Hotel;
 use App\Models\HotelCredit;
 use App\Models\MemberSubscriptionRequest;
+use App\Models\PlatformSetting;
 use App\Models\User;
 use App\Services\CentralAdminAccountService;
 use Illuminate\Support\Facades\Config;
@@ -106,6 +107,26 @@ class PlatformAdminTest extends TestCase
         ]);
         $rows = collect($response->json('hotels'));
         $this->assertTrue($rows->contains(fn ($r) => ($r['hotel_id'] ?? '') === (string) $hotel->id));
+    }
+
+    public function test_platform_info_exposes_member_subscription_qr_from_central_admin(): void
+    {
+        PlatformSetting::query()->updateOrCreate(
+            ['key' => 'global'],
+            [
+                'member_subscription_qr_url' => 'platform-qr/member-test.png',
+                'member_monthly_fee' => 300,
+            ]
+        );
+
+        $response = $this->getJson('/api/v1/platform/info');
+
+        $response->assertOk();
+        $response->assertJsonPath('member_monthly_fee', 300);
+        $this->assertStringContainsString(
+            'platform-qr%2Fmember-test.png',
+            (string) $response->json('member_subscription_qr_url')
+        );
     }
 
     public function test_hotel_admin_cannot_access_platform_routes(): void

@@ -9,7 +9,22 @@ import '../../widgets/chat_attachment.dart';
 import '../public_hotel_search_screen.dart';
 
 const _kPlatformNavy = Color(0xFF1A2B4A);
+const _kPlatformNavyDeep = Color(0xFF0F1A2E);
 const _kPlatformGold = Color(0xFFD4A843);
+const _kPlatformGoldLight = Color(0xFFF0D78C);
+
+TextStyle _platformTitleStyle({double size = 18}) => TextStyle(
+      color: Colors.white,
+      fontSize: size,
+      fontWeight: FontWeight.w800,
+      letterSpacing: -0.2,
+    );
+
+TextStyle _platformSubtitleStyle() => const TextStyle(
+      color: Colors.white70,
+      fontSize: 12,
+      fontWeight: FontWeight.w500,
+    );
 
 /// Developer-only platform control panel (not hotel admin).
 class CentralAdminDashboardScreen extends StatefulWidget {
@@ -217,23 +232,66 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
 
     return AppScaffold(
       appBar: AppBar(
+        toolbarHeight: 76,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
+        iconTheme: const IconThemeData(color: Colors.white),
+        actionsIconTheme: const IconThemeData(color: Colors.white),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [_kPlatformNavyDeep, _kPlatformNavy, Color(0xFF2D4A7A)],
+            ),
+          ),
+        ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('MADYAWPH Platform'),
-            Text(
-              'Central administration',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Colors.white70,
+            Row(
+              children: [
+                Text('MADYAWPH', style: _platformTitleStyle()),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: _kPlatformGold.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: _kPlatformGold.withValues(alpha: 0.55),
+                    ),
                   ),
+                  child: const Text(
+                    'Platform control',
+                    style: TextStyle(
+                      color: _kPlatformGoldLight,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ),
+              ],
             ),
+            const SizedBox(height: 2),
+            Text('Central administration', style: _platformSubtitleStyle()),
           ],
         ),
-        backgroundColor: _kPlatformNavy,
-        foregroundColor: Colors.white,
         actions: [
-          IconButton(onPressed: _loadAll, icon: const Icon(Icons.refresh)),
-          IconButton(onPressed: _signOut, icon: const Icon(Icons.logout)),
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: _loadAll,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+          IconButton(
+            tooltip: 'Sign out',
+            onPressed: _signOut,
+            icon: const Icon(Icons.logout_rounded),
+          ),
         ],
       ),
       body: _loading
@@ -292,7 +350,30 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
                     ),
                   ],
                 ),
-      bottomNavigationBar: NavigationBar(
+      bottomNavigationBar: Theme(
+        data: Theme.of(context).copyWith(
+          navigationBarTheme: NavigationBarThemeData(
+            height: 68,
+            backgroundColor: Colors.white,
+            indicatorColor: _kPlatformGold.withValues(alpha: 0.28),
+            labelTextStyle: WidgetStateProperty.resolveWith((states) {
+              final selected = states.contains(WidgetState.selected);
+              return TextStyle(
+                fontSize: 11,
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+                color: selected ? _kPlatformNavy : Colors.black54,
+              );
+            }),
+            iconTheme: WidgetStateProperty.resolveWith((states) {
+              final selected = states.contains(WidgetState.selected);
+              return IconThemeData(
+                color: selected ? _kPlatformNavy : Colors.black45,
+                size: 22,
+              );
+            }),
+          ),
+        ),
+        child: NavigationBar(
         selectedIndex: _section,
         onDestinationSelected: (i) => setState(() => _section = i),
         destinations: [
@@ -330,6 +411,73 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
             label: 'Hotels',
           ),
         ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PlatformSectionHeader extends StatelessWidget {
+  const _PlatformSectionHeader({
+    required this.title,
+    this.subtitle,
+    this.icon,
+  });
+
+  final String title;
+  final String? subtitle;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [_kPlatformNavy, Color(0xFF2D4A7A)],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: _kPlatformNavy.withValues(alpha: 0.22),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          if (icon != null) ...[
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: _kPlatformGold.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: _kPlatformGoldLight, size: 22),
+            ),
+            const SizedBox(width: 14),
+          ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: _platformTitleStyle(size: 17),
+                ),
+                if (subtitle != null && subtitle!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(subtitle!, style: _platformSubtitleStyle()),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -358,15 +506,27 @@ class _OverviewSection extends StatelessWidget {
     final period = (revenue['period'] ?? 'month').toString();
 
     return ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        padding: const EdgeInsets.only(bottom: 24),
         children: [
-          Text(
-            'This $period at a glance',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+          _PlatformSectionHeader(
+            icon: Icons.dashboard_outlined,
+            title: 'Overview',
+            subtitle: 'This $period at a glance',
           ),
-          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'Key metrics',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: _kPlatformNavy,
+                  ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child:
           LayoutBuilder(
             builder: (context, constraints) {
               final w = (constraints.maxWidth - 12) / 2;
@@ -414,9 +574,12 @@ class _OverviewSection extends StatelessWidget {
               );
             },
           ),
+          ),
           const SizedBox(height: 20),
           if (pendingCredits > 0 || pendingMembers > 0)
-            Card(
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Card(
               color: Colors.orange.shade50,
               child: ListTile(
                 leading: const Icon(Icons.notifications_active_outlined),
@@ -431,14 +594,25 @@ class _OverviewSection extends StatelessWidget {
                 onTap: onOpenApprovals,
               ),
             ),
+            ),
           const SizedBox(height: 12),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.insights_outlined),
-              title: const Text('Revenue by hotel'),
-              subtitle: const Text('See breakdown for every property'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: onOpenRevenue,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Card(
+              clipBehavior: Clip.antiAlias,
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: _kPlatformGold.withValues(alpha: 0.2),
+                  child: const Icon(Icons.insights_outlined, color: _kPlatformNavy),
+                ),
+                title: const Text(
+                  'Revenue by hotel',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: const Text('See breakdown for every property'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: onOpenRevenue,
+              ),
             ),
           ),
         ],
@@ -518,24 +692,14 @@ class _RevenueSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _PlatformSectionHeader(
+          icon: Icons.insights_outlined,
+          title: 'Revenue analytics',
+          subtitle: from.isNotEmpty ? '$from → $to' : 'Track earnings by hotel',
+        ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Revenue analytics',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-              ),
-              if (from.isNotEmpty)
-                Text(
-                  '$from → $to',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              const SizedBox(height: 12),
-              SegmentedButton<String>(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: SegmentedButton<String>(
                 segments: const [
                   ButtonSegment(value: 'day', label: Text('Today')),
                   ButtonSegment(value: 'week', label: Text('Week')),
@@ -545,8 +709,6 @@ class _RevenueSection extends StatelessWidget {
                 selected: {period},
                 onSelectionChanged: (s) => onPeriodChanged(s.first),
               ),
-            ],
-          ),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -572,6 +734,7 @@ class _RevenueSection extends StatelessWidget {
             'By hotel',
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w800,
+                  color: _kPlatformNavy,
                 ),
           ),
         ),
@@ -709,8 +872,13 @@ class _ApprovalsSection extends StatelessWidget {
 
     return Column(
       children: [
+        _PlatformSectionHeader(
+          icon: Icons.pending_actions_outlined,
+          title: 'Approvals',
+          subtitle: 'Credit top-ups and member subscriptions',
+        ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: SegmentedButton<int>(
             segments: const [
               ButtonSegment(value: 0, label: Text('Credit wallet')),
@@ -893,30 +1061,44 @@ class _QrSettingsSection extends StatelessWidget {
     );
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.only(bottom: 24),
       children: [
-        Text(
-          'QR Ph payment images',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+        const _PlatformSectionHeader(
+          icon: Icons.qr_code_2_outlined,
+          title: 'QR Ph images',
+          subtitle: 'Hotels and guests scan these for credits or membership',
         ),
-        const SizedBox(height: 6),
-        Text(
-          'Hotels and guests scan these when paying for credits or membership.',
-          style: Theme.of(context).textTheme.bodySmall,
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            'Upload payment QR codes',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: _kPlatformNavy,
+                ),
+          ),
         ),
-        const SizedBox(height: 16),
-        _QrUploadCard(
-          title: 'Hotel credit wallet',
-          subtitle: 'Used when hotels request credit top-ups.',
-          imageUrl: creditQr,
-          onUpload: onUploadCredit,
-        ),
-        const SizedBox(height: 16),
-        _QrUploadCard(
-          title: 'Become a member',
-          subtitle: 'Guests pay ₱${settings['member_monthly_fee'] ?? 300}/month.',
-          imageUrl: memberQr,
-          onUpload: onUploadMember,
+        const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            children: [
+              _QrUploadCard(
+                title: 'Hotel credit wallet',
+                subtitle: 'Used when hotels request credit top-ups.',
+                imageUrl: creditQr,
+                onUpload: onUploadCredit,
+              ),
+              const SizedBox(height: 16),
+              _QrUploadCard(
+                title: 'Become a member',
+                subtitle: 'Guests pay ₱${settings['member_monthly_fee'] ?? 300}/month.',
+                imageUrl: memberQr,
+                onUpload: onUploadMember,
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -963,6 +1145,10 @@ class _QrUploadCard extends StatelessWidget {
             const SizedBox(height: 14),
             FilledButton.icon(
               onPressed: onUpload,
+              style: FilledButton.styleFrom(
+                backgroundColor: _kPlatformNavy,
+                foregroundColor: Colors.white,
+              ),
               icon: const Icon(Icons.upload_outlined),
               label: const Text('Upload QR Ph'),
             ),
@@ -982,19 +1168,39 @@ class _HotelsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (hotels.isEmpty) {
-      return const Center(child: Text('No hotels registered.'));
+      return Column(
+        children: [
+          const _PlatformSectionHeader(
+            icon: Icons.apartment_outlined,
+            title: 'Hotels',
+            subtitle: 'Manage registered properties',
+          ),
+          const Expanded(child: Center(child: Text('No hotels registered.'))),
+        ],
+      );
     }
     return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: hotels.length,
+      padding: const EdgeInsets.only(bottom: 24),
+      itemCount: hotels.length + 1,
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (_, i) {
-        final h = hotels[i] as Map<String, dynamic>;
+        if (i == 0) {
+          return const _PlatformSectionHeader(
+            icon: Icons.apartment_outlined,
+            title: 'Hotels',
+            subtitle: 'Manage registered properties',
+          );
+        }
+        final h = hotels[i - 1] as Map<String, dynamic>;
         final id = (h['id'] ?? '').toString();
         final name = (h['name'] ?? 'Hotel').toString();
-        return Card(
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Card(
           child: ListTile(
             leading: CircleAvatar(
+              backgroundColor: _kPlatformNavy.withValues(alpha: 0.12),
+              foregroundColor: _kPlatformNavy,
               child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?'),
             ),
             title: Text(name, style: const TextStyle(fontWeight: FontWeight.w700)),
@@ -1004,6 +1210,7 @@ class _HotelsSection extends StatelessWidget {
               onPressed: () => onDelete(id, name),
             ),
           ),
+        ),
         );
       },
     );

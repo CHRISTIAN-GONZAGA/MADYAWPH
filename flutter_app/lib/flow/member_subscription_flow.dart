@@ -22,10 +22,14 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
   final _emailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _refCtrl = TextEditingController();
-  String? _qrUrl;
+  String _memberQrRaw = '';
   double _fee = 300;
   bool _loading = true;
   bool _submitting = false;
+
+  String get _memberQrUrl => _memberQrRaw.trim().isEmpty
+      ? ''
+      : ChatAttachment.resolveMediaUrl(_memberQrRaw);
 
   @override
   void initState() {
@@ -43,18 +47,73 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
   }
 
   Future<void> _loadPlatform() async {
+    setState(() => _loading = true);
     try {
       final res = await publicDio().get<Map<String, dynamic>>('/platform/info');
+      final raw = res.data?['member_subscription_qr_url'];
       setState(() {
         _fee = (res.data?['member_monthly_fee'] as num?)?.toDouble() ?? 300;
-        _qrUrl = ChatAttachment.resolveMediaUrl(
-          (res.data?['member_subscription_qr_url'] ?? '').toString(),
-        );
+        _memberQrRaw = raw == null ? '' : '$raw'.trim();
         _loading = false;
       });
     } catch (_) {
       setState(() => _loading = false);
     }
+  }
+
+  void _showQrPhDialog() {
+    final url = _memberQrUrl;
+    if (url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'QR Ph image is not available yet. Ask platform support or try again later.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Pay via QR Ph'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Scan with your bank or e-wallet app to pay '
+                '₱${_fee.toStringAsFixed(0)} for membership.',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: NetworkMediaImage(
+                  url: url,
+                  width: 280,
+                  height: 280,
+                  fit: BoxFit.contain,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'After paying, enter your transaction reference below and tap Register.',
+                textAlign: TextAlign.center,
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _submit() async {
@@ -103,50 +162,40 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
       appBar: AppBar(title: const Text('Become a member')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-              children: [
-                Text(
-                  'MADYAWPH Member',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '₱${_fee.toStringAsFixed(0)} / month — exclusive deals and priority support.',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                ),
-                const SizedBox(height: 20),
-                if (_qrUrl != null && _qrUrl!.isNotEmpty) ...[
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        children: [
-                          Text(
-                            'Scan to pay via QR Ph',
-                            style: Theme.of(context).textTheme.titleSmall,
-                          ),
-                          const SizedBox(height: 12),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: NetworkMediaImage(
-                              url: _qrUrl!,
-                              width: 220,
-                              height: 220,
-                              fit: BoxFit.contain,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+          : RefreshIndicator(
+              onRefresh: _loadPlatform,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+                children: [
+                  Text(
+                    'MADYAWPH Member',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '₱${_fee.toStringAsFixed(0)} / month — exclusive deals and priority support.',
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
                   ),
                   const SizedBox(height: 20),
-                ],
-                AppInput(controller: _nameCtrl, label: 'Full name'),
+                  _MemberQrPhPaymentCard(
+                    fee: _fee,
+                    qrUrl: _memberQrUrl,
+                    onShowQr: _showQrPhDialog,
+                    onRefresh: _loadPlatform,
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Your details',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  const SizedBox(height: 12),
+                  AppInput(controller: _nameCtrl, label: 'Full name'),
                 const SizedBox(height: 12),
                 AppInput(
                   controller: _emailCtrl,
@@ -165,18 +214,142 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
                   label: 'Payment reference / transaction ID',
                 ),
                 const SizedBox(height: 24),
-                FilledButton(
-                  onPressed: _submitting ? null : _submit,
-                  child: _submitting
-                      ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Register'),
+                  FilledButton(
+                    onPressed: _submitting ? null : _submit,
+                    child: _submitting
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Register'),
+                  ),
+                ],
+              ),
+            ),
+    );
+  }
+}
+
+class _MemberQrPhPaymentCard extends StatelessWidget {
+  const _MemberQrPhPaymentCard({
+    required this.fee,
+    required this.qrUrl,
+    required this.onShowQr,
+    required this.onRefresh,
+  });
+
+  final double fee;
+  final String qrUrl;
+  final VoidCallback onShowQr;
+  final Future<void> Function() onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final hasQr = qrUrl.isNotEmpty;
+
+    return Card(
+      elevation: 0,
+      color: scheme.primaryContainer.withValues(alpha: 0.35),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.qr_code_2, color: scheme.primary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Pay with QR Ph',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            Text(
+              '1. Scan the platform QR Ph code (₱${fee.toStringAsFixed(0)})\n'
+              '2. Copy your transaction reference\n'
+              '3. Complete the form below and register',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    height: 1.45,
+                  ),
+            ),
+            const SizedBox(height: 16),
+            Center(
+              child: hasQr
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Material(
+                        color: Colors.white,
+                        child: InkWell(
+                          onTap: onShowQr,
+                          child: NetworkMediaImage(
+                            url: qrUrl,
+                            width: 180,
+                            height: 180,
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                      ),
+                    )
+                  : Container(
+                      width: 180,
+                      height: 180,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: scheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: scheme.outlineVariant),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.qr_code_scanner_outlined,
+                            size: 48,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(height: 8),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Text(
+                              'QR Ph image not set yet',
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: hasQr ? onShowQr : null,
+                    icon: const Icon(Icons.fullscreen_outlined),
+                    label: const Text('Show QR Ph'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                IconButton.outlined(
+                  tooltip: 'Refresh QR',
+                  onPressed: onRefresh,
+                  icon: const Icon(Icons.refresh),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
