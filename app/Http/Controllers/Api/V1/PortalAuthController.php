@@ -95,8 +95,14 @@ class PortalAuthController extends Controller
 
         $username = trim((string) $validated['username']);
         $hotel = Hotel::withoutGlobalScopes()
-            ->where('access_username', $username)
-            ->first();
+            ->whereNotNull('access_username')
+            ->get()
+            ->first(function (Hotel $candidate) use ($username) {
+                $gateUser = trim((string) $candidate->access_username);
+
+                return $gateUser !== ''
+                    && strcasecmp($gateUser, $username) === 0;
+            });
 
         if ($hotel === null) {
             return response()->json([

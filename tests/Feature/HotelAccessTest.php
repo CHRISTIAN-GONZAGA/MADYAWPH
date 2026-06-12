@@ -28,6 +28,21 @@ class HotelAccessTest extends TestCase
         $response->assertJsonPath('hotel_name', 'Gate Test Hotel');
     }
 
+    public function test_hotel_gate_username_is_case_insensitive(): void
+    {
+        Hotel::create([
+            'name' => 'Case Hotel',
+            'location' => 'Manila',
+            'access_username' => 'TestHotel',
+            'access_password' => Hash::make('TestHotel123'),
+        ]);
+
+        $this->postJson('/api/v1/hotel/access', [
+            'username' => 'testhotel',
+            'password' => 'TestHotel123',
+        ])->assertOk();
+    }
+
     public function test_invalid_hotel_gate_credentials_are_rejected(): void
     {
         Hotel::create([

@@ -2416,23 +2416,25 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return AppScaffold(
-      appBar: AppBar(
-        title: const Text('Book a stay'),
-        actions: [
-          IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
-          IconButton(
-            onPressed: () => Navigator.of(context).push<void>(
-              MaterialPageRoute<void>(
-                builder: (_) => CustomerToolsScreen(hotelId: widget.hotelId),
+    return LocaleScope(
+      builder: (context, _) => AppScaffold(
+        appBar: AppBar(
+          title: Text(context.tr('book_a_stay')),
+          actions: [
+            IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
+            IconButton(
+              onPressed: () => Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (_) => CustomerToolsScreen(hotelId: widget.hotelId),
+                ),
               ),
+              icon: const Icon(Icons.manage_search_outlined),
+              tooltip: context.tr('track_booking'),
             ),
-            icon: const Icon(Icons.manage_search_outlined),
-            tooltip: 'Track booking / OTP',
-          ),
-        ],
+          ],
+        ),
+        body: _buildBody(context),
       ),
-      body: _buildBody(context),
     );
   }
 
@@ -2447,7 +2449,10 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
             children: [
               Text(_error!, textAlign: TextAlign.center),
               const SizedBox(height: 16),
-              FilledButton(onPressed: _load, child: const Text('Retry')),
+              FilledButton(
+                onPressed: _load,
+                child: Text(context.tr('retry')),
+              ),
             ],
           ),
         ),
@@ -2482,10 +2487,15 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Your stay: ${search.checkInIso} → ${search.checkOutIso}\n'
-                        '${search.rooms} room${search.rooms == 1 ? '' : 's'}, '
-                        '${search.adults} adult${search.adults == 1 ? '' : 's'}'
-                        '${search.children > 0 ? ', ${search.children} child${search.children == 1 ? '' : 'ren'}' : ''}',
+                        '${context.tr('your_stay', {
+                          'checkin': search.checkInIso,
+                          'checkout': search.checkOutIso,
+                        })}\n'
+                        '${context.tr('guest_party_line', {
+                          'rooms': '${search.rooms}',
+                          'adults': '${search.adults}',
+                          'children': '${search.children}',
+                        })}',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               fontWeight: FontWeight.w600,
                             ),
@@ -2498,14 +2508,14 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
             const SizedBox(height: 12),
           ],
           Text(
-            'Find your room',
+            context.tr('find_your_room'),
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w800,
                 ),
           ),
           const SizedBox(height: 6),
           Text(
-            'Browse categories, compare rates, and book in a few taps.',
+            context.tr('find_room_sub'),
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),
@@ -2522,15 +2532,15 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                     const SizedBox(height: 12),
                     Text(
                       search != null
-                          ? 'No rooms available for your dates at this hotel.'
-                          : 'No room categories are available right now.',
+                          ? context.tr('no_rooms_for_dates')
+                          : context.tr('no_categories_available'),
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.titleSmall,
                     ),
                     if (search != null) ...[
                       const SizedBox(height: 8),
                       Text(
-                        'Try different dates from the search screen, or contact the hotel.',
+                        context.tr('try_different_dates'),
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: scheme.onSurfaceVariant,
@@ -2551,8 +2561,8 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
             final desc = '${m['description'] ?? ''}'.trim();
             final available = (m['available_rooms'] as num?)?.toInt() ?? 0;
             final availLabel = available == 1
-                ? '1 room available'
-                : '$available rooms available';
+                ? context.tr('one_room_available')
+                : context.tr('rooms_available_label', {'n': '$available'});
             return Padding(
               padding: const EdgeInsets.only(bottom: 14),
               child: Material(
@@ -2673,7 +2683,7 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  'See rooms & prices',
+                                  context.tr('see_rooms_prices'),
                                   style: Theme.of(context)
                                       .textTheme
                                       .labelLarge
@@ -2902,7 +2912,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
             if (fromSearch) return;
             if (checkInDate == null) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Select check-in first.')),
+                SnackBar(content: Text(context.tr('select_checkin_first'))),
               );
               return;
             }
@@ -2920,22 +2930,28 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
           }
 
           return AlertDialog(
-            title: Text(fromSearch ? 'Complete your booking' : (forceReserve ? 'Request reservation' : 'Book room')),
+            title: Text(
+              fromSearch
+                  ? context.tr('complete_booking')
+                  : (forceReserve
+                      ? context.tr('request_reservation')
+                      : context.tr('book_room_title')),
+            ),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  AppInput(controller: nameCtrl, label: 'Full name'),
+                  AppInput(controller: nameCtrl, label: context.tr('full_name')),
                   const SizedBox(height: 8),
                   AppInput(
                     controller: emailCtrl,
-                    label: 'Email (Gmail)',
+                    label: context.tr('email_gmail'),
                     keyboardType: TextInputType.emailAddress,
                   ),
                   const SizedBox(height: 8),
                   AppInput(
                     controller: phoneCtrl,
-                    label: 'Phone number',
+                    label: context.tr('phone_number'),
                     keyboardType: TextInputType.phone,
                   ),
                   const SizedBox(height: 8),
@@ -3241,18 +3257,20 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return AppScaffold(
-      appBar: AppBar(
-        title: Text(widget.categoryName),
-        actions: [
-          IconButton(onPressed: _load, icon: const Icon(Icons.refresh))
-        ],
+    return LocaleScope(
+      builder: (context, _) => AppScaffold(
+        appBar: AppBar(
+          title: Text(widget.categoryName),
+          actions: [
+            IconButton(onPressed: _load, icon: const Icon(Icons.refresh))
+          ],
+        ),
+        body: _buildBody(context),
       ),
-      body: _buildBody(),
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(BuildContext context) {
     if (_loading) return const AppLoadingView();
     if (_error != null) {
       return Center(
@@ -3263,7 +3281,10 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
             children: [
               Text(_error!, textAlign: TextAlign.center),
               const SizedBox(height: 16),
-              FilledButton(onPressed: _load, child: const Text('Retry')),
+              FilledButton(
+                onPressed: _load,
+                child: Text(context.tr('retry')),
+              ),
             ],
           ),
         ),

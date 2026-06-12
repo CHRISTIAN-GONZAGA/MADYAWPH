@@ -9,7 +9,9 @@ import '../branding/madyaw_logo_widget.dart';
 import '../data/philippine_destination_presets.dart';
 import '../dio_client.dart';
 import '../locale_controller.dart';
+import '../ui/app_visual.dart';
 import '../widgets/language_picker_button.dart';
+import '../widgets/philippine_destination_field.dart';
 import 'customer_search_context.dart';
 import 'hotel_search_results_screen.dart';
 import 'hotel_screens.dart';
@@ -34,9 +36,6 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
   int _rooms = 1;
   int _adults = 2;
   int _children = 0;
-
-  static const _heroBlue = Color(0xFF1565C0);
-  static const _heroDeep = Color(0xFF083A7A);
 
   @override
   void initState() {
@@ -165,14 +164,14 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
               children: [
                 Text(
-                  'Philippine destinations',
+                  context.tr('philippine_destinations'),
                   style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w800,
                       ),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Tap a city to set your search',
+                  context.tr('tap_city_search'),
                   style: Theme.of(ctx).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 16),
@@ -186,7 +185,7 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                           entry.key,
                           style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
                                 fontWeight: FontWeight.w700,
-                                color: _heroBlue,
+                                color: Theme.of(ctx).colorScheme.primary,
                               ),
                         ),
                       ),
@@ -260,31 +259,31 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'Rooms & guests',
+                  context.tr('rooms_guests'),
                   style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w800,
                       ),
                 ),
                 const SizedBox(height: 16),
                 _GuestCounterRow(
-                  label: 'Rooms',
-                  subtitle: 'How many rooms do you need?',
+                  label: context.tr('rooms_label'),
+                  subtitle: context.tr('rooms_sub'),
                   value: rooms,
                   min: 1,
                   onChanged: (v) => setLocal(() => rooms = v),
                 ),
                 const Divider(height: 24),
                 _GuestCounterRow(
-                  label: 'Adults',
-                  subtitle: 'Ages 18+',
+                  label: context.tr('adults'),
+                  subtitle: context.tr('adults_sub'),
                   value: adults,
                   min: 1,
                   onChanged: (v) => setLocal(() => adults = v),
                 ),
                 const Divider(height: 24),
                 _GuestCounterRow(
-                  label: 'Children',
-                  subtitle: 'Ages 0–17',
+                  label: context.tr('children'),
+                  subtitle: context.tr('children_sub'),
                   value: children,
                   onChanged: (v) => setLocal(() => children = v),
                 ),
@@ -299,10 +298,9 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                     Navigator.pop(ctx);
                   },
                   style: FilledButton.styleFrom(
-                    backgroundColor: _heroBlue,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
-                  child: const Text('Apply'),
+                  child: Text(context.tr('apply')),
                 ),
               ],
             ),
@@ -311,6 +309,12 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
       ),
     );
   }
+
+  String _guestPartyLine(BuildContext context) => context.tr('guest_party_line', {
+        'rooms': '$_rooms',
+        'adults': '$_adults',
+        'children': '$_children',
+      });
 
   String _isoDate(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -337,25 +341,39 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
     }).toList();
   }
 
-  Future<({List<Map<String, dynamic>> hotels, bool usedLegacy})>
+  Map<String, dynamic> _searchQueryParams({bool includeDestination = true}) {
+    return {
+      if (includeDestination && _destinationCtrl.text.trim().isNotEmpty)
+        'q': _destinationCtrl.text.trim(),
+      'check_in': _isoDate(_checkIn),
+      'check_out': _isoDate(_checkOut),
+      'rooms': _rooms,
+      'adults': _adults,
+      'children': _children,
+    };
+  }
+
+  Future<({List<Map<String, dynamic>> hotels, bool usedLegacy, bool broadened})>
       _fetchSearchResults() async {
     try {
       final res = await publicDio().get<Map<String, dynamic>>(
         '/hotels/search',
-        queryParameters: {
-          if (_destinationCtrl.text.trim().isNotEmpty)
-            'q': _destinationCtrl.text.trim(),
-          'check_in': _isoDate(_checkIn),
-          'check_out': _isoDate(_checkOut),
-          'rooms': _rooms,
-          'adults': _adults,
-          'children': _children,
-        },
+        queryParameters: _searchQueryParams(),
       );
-      final raw = res.data?['hotels'] as List<dynamic>? ?? const [];
-      final hotels =
+      var raw = res.data?['hotels'] as List<dynamic>? ?? const [];
+      var hotels =
           raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      return (hotels: hotels, usedLegacy: false);
+      var broadened = false;
+      if (hotels.isEmpty && _destinationCtrl.text.trim().isNotEmpty) {
+        final retry = await publicDio().get<Map<String, dynamic>>(
+          '/hotels/search',
+          queryParameters: _searchQueryParams(includeDestination: false),
+        );
+        raw = retry.data?['hotels'] as List<dynamic>? ?? const [];
+        hotels = raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        broadened = hotels.isNotEmpty;
+      }
+      return (hotels: hotels, usedLegacy: false, broadened: broadened);
     } on DioException catch (e) {
       if (e.response?.statusCode != 404 && e.response?.statusCode != 501) {
         rethrow;
@@ -366,6 +384,7 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
       return (
         hotels: _fallbackDirectorySearch(usedLegacyApi: true),
         usedLegacy: true,
+        broadened: false,
       );
     }
   }
@@ -377,6 +396,7 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
       final result = await _fetchSearchResults();
       final hotels = result.hotels;
       final usedLegacy = result.usedLegacy;
+      final broadened = result.broadened;
       final search = CustomerSearchContext(
         checkIn: _checkIn,
         checkOut: _checkOut,
@@ -388,11 +408,16 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
       if (!mounted) return;
       if (usedLegacy) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Showing hotels by location. Date availability is checked when you pick a room.',
-            ),
-            duration: Duration(seconds: 4),
+          SnackBar(
+            content: Text(context.tr('legacy_search_hint')),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      } else if (broadened) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(context.tr('broadened_search_hint')),
+            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -434,128 +459,97 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final destination = _destinationCtrl.text.trim();
+    final visual = AppVisual.of(context);
 
     return Scaffold(
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF1976D2),
-                  _heroBlue,
-                  Color(0xFF0D47A1),
-                  _heroDeep,
-                ],
-                stops: [0.0, 0.35, 0.7, 1.0],
+      body: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: visual.scaffoldGradient(scheme),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: Row(
+                  children: [
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Column(
+                        children: [
+                          const MadyawLogoWidget(
+                            size: 108,
+                            glowStrength: 0.85,
+                            showBrandLine: true,
+                            brandReveal: 1,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const LanguagePickerButton(),
+                    IconButton(
+                      tooltip: context.tr('property_sign_in'),
+                      onPressed: _openStaffPropertyLogin,
+                      icon: const Icon(Icons.badge_outlined),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            child: SizedBox.expand(),
-          ),
-          Positioned(
-            top: -80,
-            right: -40,
-            child: Icon(
-              Icons.travel_explore,
-              size: 220,
-              color: Colors.white.withValues(alpha: 0.06),
-            ),
-          ),
-          SafeArea(
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 8),
-                      const Expanded(
-                        child: Center(child: MadyawLogoWidget(size: 68)),
-                      ),
-                      const LanguagePickerButton(),
-                      IconButton(
-                        tooltip: context.tr('property_sign_in'),
-                        onPressed: _openStaffPropertyLogin,
-                        icon: const Icon(Icons.badge_outlined, color: Colors.white),
-                      ),
-                    ],
-                  ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 4, 24, 8),
+                child: Column(
+                  children: [
+                    Text(
+                      context.tr('where_to_go'),
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.3,
+                          ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      context.tr('search_stays_sub'),
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
                 ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text(
-                        'Where would you like to go?',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                            ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Search stays across the Philippines',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Colors.white.withValues(alpha: 0.85),
-                            ),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Material(
-                          elevation: 12,
-                          shadowColor: Colors.black38,
-                          borderRadius: BorderRadius.circular(20),
-                          color: Colors.white,
-                          child: Padding(
-                            padding: const EdgeInsets.all(18),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                TextField(
-                                  controller: _destinationCtrl,
-                                  decoration: InputDecoration(
-                                    hintText: 'City, region, or hotel name',
-                                    prefixIcon: const Icon(Icons.location_on_outlined),
-                                    suffixIcon: destination.isNotEmpty
-                                        ? IconButton(
-                                            onPressed: () {
-                                              setState(() {
-                                                _destinationCtrl.clear();
-                                                _selectedPresetQuery = null;
-                                              });
-                                            },
-                                            icon: const Icon(Icons.close, size: 20),
-                                          )
-                                        : IconButton(
-                                            onPressed: _openDestinationPicker,
-                                            icon: const Icon(Icons.map_outlined),
-                                            tooltip: 'Browse cities',
-                                          ),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(14),
-                                    ),
-                                    filled: true,
-                                    fillColor: scheme.surfaceContainerLowest,
-                                  ),
-                                  textInputAction: TextInputAction.search,
-                                  onSubmitted: (_) => _search(),
-                                ),
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          borderRadius: visual.radiusLg,
+                          color: scheme.surfaceContainerLow,
+                          boxShadow: visual.cardShadow,
+                          border: Border.all(
+                            color: scheme.outlineVariant.withValues(alpha: 0.45),
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(18),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              PhilippineDestinationField(
+                                controller: _destinationCtrl,
+                                hintText: context.tr('browse_ph_cities'),
+                                onSelected: (entry) {
+                                  setState(() {
+                                    _selectedPresetQuery = entry.searchQuery;
+                                  });
+                                },
+                              ),
                                 const SizedBox(height: 14),
                                 Text(
-                                  'Popular destinations',
+                                  context.tr('popular_destinations'),
                                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                                         fontWeight: FontWeight.w700,
                                       ),
@@ -572,7 +566,7 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                                       if (i == PhilippineDestinationPresets.popular.length) {
                                         return ActionChip(
                                           avatar: const Icon(Icons.grid_view, size: 18),
-                                          label: const Text('All cities'),
+                                          label: Text(context.tr('all_cities')),
                                           onPressed: _openDestinationPicker,
                                         );
                                       }
@@ -591,8 +585,8 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                                         ),
                                         selected: selected,
                                         selectedColor:
-                                            _heroBlue.withValues(alpha: 0.15),
-                                        checkmarkColor: _heroBlue,
+                                            scheme.primaryContainer,
+                                        checkmarkColor: scheme.primary,
                                         onSelected: (_) => _selectPreset(preset),
                                       );
                                     },
@@ -603,7 +597,7 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                                   children: [
                                     Expanded(
                                       child: _DateTile(
-                                        label: 'Check-in',
+                                        label: context.tr('check_in'),
                                         value: _fmtDate(_checkIn),
                                         onTap: () => _pickDate(checkIn: true),
                                       ),
@@ -618,15 +612,17 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                                               vertical: 4,
                                             ),
                                             decoration: BoxDecoration(
-                                              color: _heroBlue.withValues(alpha: 0.1),
+                                              color: scheme.primaryContainer,
                                               borderRadius: BorderRadius.circular(20),
                                             ),
                                             child: Text(
-                                              '$_nightCount night${_nightCount == 1 ? '' : 's'}',
-                                              style: const TextStyle(
+                                              context.tr('nights_count', {
+                                                'n': '$_nightCount',
+                                              }),
+                                              style: TextStyle(
                                                 fontSize: 11,
                                                 fontWeight: FontWeight.w700,
-                                                color: _heroBlue,
+                                                color: scheme.onPrimaryContainer,
                                               ),
                                             ),
                                           ),
@@ -638,7 +634,7 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                                     ),
                                     Expanded(
                                       child: _DateTile(
-                                        label: 'Check-out',
+                                        label: context.tr('check_out'),
                                         value: _fmtDate(_checkOut),
                                         onTap: () => _pickDate(checkIn: false),
                                       ),
@@ -673,7 +669,7 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                                                 CrossAxisAlignment.start,
                                             children: [
                                               Text(
-                                                'Guests',
+                                                context.tr('guests'),
                                                 style: Theme.of(context)
                                                     .textTheme
                                                     .labelSmall
@@ -682,9 +678,7 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                                                     ),
                                               ),
                                               Text(
-                                                '$_rooms room${_rooms == 1 ? '' : 's'} · '
-                                                '$_adults adult${_adults == 1 ? '' : 's'} · '
-                                                '$_children child${_children == 1 ? '' : 'ren'}',
+                                                _guestPartyLine(context),
                                                 style: const TextStyle(
                                                   fontWeight: FontWeight.w600,
                                                 ),
@@ -705,13 +699,10 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                                     onPressed:
                                         (_loading || _searching) ? null : _search,
                                     style: FilledButton.styleFrom(
-                                      backgroundColor: _heroBlue,
-                                      disabledBackgroundColor:
-                                          _heroBlue.withValues(alpha: 0.5),
                                       shape: RoundedRectangleBorder(
                                         borderRadius: BorderRadius.circular(14),
                                       ),
-                                      elevation: 2,
+                                      elevation: 0,
                                     ),
                                     child: (_loading || _searching)
                                         ? const SizedBox(
@@ -722,15 +713,15 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                                               color: Colors.white,
                                             ),
                                           )
-                                        : const Row(
+                                        : Row(
                                             mainAxisAlignment:
                                                 MainAxisAlignment.center,
                                             children: [
-                                              Icon(Icons.search, size: 22),
-                                              SizedBox(width: 10),
+                                              const Icon(Icons.search, size: 22),
+                                              const SizedBox(width: 10),
                                               Text(
-                                                'SEARCH HOTELS',
-                                                style: TextStyle(
+                                                context.tr('search_hotels_btn'),
+                                                style: const TextStyle(
                                                   fontWeight: FontWeight.w800,
                                                   letterSpacing: 1.1,
                                                   fontSize: 15,
@@ -744,44 +735,38 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                             ),
                           ),
                         ),
-                        if (_error != null) ...[
-                          const SizedBox(height: 16),
-                          Text(
-                            _error!,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(color: Colors.white70),
-                          ),
-                          TextButton(
-                            onPressed: _loadHotels,
-                            child: const Text(
-                              'Retry',
-                              style: TextStyle(color: Colors.white),
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 20),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.apartment,
-                                size: 16, color: Colors.white.withValues(alpha: 0.7)),
-                            const SizedBox(width: 6),
-                            Text(
-                              '${_allHotels.length} properties nationwide',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Colors.white.withValues(alpha: 0.75),
-                                  ),
-                            ),
-                          ],
+                      if (_error != null) ...[
+                        const SizedBox(height: 16),
+                        Text(_error!, textAlign: TextAlign.center),
+                        TextButton(
+                          onPressed: _loadHotels,
+                          child: Text(context.tr('retry')),
                         ),
                       ],
-                    ),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.apartment,
+                              size: 16, color: scheme.onSurfaceVariant),
+                          const SizedBox(width: 6),
+                          Text(
+                            context.tr('properties_nationwide', {
+                              'n': '${_allHotels.length}',
+                            }),
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

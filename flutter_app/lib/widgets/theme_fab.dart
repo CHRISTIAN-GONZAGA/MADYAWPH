@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../auth_storage.dart';
+import '../locale_controller.dart';
 import '../theme_controller.dart';
+import '../ui/app_theme.dart';
 
-/// Draggable palette control; persists corner offset from bottom-right.
+/// Draggable appearance control — applies accent + mode across the whole app.
 class ThemeFab extends StatefulWidget {
   const ThemeFab({super.key});
 
@@ -16,6 +18,16 @@ class _ThemeFabState extends State<ThemeFab> {
   double _dyFromBottom = 24;
 
   static const _fabSize = 56.0;
+
+  static const _accentPresets = <Color>[
+    Color(0xFF1565C0),
+    Color(0xFF007AFF),
+    Color(0xFF5856D6),
+    Color(0xFF34C759),
+    Color(0xFFFF9500),
+    Color(0xFFFF2D55),
+    Color(0xFF1C1C1E),
+  ];
 
   @override
   void initState() {
@@ -38,103 +50,248 @@ class _ThemeFabState extends State<ThemeFab> {
     double val = HSVColor.fromColor(themeSeedColorNotifier.value).value;
     ThemeMode mode = themeModeNotifier.value;
 
-    await showDialog<void>(
+    await showGeneralDialog<void>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setLocal) {
-          final color = HSVColor.fromAHSV(1, hue, sat, val).toColor();
-          return AlertDialog(
-            title: const Text('Appearance'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Theme mode',
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                  const SizedBox(height: 8),
-                  SegmentedButton<ThemeMode>(
-                    segments: const [
-                      ButtonSegment(
-                        value: ThemeMode.light,
-                        label: Text('Light'),
-                        icon: Icon(Icons.light_mode_outlined),
-                      ),
-                      ButtonSegment(
-                        value: ThemeMode.dark,
-                        label: Text('Dark'),
-                        icon: Icon(Icons.dark_mode_outlined),
-                      ),
-                      ButtonSegment(
-                        value: ThemeMode.system,
-                        label: Text('Auto'),
-                        icon: Icon(Icons.phone_android_outlined),
-                      ),
-                    ],
-                    selected: {mode},
-                    onSelectionChanged: (s) =>
-                        setLocal(() => mode = s.first),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'Accent color',
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                  const SizedBox(height: 12),
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: 72,
-                    height: 72,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: color,
-                      border: Border.all(
-                        color: Theme.of(context).dividerColor,
-                        width: 0.8,
+      barrierDismissible: true,
+      barrierLabel: context.tr('appearance'),
+      barrierColor: Colors.black45,
+      transitionDuration: const Duration(milliseconds: 320),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return const SizedBox.shrink();
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.94, end: 1).animate(curved),
+            child: StatefulBuilder(
+              builder: (context, setLocal) {
+                final previewColor =
+                    HSVColor.fromAHSV(1, hue, sat, val).toColor();
+                final previewTheme = AppTheme.light(previewColor);
+                final previewDark = AppTheme.dark(previewColor);
+
+                return Center(
+                  child: Material(
+                    color: Colors.transparent,
+                    child: Theme(
+                      data: mode == ThemeMode.dark ? previewDark : previewTheme,
+                      child: Container(
+                        width: 360,
+                        margin: const EdgeInsets.symmetric(horizontal: 20),
+                        padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                          borderRadius: BorderRadius.circular(22),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Colors.black26,
+                              blurRadius: 32,
+                              offset: Offset(0, 16),
+                            ),
+                          ],
+                        ),
+                        child: SingleChildScrollView(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                context.tr('appearance'),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleLarge
+                                    ?.copyWith(fontWeight: FontWeight.w800),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                context.tr('appearance_sub'),
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                              const SizedBox(height: 16),
+                              Container(
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(16),
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      previewColor.withValues(alpha: 0.15),
+                                      Theme.of(context)
+                                          .colorScheme
+                                          .surfaceContainerHighest,
+                                    ],
+                                  ),
+                                  border: Border.all(
+                                    color: previewColor.withValues(alpha: 0.35),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 44,
+                                      height: 44,
+                                      decoration: BoxDecoration(
+                                        color: previewColor,
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            context.tr('live_preview'),
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .labelLarge
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          FilledButton(
+                                            onPressed: () {},
+                                            child: Text(context.tr('primary_button')),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                              Text(
+                                context.tr('theme_mode'),
+                                style: Theme.of(context).textTheme.titleSmall,
+                              ),
+                              const SizedBox(height: 8),
+                              SegmentedButton<ThemeMode>(
+                                segments: [
+                                  ButtonSegment(
+                                    value: ThemeMode.light,
+                                    label: Text(context.tr('light')),
+                                    icon: const Icon(Icons.light_mode_outlined, size: 18),
+                                  ),
+                                  ButtonSegment(
+                                    value: ThemeMode.dark,
+                                    label: Text(context.tr('dark')),
+                                    icon: const Icon(Icons.dark_mode_outlined, size: 18),
+                                  ),
+                                  ButtonSegment(
+                                    value: ThemeMode.system,
+                                    label: Text(context.tr('auto')),
+                                    icon: const Icon(Icons.phone_iphone_outlined, size: 18),
+                                  ),
+                                ],
+                                selected: {mode},
+                                onSelectionChanged: (s) =>
+                                    setLocal(() => mode = s.first),
+                              ),
+                              const SizedBox(height: 18),
+                              Text(
+                                context.tr('accent_presets'),
+                                style: Theme.of(context).textTheme.titleSmall,
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 10,
+                                runSpacing: 10,
+                                children: _accentPresets.map((c) {
+                                  final selected = HSVColor.fromColor(c).hue.round() ==
+                                      hue.round();
+                                  return InkWell(
+                                    onTap: () {
+                                      final hsv = HSVColor.fromColor(c);
+                                      setLocal(() {
+                                        hue = hsv.hue;
+                                        sat = hsv.saturation;
+                                        val = hsv.value;
+                                      });
+                                    },
+                                    borderRadius: BorderRadius.circular(999),
+                                    child: Container(
+                                      width: 36,
+                                      height: 36,
+                                      decoration: BoxDecoration(
+                                        color: c,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: selected
+                                              ? Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurface
+                                              : Colors.transparent,
+                                          width: 2.5,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                              const SizedBox(height: 14),
+                              _SliderRow(
+                                label: context.tr('hue'),
+                                value: hue,
+                                max: 360,
+                                onChanged: (v) => setLocal(() => hue = v),
+                              ),
+                              _SliderRow(
+                                label: context.tr('saturation'),
+                                value: sat,
+                                max: 1,
+                                onChanged: (v) => setLocal(() => sat = v),
+                              ),
+                              _SliderRow(
+                                label: context.tr('brightness'),
+                                value: val,
+                                max: 1,
+                                onChanged: (v) => setLocal(() => val = v),
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  TextButton(
+                                    onPressed: () => Navigator.of(context).pop(),
+                                    child: Text(context.tr('cancel')),
+                                  ),
+                                  const Spacer(),
+                                  FilledButton(
+                                    onPressed: () async {
+                                      final color = HSVColor.fromAHSV(
+                                        1,
+                                        hue,
+                                        sat,
+                                        val,
+                                      ).toColor();
+                                      await setThemeMode(mode);
+                                      await setThemeSeedColor(color);
+                                      if (context.mounted) {
+                                        Navigator.of(context).pop();
+                                      }
+                                    },
+                                    child: Text(context.tr('apply')),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  _SliderRow(
-                    label: 'Hue',
-                    value: hue,
-                    max: 360,
-                    onChanged: (v) => setLocal(() => hue = v),
-                  ),
-                  _SliderRow(
-                    label: 'Saturation',
-                    value: sat,
-                    max: 1,
-                    onChanged: (v) => setLocal(() => sat = v),
-                  ),
-                  _SliderRow(
-                    label: 'Brightness',
-                    value: val,
-                    max: 1,
-                    onChanged: (v) => setLocal(() => val = v),
-                  ),
-                ],
-              ),
+                );
+              },
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () async {
-                  await setThemeMode(mode);
-                  await setThemeSeedColor(color);
-                  if (context.mounted) Navigator.of(context).pop();
-                },
-                child: const Text('Apply'),
-              ),
-            ],
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -167,19 +324,19 @@ class _ThemeFabState extends State<ThemeFab> {
                         ? Colors.white
                         : Colors.black87;
                 return Material(
-                  elevation: 4,
+                  elevation: 6,
                   shadowColor: Colors.black26,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   color: c,
                   child: InkWell(
                     onTap: _openCustomization,
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(16),
                     child: SizedBox(
                       width: _fabSize,
                       height: _fabSize,
-                      child: Icon(Icons.tune, color: onFab),
+                      child: Icon(Icons.palette_outlined, color: onFab),
                     ),
                   ),
                 );

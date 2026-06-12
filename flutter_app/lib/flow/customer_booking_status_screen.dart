@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../dio_client.dart';
+import '../locale_controller.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/chat_attachment.dart';
 
@@ -110,8 +111,9 @@ class _CustomerBookingStatusScreenState
     final scheme = Theme.of(context).colorScheme;
     final status = (_reservation?['status'] ?? 'pending_approval').toString();
 
-    return AppScaffold(
-      appBar: AppBar(title: const Text('Booking status')),
+    return LocaleScope(
+      builder: (context, _) => AppScaffold(
+      appBar: AppBar(title: Text(context.tr('booking_status'))),
       body: _error != null && _reservation == null
           ? Center(
               child: Padding(
@@ -121,7 +123,10 @@ class _CustomerBookingStatusScreenState
                   children: [
                     Text(_error!, textAlign: TextAlign.center),
                     const SizedBox(height: 16),
-                    FilledButton(onPressed: _load, child: const Text('Retry')),
+                    FilledButton(
+                      onPressed: _load,
+                      child: Text(context.tr('retry')),
+                    ),
                   ],
                 ),
               ),
@@ -147,7 +152,7 @@ class _CustomerBookingStatusScreenState
                         ),
                         const SizedBox(height: 20),
                         Text(
-                          'Processing your booking',
+                          context.tr('processing_booking'),
                           style: Theme.of(context)
                               .textTheme
                               .titleLarge
@@ -155,8 +160,8 @@ class _CustomerBookingStatusScreenState
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Reference ${widget.reference}\n'
-                          'Waiting for ${widget.hotelName} to approve your stay.',
+                          '${context.tr('reference_label', {'ref': widget.reference})}\n'
+                          '${context.tr('waiting_approval', {'hotel': widget.hotelName})}',
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                 color: scheme.onSurfaceVariant,
@@ -170,20 +175,18 @@ class _CustomerBookingStatusScreenState
                   Icon(Icons.cancel_outlined, size: 64, color: scheme.error),
                   const SizedBox(height: 12),
                   Text(
-                    'Booking not approved',
+                    context.tr('booking_rejected'),
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    'Please contact the hotel front desk for assistance.',
-                  ),
+                  Text(context.tr('contact_front_desk')),
                 ],
                 if (_isApproved) ...[
                   Icon(Icons.check_circle_outline,
                       size: 72, color: Colors.green.shade600),
                   const SizedBox(height: 12),
                   Text(
-                    'Booking confirmed!',
+                    context.tr('booking_confirmed'),
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                           fontWeight: FontWeight.w800,
                           color: Colors.green.shade700,
@@ -198,13 +201,10 @@ class _CustomerBookingStatusScreenState
                 if (_pollUnavailable && !_isApproved && !_isRejected) ...[
                   Card(
                     color: scheme.surfaceContainerHighest,
-                    child: const ListTile(
-                      leading: Icon(Icons.cloud_off_outlined),
-                      title: Text('Live status updates unavailable'),
-                      subtitle: Text(
-                        'Your request was submitted. Save your reference and '
-                        'contact the hotel — they will confirm by email or phone.',
-                      ),
+                    child: ListTile(
+                      leading: const Icon(Icons.cloud_off_outlined),
+                      title: Text(context.tr('live_status_unavailable')),
+                      subtitle: Text(context.tr('live_status_unavailable_sub')),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -221,26 +221,27 @@ class _CustomerBookingStatusScreenState
                   Card(
                     child: ListTile(
                       leading: const Icon(Icons.info_outline),
-                      title: Text('Status: ${_label(status)}'),
-                      subtitle: const Text(
-                        'You can leave this screen open — it updates automatically.',
+                      title: Text(
+                        context.tr('status_colon', {'status': _label(context, status)}),
                       ),
+                      subtitle: Text(context.tr('updates_automatically')),
                     ),
                   ),
                 ],
               ],
             ),
           ),
+    ),
     );
   }
 
-  String _label(String status) {
+  String _label(BuildContext context, String status) {
     return switch (status) {
-      'pending_approval' => 'Pending approval',
-      'approved' => 'Approved',
-      'reserved' => 'Reserved',
-      'booked' => 'Confirmed',
-      'rejected' => 'Rejected',
+      'pending_approval' => context.tr('status_pending_approval'),
+      'approved' => context.tr('status_approved'),
+      'reserved' => context.tr('status_reserved'),
+      'booked' => context.tr('status_confirmed'),
+      'rejected' => context.tr('status_rejected'),
       _ => status,
     };
   }
@@ -304,7 +305,7 @@ class _OnlinePaymentPendingCardState extends State<_OnlinePaymentPendingCard> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Complete online payment',
+              context.tr('complete_online_payment'),
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w800,
                   ),
@@ -317,13 +318,10 @@ class _OnlinePaymentPendingCardState extends State<_OnlinePaymentPendingCard> {
               ),
             if (total > 0) ...[
               const SizedBox(height: 4),
-              Text('Amount: ₱${total.toStringAsFixed(0)}'),
+              Text(context.tr('amount_label', {'n': total.toStringAsFixed(0)})),
             ],
             const SizedBox(height: 8),
-            const Text(
-              'Pay via GCash, Maya, or QR Ph using the hotel QR below. '
-              'The hotel will verify your payment reference when approving.',
-            ),
+            Text(context.tr('pay_qr_hint')),
             if (_loadingQr)
               const Padding(
                 padding: EdgeInsets.only(top: 12),
@@ -371,7 +369,7 @@ class _TicketCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'ROOM TICKET',
+              context.tr('room_ticket'),
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
                     letterSpacing: 1.4,
                     color: scheme.primary,
@@ -379,20 +377,21 @@ class _TicketCard extends StatelessWidget {
                   ),
             ),
             const Divider(height: 24),
-            _row('Hotel', hotelName),
-            _row('Guest', '${reservation['guest_name']}'),
-            _row('Room', 'Room ${reservation['room_number']}'),
-            _row('Check-in', '${reservation['check_in_date']}'),
-            _row('Check-out', '${reservation['check_out_date']}'),
-            _row('Reservation', resRef),
-            if (bookingRef.isNotEmpty) _row('Booking ref', bookingRef),
-            _row('Payment', paymentMethod),
+            _row(context.tr('lbl_hotel'), hotelName),
+            _row(context.tr('lbl_guest'), '${reservation['guest_name']}'),
+            _row(context.tr('lbl_room'), 'Room ${reservation['room_number']}'),
+            _row(context.tr('lbl_checkin'), '${reservation['check_in_date']}'),
+            _row(context.tr('lbl_checkout'), '${reservation['check_out_date']}'),
+            _row(context.tr('lbl_reservation'), resRef),
+            if (bookingRef.isNotEmpty)
+              _row(context.tr('lbl_booking_ref'), bookingRef),
+            _row(context.tr('lbl_payment'), paymentMethod),
             if (paymentMethod.toLowerCase() == 'online' && paymentRef.isNotEmpty)
-              _row('Payment reference', paymentRef, highlight: true),
+              _row(context.tr('lbl_payment_ref'), paymentRef, highlight: true),
             if ((reservation['estimated_total'] as num?) != null &&
                 (reservation['estimated_total'] as num) > 0)
               _row(
-                'Total',
+                context.tr('lbl_total'),
                 '₱${(reservation['estimated_total'] as num).toStringAsFixed(0)}',
               ),
           ],

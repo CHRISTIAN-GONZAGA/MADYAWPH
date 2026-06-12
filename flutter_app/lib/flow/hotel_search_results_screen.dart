@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../auth_storage.dart';
+import '../locale_controller.dart';
+import '../ui/app_visual.dart';
 import '../widgets/chat_attachment.dart';
 import 'customer_search_context.dart';
 import 'dashboards.dart';
@@ -57,24 +59,34 @@ class HotelSearchResultsScreen extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final destination = search.destinationQuery.trim();
 
+    final visual = AppVisual.of(context);
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F6FA),
-      appBar: AppBar(
-        title: Text(
-          hotels.isEmpty ? 'No matches' : '${hotels.length} hotels found',
+      body: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: visual.scaffoldGradient(scheme),
         ),
-        actions: [
-          IconButton(
-            tooltip: 'Edit search',
-            onPressed: () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.tune),
-          ),
-        ],
-      ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppBar(
+              backgroundColor: Colors.transparent,
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+        title: Text(
+          hotels.isEmpty
+              ? context.tr('no_matches')
+              : context.tr('hotels_found_count', {'n': '${hotels.length}'}),
+        ),
+              actions: [
+                IconButton(
+                  tooltip: context.tr('edit_search'),
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.tune),
+                ),
+              ],
+            ),
+            Container(
             margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
@@ -105,11 +117,16 @@ class HotelSearchResultsScreen extends StatelessWidget {
                   ),
                 if (destination.isNotEmpty) const SizedBox(height: 8),
                 Text(
-                  '${_fmtDate(search.checkIn)} → ${_fmtDate(search.checkOut)} · '
-                  '$_nights night${_nights == 1 ? '' : 's'} · '
-                  '${search.rooms} room${search.rooms == 1 ? '' : 's'}, '
-                  '${search.adults} adult${search.adults == 1 ? '' : 's'}'
-                  '${search.children > 0 ? ', ${search.children} child${search.children == 1 ? '' : 'ren'}' : ''}',
+                  context.tr('search_summary_line', {
+                    'checkin': _fmtDate(search.checkIn),
+                    'checkout': _fmtDate(search.checkOut),
+                    'nights': context.tr('nights_count', {'n': '$_nights'}),
+                    'party': context.tr('guest_party_line', {
+                      'rooms': '${search.rooms}',
+                      'adults': '${search.adults}',
+                      'children': '${search.children}',
+                    }),
+                  }),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
@@ -117,23 +134,24 @@ class HotelSearchResultsScreen extends StatelessWidget {
               ],
             ),
           ),
-          Expanded(
-            child: hotels.isEmpty
-                ? _EmptyResults(search: search)
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                    itemCount: hotels.length,
-                    itemBuilder: (context, i) {
-                      return _AnimatedHotelCard(
-                        index: i,
-                        hotel: hotels[i],
-                        nights: _nights,
-                        onTap: () => _openHotel(context, hotels[i]),
-                      );
-                    },
-                  ),
-          ),
-        ],
+            Expanded(
+              child: hotels.isEmpty
+                  ? _EmptyResults(search: search)
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                      itemCount: hotels.length,
+                      itemBuilder: (context, i) {
+                        return _AnimatedHotelCard(
+                          index: i,
+                          hotel: hotels[i],
+                          nights: _nights,
+                          onTap: () => _openHotel(context, hotels[i]),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -163,7 +181,7 @@ class _EmptyResults extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             Text(
-              'No hotels can accommodate your stay',
+              context.tr('no_hotels_for_stay'),
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
@@ -171,7 +189,7 @@ class _EmptyResults extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Try different dates, fewer rooms, or another destination.',
+              context.tr('try_different_search'),
               textAlign: TextAlign.center,
               style: TextStyle(color: scheme.onSurfaceVariant),
             ),
@@ -179,7 +197,7 @@ class _EmptyResults extends StatelessWidget {
             OutlinedButton.icon(
               onPressed: () => Navigator.of(context).pop(),
               icon: const Icon(Icons.edit_outlined),
-              label: const Text('Edit search'),
+              label: Text(context.tr('edit_search')),
             ),
           ],
         ),
@@ -334,8 +352,8 @@ class _HotelResultCard extends StatelessWidget {
                     ),
                     child: Text(
                       available > 0
-                          ? '$available room${available == 1 ? '' : 's'} available'
-                          : 'Limited availability',
+                          ? context.tr('rooms_available', {'n': '$available'})
+                          : context.tr('limited_availability'),
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w700,
@@ -385,7 +403,9 @@ class _HotelResultCard extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'from ₱${minPrice.toStringAsFixed(0)}',
+                              context.tr('from_price_php', {
+                                'n': minPrice.toStringAsFixed(0),
+                              }),
                               style: Theme.of(context)
                                   .textTheme
                                   .titleMedium
@@ -396,7 +416,10 @@ class _HotelResultCard extends StatelessWidget {
                             ),
                             if (estStay > 0)
                               Text(
-                                '≈ ₱${estStay.toStringAsFixed(0)} for $nights night${nights == 1 ? '' : 's'}',
+                                context.tr('stay_estimate', {
+                                  'total': estStay.toStringAsFixed(0),
+                                  'n': '$nights',
+                                }),
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                           ],
@@ -406,7 +429,7 @@ class _HotelResultCard extends StatelessWidget {
                       FilledButton.tonalIcon(
                         onPressed: onTap,
                         icon: const Icon(Icons.arrow_forward, size: 18),
-                        label: const Text('View rooms'),
+                        label: Text(context.tr('view_rooms')),
                       ),
                     ],
                   ),

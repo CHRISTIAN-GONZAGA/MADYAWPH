@@ -159,6 +159,22 @@ Smoke test:
 - DB writes to Atlas work
 - main API routes respond correctly
 
+## 5.5 Render: persistent uploads (room photos, banners, QR codes)
+
+Render web containers use **ephemeral filesystem** — anything saved under `storage/app/public` is **deleted on every deploy**.
+
+This project stores hotel media on a **Render persistent disk** (not S3):
+
+1. Deploy with **`render.yaml`** (attaches a 10 GB disk at `/var/data/uploads`), **or** manually add a disk in the Render dashboard with mount path `/var/data/uploads`.
+2. Set environment variables (see `.env.render.example`):
+   - `FILESYSTEM_UPLOAD_DISK=uploads`
+   - `FILESYSTEM_UPLOAD_ROOT=/var/data/uploads`
+3. On each start, `scripts/render-start.sh` runs `php artisan uploads:ensure-persistent` to create folders and copy any legacy files from ephemeral storage into the disk.
+
+Uploaded images are served at `GET /api/v1/chat/media?f=rooms/...` — MongoDB stores the relative path; the file lives on the disk.
+
+**Verify after deploy:** upload a room image, redeploy, confirm the image still loads.
+
 ---
 
 ## 6) Android / Play Store (Flutter + legacy Capacitor)

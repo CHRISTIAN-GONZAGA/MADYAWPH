@@ -45,6 +45,48 @@ class PublicUploadStorageTest extends TestCase
         $this->get('/api/v1/chat/media?f='.rawurlencode('categories/legacy.jpg'))->assertOk();
     }
 
+    public function test_payment_qr_uploads_use_persistent_uploads_disk(): void
+    {
+        Storage::fake('uploads');
+        Config::set('filesystems.uploads_disk', 'uploads');
+
+        $png = base64_decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+        );
+        $file = UploadedFile::fake()->createWithContent('qr.png', $png);
+
+        $path = PublicUploadStorage::store($file, 'payment-qr');
+        $this->assertStringStartsWith('payment-qr/', $path);
+        Storage::disk('uploads')->assertExists($path);
+    }
+
+    public function test_ephemeral_uploads_migrate_to_persistent_root(): void
+    {
+        $persistent = storage_path('framework/testing/persistent-uploads');
+        $legacy = storage_path('app/public');
+
+        Config::set('filesystems.disks.uploads.root', $persistent);
+        Config::set('filesystems.uploads_disk', 'uploads');
+
+        if (! is_dir($persistent)) {
+            mkdir($persistent, 0755, true);
+        }
+        if (! is_dir($legacy.'/rooms')) {
+            mkdir($legacy.'/rooms', 0755, true);
+        }
+
+        $unique = 'legacy-'.uniqid('', true).'.jpg';
+        file_put_contents($legacy.'/rooms/'.$unique, 'legacy-image');
+
+        PublicUploadStorage::migrateEphemeralUploadsIfNeeded();
+
+        $this->assertFileExists($persistent.'/rooms/'.$unique);
+        $this->assertTrue(PublicUploadStorage::exists('rooms/'.$unique));
+
+        @unlink($legacy.'/rooms/'.$unique);
+        @unlink($persistent.'/rooms/'.$unique);
+    }
+
     public function test_uploads_can_still_use_s3_when_configured(): void
     {
         Storage::fake('s3');

@@ -26,6 +26,7 @@ use App\Services\SmsService;
 use App\Support\ChatAttachmentUrl;
 use App\Support\EnumHelper;
 use App\Support\PublicUploadStorage;
+use App\Support\RoomBillingSupport;
 use Carbon\Carbon;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
@@ -47,15 +48,36 @@ class CustomerPortalApiController extends Controller
 
     public function categories(Request $request): JsonResponse
     {
+        try {
+            return $this->categoriesResponse($request);
+        } catch (Throwable $e) {
+            return $this->customerErrorResponse($e, 'Could not load room categories.');
+        }
+    }
+
+    public function rooms(Request $request, string $categoryId): JsonResponse
+    {
+        try {
+            return $this->roomsResponse($request, $categoryId);
+        } catch (Throwable $e) {
+            return $this->customerErrorResponse($e, 'Could not load rooms for this category.');
+        }
+    }
+
+    private function categoriesResponse(Request $request): JsonResponse
+    {
         $hotelId = $this->resolveHotelId($request);
         if ($hotelId === '') {
             return response()->json(['message' => 'Hotel context required (hotel_id).'], 422);
         }
 
         $hotel = Hotel::withoutGlobalScopes()->select('id', 'name', 'location')->find($hotelId);
-        $checkIn = $request->query('check_in');
-        $checkOut = $request->query('check_out');
-        $dateFilter = filled($checkIn) && filled($checkOut);
+        if ($hotel === null) {
+            return response()->json(['message' => 'Hotel not found.'], 404);
+        }
+
+        [$checkIn, $checkOut] = $this->parseOptionalStayDates($request);
+        $dateFilter = $checkIn !== null && $checkOut !== null;
         $availableValue = RoomStatus::AVAILABLE->value;
 
         $categories = RoomCategory::withoutGlobalScopes()
@@ -67,8 +89,8 @@ class CustomerPortalApiController extends Controller
                     $hotelId,
                     (string) $cat->id,
                     null,
-                    $dateFilter ? Carbon::parse($checkIn) : null,
-                    $dateFilter ? Carbon::parse($checkOut) : null,
+                    $dateFilter ? $checkIn : null,
+                    $dateFilter ? $checkOut : null,
                 );
 
                 return [
@@ -83,15 +105,16 @@ class CustomerPortalApiController extends Controller
             $categories = Room::withoutGlobalScopes()
                 ->where('hotel_id', $hotelId)
                 ->get()
-                ->groupBy(fn ($room) => strtolower((string) ($room->room_type?->value ?? $room->room_type)))
+                ->groupBy(fn (Room $room) => $this->roomTypeKey($room))
+                ->filter(fn (mixed $group, string $type) => $type !== '')
                 ->map(function ($roomsByType, $type) use ($hotelId, $dateFilter, $checkIn, $checkOut) {
                     $available = $dateFilter
                         ? $this->countAvailableRoomsInCategory(
                             $hotelId,
                             null,
                             ucfirst((string) $type),
-                            Carbon::parse($checkIn),
-                            Carbon::parse($checkOut),
+                            $checkIn,
+                            $checkOut,
                         )
                         : $roomsByType->filter(function ($room) {
                             $st = $room->status?->value ?? (string) $room->status;
@@ -120,10 +143,13 @@ class CustomerPortalApiController extends Controller
             )->values();
         }
 
-        return response()->json(['hotel' => $hotel, 'categories' => $categories]);
+        return response()->json([
+            'hotel' => $hotel,
+            'categories' => $categories->values()->all(),
+        ]);
     }
 
-    public function rooms(Request $request, string $categoryId): JsonResponse
+    private function roomsResponse(Request $request, string $categoryId): JsonResponse
     {
         $hotelId = $this->resolveHotelId($request);
         if ($hotelId === '') {
@@ -131,44 +157,35 @@ class CustomerPortalApiController extends Controller
         }
 
         $hotel = Hotel::withoutGlobalScopes()->select('id', 'name', 'location')->find($hotelId);
+        if ($hotel === null) {
+            return response()->json(['message' => 'Hotel not found.'], 404);
+        }
+
         $category = RoomCategory::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
             ->where(function ($query) use ($categoryId) {
                 $query->where('id', $categoryId)->orWhere('_id', $categoryId);
             })
             ->first();
-        $checkIn = $request->query('check_in');
-        $checkOut = $request->query('check_out');
-        $dateFilter = filled($checkIn) && filled($checkOut);
+        [$checkIn, $checkOut] = $this->parseOptionalStayDates($request);
+        $dateFilter = $checkIn !== null && $checkOut !== null;
         $availableValue = RoomStatus::AVAILABLE->value;
         $categoryImage = ChatAttachmentUrl::fromStoredUrl($category?->image_url);
 
         $scopedRooms = $this->roomsInCategoryScope($hotelId, $category, $categoryId);
 
         $rooms = $scopedRooms
-            ->filter(function ($room) use ($hotelId, $dateFilter, $checkIn, $checkOut, $availableValue) {
-                if (! $dateFilter) {
-                    $status = $room->status?->value ?? (string) $room->status;
-
-                    return $status === $availableValue;
-                }
-                $status = $room->status?->value ?? (string) $room->status;
-                if ($status !== $availableValue) {
-                    return false;
-                }
-
-                return ! $this->hotelAvailabilityService->roomHasStayConflict(
-                    (string) $room->id,
-                    $hotelId,
-                    Carbon::parse($checkIn)->toDateString(),
-                    Carbon::parse($checkOut)->toDateString(),
-                    null,
-                );
-            })
+            ->filter(fn (Room $room) => $this->roomVisibleToCustomer(
+                $room,
+                $hotelId,
+                $dateFilter,
+                $checkIn,
+                $checkOut,
+            ))
             ->take(30)
             ->values()
-            ->map(function ($room) use ($hotelId, $category, $categoryImage, $availableValue) {
-                $basePrice = (float) $room->price_per_night;
+            ->map(function ($room) use ($hotelId, $categoryImage, $availableValue) {
+                $basePrice = RoomBillingSupport::toFloat($room->price_per_night);
                 $displayPrice = $this->roomPricingService->applySurge((string) $hotelId, $basePrice);
                 $roomImage = ChatAttachmentUrl::fromStoredUrl($room->image_url) ?? $categoryImage;
 
@@ -193,8 +210,58 @@ class CustomerPortalApiController extends Controller
                 'name' => $category?->name ?? 'Rooms',
                 'image_url' => (string) ($categoryImage ?? ''),
             ],
-            'rooms' => $rooms,
+            'rooms' => $rooms->values()->all(),
         ]);
+    }
+
+    /**
+     * @return array{0: ?Carbon, 1: ?Carbon}
+     */
+    private function parseOptionalStayDates(Request $request): array
+    {
+        $checkInRaw = $request->query('check_in');
+        $checkOutRaw = $request->query('check_out');
+        if (! filled($checkInRaw) || ! filled($checkOutRaw)) {
+            return [null, null];
+        }
+
+        try {
+            $checkIn = Carbon::parse((string) $checkInRaw)->startOfDay();
+            $checkOut = Carbon::parse((string) $checkOutRaw)->startOfDay();
+        } catch (Throwable) {
+            return [null, null];
+        }
+
+        if (! $checkOut->isAfter($checkIn)) {
+            return [null, null];
+        }
+
+        return [$checkIn, $checkOut];
+    }
+
+    private function roomVisibleToCustomer(
+        Room $room,
+        string $hotelId,
+        bool $dateFilter,
+        ?Carbon $checkIn,
+        ?Carbon $checkOut,
+    ): bool {
+        $status = $room->status?->value ?? (string) $room->status;
+        if ($status === RoomStatus::MAINTENANCE->value) {
+            return false;
+        }
+
+        if (! $dateFilter || $checkIn === null || $checkOut === null) {
+            return $status === RoomStatus::AVAILABLE->value;
+        }
+
+        return ! $this->hotelAvailabilityService->roomHasStayConflict(
+            (string) $room->id,
+            $hotelId,
+            $checkIn->toDateString(),
+            $checkOut->toDateString(),
+            null,
+        );
     }
 
     public function paymentQr(Request $request): JsonResponse
@@ -284,7 +351,7 @@ class CustomerPortalApiController extends Controller
             $checkIn = Carbon::parse($validated['check_in']);
             $checkOut = Carbon::parse($validated['check_out']);
             $nights = max(1, $checkIn->diffInDays($checkOut));
-            $nightly = $this->roomPricingService->applySurge((string) $hotelId, (float) $room->price_per_night);
+            $nightly = $this->roomPricingService->applySurge((string) $hotelId, RoomBillingSupport::toFloat($room->price_per_night));
             $gross = $this->financialComputationService->computeRoomCharge($nightly, $nights);
             $discountPercent = (float) ($validated['discount_percent'] ?? 0);
             $total = $this->applyDiscountToTotal($gross, $discountPercent);
@@ -398,7 +465,7 @@ class CustomerPortalApiController extends Controller
         }
 
         $nights = max(1, $checkIn->diffInDays($checkOut));
-        $nightly = $this->roomPricingService->applySurge($hotelId, (float) $room->price_per_night);
+        $nightly = $this->roomPricingService->applySurge($hotelId, RoomBillingSupport::toFloat($room->price_per_night));
         $gross = $this->financialComputationService->computeRoomCharge($nightly, $nights);
         $total = $this->applyDiscountToTotal($gross, (float) ($validated['discount_percent'] ?? 0));
 
@@ -640,20 +707,9 @@ class CustomerPortalApiController extends Controller
 
         $count = 0;
         foreach ($scoped as $room) {
-            $status = $room->status?->value ?? (string) $room->status;
-            if ($status !== RoomStatus::AVAILABLE->value) {
-                continue;
+            if ($this->roomVisibleToCustomer($room, $hotelId, true, $checkIn, $checkOut)) {
+                $count++;
             }
-            if ($this->hotelAvailabilityService->roomHasStayConflict(
-                (string) $room->id,
-                $hotelId,
-                $checkIn->toDateString(),
-                $checkOut->toDateString(),
-                null,
-            )) {
-                continue;
-            }
-            $count++;
         }
 
         return $count;

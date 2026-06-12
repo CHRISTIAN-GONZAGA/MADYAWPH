@@ -54,5 +54,21 @@ class AppLocales {
 }
 
 extension LocaleContext on BuildContext {
-  String tr(String key) => AppStrings.t(appLocaleNotifier.value, key);
+  String tr(String key, [Map<String, String> params = const {}]) =>
+      AppStrings.t(appLocaleNotifier.value, key, params);
+}
+
+/// Rebuilds when the user changes language (use around screens with hardcoded `tr` calls).
+class LocaleScope extends StatelessWidget {
+  const LocaleScope({super.key, required this.builder});
+
+  final Widget Function(BuildContext context, Locale locale) builder;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<Locale>(
+      valueListenable: appLocaleNotifier,
+      builder: (context, locale, _) => builder(context, locale),
+    );
+  }
 }

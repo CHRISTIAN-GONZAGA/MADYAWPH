@@ -1,0 +1,53 @@
+# Render Blueprint — MADYAWPH API
+# Docs: https://render.com/docs/disks
+#
+# After linking this repo, set secrets in the dashboard (APP_KEY, MONGODB_URI, etc.)
+# or sync from .env.render.example.
+
+services:
+  - type: web
+    name: madyawph-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /api/v1/hotels
+    disk:
+      name: uploads
+      mountPath: /var/data/uploads
+      sizeGB: 10
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: false
+      - key: FILESYSTEM_UPLOAD_DISK
+        value: uploads
+      - key: FILESYSTEM_UPLOAD_ROOT
+        value: /var/data/uploads
+      - key: SESSION_DRIVER
+        value: file
+      - key: CACHE_STORE
+        value: file
+      - key: QUEUE_CONNECTION
+        value: sync
+      - key: REDIS_CLIENT
+        value: predis
+      - key: DB_CONNECTION
+        value: mongodb
+      - key: STRICT_TENANT_SCOPING
+        value: true
+      - key: SESSION_SECURE_COOKIE
+        value: true
+      - key: SESSION_SAME_SITE
+        value: lax
+      # Set in dashboard (generate / paste secrets):
+      - key: APP_KEY
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DATABASE
+        sync: false
+      - key: SANCTUM_STATEFUL_DOMAINS
+        sync: false

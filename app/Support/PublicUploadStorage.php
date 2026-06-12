@@ -23,8 +23,20 @@ final class PublicUploadStorage
         'categories/',
         'rooms/',
         'hotel-banners/',
+        'payment-qr/',
         'reseller-ids/',
         'bookings/',
+    ];
+
+    /** @var list<string> */
+    public const UPLOAD_SUBDIRECTORIES = [
+        'chat',
+        'categories',
+        'rooms',
+        'hotel-banners',
+        'payment-qr',
+        'reseller-ids',
+        'bookings',
     ];
 
     /** @var list<string> */
@@ -48,6 +60,21 @@ final class PublicUploadStorage
     public static function uploadRoot(): string
     {
         return (string) config('filesystems.disks.uploads.root', storage_path('app/public'));
+    }
+
+    /**
+     * True when uploads target a dedicated root (e.g. Render persistent disk), not ephemeral storage.
+     */
+    public static function usingPersistentRoot(): bool
+    {
+        if (self::diskName() === 's3') {
+            return true;
+        }
+
+        $root = realpath(self::uploadRoot()) ?: self::uploadRoot();
+        $ephemeral = realpath(storage_path('app/public')) ?: storage_path('app/public');
+
+        return $root !== $ephemeral;
     }
 
     public static function s3Configured(): bool
@@ -188,12 +215,71 @@ final class PublicUploadStorage
         }
     }
 
+    public static function ensureUploadSubdirectoriesExist(): void
+    {
+        if (self::diskName() === 's3') {
+            return;
+        }
+
+        self::ensureUploadRootExists();
+
+        foreach (self::UPLOAD_SUBDIRECTORIES as $subdir) {
+            $path = self::uploadRoot().DIRECTORY_SEPARATOR.$subdir;
+            if (! File::isDirectory($path)) {
+                File::makeDirectory($path, 0755, true);
+            }
+        }
+    }
+
+    /**
+     * Copy files from ephemeral storage/app/public into the persistent upload root (one-time safe).
+     */
+    public static function migrateEphemeralUploadsIfNeeded(): int
+    {
+        if (self::diskName() === 's3' || ! self::usingPersistentRoot()) {
+            return 0;
+        }
+
+        $legacyRoot = storage_path('app/public');
+        $targetRoot = self::uploadRoot();
+        $migrated = 0;
+
+        foreach (self::UPLOAD_SUBDIRECTORIES as $subdir) {
+            $legacyDir = $legacyRoot.DIRECTORY_SEPARATOR.$subdir;
+            if (! File::isDirectory($legacyDir)) {
+                continue;
+            }
+
+            $targetDir = $targetRoot.DIRECTORY_SEPARATOR.$subdir;
+            if (! File::isDirectory($targetDir)) {
+                File::makeDirectory($targetDir, 0755, true);
+            }
+
+            foreach (File::allFiles($legacyDir) as $file) {
+                $relative = $subdir.'/'.$file->getRelativePathname();
+                $relative = str_replace('\\', '/', $relative);
+                $destination = $targetRoot.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $relative);
+
+                if (File::exists($destination)) {
+                    continue;
+                }
+
+                File::ensureDirectoryExists(dirname($destination));
+                if (File::copy($file->getPathname(), $destination)) {
+                    $migrated++;
+                }
+            }
+        }
+
+        return $migrated;
+    }
+
     /**
      * @throws ValidationException
      */
     private static function assertAllowedDirectory(string $directory): void
     {
-        $allowedRoots = ['rooms', 'categories', 'hotel-banners', 'reseller-ids', 'chat', 'bookings'];
+        $allowedRoots = self::UPLOAD_SUBDIRECTORIES;
         $root = explode('/', $directory)[0] ?? '';
         if (! in_array($root, $allowedRoots, true)) {
             throw ValidationException::withMessages([

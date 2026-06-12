@@ -33,17 +33,41 @@ class HotelAvailabilityService
 
         $available = [];
         foreach ($rooms as $room) {
-            $status = $room->status?->value ?? (string) $room->status;
-            if ($status !== RoomStatus::AVAILABLE->value) {
-                continue;
+            if ($this->isRoomAvailableForStay((string) $room->id, $hotelId, $checkIn, $checkOut, $excludeReservationId)) {
+                $available[] = (string) $room->id;
             }
-            if ($this->roomHasStayConflict((string) $room->id, $hotelId, $in, $out, $excludeReservationId)) {
-                continue;
-            }
-            $available[] = (string) $room->id;
         }
 
         return $available;
+    }
+
+    public function isRoomAvailableForStay(
+        string $roomId,
+        string $hotelId,
+        CarbonInterface $checkIn,
+        CarbonInterface $checkOut,
+        ?string $excludeReservationId = null,
+    ): bool {
+        $room = Room::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where(function ($query) use ($roomId) {
+                $query->where('id', $roomId)->orWhere('_id', $roomId);
+            })
+            ->first(['id', 'status']);
+
+        if ($room === null) {
+            return false;
+        }
+
+        $status = $room->status?->value ?? (string) $room->status;
+        if ($status === RoomStatus::MAINTENANCE->value) {
+            return false;
+        }
+
+        $in = Carbon::parse($checkIn)->startOfDay()->toDateString();
+        $out = Carbon::parse($checkOut)->startOfDay()->toDateString();
+
+        return ! $this->roomHasStayConflict($roomId, $hotelId, $in, $out, $excludeReservationId);
     }
 
     public function hotelCanAccommodate(
@@ -127,16 +151,8 @@ class HotelAvailabilityService
             if (! $this->hotelCanAccommodate($hid, $checkIn, $checkOut, $roomsNeeded)) {
                 continue;
             }
-            if ($q !== '') {
-                $hay = strtolower(implode(' ', [
-                    (string) $hotel->name,
-                    (string) ($hotel->city ?? ''),
-                    (string) ($hotel->region ?? ''),
-                    (string) ($hotel->location ?? ''),
-                ]));
-                if (! str_contains($hay, $q)) {
-                    continue;
-                }
+            if ($q !== '' && ! $this->hotelMatchesQuery($hotel, $q)) {
+                continue;
             }
             $availableCount = count($this->availableRoomIdsForStay($hid, $checkIn, $checkOut));
             $price = $stats[$hid] ?? ['min_price' => 0.0, 'max_price' => 0.0, 'room_count' => 0];
@@ -160,5 +176,30 @@ class HotelAvailabilityService
         usort($out, fn ($a, $b) => strcmp((string) $a['name'], (string) $b['name']));
 
         return $out;
+    }
+
+    private function hotelMatchesQuery(Hotel $hotel, string $query): bool
+    {
+        $hay = strtolower(implode(' ', array_filter([
+            (string) $hotel->name,
+            (string) ($hotel->city ?? ''),
+            (string) ($hotel->region ?? ''),
+            (string) ($hotel->location ?? ''),
+        ])));
+
+        $tokens = array_values(array_filter(
+            preg_split('/\s+/', strtolower(trim($query))) ?: [],
+            fn (string $token) => $token !== '',
+        ));
+        if ($tokens === []) {
+            return true;
+        }
+        foreach ($tokens as $token) {
+            if (! str_contains($hay, $token)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
