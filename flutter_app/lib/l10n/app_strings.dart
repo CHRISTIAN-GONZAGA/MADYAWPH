@@ -441,8 +441,6 @@ class AppStrings {
       'admin_frontdesk': 'Admin / Front desk',
       'hotel_owner': 'May-ari ng hotel',
       'hotel_owner_sub': 'Pinansyal na buod at activity log',
-      'public_customer': 'Pampublikong customer',
-      'public_customer_sub': 'Mag-browse at mag-book',
       'system_access': 'System Access',
       'system_access_sub':
           'Ilagay ang credentials at role para mag-log in.',
