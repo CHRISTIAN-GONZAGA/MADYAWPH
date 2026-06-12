@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Services\ActivityLogService;
 use App\Services\CreditWalletApprovalService;
 use App\Services\MemberSubscriptionApprovalService;
+use App\Services\PlatformRevenueAnalyticsService;
 use App\Services\PlatformSettingsService;
 use App\Support\ChatAttachmentUrl;
 use App\Support\RoomImageUploadRules;
@@ -27,10 +28,22 @@ class PlatformAdminController extends Controller
 {
     public function __construct(
         private readonly PlatformSettingsService $settings,
+        private readonly PlatformRevenueAnalyticsService $revenueAnalytics,
         private readonly CreditWalletApprovalService $creditApprovals,
         private readonly MemberSubscriptionApprovalService $memberApprovals,
         private readonly ActivityLogService $activityLog,
     ) {}
+
+    public function revenueAnalytics(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'period' => ['nullable', 'in:day,week,month,year'],
+        ]);
+
+        return response()->json(
+            $this->revenueAnalytics->summarize($validated['period'] ?? 'month')
+        );
+    }
 
     public function settings(): JsonResponse
     {

@@ -82,6 +82,32 @@ class PlatformAdminTest extends TestCase
         $this->assertNotNull($request->member_valid_until);
     }
 
+    public function test_central_admin_can_fetch_revenue_analytics(): void
+    {
+        $hotel = Hotel::create(['name' => 'Revenue Hotel', 'location' => 'City']);
+        $admin = app(CentralAdminAccountService::class)->ensureUser();
+
+        $response = $this->actingAs($admin)->getJson(
+            '/api/v1/platform/revenue-analytics?period=month'
+        );
+
+        $response->assertOk();
+        $response->assertJsonStructure([
+            'period',
+            'from',
+            'to',
+            'totals' => [
+                'hotel_gross_revenue',
+                'hotel_net_revenue',
+                'platform_revenue',
+                'active_hotels',
+            ],
+            'hotels',
+        ]);
+        $rows = collect($response->json('hotels'));
+        $this->assertTrue($rows->contains(fn ($r) => ($r['hotel_id'] ?? '') === (string) $hotel->id));
+    }
+
     public function test_hotel_admin_cannot_access_platform_routes(): void
     {
         $hotel = Hotel::create(['name' => 'Regular', 'location' => 'City']);

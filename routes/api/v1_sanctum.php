@@ -1690,6 +1690,7 @@ Route::get('/admin/chat/rooms/{roomId}', [AdminChatController::class, 'room'])->
 Route::middleware('role:central_admin')->prefix('platform')->group(function () {
     $platform = \App\Http\Controllers\Api\V1\PlatformAdminController::class;
     Route::get('/settings', [$platform, 'settings']);
+    Route::get('/revenue-analytics', [$platform, 'revenueAnalytics']);
     Route::post('/settings/credit-wallet-qr', [$platform, 'uploadCreditWalletQr']);
     Route::post('/settings/member-qr', [$platform, 'uploadMemberQr']);
     Route::get('/hotels', [$platform, 'hotels']);

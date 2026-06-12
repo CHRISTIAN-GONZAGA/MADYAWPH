@@ -596,26 +596,6 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                             height: 1.35,
                           ),
                     ),
-                    const SizedBox(height: 14),
-                    Wrap(
-                      alignment: WrapAlignment.center,
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        ActionChip(
-                          avatar: Icon(Icons.qr_code_scanner,
-                              size: 18, color: scheme.primary),
-                          label: const Text('In-house guest'),
-                          onPressed: _openGuestQrScanner,
-                        ),
-                        ActionChip(
-                          avatar: Icon(Icons.badge_outlined,
-                              size: 18, color: scheme.secondary),
-                          label: Text(context.tr('property_sign_in')),
-                          onPressed: _openStaffPropertyLogin,
-                        ),
-                      ],
-                    ),
                   ],
                 ),
               ),
