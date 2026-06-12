@@ -18,7 +18,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.textContaining('Where would you like to go'), findsOneWidget);
-    expect(find.byIcon(Icons.qr_code_scanner_outlined), findsOneWidget);
-    expect(find.byIcon(Icons.badge_outlined), findsOneWidget);
+    expect(find.textContaining('In-house guest'), findsOneWidget);
+    expect(find.byIcon(Icons.badge_outlined), findsWidgets);
   });
 }

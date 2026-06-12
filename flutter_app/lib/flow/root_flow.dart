@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../auth_storage.dart';
 import '../dio_client.dart';
 import '../locale_controller.dart';
+import 'central_admin/central_admin_dashboard_screen.dart';
 import 'dashboards.dart';
 import 'public_hotel_search_screen.dart';
 
@@ -19,7 +20,26 @@ class _FlowRootState extends State<FlowRoot> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _resumeGuestSession());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _resumeCentralAdminSession();
+      _resumeGuestSession();
+    });
+  }
+
+  Future<void> _resumeCentralAdminSession() async {
+    final role = await AuthStorage.portalRole();
+    if (role != 'central_admin' || !mounted) return;
+    try {
+      await portalDio().get<Map<String, dynamic>>('/platform/settings');
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const CentralAdminDashboardScreen(),
+        ),
+      );
+    } on DioException catch (_) {
+      await AuthStorage.clearPortalAuth();
+    }
   }
 
   Future<void> _resumeGuestSession() async {

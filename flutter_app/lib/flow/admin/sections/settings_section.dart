@@ -10,6 +10,7 @@ import '../../admin_staff.dart';
 import '../../admin_tasks.dart';
 import '../../guest_list_history.dart';
 import '../admin_guest_portal_qr_screen.dart';
+import '../admin_hotel_logo_screen.dart';
 import '../admin_online_payment_screen.dart';
 
 class SettingsSection extends StatelessWidget {
@@ -142,6 +143,19 @@ class SettingsSection extends StatelessWidget {
               subtitle: 'Weekend, peak, emergency surge toggles',
               enabled: !creditsLocked,
               onTap: onSurgePricing,
+            ),
+            _SettingsTile(
+              icon: Icons.image_outlined,
+              title: 'Hotel logo',
+              subtitle: 'Shown when guests search and browse your property',
+              enabled: !creditsLocked,
+              onTap: () {
+                Navigator.of(context).push<void>(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AdminHotelLogoScreen(),
+                  ),
+                );
+              },
             ),
             _SettingsTile(
               icon: Icons.qr_code_2_outlined,

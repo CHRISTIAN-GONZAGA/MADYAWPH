@@ -118,55 +118,23 @@ class ReportController extends Controller
         ]);
 
         $granularity = $validated['granularity'] ?? 'week';
-        $defaultFrom = match ($granularity) {
-            'day' => now()->subDays(14)->startOfDay(),
-            'week' => now()->subWeeks(12)->startOfDay(),
-            'month' => now()->subMonths(12)->startOfMonth(),
-            'year' => now()->subYears(5)->startOfYear(),
-            default => now()->subDays(30)->startOfDay(),
-        };
-        $from = isset($validated['from']) ? Carbon::parse($validated['from'])->startOfDay() : $defaultFrom;
-        $to = isset($validated['to']) ? Carbon::parse($validated['to'])->endOfDay() : now()->endOfDay();
+        [$from, $to] = $this->resolveReportRange($granularity, $validated);
 
         $bookings = $this->paidBookingsInRange($from, $to);
         $revenueByBooking = $this->recognizedRevenueByBooking($bookings);
         $rows = $bookings
             ->groupBy(fn ($b) => $this->bucketLabel($this->paymentDateForBooking($b), $granularity))
             ->map(function ($group, $label) use ($revenueByBooking) {
-                $transactions = $group
-                    ->map(function ($booking) use ($revenueByBooking) {
-                        $bookingId = (string) $booking->id;
-                        $amount = (float) ($revenueByBooking[$bookingId] ?? (float) ($booking->total_amount ?? 0));
-                        $method = $this->paymentMethodLabel($booking);
-                        $channel = $this->paymentChannel($booking);
+                $grossSales = (float) $group->sum(function ($booking) use ($revenueByBooking) {
+                    $bookingId = (string) $booking->id;
 
-                        return [
-                            'booking_id' => $bookingId,
-                            'booking_reference' => (string) ($booking->booking_reference ?? ''),
-                            'room_id' => (string) ($booking->room_id ?? ''),
-                            'room_number' => $this->roomNumberForBooking($booking),
-                            'guest_name' => (string) ($booking->guest_name ?? ''),
-                            'payment_status' => (string) ($booking->payment_status ?? 'unpaid'),
-                            'payment_method' => $method,
-                            'payment_channel' => $channel,
-                            'amount' => $amount,
-                            'line' => sprintf(
-                                'Room %s: fully paid (%s · %s), %.2f, %s',
-                                $this->roomNumberForBooking($booking),
-                                $channel,
-                                $method,
-                                $amount,
-                                (string) ($booking->guest_name ?? '')
-                            ),
-                        ];
-                    })
-                    ->values();
+                    return (float) ($revenueByBooking[$bookingId] ?? (float) ($booking->total_amount ?? 0));
+                });
 
                 return [
                     'period_label' => (string) $label,
                     'booking_count' => (int) $group->count(),
-                    'gross_sales' => (float) $transactions->sum('amount'),
-                    'transactions' => $transactions,
+                    'gross_sales' => $grossSales,
                 ];
             })
             ->sortBy('period_label')
@@ -182,38 +150,12 @@ class ReportController extends Controller
                 'period_label' => $label,
                 'booking_count' => 0,
                 'gross_sales' => 0.0,
-                'transactions' => collect(),
             ]);
             $refundAmount = (float) ($refund->amount ?? 0);
-            $refundBooking = Booking::query()->find((string) ($refund->booking_id ?? ''));
-            $refundMethod = $refundBooking ? $this->paymentMethodLabel($refundBooking) : '';
-            $refundChannel = $refundBooking ? $this->paymentChannel($refundBooking) : '';
             $entry['gross_sales'] = (float) ($entry['gross_sales'] ?? 0) + $refundAmount;
-            $entry['transactions'] = collect($entry['transactions'] ?? [])->push([
-                'booking_id' => (string) ($refund->booking_id ?? ''),
-                'booking_reference' => (string) ($refundBooking?->booking_reference ?? ''),
-                'room_id' => (string) ($refund->room_id ?? ''),
-                'room_number' => $this->roomNumberByRoomId((string) ($refund->room_id ?? '')),
-                'guest_name' => (string) ($refundBooking?->guest_name ?? ''),
-                'payment_status' => (string) ($refundBooking?->payment_status ?? 'unpaid'),
-                'payment_method' => $refundMethod,
-                'payment_channel' => $refundChannel,
-                'amount' => $refundAmount,
-                'line' => sprintf(
-                    'Room %s: refund (%s), %.2f, %s',
-                    $this->roomNumberByRoomId((string) ($refund->room_id ?? '')),
-                    $refundMethod !== '' ? $refundMethod : 'n/a',
-                    $refundAmount,
-                    (string) ($refundBooking?->guest_name ?? '')
-                ),
-            ]);
             $rowsByLabel->put($label, $entry);
         }
-        $rows = $rowsByLabel->values()->map(function ($row) {
-            $row['transactions'] = collect($row['transactions'] ?? [])->values()->all();
-
-            return $row;
-        })->sortBy('period_label')->values();
+        $rows = $rowsByLabel->values()->sortBy('period_label')->values();
 
         $grossSales = (float) $rows->sum('gross_sales');
         $refundsTotal = (float) $refundCharges->sum(fn ($c) => (float) ($c->amount ?? 0));
@@ -229,6 +171,106 @@ class ReportController extends Controller
                 'gross_revenue' => $grossSales,
                 'refunds' => $refundsTotal,
                 'net_revenue' => $grossSales,
+            ],
+        ]);
+    }
+
+    public function paidTransactions(Request $request)
+    {
+        $validated = $request->validate([
+            'granularity' => ['nullable', 'in:day,week,month,year'],
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:5', 'max:50'],
+        ]);
+
+        $granularity = $validated['granularity'] ?? 'week';
+        [$from, $to] = $this->resolveReportRange($granularity, $validated);
+        $perPage = min(50, max(5, (int) ($validated['per_page'] ?? 15)));
+        $page = max(1, (int) ($validated['page'] ?? 1));
+
+        $bookings = $this->paidBookingsInRange($from, $to);
+        $revenueByBooking = $this->recognizedRevenueByBooking($bookings);
+        $transactions = $bookings
+            ->map(function ($booking) use ($revenueByBooking) {
+                $bookingId = (string) $booking->id;
+                $amount = (float) ($revenueByBooking[$bookingId] ?? (float) ($booking->total_amount ?? 0));
+                $method = $this->paymentMethodLabel($booking);
+                $channel = $this->paymentChannel($booking);
+                $paidAt = $this->paymentDateForBooking($booking);
+
+                return [
+                    'booking_id' => $bookingId,
+                    'booking_reference' => (string) ($booking->booking_reference ?? ''),
+                    'room_id' => (string) ($booking->room_id ?? ''),
+                    'room_number' => $this->roomNumberForBooking($booking),
+                    'guest_name' => (string) ($booking->guest_name ?? ''),
+                    'payment_status' => (string) ($booking->payment_status ?? 'unpaid'),
+                    'payment_method' => $method,
+                    'payment_channel' => $channel,
+                    'amount' => $amount,
+                    'paid_at' => $paidAt?->toIso8601String(),
+                    'line' => sprintf(
+                        'Room %s: fully paid (%s · %s), %.2f, %s',
+                        $this->roomNumberForBooking($booking),
+                        $channel,
+                        $method,
+                        $amount,
+                        (string) ($booking->guest_name ?? '')
+                    ),
+                ];
+            })
+            ->sortByDesc(fn ($row) => $row['paid_at'] ?? '')
+            ->values();
+
+        $refundCharges = BillingCharge::query()
+            ->where('type', 'refund')
+            ->whereBetween('created_at', [$from, $to])
+            ->get();
+        foreach ($refundCharges as $refund) {
+            $refundBooking = Booking::query()->find((string) ($refund->booking_id ?? ''));
+            $refundMethod = $refundBooking ? $this->paymentMethodLabel($refundBooking) : '';
+            $refundChannel = $refundBooking ? $this->paymentChannel($refundBooking) : '';
+            $refundAmount = (float) ($refund->amount ?? 0);
+            $createdAt = SafeModelAttributes::carbonFromModel($refund, 'created_at');
+            $transactions->push([
+                'booking_id' => (string) ($refund->booking_id ?? ''),
+                'booking_reference' => (string) ($refundBooking?->booking_reference ?? ''),
+                'room_id' => (string) ($refund->room_id ?? ''),
+                'room_number' => $this->roomNumberByRoomId((string) ($refund->room_id ?? '')),
+                'guest_name' => (string) ($refundBooking?->guest_name ?? ''),
+                'payment_status' => (string) ($refundBooking?->payment_status ?? 'unpaid'),
+                'payment_method' => $refundMethod,
+                'payment_channel' => $refundChannel,
+                'amount' => $refundAmount,
+                'paid_at' => $createdAt?->toIso8601String(),
+                'line' => sprintf(
+                    'Room %s: refund (%s), %.2f, %s',
+                    $this->roomNumberByRoomId((string) ($refund->room_id ?? '')),
+                    $refundMethod !== '' ? $refundMethod : 'n/a',
+                    $refundAmount,
+                    (string) ($refundBooking?->guest_name ?? '')
+                ),
+            ]);
+        }
+
+        $transactions = $transactions->sortByDesc(fn ($row) => $row['paid_at'] ?? '')->values();
+        $total = $transactions->count();
+        $lastPage = max(1, (int) ceil($total / $perPage));
+        $page = min($page, $lastPage);
+        $slice = $transactions->slice(($page - 1) * $perPage, $perPage)->values();
+
+        return response()->json([
+            'granularity' => $granularity,
+            'from' => $from->toDateString(),
+            'to' => $to->toDateString(),
+            'data' => $slice,
+            'meta' => [
+                'current_page' => $page,
+                'per_page' => $perPage,
+                'total' => $total,
+                'last_page' => $lastPage,
             ],
         ]);
     }
@@ -535,6 +577,25 @@ class ReportController extends Controller
         ]);
     }
 
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return array{0: Carbon, 1: Carbon}
+     */
+    private function resolveReportRange(string $granularity, array $validated): array
+    {
+        $defaultFrom = match ($granularity) {
+            'day' => now()->subDays(14)->startOfDay(),
+            'week' => now()->subWeeks(12)->startOfDay(),
+            'month' => now()->subMonths(12)->startOfMonth(),
+            'year' => now()->subYears(5)->startOfYear(),
+            default => now()->subDays(30)->startOfDay(),
+        };
+        $from = isset($validated['from']) ? Carbon::parse($validated['from'])->startOfDay() : $defaultFrom;
+        $to = isset($validated['to']) ? Carbon::parse($validated['to'])->endOfDay() : now()->endOfDay();
+
+        return [$from, $to];
+    }
+
     private function bucketLabel(?Carbon $date, string $granularity): string
     {
         if (! $date) {
@@ -559,8 +620,16 @@ class ReportController extends Controller
      */
     private function paidBookingsInRange(Carbon $from, Carbon $to): Collection
     {
-        return Booking::query()
+        $withPaidAt = Booking::query()
             ->where('payment_status', 'paid')
+            ->whereBetween('paid_at', [$from, $to])
+            ->get();
+
+        $legacyPaid = Booking::query()
+            ->where('payment_status', 'paid')
+            ->where(function ($query) {
+                $query->whereNull('paid_at')->orWhere('paid_at', '');
+            })
             ->get()
             ->filter(function ($booking) use ($from, $to) {
                 $paidAt = $this->paymentDateForBooking($booking);
@@ -569,7 +638,11 @@ class ReportController extends Controller
                 }
 
                 return $paidAt->between($from, $to);
-            })
+            });
+
+        return $withPaidAt
+            ->merge($legacyPaid)
+            ->unique(fn ($booking) => (string) $booking->id)
             ->values();
     }
 

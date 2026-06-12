@@ -137,7 +137,18 @@ class HotelAvailabilityService
         $q = strtolower(trim((string) $query ?? ''));
 
         $hotels = Hotel::withoutGlobalScopes()
-            ->select('id', 'name', 'location', 'city', 'region', 'banner_url', 'latitude', 'longitude')
+            ->select(
+                'id',
+                'name',
+                'location',
+                'city',
+                'region',
+                'province',
+                'barangay',
+                'picker_banner_url',
+                'latitude',
+                'longitude'
+            )
             ->orderBy('name')
             ->get();
 
@@ -148,14 +159,12 @@ class HotelAvailabilityService
         $out = [];
         foreach ($hotels as $hotel) {
             $hid = (string) $hotel->id;
-            if (! $this->hotelCanAccommodate($hid, $checkIn, $checkOut, $roomsNeeded)) {
-                continue;
-            }
             if ($q !== '' && ! $this->hotelMatchesQuery($hotel, $q)) {
                 continue;
             }
             $availableCount = count($this->availableRoomIdsForStay($hid, $checkIn, $checkOut));
             $price = $stats[$hid] ?? ['min_price' => 0.0, 'max_price' => 0.0, 'room_count' => 0];
+            $canAccommodate = $availableCount >= $roomsNeeded;
 
             $out[] = [
                 'id' => $hid,
@@ -163,34 +172,50 @@ class HotelAvailabilityService
                 'location' => (string) ($hotel->location ?? ''),
                 'city' => (string) ($hotel->city ?? ''),
                 'region' => (string) ($hotel->region ?? ''),
-                'banner_url' => (string) (ChatAttachmentUrl::fromStoredUrl($hotel->banner_url) ?? ''),
+                'banner_url' => (string) (ChatAttachmentUrl::fromStoredUrl(
+                    filled($hotel->picker_banner_url ?? null)
+                        ? (string) $hotel->picker_banner_url
+                        : null
+                ) ?? ''),
                 'latitude' => $hotel->latitude,
                 'longitude' => $hotel->longitude,
                 'min_price' => (float) ($price['min_price'] ?? 0),
                 'max_price' => (float) ($price['max_price'] ?? 0),
                 'available_rooms' => $availableCount,
                 'room_count' => (int) ($price['room_count'] ?? 0),
+                'can_accommodate' => $canAccommodate,
             ];
         }
 
-        usort($out, fn ($a, $b) => strcmp((string) $a['name'], (string) $b['name']));
+        usort($out, function (array $a, array $b): int {
+            $acA = ($a['can_accommodate'] ?? false) ? 1 : 0;
+            $acB = ($b['can_accommodate'] ?? false) ? 1 : 0;
+            if ($acA !== $acB) {
+                return $acB <=> $acA;
+            }
+            $avail = ((int) ($b['available_rooms'] ?? 0)) <=> ((int) ($a['available_rooms'] ?? 0));
+            if ($avail !== 0) {
+                return $avail;
+            }
+
+            return strcmp((string) $a['name'], (string) $b['name']);
+        });
 
         return $out;
     }
 
     private function hotelMatchesQuery(Hotel $hotel, string $query): bool
     {
-        $hay = strtolower(implode(' ', array_filter([
-            (string) $hotel->name,
-            (string) ($hotel->city ?? ''),
-            (string) ($hotel->region ?? ''),
-            (string) ($hotel->location ?? ''),
-        ])));
+        $hay = $this->normalizeLocationText($this->hotelSearchHaystack($hotel));
+        $normalizedQuery = $this->normalizeLocationText($query);
+        if ($normalizedQuery === '') {
+            return true;
+        }
+        if (str_contains($hay, $normalizedQuery)) {
+            return true;
+        }
 
-        $tokens = array_values(array_filter(
-            preg_split('/\s+/', strtolower(trim($query))) ?: [],
-            fn (string $token) => $token !== '',
-        ));
+        $tokens = $this->significantLocationTokens($query);
         if ($tokens === []) {
             return true;
         }
@@ -201,5 +226,45 @@ class HotelAvailabilityService
         }
 
         return true;
+    }
+
+    private function hotelSearchHaystack(Hotel $hotel): string
+    {
+        return implode(' ', array_filter([
+            (string) $hotel->name,
+            (string) ($hotel->city ?? ''),
+            (string) ($hotel->province ?? ''),
+            (string) ($hotel->region ?? ''),
+            (string) ($hotel->barangay ?? ''),
+            (string) ($hotel->location ?? ''),
+        ]));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function significantLocationTokens(string $text): array
+    {
+        $stopWords = [
+            'city', 'municipality', 'municipal', 'province', 'region', 'of', 'the', 'and',
+        ];
+        $normalized = $this->normalizeLocationText($text);
+        $parts = preg_split('/\s+/', $normalized) ?: [];
+
+        return array_values(array_filter(
+            $parts,
+            fn (string $token) => $token !== ''
+                && strlen($token) >= 2
+                && ! in_array($token, $stopWords, true)
+        ));
+    }
+
+    private function normalizeLocationText(string $text): string
+    {
+        $lower = strtolower(trim($text));
+        $lower = str_replace(['-', '_', ',', '.', '(', ')', '/'], ' ', $lower);
+        $lower = preg_replace('/\s+/', ' ', $lower) ?? $lower;
+
+        return trim($lower);
     }
 }

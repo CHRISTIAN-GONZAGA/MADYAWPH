@@ -84,6 +84,60 @@ class RoomCategoryController extends Controller
         ], 201);
     }
 
+    public function update(Request $request, RoomCategory $roomCategory): JsonResponse
+    {
+        $this->requireHotelId($request);
+
+        $validated = $request->validate([
+            'name' => ['sometimes', 'string', 'max:100'],
+            'description' => ['nullable', 'string', 'max:300'],
+            'default_price' => ['nullable', 'numeric', 'min:0'],
+            'billing_mode' => ['nullable', 'in:nightly,hourly'],
+            'price_per_block' => ['nullable', 'numeric', 'min:0'],
+            'block_hours' => ['nullable', 'integer', 'min:1', 'max:48'],
+            'image_file' => RoomImageUploadRules::fileRules(),
+            'remove_image' => ['sometimes', 'boolean'],
+        ]);
+
+        $payload = RoomMediaStorage::stripUploadField($validated);
+
+        if (array_key_exists('default_price', $payload)) {
+            $payload['default_price'] = PriceRounding::nearest50((float) $payload['default_price']);
+        }
+        if (array_key_exists('price_per_block', $payload)) {
+            $payload['price_per_block'] = PriceRounding::nearest50((float) $payload['price_per_block']);
+        }
+        if (array_key_exists('billing_mode', $payload)) {
+            $payload['billing_mode'] = strtolower((string) $payload['billing_mode']) === 'hourly'
+                ? 'hourly'
+                : 'nightly';
+        }
+
+        if ($request->boolean('remove_image')) {
+            $payload['image_url'] = null;
+        }
+
+        if ($request->hasFile('image_file')) {
+            $payload['image_url'] = RoomMediaStorage::store(
+                $request->file('image_file'),
+                'categories'
+            );
+        }
+
+        $roomCategory->update($payload);
+
+        return response()->json([
+            'id' => (string) $roomCategory->id,
+            'name' => (string) $roomCategory->name,
+            'description' => (string) ($roomCategory->description ?? ''),
+            'default_price' => (float) ($roomCategory->default_price ?? 0),
+            'billing_mode' => (string) ($roomCategory->billing_mode ?? 'nightly'),
+            'price_per_block' => (float) ($roomCategory->price_per_block ?? 0),
+            'block_hours' => (int) ($roomCategory->block_hours ?? 3),
+            'image_url' => (string) (ChatAttachmentUrl::fromStoredUrl($roomCategory->image_url) ?? ''),
+        ]);
+    }
+
     public function destroy(RoomCategory $roomCategory)
     {
         Room::query()->where('category_id', (string) $roomCategory->id)->delete();

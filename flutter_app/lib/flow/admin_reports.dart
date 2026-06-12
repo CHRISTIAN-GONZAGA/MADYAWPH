@@ -49,34 +49,32 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     });
     try {
       final qp = {'granularity': _granularity};
-      final sales = await portalDio().get<Map<String, dynamic>>(
-        '/reports/sales/timeseries',
-        queryParameters: qp,
-      );
-      final timeline = await portalDio().get<Map<String, dynamic>>(
-        '/reports/activity/timeline',
-        queryParameters: qp,
-      );
-      final transfers =
-          await portalDio().get<Map<String, dynamic>>('/reports/transfers');
-      final tasks =
-          await portalDio().get<Map<String, dynamic>>('/reports/tasks/performance');
-      final occupancy =
-          await portalDio().get<Map<String, dynamic>>('/reports/room-occupancy');
-      final overview =
-          await portalDio().get<Map<String, dynamic>>('/reports/profit-overview');
-      final resellerPay = await portalDio().get<Map<String, dynamic>>(
-        '/reports/reseller-payments/timeseries',
-        queryParameters: qp,
-      );
+      final results = await Future.wait([
+        portalDio().get<Map<String, dynamic>>(
+          '/reports/sales/timeseries',
+          queryParameters: qp,
+        ),
+        portalDio().get<Map<String, dynamic>>(
+          '/reports/activity/timeline',
+          queryParameters: qp,
+        ),
+        portalDio().get<Map<String, dynamic>>('/reports/transfers'),
+        portalDio().get<Map<String, dynamic>>('/reports/tasks/performance'),
+        portalDio().get<Map<String, dynamic>>('/reports/room-occupancy'),
+        portalDio().get<Map<String, dynamic>>('/reports/profit-overview'),
+        portalDio().get<Map<String, dynamic>>(
+          '/reports/reseller-payments/timeseries',
+          queryParameters: qp,
+        ),
+      ]);
       setState(() {
-        _sales = sales.data;
-        _timeline = timeline.data;
-        _transfers = transfers.data;
-        _tasks = tasks.data;
-        _occupancy = occupancy.data;
-        _profitOverview = overview.data;
-        _resellerPayments = resellerPay.data;
+        _sales = results[0].data;
+        _timeline = results[1].data;
+        _transfers = results[2].data;
+        _tasks = results[3].data;
+        _occupancy = results[4].data;
+        _profitOverview = results[5].data;
+        _resellerPayments = results[6].data;
         _loading = false;
       });
     } on DioException catch (e) {
@@ -148,33 +146,43 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     final resellerPay = _resellerPayments ?? const {};
     final resellerTotals = resellerPay['totals'] as Map<String, dynamic>? ?? {};
     final resellerPoints = (resellerPay['points'] as List<dynamic>?) ?? [];
+    final reportFrom = (_sales?['from'] ?? '').toString();
+    final reportTo = (_sales?['to'] ?? '').toString();
 
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: EdgeInsets.fromLTRB(16, widget.embedded ? 8 : 16, 16, 24),
+        padding: EdgeInsets.fromLTRB(16, widget.embedded ? 8 : 16, 16, 32),
         children: [
           AppSectionCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Financial overview',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
+                if (!widget.embedded)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text(
+                      'Financial overview',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                  ),
                 _PeriodFinanceRow(
                   label: 'Today (daily)',
                   data: overview['daily'] as Map<String, dynamic>?,
                 ),
+                const Divider(height: 20),
                 _PeriodFinanceRow(
                   label: 'This week',
                   data: overview['weekly'] as Map<String, dynamic>?,
                 ),
+                const Divider(height: 20),
                 _PeriodFinanceRow(
                   label: 'This month',
                   data: overview['monthly'] as Map<String, dynamic>?,
                 ),
+                const Divider(height: 20),
                 _PeriodFinanceRow(
                   label: 'This year',
                   data: overview['annual'] as Map<String, dynamic>?,
@@ -182,22 +190,29 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           AppSectionCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   'Reseller commissions (payouts)',
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 Text(
-                  'Period total: ₱${_AdminReportsScreenState._fmtNum(resellerTotals['total_paid'] ?? 0)} · '
-                  '${resellerTotals['payment_count'] ?? 0} payment(s)',
-                  style: Theme.of(context).textTheme.bodySmall,
+                  'Period total: ₱${_fmtNum(resellerTotals['total_paid'] ?? 0)}',
+                  style: Theme.of(context).textTheme.titleSmall,
                 ),
-                const SizedBox(height: 8),
+                Text(
+                  '${resellerTotals['payment_count'] ?? 0} payment(s)',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                ),
+                const SizedBox(height: 16),
                 _ResellerPeriodRow(
                   label: 'Today',
                   data: (overview['reseller_payments'] as Map?)?['daily']
@@ -219,19 +234,20 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                       as Map<String, dynamic>?,
                 ),
                 if (resellerPoints.isNotEmpty) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 16),
                   Text(
                     'Chart period breakdown',
                     style: Theme.of(context).textTheme.labelLarge,
                   ),
+                  const SizedBox(height: 8),
                   ...resellerPoints.whereType<Map>().map((p) {
                     final m = Map<String, dynamic>.from(p);
                     return Padding(
-                      padding: const EdgeInsets.only(top: 6),
+                      padding: const EdgeInsets.only(bottom: 8),
                       child: Text(
-                        '${m['period_label']}: ₱${_AdminReportsScreenState._fmtNum(m['total_paid'])} '
+                        '${m['period_label']}: ₱${_fmtNum(m['total_paid'])} '
                         '(${m['payment_count']} payments)',
-                        style: Theme.of(context).textTheme.bodySmall,
+                        style: Theme.of(context).textTheme.bodyMedium,
                       ),
                     );
                   }),
@@ -239,99 +255,103 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           AppSectionCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Period',
-                  style: Theme.of(context).textTheme.titleSmall,
+                  'Chart period',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                 ),
-                const SizedBox(height: 10),
-                SegmentedButton<String>(
-                  segments: _granularityLabels.entries
-                      .map(
-                        (e) => ButtonSegment<String>(
-                          value: e.key,
-                          label: Text(e.value),
-                        ),
-                      )
-                      .toList(),
-                  selected: {_granularity},
-                  onSelectionChanged: (s) {
-                    setState(() => _granularity = s.first);
-                    _load();
-                  },
+                const SizedBox(height: 12),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SegmentedButton<String>(
+                    segments: _granularityLabels.entries
+                        .map(
+                          (e) => ButtonSegment<String>(
+                            value: e.key,
+                            label: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                              child: Text(e.value),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    selected: {_granularity},
+                    onSelectionChanged: (s) {
+                      setState(() => _granularity = s.first);
+                      _load();
+                    },
+                  ),
                 ),
               ],
             ),
           ),
+          const SizedBox(height: 20),
+          _KpiGrid(
+            children: [
+              _KpiCard(
+                label: 'Net revenue',
+                value:
+                    '₱${_fmtNum(salesSummary['net_revenue'] ?? salesSummary['sales'] ?? salesSummary['gross_sales'] ?? 0)}',
+                icon: Icons.payments_outlined,
+              ),
+              _KpiCard(
+                label: 'Refunds',
+                value: '₱${_fmtNum(salesSummary['refunds'] ?? 0)}',
+                icon: Icons.money_off_outlined,
+              ),
+              _KpiCard(
+                label: 'Bookings',
+                value: '${salesSummary['bookings'] ?? 0}',
+                icon: Icons.book_online_outlined,
+              ),
+              _KpiCard(
+                label: 'Room transfers',
+                value: '${transferSummary['count'] ?? 0}',
+                icon: Icons.swap_horiz_outlined,
+              ),
+              _KpiCard(
+                label: 'Task completion',
+                value: '${taskSummary['completion_rate'] ?? 0}%',
+                icon: Icons.task_alt_outlined,
+              ),
+            ],
+          ),
           const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _KpiCard(
-                  label: 'Net revenue',
-                  value:
-                      '₱${_fmtNum(salesSummary['net_revenue'] ?? salesSummary['sales'] ?? salesSummary['gross_sales'] ?? 0)}',
-                  icon: Icons.payments_outlined,
-                ),
-              ),
-              Expanded(
-                child: _KpiCard(
-                  label: 'Refunds',
-                  value: '₱${_fmtNum(salesSummary['refunds'] ?? 0)}',
-                  icon: Icons.money_off_outlined,
-                ),
-              ),
-              Expanded(
-                child: _KpiCard(
-                  label: 'Bookings',
-                  value: '${salesSummary['bookings'] ?? 0}',
-                  icon: Icons.book_online_outlined,
-                ),
-              ),
-            ],
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: _KpiCard(
-                  label: 'Room transfers',
-                  value: '${transferSummary['count'] ?? 0}',
-                  icon: Icons.swap_horiz_outlined,
-                ),
-              ),
-              Expanded(
-                child: _KpiCard(
-                  label: 'Task completion',
-                  value: '${taskSummary['completion_rate'] ?? 0}%',
-                  icon: Icons.task_alt_outlined,
-                ),
-              ),
-            ],
-          ),
           AppSectionCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   'Occupancy',
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 Text(
-                  'Booked ${_occupancy?['booked_rooms'] ?? 0} / ${_occupancy?['total_rooms'] ?? 0} rooms (${_occupancy?['occupancy_rate'] ?? 0}%)',
+                  'Booked ${_occupancy?['booked_rooms'] ?? 0} / ${_occupancy?['total_rooms'] ?? 0} rooms',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${_occupancy?['occupancy_rate'] ?? 0}% occupancy',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
                 ),
               ],
             ),
           ),
-          Text(
-            'Revenue by period',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 20),
+          _SectionTitle('Revenue by period'),
+          const SizedBox(height: 10),
           AppSectionCard(
             child: SizedBox(
               height: 240,
@@ -346,12 +366,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                     ),
             ),
           ),
-          const SizedBox(height: 16),
-          Text(
-            'Bookings count',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 20),
+          _SectionTitle('Bookings count'),
+          const SizedBox(height: 10),
           AppSectionCard(
             child: SizedBox(
               height: 220,
@@ -364,12 +381,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                     ),
             ),
           ),
-          const SizedBox(height: 16),
-          Text(
-            'Activity volume',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 20),
+          _SectionTitle('Activity volume'),
+          const SizedBox(height: 10),
           AppSectionCard(
             child: SizedBox(
               height: 220,
@@ -384,62 +398,12 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                     ),
             ),
           ),
-          const SizedBox(height: 16),
-          Text(
-            'Paid transactions',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          AppSectionCard(
-            child: salesPoints.isEmpty
-                ? const Text('No paid transactions in selected range.')
-                : Column(
-                    children: salesPoints
-                        .expand((point) {
-                          final p = point as Map<String, dynamic>;
-                          final txns = (p['transactions'] as List<dynamic>? ?? const []);
-                          return txns.take(10);
-                        })
-                        .take(30)
-                        .map((txnRaw) {
-                          final txn = txnRaw as Map<String, dynamic>;
-                          final line = (txn['line'] ?? '').toString();
-                          final amount =
-                              ((txn['amount'] as num?)?.toDouble() ?? 0).toStringAsFixed(2);
-                          final method =
-                              (txn['payment_method'] ?? '').toString().trim();
-                          final channelRaw =
-                              (txn['payment_channel'] ?? '').toString().trim();
-                          final channelLabel = switch (channelRaw.toLowerCase()) {
-                            'cash' => 'Cash',
-                            'online' => 'Online',
-                            'unknown' => '',
-                            _ => channelRaw.isEmpty ? '' : channelRaw,
-                          };
-                          final payBits = <String>[
-                            if (method.isNotEmpty) method,
-                            if (channelLabel.isNotEmpty) channelLabel,
-                          ];
-                          final payLine = payBits.isEmpty
-                              ? 'Payment: —'
-                              : 'Payment: ${payBits.join(' · ')}';
-                          return ListTile(
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                            leading: const Icon(Icons.receipt_long_outlined),
-                            title: Text(
-                              line.isEmpty ? 'Transaction' : line,
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                            subtitle: Text(
-                              'Guest: ${(txn['guest_name'] ?? '').toString()}\n$payLine',
-                            ),
-                            isThreeLine: true,
-                            trailing: Text('₱$amount'),
-                          );
-                        })
-                        .toList(),
-                  ),
+          const SizedBox(height: 20),
+          _PaidTransactionsPanel(
+            key: ValueKey('tx-$_granularity-$reportFrom-$reportTo'),
+            granularity: _granularity,
+            from: reportFrom,
+            to: reportTo,
           ),
         ],
       ),
@@ -487,7 +451,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         leftTitles: AxisTitles(
           sideTitles: SideTitles(
             showTitles: true,
-            reservedSize: 42,
+            reservedSize: 48,
             getTitlesWidget: (v, _) => Text(
               v >= 1000 ? '${(v / 1000).toStringAsFixed(1)}k' : v.toInt().toString(),
               style: const TextStyle(fontSize: 10),
@@ -497,7 +461,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         bottomTitles: AxisTitles(
           sideTitles: SideTitles(
             showTitles: true,
-            reservedSize: 28,
+            reservedSize: 32,
             getTitlesWidget: (xv, _) {
               final i = xv.toInt();
               if (i < 0 || i >= maxShow) return const SizedBox.shrink();
@@ -549,7 +513,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         leftTitles: AxisTitles(
           sideTitles: SideTitles(
             showTitles: true,
-            reservedSize: 28,
+            reservedSize: 32,
             getTitlesWidget: (v, _) => Text(
               v.toInt().toString(),
               style: const TextStyle(fontSize: 10),
@@ -559,13 +523,17 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         bottomTitles: AxisTitles(
           sideTitles: SideTitles(
             showTitles: true,
-            reservedSize: 22,
+            reservedSize: 28,
             getTitlesWidget: (xv, _) {
               final i = xv.toInt();
               if (i < 0 || i >= n) return const SizedBox.shrink();
+              final m = points[i] as Map<String, dynamic>;
+              final raw = (m['period_label'] ?? '').toString();
+              final short =
+                  raw.length > 6 ? raw.substring(raw.length - 5) : raw;
               return Padding(
                 padding: const EdgeInsets.only(top: 6),
-                child: Text('$i', style: const TextStyle(fontSize: 9)),
+                child: Text(short, style: const TextStyle(fontSize: 9)),
               );
             },
           ),
@@ -627,7 +595,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         leftTitles: AxisTitles(
           sideTitles: SideTitles(
             showTitles: true,
-            reservedSize: 28,
+            reservedSize: 32,
             getTitlesWidget: (v, _) => Text(
               v.toInt().toString(),
               style: const TextStyle(fontSize: 10),
@@ -637,7 +605,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         bottomTitles: AxisTitles(
           sideTitles: SideTitles(
             showTitles: true,
-            reservedSize: 26,
+            reservedSize: 28,
             getTitlesWidget: (xv, _) {
               final i = xv.toInt();
               if (i < 0 || i >= maxShow) return const SizedBox.shrink();
@@ -663,6 +631,293 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   }
 }
 
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+    );
+  }
+}
+
+class _KpiGrid extends StatelessWidget {
+  const _KpiGrid({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth >= 520;
+        final itemWidth = wide
+            ? (constraints.maxWidth - 24) / 3
+            : (constraints.maxWidth - 12) / 2;
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: children
+              .map((c) => SizedBox(width: itemWidth, child: c))
+              .toList(),
+        );
+      },
+    );
+  }
+}
+
+class _PaidTransactionsPanel extends StatefulWidget {
+  const _PaidTransactionsPanel({
+    super.key,
+    required this.granularity,
+    required this.from,
+    required this.to,
+  });
+
+  final String granularity;
+  final String from;
+  final String to;
+
+  @override
+  State<_PaidTransactionsPanel> createState() => _PaidTransactionsPanelState();
+}
+
+class _PaidTransactionsPanelState extends State<_PaidTransactionsPanel> {
+  List<Map<String, dynamic>> _rows = const [];
+  bool _loading = true;
+  String? _error;
+  int _page = 1;
+  int _lastPage = 1;
+  int _total = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PaidTransactionsPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.granularity != widget.granularity ||
+        oldWidget.from != widget.from ||
+        oldWidget.to != widget.to) {
+      _page = 1;
+      _load();
+    }
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final res = await portalDio().get<Map<String, dynamic>>(
+        '/reports/paid-transactions',
+        queryParameters: {
+          'granularity': widget.granularity,
+          if (widget.from.isNotEmpty) 'from': widget.from,
+          if (widget.to.isNotEmpty) 'to': widget.to,
+          'page': _page,
+          'per_page': 15,
+        },
+      );
+      final meta = res.data?['meta'] as Map<String, dynamic>? ?? {};
+      final data = (res.data?['data'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      setState(() {
+        _rows = data;
+        _page = (meta['current_page'] as num?)?.toInt() ?? _page;
+        _lastPage = (meta['last_page'] as num?)?.toInt() ?? 1;
+        _total = (meta['total'] as num?)?.toInt() ?? data.length;
+        _loading = false;
+      });
+    } on DioException catch (e) {
+      setState(() {
+        _error = dioErrorMessage(e);
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = '$e';
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _SectionTitle('Paid transactions'),
+        const SizedBox(height: 6),
+        Text(
+          _total > 0 ? '$_total transaction(s) in selected period' : 'No transactions',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+        ),
+        const SizedBox(height: 10),
+        AppSectionCard(
+          child: _loading
+              ? const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              : _error != null
+                  ? Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        children: [
+                          Text(_error!, textAlign: TextAlign.center),
+                          const SizedBox(height: 8),
+                          OutlinedButton(
+                            onPressed: _load,
+                            child: const Text('Retry'),
+                          ),
+                        ],
+                      ),
+                    )
+                  : _rows.isEmpty
+                      ? const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Text('No paid transactions in selected range.'),
+                        )
+                      : Column(
+                          children: [
+                            ..._rows.map((txn) => _TransactionTile(txn: txn)),
+                            if (_lastPage > 1) ...[
+                              const SizedBox(height: 12),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  IconButton(
+                                    tooltip: 'Previous page',
+                                    onPressed: _page > 1
+                                        ? () {
+                                            setState(() => _page -= 1);
+                                            _load();
+                                          }
+                                        : null,
+                                    icon: const Icon(Icons.chevron_left),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12),
+                                    child: Text(
+                                      'Page $_page of $_lastPage',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelLarge,
+                                    ),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Next page',
+                                    onPressed: _page < _lastPage
+                                        ? () {
+                                            setState(() => _page += 1);
+                                            _load();
+                                          }
+                                        : null,
+                                    icon: const Icon(Icons.chevron_right),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TransactionTile extends StatelessWidget {
+  const _TransactionTile({required this.txn});
+
+  final Map<String, dynamic> txn;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final line = (txn['line'] ?? '').toString();
+    final amount =
+        ((txn['amount'] as num?)?.toDouble() ?? 0).toStringAsFixed(2);
+    final method = (txn['payment_method'] ?? '').toString().trim();
+    final channelRaw = (txn['payment_channel'] ?? '').toString().trim();
+    final channelLabel = switch (channelRaw.toLowerCase()) {
+      'cash' => 'Cash',
+      'online' => 'Online',
+      'unknown' => '',
+      _ => channelRaw.isEmpty ? '' : channelRaw,
+    };
+    final payBits = <String>[
+      if (method.isNotEmpty) method,
+      if (channelLabel.isNotEmpty) channelLabel,
+    ];
+    final guest = (txn['guest_name'] ?? '').toString();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.receipt_long_outlined, color: scheme.primary, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  line.isEmpty ? 'Transaction' : line,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                if (guest.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Guest: $guest',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+                if (payBits.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    payBits.join(' · '),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '₱$amount',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _PeriodFinanceRow extends StatelessWidget {
   const _PeriodFinanceRow({required this.label, this.data});
 
@@ -676,38 +931,90 @@ class _PeriodFinanceRow extends StatelessWidget {
     final reseller = (data?['reseller_commissions_paid'] ?? 0);
     final expenses = (data?['expenses'] ?? data?['refund_expense'] ?? 0);
     final net = (data?['profit'] ?? data?['net_revenue'] ?? revenue);
-    final grossNet = (data?['profit_before_reseller_payouts'] ?? data?['net_revenue'] ?? revenue);
+    final grossNet =
+        (data?['profit_before_reseller_payouts'] ?? data?['net_revenue'] ?? revenue);
     final bookings = data?['bookings'] ?? 0;
     final amenity = (data?['amenity_revenue'] ?? 0);
     final room = (data?['room_revenue'] ?? 0);
     final transfers = (data?['transfer_adjustments'] ?? 0);
 
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+        ),
+        const SizedBox(height: 10),
+        _MetricLine(label: 'Gross revenue', value: '₱${_AdminReportsScreenState._fmtNum(revenue)}'),
+        _MetricLine(label: 'Room revenue', value: '₱${_AdminReportsScreenState._fmtNum(room)}'),
+        _MetricLine(label: 'Amenity revenue', value: '₱${_AdminReportsScreenState._fmtNum(amenity)}'),
+        _MetricLine(label: 'Transfer adjustments', value: '₱${_AdminReportsScreenState._fmtNum(transfers)}'),
+        const SizedBox(height: 6),
+        _MetricLine(label: 'Refunds', value: '₱${_AdminReportsScreenState._fmtNum(refunds)}'),
+        _MetricLine(label: 'Reseller payouts', value: '₱${_AdminReportsScreenState._fmtNum(reseller)}'),
+        _MetricLine(label: 'Total expenses', value: '₱${_AdminReportsScreenState._fmtNum(expenses)}'),
+        const SizedBox(height: 6),
+        _MetricLine(
+          label: 'Net before resellers',
+          value: '₱${_AdminReportsScreenState._fmtNum(grossNet)}',
+          emphasized: true,
+        ),
+        _MetricLine(
+          label: 'Net profit',
+          value: '₱${_AdminReportsScreenState._fmtNum(net)}',
+          emphasized: true,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '$bookings paid booking(s)',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    );
+  }
+}
+
+class _MetricLine extends StatelessWidget {
+  const _MetricLine({
+    required this.label,
+    required this.value,
+    this.emphasized = false,
+  });
+
+  final String label;
+  final String value;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Column(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: Theme.of(context).textTheme.titleSmall),
-          Text(
-            'Gross revenue ₱${_AdminReportsScreenState._fmtNum(revenue)} · '
-            'Room ₱${_AdminReportsScreenState._fmtNum(room)} · '
-            'Amenities ₱${_AdminReportsScreenState._fmtNum(amenity)} · '
-            'Transfers ₱${_AdminReportsScreenState._fmtNum(transfers)}',
-            style: Theme.of(context).textTheme.bodySmall,
+          Expanded(
+            flex: 3,
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
           ),
-          Text(
-            'Refunds ₱${_AdminReportsScreenState._fmtNum(refunds)} · '
-            'Reseller payouts ₱${_AdminReportsScreenState._fmtNum(reseller)} · '
-            'Total expenses ₱${_AdminReportsScreenState._fmtNum(expenses)}',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          Text(
-            'Net before resellers ₱${_AdminReportsScreenState._fmtNum(grossNet)} · '
-            'Net profit ₱${_AdminReportsScreenState._fmtNum(net)} · '
-            '$bookings paid booking(s)',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: emphasized
+                  ? Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      )
+                  : Theme.of(context).textTheme.bodyMedium,
+            ),
           ),
         ],
       ),
@@ -729,14 +1036,39 @@ class _ResellerPeriodRow extends StatelessWidget {
     final byCat = data?['by_category'] as Map<String, dynamic>? ?? {};
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        '$label: ₱${_AdminReportsScreenState._fmtNum(total)} · $count payment(s) · '
-        '$resellers reseller(s)'
-        '${byCat.isEmpty ? '' : ' · taxi ₱${_AdminReportsScreenState._fmtNum(byCat['taxi'] ?? 0)}, '
-            'moto ₱${_AdminReportsScreenState._fmtNum(byCat['motorcycle'] ?? 0)}, '
-            'individual ₱${_AdminReportsScreenState._fmtNum(byCat['individual'] ?? 0)}'}',
-        style: Theme.of(context).textTheme.bodySmall,
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+          const SizedBox(height: 6),
+          _MetricLine(
+            label: 'Total paid',
+            value: '₱${_AdminReportsScreenState._fmtNum(total)}',
+          ),
+          _MetricLine(label: 'Payments', value: '$count'),
+          _MetricLine(label: 'Resellers', value: '$resellers'),
+          if (byCat.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            _MetricLine(
+              label: 'Taxi',
+              value: '₱${_AdminReportsScreenState._fmtNum(byCat['taxi'] ?? 0)}',
+            ),
+            _MetricLine(
+              label: 'Motorcycle',
+              value: '₱${_AdminReportsScreenState._fmtNum(byCat['motorcycle'] ?? 0)}',
+            ),
+            _MetricLine(
+              label: 'Individual',
+              value: '₱${_AdminReportsScreenState._fmtNum(byCat['individual'] ?? 0)}',
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -755,19 +1087,25 @@ class _KpiCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return AppSectionCard(
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: Theme.of(context).textTheme.labelMedium),
-                Text(value, style: Theme.of(context).textTheme.titleMedium),
-              ],
-            ),
+          Icon(icon, color: scheme.primary, size: 22),
+          const SizedBox(height: 10),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
           ),
         ],
       ),

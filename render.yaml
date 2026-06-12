@@ -51,3 +51,22 @@ services:
         sync: false
       - key: SANCTUM_STATEFUL_DOMAINS
         sync: false
+
+  # Runs scheduled tasks: auto-checkout, reservation activation, booking purge.
+  - type: cron
+    name: madyawph-scheduler
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    schedule: "* * * * *"
+    dockerCommand: php artisan schedule:run
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DB_CONNECTION
+        value: mongodb
+      - key: APP_KEY
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DATABASE
+        sync: false

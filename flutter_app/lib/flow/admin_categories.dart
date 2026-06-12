@@ -60,6 +60,35 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
   String _categoryId(Map<String, dynamic> category) =>
       (category['id'] ?? category['_id'] ?? '').toString().trim();
 
+  Future<void> _putMultipart(
+    String path,
+    Map<String, dynamic> fields,
+    XFile? image,
+  ) async {
+    if (image != null) {
+      final form = await ChatAttachment.formWithImage(
+        fields: fields,
+        file: image,
+      );
+      await portalDio().put(
+        path,
+        data: form,
+        options: Options(
+          contentType: 'multipart/form-data',
+          headers: {Headers.acceptHeader: 'application/json'},
+        ),
+      );
+    } else {
+      final body = <String, dynamic>{};
+      for (final entry in fields.entries) {
+        final v = entry.value;
+        if (v == null) continue;
+        body[entry.key] = v is num || v is bool ? v.toString() : v;
+      }
+      await portalDio().put(path, data: body);
+    }
+  }
+
   Future<void> _postMultipart(
     String path,
     Map<String, dynamic> fields,
@@ -525,6 +554,274 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     }
   }
 
+  Future<void> _editCategory(Map<String, dynamic> category) async {
+    final categoryId = _categoryId(category);
+    if (categoryId.isEmpty) return;
+    final nameCtrl = TextEditingController(text: (category['name'] ?? '').toString());
+    final descCtrl = TextEditingController(text: (category['description'] ?? '').toString());
+    final nightlyCtrl = TextEditingController(
+      text: '${(category['default_price'] as num?)?.toDouble() ?? 0}',
+    );
+    final blockPriceCtrl = TextEditingController(
+      text: '${(category['price_per_block'] as num?)?.toDouble() ?? 0}',
+    );
+    var catBillingMode = (category['billing_mode'] ?? 'nightly').toString();
+    var catPricePerNight = (category['default_price'] as num?)?.toDouble() ?? 0.0;
+    var catPricePerBlock = (category['price_per_block'] as num?)?.toDouble() ?? 0.0;
+    var catBlockHours = (category['block_hours'] as num?)?.toInt() ?? 3;
+    XFile? pickedImage;
+
+    final payload = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocal) => AlertDialog(
+          title: const Text('Edit category'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(labelText: 'Name'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descCtrl,
+                  maxLines: 3,
+                  decoration: const InputDecoration(labelText: 'Description'),
+                ),
+                const SizedBox(height: 12),
+                RoomPricingFields(
+                  billingMode: catBillingMode,
+                  pricePerNight: catPricePerNight,
+                  pricePerBlock: catPricePerBlock,
+                  blockHours: catBlockHours,
+                  nightlyController: nightlyCtrl,
+                  blockPriceController: blockPriceCtrl,
+                  onChanged: ({
+                    required String billingMode,
+                    required double pricePerNight,
+                    required double pricePerBlock,
+                    required int blockHours,
+                  }) {
+                    setLocal(() {
+                      catBillingMode = billingMode;
+                      catPricePerNight = pricePerNight;
+                      catPricePerBlock = pricePerBlock;
+                      catBlockHours = blockHours;
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                _galleryPickerTile(
+                  image: pickedImage,
+                  onPick: () async {
+                    final file = await ChatAttachment.pickRoomImageFromGallery(context);
+                    if (file != null) setLocal(() => pickedImage = file);
+                  },
+                  onClear: () => setLocal(() => pickedImage = null),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, {
+                'name': nameCtrl.text.trim(),
+                'description': descCtrl.text.trim(),
+                'default_price': catPricePerNight,
+                'billing_mode': catBillingMode,
+                'price_per_block': catPricePerBlock,
+                'block_hours': catBlockHours,
+                '__image': pickedImage,
+              }),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+    nameCtrl.dispose();
+    descCtrl.dispose();
+    nightlyCtrl.dispose();
+    blockPriceCtrl.dispose();
+    if (payload == null) return;
+    final image = payload.remove('__image') as XFile?;
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await _putMultipart('/room-categories/$categoryId', payload, image);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Category updated.')),
+      );
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dioErrorMessage(e))),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _editRoomInCategory(Map<String, dynamic> category) async {
+    try {
+      final res = await portalDio().get<Map<String, dynamic>>('/admin/rooms');
+      final rooms = (res.data?['data'] as List<dynamic>? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .where((r) => (r['category_id'] ?? '').toString() ==
+              (category['id'] ?? '').toString())
+          .toList();
+      if (rooms.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No rooms in this category.')),
+        );
+        return;
+      }
+      String selectedId = (rooms.first['id'] ?? '').toString();
+      if (!mounted) return;
+      final room = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setLocal) => AlertDialog(
+            title: const Text('Select room to edit'),
+            content: DropdownButtonFormField<String>(
+              initialValue: selectedId,
+              items: rooms.map((r) {
+                final id = (r['id'] ?? '').toString();
+                final no = (r['room_number'] ?? '').toString();
+                return DropdownMenuItem(value: id, child: Text('Room $no'));
+              }).toList(),
+              onChanged: (v) => setLocal(() => selectedId = v ?? selectedId),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              FilledButton(
+                onPressed: () {
+                  final picked = rooms.firstWhere(
+                    (r) => (r['id'] ?? '').toString() == selectedId,
+                    orElse: () => rooms.first,
+                  );
+                  Navigator.pop(context, picked);
+                },
+                child: const Text('Edit'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (room == null || !mounted) return;
+
+      final roomId = (room['id'] ?? '').toString();
+      final nameCtrl = TextEditingController(text: (room['display_name'] ?? room['name'] ?? '').toString());
+      final roomNoCtrl = TextEditingController(text: (room['room_number'] ?? '').toString());
+      var roomType = (room['room_type'] ?? 'Single').toString();
+      var roomBillingMode = (room['billing_mode'] ?? category['billing_mode'] ?? 'nightly').toString();
+      var roomPricePerNight = (room['price_per_night'] as num?)?.toDouble() ?? 0.0;
+      var roomPricePerBlock = (room['price_per_block'] as num?)?.toDouble() ?? 0.0;
+      var roomBlockHours = (room['block_hours'] as num?)?.toInt() ?? 3;
+      final nightlyCtrl = TextEditingController(text: '$roomPricePerNight');
+      final blockPriceCtrl = TextEditingController(text: '$roomPricePerBlock');
+      XFile? pickedImage;
+
+      final payload = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setLocal) => AlertDialog(
+            title: const Text('Edit room'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Display name')),
+                  const SizedBox(height: 10),
+                  TextField(controller: roomNoCtrl, decoration: const InputDecoration(labelText: 'Room number')),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    initialValue: roomType,
+                    items: const [
+                      DropdownMenuItem(value: 'Single', child: Text('Single')),
+                      DropdownMenuItem(value: 'Double', child: Text('Double')),
+                      DropdownMenuItem(value: 'Suite', child: Text('Suite')),
+                      DropdownMenuItem(value: 'Deluxe', child: Text('Deluxe')),
+                    ],
+                    onChanged: (v) => setLocal(() => roomType = v ?? roomType),
+                  ),
+                  const SizedBox(height: 10),
+                  RoomPricingFields(
+                    billingMode: roomBillingMode,
+                    pricePerNight: roomPricePerNight,
+                    pricePerBlock: roomPricePerBlock,
+                    blockHours: roomBlockHours,
+                    nightlyController: nightlyCtrl,
+                    blockPriceController: blockPriceCtrl,
+                    onChanged: ({
+                      required String billingMode,
+                      required double pricePerNight,
+                      required double pricePerBlock,
+                      required int blockHours,
+                    }) {
+                      setLocal(() {
+                        roomBillingMode = billingMode;
+                        roomPricePerNight = pricePerNight;
+                        roomPricePerBlock = pricePerBlock;
+                        roomBlockHours = blockHours;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  _galleryPickerTile(
+                    image: pickedImage,
+                    onPick: () async {
+                      final file = await ChatAttachment.pickRoomImageFromGallery(context);
+                      if (file != null) setLocal(() => pickedImage = file);
+                    },
+                    onClear: () => setLocal(() => pickedImage = null),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, {
+                  'display_name': nameCtrl.text.trim(),
+                  'room_number': roomNoCtrl.text.trim(),
+                  'room_type': roomType,
+                  'billing_mode': roomBillingMode,
+                  'price_per_night': roomPricePerNight,
+                  'price_per_block': roomPricePerBlock,
+                  'block_hours': roomBlockHours,
+                  '__image': pickedImage,
+                }),
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+        ),
+      );
+      nameCtrl.dispose();
+      roomNoCtrl.dispose();
+      nightlyCtrl.dispose();
+      blockPriceCtrl.dispose();
+      if (payload == null) return;
+      final image = payload.remove('__image') as XFile?;
+      await _putMultipart('/rooms/$roomId', payload, image);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Room updated.')),
+      );
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dioErrorMessage(e))),
+      );
+    }
+  }
+
   Future<void> _deleteRoomInCategory(Map<String, dynamic> category) async {
     try {
       final res = await portalDio().get<Map<String, dynamic>>('/admin/rooms');
@@ -664,9 +961,19 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                     child: Wrap(
                       children: [
                         ListTile(
+                          leading: const Icon(Icons.edit_outlined),
+                          title: const Text('Edit category'),
+                          onTap: () => Navigator.of(context).pop('edit_cat'),
+                        ),
+                        ListTile(
                           leading: const Icon(Icons.add_business_outlined),
                           title: const Text('Create room in this category'),
                           onTap: () => Navigator.of(context).pop('create_room'),
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.meeting_room_outlined),
+                          title: const Text('Edit a room in this category'),
+                          onTap: () => Navigator.of(context).pop('edit_room'),
                         ),
                         ListTile(
                           leading: const Icon(Icons.delete_outline),
@@ -682,8 +989,14 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                     ),
                   ),
                 );
-                if (action == 'create_room') {
+                if (action == 'edit_cat') {
+                  await _editCategory(c);
+                  await _load();
+                } else if (action == 'create_room') {
                   await _createRoomInCategory(c);
+                  await _load();
+                } else if (action == 'edit_room') {
+                  await _editRoomInCategory(c);
                   await _load();
                 } else if (action == 'delete_room') {
                   await _deleteRoomInCategory(c);

@@ -70,4 +70,50 @@ class HotelPickerBannerTest extends TestCase
 
         $response->assertForbidden();
     }
+
+    public function test_admin_can_upload_hotel_logo_and_search_includes_it(): void
+    {
+        Storage::fake('public');
+
+        $hotel = Hotel::create([
+            'name' => 'Logo Hotel',
+            'location' => 'Cebu City',
+            'city' => 'Cebu',
+        ]);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'logoadmin',
+            'email' => 'logoadmin@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+
+        $png = base64_decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+        );
+        $file = UploadedFile::fake()->createWithContent('logo.png', $png);
+
+        $upload = $this->actingAs($admin)->post('/api/v1/admin/hotel/logo', [
+            'image_file' => $file,
+        ]);
+
+        $upload->assertOk();
+        $logoUrl = (string) $upload->json('logo_url');
+        $this->assertNotSame('', $logoUrl);
+
+        Cache::forget(PortalAuthController::HOTELS_DIRECTORY_CACHE_KEY);
+
+        $checkIn = now()->addDays(2)->toDateString();
+        $checkOut = now()->addDays(4)->toDateString();
+        $search = $this->getJson('/api/v1/hotels/search?'.http_build_query([
+            'q' => 'Cebu',
+            'check_in' => $checkIn,
+            'check_out' => $checkOut,
+        ]));
+        $search->assertOk();
+        $row = collect($search->json('hotels'))
+            ->firstWhere('id', (string) $hotel->id);
+        $this->assertIsArray($row);
+        $this->assertSame($logoUrl, $row['banner_url']);
+    }
 }

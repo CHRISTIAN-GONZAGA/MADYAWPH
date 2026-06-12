@@ -10,260 +10,349 @@ Future<bool> showAdminManualBookingDialog({
   required Map<String, dynamic> room,
   required Future<void> Function() onSuccess,
 }) async {
-  final nameCtrl = TextEditingController();
-  final emailCtrl = TextEditingController();
-  final phoneCtrl = TextEditingController();
-  var checkInDate = DateTime.now();
-  var checkOutDate = DateTime.now().add(const Duration(hours: 3));
-  var checkInTime = AdminTimeSlotField.snapToSlot(TimeOfDay.fromDateTime(checkInDate));
-  var checkOutTime = AdminTimeSlotField.snapToSlot(TimeOfDay.fromDateTime(checkOutDate));
-  var checkInNow = true;
-  var busy = false;
-  String? error;
-
-  final roomNo = (room['room_number'] ?? '').toString();
-  final result = await showDialog<bool>(
+  final result = await showModalBottomSheet<bool>(
     context: context,
-    builder: (ctx) => StatefulBuilder(
-      builder: (ctx, setLocal) {
-        DateTime checkInAt() => DateTime(
-              checkInDate.year,
-              checkInDate.month,
-              checkInDate.day,
-              checkInTime.hour,
-              checkInTime.minute,
-            );
-        DateTime checkOutAt() => DateTime(
-              checkOutDate.year,
-              checkOutDate.month,
-              checkOutDate.day,
-              checkOutTime.hour,
-              checkOutTime.minute,
-            );
+    isScrollControlled: true,
+    useSafeArea: true,
+    showDragHandle: true,
+    backgroundColor: Theme.of(context).colorScheme.surface,
+    builder: (ctx) => Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.viewInsetsOf(ctx).bottom,
+      ),
+      child: _ManualBookingSheet(
+        room: room,
+        onSuccess: onSuccess,
+      ),
+    ),
+  );
 
-        final inAt = checkInAt();
-        final outAt = checkOutAt();
-        final validWindow = outAt.isAfter(inAt);
-        final estimated = validWindow
-            ? HourlyBilling.stayCharge(room, inAt, outAt)
-            : 0.0;
-        final stayHours =
-            validWindow ? HourlyBilling.stayHours(inAt, outAt) : 0;
-        final isHourly = HourlyBilling.isHourly(room);
+  return result == true;
+}
 
-        Future<void> submit() async {
-          if (nameCtrl.text.trim().isEmpty ||
-              emailCtrl.text.trim().isEmpty ||
-              phoneCtrl.text.trim().isEmpty) {
-            setLocal(() => error = 'Enter guest name, email, and phone.');
-            return;
-          }
-          if (!validWindow) {
-            setLocal(() => error = 'Check-out must be after check-in.');
-            return;
-          }
-          setLocal(() {
-            busy = true;
-            error = null;
-          });
-          try {
-            await portalDio().post('/admin/bookings', data: {
-              'room_id': (room['id'] ?? '').toString(),
-              'guest_name': nameCtrl.text.trim(),
-              'guest_email': emailCtrl.text.trim(),
-              'guest_phone': phoneCtrl.text.trim(),
-              'check_in_at': inAt.toIso8601String(),
-              'check_out_at': outAt.toIso8601String(),
-              'payment_method': 'Cash',
-              'check_in_now': checkInNow,
-            });
-            if (!ctx.mounted) return;
-            Navigator.of(ctx).pop(true);
-          } on DioException catch (e) {
-            setLocal(() {
-              busy = false;
-              error = dioErrorMessage(e);
-            });
-          } catch (e) {
-            setLocal(() {
-              busy = false;
-              error = '$e';
-            });
-          }
+class _ManualBookingSheet extends StatefulWidget {
+  const _ManualBookingSheet({
+    required this.room,
+    required this.onSuccess,
+  });
+
+  final Map<String, dynamic> room;
+  final Future<void> Function() onSuccess;
+
+  @override
+  State<_ManualBookingSheet> createState() => _ManualBookingSheetState();
+}
+
+class _ManualBookingSheetState extends State<_ManualBookingSheet> {
+  final _nameCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+
+  late DateTime _checkInDate;
+  late DateTime _checkOutDate;
+  late TimeOfDay _checkInTime;
+  late TimeOfDay _checkOutTime;
+  var _checkInNow = true;
+  var _busy = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _checkInDate = DateTime(now.year, now.month, now.day);
+    _checkOutDate = _checkInDate.add(const Duration(days: 1));
+    _checkInTime = AdminTimeSlotField.snapToSlot(TimeOfDay.fromDateTime(now));
+    _checkOutTime = const TimeOfDay(hour: 11, minute: 0);
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _emailCtrl.dispose();
+    _phoneCtrl.dispose();
+    super.dispose();
+  }
+
+  DateTime _checkInAt() => DateTime(
+        _checkInDate.year,
+        _checkInDate.month,
+        _checkInDate.day,
+        _checkInTime.hour,
+        _checkInTime.minute,
+      );
+
+  DateTime _checkOutAt() => DateTime(
+        _checkOutDate.year,
+        _checkOutDate.month,
+        _checkOutDate.day,
+        _checkOutTime.hour,
+        _checkOutTime.minute,
+      );
+
+  Future<void> _submit() async {
+    if (_nameCtrl.text.trim().isEmpty ||
+        _emailCtrl.text.trim().isEmpty ||
+        _phoneCtrl.text.trim().isEmpty) {
+      setState(() => _error = 'Enter guest name, email, and phone.');
+      return;
+    }
+    final inAt = _checkInAt();
+    final outAt = _checkOutAt();
+    if (!outAt.isAfter(inAt)) {
+      setState(() => _error = 'Check-out must be after check-in.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await portalDio().post('/admin/bookings', data: {
+        'room_id': (widget.room['id'] ?? '').toString(),
+        'guest_name': _nameCtrl.text.trim(),
+        'guest_email': _emailCtrl.text.trim(),
+        'guest_phone': _phoneCtrl.text.trim(),
+        'check_in_at': inAt.toIso8601String(),
+        'check_out_at': outAt.toIso8601String(),
+        'payment_method': 'Cash',
+        'check_in_now': _checkInNow,
+      });
+      if (!mounted) return;
+      await widget.onSuccess();
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } on DioException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = dioErrorMessage(e);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = '$e';
+      });
+    }
+  }
+
+  Future<void> _pickDate({required bool checkIn}) async {
+    final picked = await showDatePicker(
+      context: context,
+      firstDate: DateTime.now().subtract(const Duration(days: 1)),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDate: checkIn ? _checkInDate : _checkOutDate,
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      if (checkIn) {
+        _checkInDate = picked;
+        if (!_checkOutDate.isAfter(_checkInDate)) {
+          _checkOutDate = _checkInDate.add(const Duration(days: 1));
         }
+      } else {
+        _checkOutDate = picked.isBefore(_checkInDate)
+            ? _checkInDate.add(const Duration(days: 1))
+            : picked;
+      }
+    });
+  }
 
-        return AlertDialog(
-          title: Text('Book Room $roomNo'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+  String _fmtDate(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final roomNo = (widget.room['room_number'] ?? '—').toString();
+    final inAt = _checkInAt();
+    final outAt = _checkOutAt();
+    final validWindow = outAt.isAfter(inAt);
+    final estimated =
+        validWindow ? HourlyBilling.stayCharge(widget.room, inAt, outAt) : 0.0;
+    final stayHours = validWindow ? HourlyBilling.stayHours(inAt, outAt) : 0;
+    final isHourly = HourlyBilling.isHourly(widget.room);
+
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.92,
+      minChildSize: 0.5,
+      maxChildSize: 0.96,
+      builder: (context, scrollController) {
+        return ListView(
+          controller: scrollController,
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+          children: [
+            Text(
+              'Walk-in booking',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Room $roomNo · ${HourlyBilling.priceLabel(widget.room)}',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+            ),
+            const SizedBox(height: 20),
+            TextField(
+              controller: _nameCtrl,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Guest name *',
+                prefixIcon: Icon(Icons.person_outline),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _emailCtrl,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                labelText: 'Email *',
+                prefixIcon: Icon(Icons.email_outlined),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _phoneCtrl,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                labelText: 'Phone *',
+                prefixIcon: Icon(Icons.phone_outlined),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Stay schedule',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            Row(
               children: [
-                Text(
-                  HourlyBilling.priceLabel(room),
-                  style: Theme.of(ctx).textTheme.bodySmall,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Guest name',
-                    prefixIcon: Icon(Icons.person_outline),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _pickDate(checkIn: true),
+                    icon: const Icon(Icons.calendar_today, size: 18),
+                    label: Text('In ${_fmtDate(_checkInDate)}'),
                   ),
                 ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: emailCtrl,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                    labelText: 'Email',
-                    prefixIcon: Icon(Icons.email_outlined),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _pickDate(checkIn: false),
+                    icon: const Icon(Icons.event, size: 18),
+                    label: Text('Out ${_fmtDate(_checkOutDate)}'),
                   ),
                 ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: phoneCtrl,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
-                    labelText: 'Phone',
-                    prefixIcon: Icon(Icons.phone_outlined),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Check-in date'),
-                  subtitle: Text(
-                    '${checkInDate.year}-${checkInDate.month.toString().padLeft(2, '0')}-${checkInDate.day.toString().padLeft(2, '0')}',
-                  ),
-                  trailing: const Icon(Icons.calendar_today),
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: ctx,
-                      firstDate:
-                          DateTime.now().subtract(const Duration(days: 1)),
-                      lastDate: DateTime.now().add(const Duration(days: 365)),
-                      initialDate: checkInDate,
-                    );
-                    if (picked != null) {
-                      setLocal(() => checkInDate = picked);
-                    }
-                  },
-                ),
-                AdminTimeSlotField(
-                  label: 'Check-in time',
-                  value: checkInTime,
-                  onChanged: (t) => setLocal(
-                    () => checkInTime = t ?? checkInTime,
-                  ),
-                ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Check-out date'),
-                  subtitle: Text(
-                    '${checkOutDate.year}-${checkOutDate.month.toString().padLeft(2, '0')}-${checkOutDate.day.toString().padLeft(2, '0')}',
-                  ),
-                  trailing: const Icon(Icons.calendar_today),
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: ctx,
-                      firstDate: checkInDate,
-                      lastDate: checkInDate.add(const Duration(days: 365)),
-                      initialDate: checkOutDate,
-                    );
-                    if (picked != null) {
-                      setLocal(() => checkOutDate = picked);
-                    }
-                  },
-                ),
-                AdminTimeSlotField(
-                  label: 'Check-out time',
-                  value: checkOutTime,
-                  onChanged: (t) => setLocal(
-                    () => checkOutTime = t ?? checkOutTime,
-                  ),
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Check in immediately'),
-                  subtitle: const Text(
-                    'Mark guest as checked in after booking',
-                  ),
-                  value: checkInNow,
-                  onChanged: (v) => setLocal(() => checkInNow = v),
-                ),
-                if (validWindow)
-                  Card(
-                    color: Theme.of(ctx)
-                        .colorScheme
-                        .primaryContainer
-                        .withValues(alpha: 0.35),
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Estimated bill',
-                            style: Theme.of(ctx)
-                                .textTheme
-                                .titleSmall
-                                ?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 6),
-                          if (isHourly) Text('$stayHours hour(s) stay'),
-                          Text(
-                            '₱${estimated.toStringAsFixed(0)}',
-                            style: Theme.of(ctx)
-                                .textTheme
-                                .headlineSmall
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  color: Theme.of(ctx).colorScheme.primary,
-                                ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                if (error != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    error!,
-                    style: TextStyle(color: Theme.of(ctx).colorScheme.error),
-                  ),
-                ],
               ],
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: busy ? null : () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
+            const SizedBox(height: 12),
+            AdminTimeSlotField(
+              label: 'Check-in time',
+              value: _checkInTime,
+              onChanged: (t) {
+                if (t != null) setState(() => _checkInTime = t);
+              },
             ),
-            FilledButton(
-              onPressed: busy ? null : submit,
-              child: busy
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Create booking'),
+            const SizedBox(height: 12),
+            AdminTimeSlotField(
+              label: 'Check-out time',
+              value: _checkOutTime,
+              onChanged: (t) {
+                if (t != null) setState(() => _checkOutTime = t);
+              },
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Check in immediately'),
+              subtitle: const Text('Mark guest as checked in after booking'),
+              value: _checkInNow,
+              onChanged: (v) => setState(() => _checkInNow = v),
+            ),
+            if (validWindow) ...[
+              const SizedBox(height: 8),
+              Card(
+                color: scheme.primaryContainer.withValues(alpha: 0.35),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
+                    children: [
+                      Icon(Icons.receipt_long, color: scheme.primary),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Estimated bill',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelLarge
+                                  ?.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                            if (isHourly)
+                              Text('$stayHours hour(s) stay'),
+                            Text(
+                              '₱${estimated.toStringAsFixed(0)}',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    color: scheme.primary,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                style: TextStyle(color: scheme.error),
+              ),
+            ],
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _busy ? null : () => Navigator.pop(context, false),
+                    child: const Text('Cancel'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: FilledButton(
+                    onPressed: _busy ? null : _submit,
+                    child: _busy
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Create booking'),
+                  ),
+                ),
+              ],
             ),
           ],
         );
       },
-    ),
-  );
-
-  nameCtrl.dispose();
-  emailCtrl.dispose();
-  phoneCtrl.dispose();
-
-  if (result == true) {
-    await onSuccess();
-    return true;
+    );
   }
-  return false;
 }

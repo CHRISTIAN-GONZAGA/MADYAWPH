@@ -13,9 +13,16 @@ class ActivityLogController extends Controller
     {
     }
 
-    public function index()
+    public function index(Request $request)
     {
-        return response()->json(ActivityLog::query()->latest('created_at')->paginate(25));
+        $perPage = min(50, max(10, (int) $request->query('per_page', 25)));
+        $page = max(1, (int) $request->query('page', 1));
+
+        return response()->json(
+            ActivityLog::query()
+                ->latest('created_at')
+                ->paginate($perPage, ['*'], 'page', $page)
+        );
     }
 
     public function store(Request $request)

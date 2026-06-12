@@ -31,6 +31,23 @@ abstract class TestCase extends BaseTestCase
             'tasks',
             'activity_logs',
             'personal_access_tokens',
+            'amenity_menu_items',
+            'external_reservations',
+            'guest_messages',
+            'billing_charges',
+            'checkout_reminders',
+            'stay_reviews',
+            'amenity_claims',
+            'hotel_credits',
+            'resellers',
+            'reseller_commission_payments',
+            'room_categories',
+            'room_transfers',
+            'system_settings',
+            'user_settings',
+            'platform_settings',
+            'credit_wallet_requests',
+            'member_subscription_requests',
         ] as $collection) {
             try {
                 $db->dropCollection($collection);

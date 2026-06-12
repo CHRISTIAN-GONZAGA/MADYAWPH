@@ -19,6 +19,8 @@ class _AdminSalesPanelState extends State<AdminSalesPanel> {
   Map<String, dynamic>? _overview;
   Map<String, int> _countsByDay = {};
   bool _loading = false;
+  static const _txnPageSize = 10;
+  int _txnVisible = _txnPageSize;
 
   @override
   void initState() {
@@ -94,7 +96,10 @@ class _AdminSalesPanelState extends State<AdminSalesPanel> {
           hasEvent: (d) => (_countsByDay[_fmt(d)] ?? 0) > 0,
           eventCount: (d) => _countsByDay[_fmt(d)] ?? 0,
           onDaySelected: (d) {
-            setState(() => _selected = d);
+            setState(() {
+              _selected = d;
+              _txnVisible = _txnPageSize;
+            });
             _loadAll();
           },
           onMonthChanged: (m) {
@@ -128,18 +133,50 @@ class _AdminSalesPanelState extends State<AdminSalesPanel> {
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 if ((_daySales?['transactions'] as List?)?.isNotEmpty == true) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Orders',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
                   ...(((_daySales!['transactions'] as List?) ?? const [])
                       .whereType<Map>()
+                      .take(_txnVisible)
                       .map(
                         (t) => Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
-                          child: Text(
-                            (t['line'] ?? t['label'] ?? '').toString(),
-                            style: Theme.of(context).textTheme.bodySmall,
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(Icons.shopping_bag_outlined, size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  (t['line'] ?? t['label'] ?? '').toString(),
+                                  style:
+                                      Theme.of(context).textTheme.bodyMedium,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       )),
+                  if (((_daySales!['transactions'] as List?) ?? const [])
+                          .length >
+                      _txnVisible)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: OutlinedButton(
+                        onPressed: () => setState(
+                          () => _txnVisible += _txnPageSize,
+                        ),
+                        child: Text(
+                          'Show more (${((_daySales!['transactions'] as List?) ?? const []).length - _txnVisible} remaining)',
+                        ),
+                      ),
+                    ),
                 ],
               ],
             ),

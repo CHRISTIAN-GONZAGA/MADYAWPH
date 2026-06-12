@@ -164,6 +164,62 @@ Route::middleware('role:admin')->group(function (): void {
         ]);
     })->name('api.v1.admin.credits.recharge');
 
+    Route::post('/admin/credits/recharge-request', function (Request $request) {
+        $validated = $request->validate([
+            'amount' => ['required', 'numeric', 'min:100'],
+            'payment_reference' => ['required', 'string', 'max:120'],
+        ]);
+
+        $hotel = Hotel::withoutGlobalScopes()->findOrFail((string) $request->user()->hotel_id);
+        $pending = \App\Models\CreditWalletRequest::query()
+            ->where('hotel_id', (string) $hotel->id)
+            ->where('status', 'pending')
+            ->exists();
+
+        if ($pending) {
+            return response()->json([
+                'message' => 'You already have a pending credit top-up awaiting approval.',
+            ], 422);
+        }
+
+        $row = \App\Models\CreditWalletRequest::create([
+            'hotel_id' => (string) $hotel->id,
+            'hotel_name' => (string) $hotel->name,
+            'amount' => (float) $validated['amount'],
+            'payment_reference' => trim((string) $validated['payment_reference']),
+            'status' => 'pending',
+            'requested_by_user_id' => (string) $request->user()->id,
+            'requested_by_name' => (string) ($request->user()->name ?? 'Admin'),
+        ]);
+
+        $platform = app(\App\Services\PlatformSettingsService::class)->publicPayload();
+
+        return response()->json([
+            'ok' => true,
+            'request_id' => (string) $row->id,
+            'status' => 'pending',
+            'credit_wallet_qr_url' => $platform['credit_wallet_qr_url'] ?? '',
+            'message' => 'Top-up submitted. Credits apply after platform approval.',
+        ], 201);
+    })->middleware('role:admin')->name('api.v1.admin.credits.recharge-request');
+
+    Route::get('/admin/credits/recharge-request/status', function (Request $request) {
+        $row = \App\Models\CreditWalletRequest::query()
+            ->where('hotel_id', (string) $request->user()->hotel_id)
+            ->orderByDesc('created_at')
+            ->first();
+
+        if ($row === null) {
+            return response()->json(['status' => 'none']);
+        }
+
+        return response()->json([
+            'id' => (string) $row->id,
+            'status' => (string) ($row->status ?? 'pending'),
+            'amount' => (float) ($row->amount ?? 0),
+        ]);
+    })->middleware('role:admin');
+
     Route::patch('/admin/credits/markup', function (Request $request) {
         $validated = $request->validate([
             'percentage' => ['required', 'numeric', 'min:0', 'max:100'],
@@ -702,6 +758,7 @@ Route::delete('/rooms/{room}', [RoomController::class, 'destroy'])->middleware('
 // Room categories
 Route::get('/room-categories', [RoomCategoryController::class, 'index'])->middleware('role:admin,staff');
 Route::post('/room-categories', [RoomCategoryController::class, 'store'])->middleware('role:admin');
+Route::put('/room-categories/{roomCategory}', [RoomCategoryController::class, 'update'])->middleware('role:admin');
 Route::delete('/room-categories/{roomCategory}', [RoomCategoryController::class, 'destroy'])->middleware('role:admin');
 
 // Bookings
@@ -1054,6 +1111,7 @@ Route::get('/tasks/assigned-to-me', [TaskController::class, 'assignedToMe'])->mi
 // Reports
 Route::get('/reports/sales', [ReportController::class, 'sales'])->middleware('role:admin');
 Route::get('/reports/sales/timeseries', [ReportController::class, 'salesTimeseries'])->middleware('role:admin');
+Route::get('/reports/paid-transactions', [ReportController::class, 'paidTransactions'])->middleware('role:admin');
 Route::get('/reports/amenity-sales/timeseries', [ReportController::class, 'amenitySalesTimeseries'])->middleware('role:admin');
 Route::get('/reports/amenity-sales/overview', [ReportController::class, 'amenityProfitOverview'])->middleware('role:admin');
 Route::get('/reports/profit-overview', [ReportController::class, 'profitOverview'])->middleware('role:admin');
@@ -1237,6 +1295,45 @@ Route::post('/admin/hotel/picker-banner', function (Request $request) {
         'picker_banner_url' => $url,
     ]);
 })->middleware('role:super_admin')->name('api.v1.admin.hotel.picker-banner.store');
+
+Route::get('/admin/hotel/logo', function (Request $request) {
+    $hotel = Hotel::withoutGlobalScopes()->findOrFail((string) $request->user()->hotel_id);
+    $stored = filled($hotel->picker_banner_url ?? null)
+        ? (string) $hotel->picker_banner_url
+        : null;
+
+    return response()->json([
+        'logo_url' => ChatAttachmentUrl::fromStoredUrl($stored),
+        'banner_url' => ChatAttachmentUrl::fromStoredUrl($stored),
+        'picker_banner_url' => $stored,
+        'hotel_name' => (string) ($hotel->name ?? ''),
+    ]);
+})->middleware('role:admin')->name('api.v1.admin.hotel.logo.show');
+
+Route::post('/admin/hotel/logo', function (Request $request) {
+    $validated = $request->validate([
+        'image_file' => array_merge(['required'], array_slice(RoomImageUploadRules::fileRules(), 1)),
+    ]);
+
+    $hotel = Hotel::withoutGlobalScopes()->findOrFail((string) $request->user()->hotel_id);
+    $url = RoomMediaStorage::store($request->file('image_file'), 'hotel-banners');
+    $hotel->update(['picker_banner_url' => $url]);
+    Cache::forget(PortalAuthController::HOTELS_DIRECTORY_CACHE_KEY);
+
+    app(ActivityLogService::class)->log(
+        (string) $hotel->id,
+        $request->user(),
+        'Updated hotel logo for guest search',
+        ['logo_url' => $url]
+    );
+
+    return response()->json([
+        'ok' => true,
+        'logo_url' => ChatAttachmentUrl::fromStoredUrl($url),
+        'banner_url' => ChatAttachmentUrl::fromStoredUrl($url),
+        'picker_banner_url' => $url,
+    ]);
+})->middleware('role:admin')->name('api.v1.admin.hotel.logo.store');
 
 Route::get('/admin/hotel/guest-portal-qr', function (Request $request, GuestPortalQrService $guestPortalQrService) {
     $hotel = Hotel::withoutGlobalScopes()->findOrFail((string) $request->user()->hotel_id);
@@ -1588,3 +1685,19 @@ Route::patch('/admin/pricing/surge', function (Request $request) {
 
 Route::get('/admin/chat/inbox', [AdminChatController::class, 'inbox'])->middleware('role:admin');
 Route::get('/admin/chat/rooms/{roomId}', [AdminChatController::class, 'room'])->middleware('role:admin');
+
+// Platform central admin (developers) — separate from hotel admins.
+Route::middleware('role:central_admin')->prefix('platform')->group(function () {
+    $platform = \App\Http\Controllers\Api\V1\PlatformAdminController::class;
+    Route::get('/settings', [$platform, 'settings']);
+    Route::post('/settings/credit-wallet-qr', [$platform, 'uploadCreditWalletQr']);
+    Route::post('/settings/member-qr', [$platform, 'uploadMemberQr']);
+    Route::get('/hotels', [$platform, 'hotels']);
+    Route::delete('/hotels/{hotelId}', [$platform, 'deleteHotel']);
+    Route::get('/credit-requests', [$platform, 'creditRequests']);
+    Route::post('/credit-requests/{id}/approve', [$platform, 'approveCreditRequest']);
+    Route::post('/credit-requests/{id}/reject', [$platform, 'rejectCreditRequest']);
+    Route::get('/member-requests', [$platform, 'memberRequests']);
+    Route::post('/member-requests/{id}/approve', [$platform, 'approveMemberRequest']);
+    Route::post('/member-requests/{id}/reject', [$platform, 'rejectMemberRequest']);
+});

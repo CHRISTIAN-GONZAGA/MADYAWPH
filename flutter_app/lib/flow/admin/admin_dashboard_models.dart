@@ -32,8 +32,16 @@ class AdminDashboardModels {
     return rt.length == 1 ? rt.toUpperCase() : rt;
   }
 
-  static String statusOf(Map<String, dynamic> room) =>
-      (room['status'] ?? '').toString().toLowerCase();
+  static String statusOf(Map<String, dynamic> room) {
+    final raw = room['status'];
+    if (raw is Map) {
+      return (raw['value'] ?? raw['name'] ?? '')
+          .toString()
+          .toLowerCase()
+          .trim();
+    }
+    return (raw ?? '').toString().toLowerCase().trim();
+  }
 
   /// Display label: checked_in → Occupied (API value unchanged).
   static String roomStatusLabel(String status) {

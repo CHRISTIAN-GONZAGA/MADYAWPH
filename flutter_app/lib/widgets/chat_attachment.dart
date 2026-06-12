@@ -114,6 +114,7 @@ class ChatAttachment {
     if (trimmed.startsWith('categories/') ||
         trimmed.startsWith('rooms/') ||
         trimmed.startsWith('hotel-banners/') ||
+        trimmed.startsWith('platform-qr/') ||
         trimmed.startsWith('payment-qr/') ||
         trimmed.startsWith('bookings/') ||
         trimmed.startsWith('reseller-ids/')) {

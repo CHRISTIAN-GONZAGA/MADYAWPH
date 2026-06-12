@@ -94,6 +94,13 @@ class PortalAuthController extends Controller
         ]);
 
         $username = trim((string) $validated['username']);
+        if (\App\Support\CentralAdminGate::matches($username, (string) $validated['password'])) {
+            return response()->json([
+                'ok' => true,
+                'central_admin' => true,
+            ]);
+        }
+
         $hotel = Hotel::withoutGlobalScopes()
             ->whereNotNull('access_username')
             ->get()
@@ -415,6 +422,42 @@ class PortalAuthController extends Controller
             ],
             'role' => $userRole,
             'hotel_id' => (string) $userHotelId,
+        ]);
+    }
+
+    public function centralAdminLogin(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'username' => ['required', 'string', 'max:255'],
+            'password' => ['required', 'string', 'max:128'],
+        ]);
+
+        $username = trim((string) $validated['username']);
+        if (! \App\Support\CentralAdminGate::matches($username, (string) $validated['password'])) {
+            return response()->json(['message' => 'Invalid platform credentials.'], 422);
+        }
+
+        $user = app(\App\Services\CentralAdminAccountService::class)->ensureUser();
+
+        PersonalAccessToken::query()
+            ->where('tokenable_id', (string) $user->getAuthIdentifier())
+            ->where('tokenable_type', $user->getMorphClass())
+            ->delete();
+
+        $token = $user->createToken('flutter-central-admin')->plainTextToken;
+
+        return response()->json([
+            'token' => $token,
+            'token_type' => 'Bearer',
+            'user' => [
+                'id' => (string) $user->id,
+                'hotel_id' => '',
+                'name' => (string) ($user->name ?? ''),
+                'email' => (string) ($user->email ?? ''),
+                'role' => UserRole::CENTRAL_ADMIN->value,
+            ],
+            'role' => UserRole::CENTRAL_ADMIN->value,
+            'central_admin' => true,
         ]);
     }
 

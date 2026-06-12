@@ -7,6 +7,7 @@ import '../ui/app_visual.dart';
 import '../widgets/chat_attachment.dart';
 import 'customer_search_context.dart';
 import 'dashboards.dart';
+import 'member_subscription_flow.dart';
 
 /// Hotels that can accommodate the guest's search criteria.
 class HotelSearchResultsScreen extends StatelessWidget {
@@ -134,6 +135,18 @@ class HotelSearchResultsScreen extends StatelessWidget {
               ],
             ),
           ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: _MemberPromoBanner(
+                onTap: () {
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const MemberRegistrationScreen(),
+                    ),
+                  );
+                },
+              ),
+            ),
             Expanded(
               child: hotels.isEmpty
                   ? _EmptyResults(search: search)
@@ -151,6 +164,69 @@ class HotelSearchResultsScreen extends StatelessWidget {
                     ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MemberPromoBanner extends StatelessWidget {
+  const _MemberPromoBanner({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      elevation: 2,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Ink(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF1A2B4A), Color(0xFF2D4A7A)],
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD4A843).withValues(alpha: 0.25),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.workspace_premium_outlined,
+                    color: Color(0xFFD4A843), size: 28),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'BE A MEMBER',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.2,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '₱300/month — exclusive perks & priority booking',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.white70,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Colors.white70),
+            ],
+          ),
         ),
       ),
     );
@@ -291,6 +367,7 @@ class _HotelResultCard extends StatelessWidget {
     final loc = [city, region].where((s) => s.isNotEmpty).join(' · ');
     final minPrice = (hotel['min_price'] as num?)?.toDouble() ?? 0;
     final available = (hotel['available_rooms'] as num?)?.toInt() ?? 0;
+    final canAccommodate = hotel['can_accommodate'] != false && available > 0;
     final estStay = minPrice > 0 ? minPrice * nights : 0.0;
     final banner = ChatAttachment.resolveMediaUrl(
       (hotel['banner_url'] ?? '').toString(),
@@ -345,13 +422,13 @@ class _HotelResultCard extends StatelessWidget {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: available > 0
+                      color: canAccommodate
                           ? const Color(0xFF2E7D32)
                           : Colors.orange.shade800,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      available > 0
+                      canAccommodate
                           ? context.tr('rooms_available', {'n': '$available'})
                           : context.tr('limited_availability'),
                       style: const TextStyle(

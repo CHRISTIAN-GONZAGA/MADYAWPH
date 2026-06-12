@@ -185,38 +185,72 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Future<void> _showRechargeDialog() async {
-    final amountCtrl = TextEditingController(text: '100');
-    String method = 'gcash';
+    final amountCtrl = TextEditingController(text: '1000');
+    final refCtrl = TextEditingController();
+    String method = 'qrph';
+    String qrUrl = '';
+    try {
+      final info = await publicDio().get<Map<String, dynamic>>('/platform/info');
+      qrUrl = ChatAttachment.resolveMediaUrl(
+        (info.data?['credit_wallet_qr_url'] ?? '').toString(),
+      );
+    } catch (_) {}
+
+    if (!mounted) return;
     final payload = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setLocal) => AlertDialog(
-          title: const Text('Recharge Credits'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: amountCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Amount (PHP)',
-                  border: OutlineInputBorder(),
+          title: const Text('Recharge credits'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: amountCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Amount (PHP)',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              DropdownButtonFormField<String>(
-                initialValue: method,
-                items: const [
-                  DropdownMenuItem(value: 'gcash', child: Text('GCash')),
-                  DropdownMenuItem(value: 'paymaya', child: Text('PayMaya')),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  initialValue: method,
+                  items: const [
+                    DropdownMenuItem(value: 'qrph', child: Text('QR Ph (manual approval)')),
+                    DropdownMenuItem(value: 'gcash', child: Text('GCash (online)')),
+                    DropdownMenuItem(value: 'paymaya', child: Text('PayMaya (online)')),
+                  ],
+                  onChanged: (v) => setLocal(() => method = v ?? method),
+                  decoration: const InputDecoration(
+                    labelText: 'Payment method',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                if (method == 'qrph') ...[
+                  const SizedBox(height: 12),
+                  if (qrUrl.isNotEmpty)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: NetworkMediaImage(
+                        url: qrUrl,
+                        width: 180,
+                        height: 180,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: refCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Payment reference / transaction ID',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
                 ],
-                onChanged: (v) => setLocal(() => method = v ?? method),
-                decoration: const InputDecoration(
-                  labelText: 'Wallet',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -226,14 +260,33 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               onPressed: () => Navigator.of(context).pop({
                 'amount': double.tryParse(amountCtrl.text.trim()) ?? 0,
                 'method': method,
+                if (method == 'qrph') 'payment_reference': refCtrl.text.trim(),
               }),
-              child: const Text('Recharge'),
+              child: Text(method == 'qrph' ? 'Submit for approval' : 'Recharge'),
             ),
           ],
         ),
       ),
     );
     if (payload == null) return;
+
+    if (payload['method'] == 'qrph') {
+      await _runAction('Submit credit top-up', () async {
+        final res = await portalDio().post<Map<String, dynamic>>(
+          '/admin/credits/recharge-request',
+          data: {
+            'amount': payload['amount'],
+            'payment_reference': payload['payment_reference'],
+          },
+        );
+        return {
+          ...Map<String, dynamic>.from(res.data ?? {}),
+          'message':
+              'Top-up submitted. Credits apply after platform approval.',
+        };
+      });
+      return;
+    }
 
     await _runAction('Recharge credits', () async {
       final res = await portalDio().post<Map<String, dynamic>>(
@@ -665,25 +718,45 @@ class _AdminActivityLogsScreenState extends State<AdminActivityLogsScreen> {
   bool _loading = true;
   String? _error;
   static const _pageSize = 25;
-  int _visibleCount = _pageSize;
+  int _page = 1;
+  int _lastPage = 1;
+  int _total = 0;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _load(page: 1);
   }
 
-  Future<void> _load() async {
+  Future<void> _load({required int page}) async {
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final res = await portalDio().get<Map<String, dynamic>>('/activity-logs');
-      final data = (res.data?['data'] as List<dynamic>?) ?? const [];
+      final res = await portalDio().get<Map<String, dynamic>>(
+        '/activity-logs',
+        queryParameters: {
+          'page': page,
+          'per_page': _pageSize,
+        },
+      );
+      final body = res.data ?? const <String, dynamic>{};
+      final data = (body['data'] as List<dynamic>?) ?? const [];
+      final currentPage = (body['current_page'] as num?)?.toInt() ??
+          ((body['meta'] as Map?)?['current_page'] as num?)?.toInt() ??
+          page;
+      final lastPage = (body['last_page'] as num?)?.toInt() ??
+          ((body['meta'] as Map?)?['last_page'] as num?)?.toInt() ??
+          (data.length < _pageSize ? page : page + 1);
+      final total = (body['total'] as num?)?.toInt() ??
+          ((body['meta'] as Map?)?['total'] as num?)?.toInt() ??
+          data.length;
       setState(() {
         _logs = data;
-        _visibleCount = _pageSize;
+        _page = currentPage;
+        _lastPage = lastPage;
+        _total = total;
         _loading = false;
       });
     } on DioException catch (e) {
@@ -701,42 +774,60 @@ class _AdminActivityLogsScreenState extends State<AdminActivityLogsScreen> {
 
   Widget _buildLogList() {
     if (_loading) return const AppLoadingView();
-    if (_error != null) return AppErrorView(message: _error!, onRetry: _load);
+    if (_error != null) {
+      return AppErrorView(message: _error!, onRetry: () => _load(page: _page));
+    }
     if (_logs.isEmpty) {
       return const Center(child: Text('No activity recorded yet.'));
     }
 
-    final visible = _logs.take(_visibleCount).toList();
-    final hasMore = _visibleCount < _logs.length;
-
     return RefreshIndicator(
-      onRefresh: _load,
+      onRefresh: () => _load(page: 1),
       child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-        itemCount: visible.length + (hasMore ? 1 : 0),
+        itemCount: _logs.length + 1,
         itemBuilder: (context, i) {
-          if (hasMore && i == visible.length) {
+          if (i == _logs.length) {
+            if (_lastPage <= 1) return const SizedBox(height: 8);
             return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: OutlinedButton(
-                onPressed: () => setState(
-                  () => _visibleCount += _pageSize,
-                ),
-                child: Text(
-                  'Load more (${_logs.length - _visibleCount} remaining)',
-                ),
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    tooltip: 'Previous page',
+                    onPressed: _page > 1
+                        ? () => _load(page: _page - 1)
+                        : null,
+                    icon: const Icon(Icons.chevron_left),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Text(
+                      'Page $_page of $_lastPage · $_total entries',
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Next page',
+                    onPressed: _page < _lastPage
+                        ? () => _load(page: _page + 1)
+                        : null,
+                    icon: const Icon(Icons.chevron_right),
+                  ),
+                ],
               ),
             );
           }
-          final log = visible[i] as Map<String, dynamic>;
+          final log = _logs[i] as Map<String, dynamic>;
           final when = (log['created_at'] ?? log['timestamp'] ?? '').toString();
           return Padding(
-            padding: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.only(bottom: 12),
             child: Card(
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
               child: Padding(
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -746,16 +837,16 @@ class _AdminActivityLogsScreenState extends State<AdminActivityLogsScreen> {
                             fontWeight: FontWeight.w700,
                           ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     Text(
                       'By ${(log['user_name'] ?? 'System').toString()}',
-                      style: Theme.of(context).textTheme.bodySmall,
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     if (when.isNotEmpty) ...[
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 6),
                       Text(
                         when,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
                               color: Theme.of(context).colorScheme.outline,
                             ),
                       ),
@@ -790,7 +881,7 @@ class _AdminActivityLogsScreenState extends State<AdminActivityLogsScreen> {
                   ),
                 ),
                 IconButton(
-                  onPressed: _load,
+                  onPressed: () => _load(page: _page),
                   icon: const Icon(Icons.refresh),
                   tooltip: 'Refresh',
                 ),
@@ -804,7 +895,12 @@ class _AdminActivityLogsScreenState extends State<AdminActivityLogsScreen> {
     return AppScaffold(
       appBar: AppBar(
         title: const Text('Activity logs'),
-        actions: [IconButton(onPressed: _load, icon: const Icon(Icons.refresh))],
+        actions: [
+          IconButton(
+            onPressed: () => _load(page: _page),
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
       ),
       body: body,
     );
@@ -2918,10 +3014,12 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
   }) async {
     final fromSearch = widget.searchContext != null;
     final forceReserve = fromSearch || reserve;
+    final savedGuest = await AuthStorage.customerGuestContact();
+    if (!mounted) return;
 
-    final nameCtrl = TextEditingController();
-    final emailCtrl = TextEditingController();
-    final phoneCtrl = TextEditingController();
+    final nameCtrl = TextEditingController(text: savedGuest?.name ?? '');
+    final emailCtrl = TextEditingController(text: savedGuest?.email ?? '');
+    final phoneCtrl = TextEditingController(text: savedGuest?.phone ?? '');
     final checkInCtrl = TextEditingController();
     final checkOutCtrl = TextEditingController();
     final pricePerNight = (room['price_per_night'] as num?)?.toDouble() ?? 0;
@@ -3025,6 +3123,42 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (fromSearch && widget.searchContext != null) ...[
+                    Card(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .primaryContainer
+                          .withValues(alpha: 0.35),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'From your search',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              context.tr('guest_party_line', {
+                                'rooms': '${widget.searchContext!.rooms}',
+                                'adults': '${widget.searchContext!.adults}',
+                                'children': '${widget.searchContext!.children}',
+                              }),
+                            ),
+                            Text(
+                              '${widget.searchContext!.checkInIso} → ${widget.searchContext!.checkOutIso}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   AppInput(controller: nameCtrl, label: context.tr('full_name')),
                   const SizedBox(height: 8),
                   AppInput(
@@ -3254,11 +3388,17 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
         'hotel_id': widget.hotelId,
         ...payload,
       };
-      if (fromSearch) {
+      if (widget.searchContext != null) {
         body['rooms'] = widget.searchContext!.rooms;
         body['adults'] = widget.searchContext!.adults;
         body['children'] = widget.searchContext!.children;
       }
+
+      await AuthStorage.setCustomerGuestContact(
+        name: (payload['guest_name'] ?? '').toString(),
+        email: (payload['guest_email'] ?? '').toString(),
+        phone: (payload['guest_phone'] ?? '').toString(),
+      );
 
       final Response<Map<String, dynamic>> res;
       final hasDiscountFile = discount != 'none' && discountIdFile != null;

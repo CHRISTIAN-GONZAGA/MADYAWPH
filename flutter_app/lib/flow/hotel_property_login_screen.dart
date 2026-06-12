@@ -9,6 +9,7 @@ import '../ui/app_visual.dart';
 import '../widgets/app_input.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/language_picker_button.dart';
+import 'central_admin/central_admin_dashboard_screen.dart';
 import 'flow_state.dart';
 import 'system_access_screen.dart';
 
@@ -57,6 +58,37 @@ class _HotelPropertyLoginScreenState extends State<HotelPropertyLoginScreen> {
         '/hotel/access',
         data: {'username': user, 'password': pass},
       );
+
+      if (res.data?['central_admin'] == true) {
+        final login = await publicDio().post<Map<String, dynamic>>(
+          '/auth/central-admin-login',
+          data: {'username': user, 'password': pass},
+        );
+        final token = (login.data?['token'] ?? '').toString();
+        if (token.isEmpty) {
+          setState(() {
+            _error = context.tr('property_login_failed');
+            _busy = false;
+          });
+          return;
+        }
+        await AuthStorage.clearGuestAuth();
+        await AuthStorage.setHotelContext(id: '', name: '');
+        await AuthStorage.setPortalAuth(
+          token: token,
+          role: 'central_admin',
+        );
+        hotelSessionNotifier.value = null;
+        if (!mounted) return;
+        await Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute<void>(
+            builder: (_) => const CentralAdminDashboardScreen(),
+          ),
+          (_) => false,
+        );
+        return;
+      }
+
       final hid = (res.data?['hotel_id'] ?? '').toString();
       final name = (res.data?['hotel_name'] ?? 'Hotel').toString();
       if (hid.isEmpty) {

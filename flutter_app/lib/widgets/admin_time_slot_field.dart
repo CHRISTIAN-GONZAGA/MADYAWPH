@@ -38,40 +38,47 @@ class AdminTimeSlotField extends StatelessWidget {
     return '$h:$m $p';
   }
 
+  static String _slotKey(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
   @override
   Widget build(BuildContext context) {
     final slot = value != null ? snapToSlot(value!) : null;
-    final selected = slot != null
-        ? '${slot.hour.toString().padLeft(2, '0')}:${slot.minute.toString().padLeft(2, '0')}'
-        : null;
+    final selected = slot != null ? _slotKey(slot) : null;
 
-    return DropdownButtonFormField<String>(
-      initialValue: selected,
+    return InputDecorator(
       decoration: InputDecoration(
         labelText: label,
         border: const OutlineInputBorder(),
         prefixIcon: const Icon(Icons.schedule),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       ),
-      items: slots
-          .map(
-            (t) => DropdownMenuItem(
-              value:
-                  '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}',
-              child: Text(format(t)),
-            ),
-          )
-          .toList(),
-      onChanged: (v) {
-        if (v == null) {
-          onChanged(null);
-          return;
-        }
-        final parts = v.split(':');
-        onChanged(TimeOfDay(
-          hour: int.parse(parts[0]),
-          minute: int.parse(parts[1]),
-        ));
-      },
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          isExpanded: true,
+          value: selected,
+          hint: const Text('Select time'),
+          items: slots
+              .map(
+                (t) => DropdownMenuItem(
+                  value: _slotKey(t),
+                  child: Text(format(t)),
+                ),
+              )
+              .toList(),
+          onChanged: (v) {
+            if (v == null) {
+              onChanged(null);
+              return;
+            }
+            final parts = v.split(':');
+            onChanged(TimeOfDay(
+              hour: int.parse(parts[0]),
+              minute: int.parse(parts[1]),
+            ));
+          },
+        ),
+      ),
     );
   }
 }

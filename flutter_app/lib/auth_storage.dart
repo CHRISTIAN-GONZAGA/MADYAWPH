@@ -30,6 +30,9 @@ class AuthStorage {
   static const _kAppLocale = 'app_locale';
   static const _kIntroSeen = 'intro_seen';
   static const _kHotelsDirectoryCache = 'hotels_directory_cache';
+  static const _kCustomerGuestName = 'customer_guest_name';
+  static const _kCustomerGuestEmail = 'customer_guest_email';
+  static const _kCustomerGuestPhone = 'customer_guest_phone';
 
   static SharedPreferences? _prefs;
   static bool _migrationStarted = false;
@@ -119,6 +122,37 @@ class AuthStorage {
   static Future<void> clearHotelsDirectoryCache() async {
     await _ensureMigrated();
     await (await _preferences()).remove(_kHotelsDirectoryCache);
+  }
+
+  /// Last guest contact used on a public booking (for autofill).
+  static Future<({String name, String email, String phone})?> customerGuestContact() async {
+    await _ensureMigrated();
+    final prefs = await _preferences();
+    final name = prefs.getString(_kCustomerGuestName);
+    final email = prefs.getString(_kCustomerGuestEmail);
+    final phone = prefs.getString(_kCustomerGuestPhone);
+    if ((name == null || name.isEmpty) &&
+        (email == null || email.isEmpty) &&
+        (phone == null || phone.isEmpty)) {
+      return null;
+    }
+    return (
+      name: name ?? '',
+      email: email ?? '',
+      phone: phone ?? '',
+    );
+  }
+
+  static Future<void> setCustomerGuestContact({
+    required String name,
+    required String email,
+    required String phone,
+  }) async {
+    await _ensureMigrated();
+    final prefs = await _preferences();
+    await prefs.setString(_kCustomerGuestName, name.trim());
+    await prefs.setString(_kCustomerGuestEmail, email.trim());
+    await prefs.setString(_kCustomerGuestPhone, phone.trim());
   }
 
   static Future<String?> uiSeedColorHex() async {

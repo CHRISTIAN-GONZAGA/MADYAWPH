@@ -5,6 +5,9 @@ UPLOAD_ROOT="${FILESYSTEM_UPLOAD_ROOT:-/var/data/uploads}"
 
 php artisan optimize:clear
 
+# Ensure MongoDB indexes and schema migrations are applied on each deploy.
+php artisan migrate --force --no-interaction
+
 mkdir -p "$UPLOAD_ROOT"
 chmod -R 775 "$UPLOAD_ROOT" 2>/dev/null || true
 
