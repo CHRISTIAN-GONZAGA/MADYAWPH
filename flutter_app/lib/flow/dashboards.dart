@@ -2817,11 +2817,13 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                                 Expanded(
                                   child: Text(
                                     name,
+                                    softWrap: true,
                                     style: Theme.of(context)
                                         .textTheme
                                         .titleMedium
                                         ?.copyWith(
                                           fontWeight: FontWeight.w800,
+                                          height: 1.2,
                                         ),
                                   ),
                                 ),
@@ -2856,8 +2858,9 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                               const SizedBox(height: 6),
                               Text(
                                 desc,
-                                maxLines: 3,
+                                maxLines: 4,
                                 overflow: TextOverflow.ellipsis,
+                                softWrap: true,
                                 style: Theme.of(context)
                                     .textTheme
                                     .bodySmall
@@ -2937,10 +2940,10 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                   children: [
                     Text(
                       hotelName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      softWrap: true,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w800,
+                            height: 1.2,
                           ),
                     ),
                     Text(
@@ -2963,8 +2966,9 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                     ),
                     child: Text(
                       '${search.checkInIso} → ${search.checkOutIso}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      maxLines: 2,
+                      softWrap: true,
+                      textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                             fontWeight: FontWeight.w700,
                           ),
@@ -3080,11 +3084,11 @@ class _CustomerMadyawHeader extends StatelessWidget {
                 Text(
                   hotelName,
                   textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                  softWrap: true,
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w800,
                         color: const Color(0xFF1A304D),
+                        height: 1.25,
                       ),
                 ),
               ],
@@ -3901,10 +3905,10 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
               Expanded(
                 child: Text(
                   widget.categoryName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  softWrap: true,
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w800,
+                        height: 1.2,
                       ),
                 ),
               ),

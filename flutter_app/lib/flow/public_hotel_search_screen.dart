@@ -1224,7 +1224,8 @@ class _DateTile extends StatelessWidget {
                   child: Text(
                     value,
                     style: const TextStyle(fontWeight: FontWeight.w600),
-                    overflow: TextOverflow.ellipsis,
+                    softWrap: true,
+                    maxLines: 2,
                   ),
                 ),
               ],

@@ -261,9 +261,12 @@ class _SystemAccessScreenState extends State<SystemAccessScreen> {
                     const SizedBox(height: 6),
                     Text(
                       widget.session.hotelName,
+                      textAlign: TextAlign.center,
+                      softWrap: true,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             color: _navy,
                             fontWeight: FontWeight.w700,
+                            height: 1.25,
                           ),
                     ),
                     const SizedBox(height: 24),

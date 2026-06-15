@@ -147,11 +147,10 @@ class AdminDashboardHeader extends StatelessWidget {
         children: [
           Text(
             displayName,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
+            softWrap: true,
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.w800,
-                  height: 1.2,
+                  height: 1.25,
                   letterSpacing: -0.2,
                 ),
           ),
@@ -172,8 +171,9 @@ class AdminDashboardHeader extends StatelessWidget {
                         isSuperAdmin
                             ? 'Super admin · $adminName'
                             : 'Admin · $adminName',
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
+                        softWrap: true,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: scheme.onSurfaceVariant,
                               fontWeight: isSuperAdmin

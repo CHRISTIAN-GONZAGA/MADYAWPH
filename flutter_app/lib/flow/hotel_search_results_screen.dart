@@ -135,7 +135,7 @@ class HotelSearchResultsScreen extends StatelessWidget {
           crossAxisCount: 2,
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
-          childAspectRatio: 1.35,
+          childAspectRatio: 0.82,
         ),
         itemCount: hotels.length,
         itemBuilder: (context, i) {
@@ -194,12 +194,14 @@ class HotelSearchResultsScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     SizedBox(
-                      width: 280,
-                      child: Column(
-                        children: [
-                          summaryCard,
-                          memberBanner,
-                        ],
+                      width: 300,
+                      child: SingleChildScrollView(
+                        child: Column(
+                          children: [
+                            summaryCard,
+                            memberBanner,
+                          ],
+                        ),
                       ),
                     ),
                     Expanded(child: resultsBody),
@@ -450,9 +452,9 @@ class _HotelResultCard extends StatelessWidget {
     final contentPadding = compact ? 12.0 : 16.0;
 
     return Material(
-      elevation: 3,
+      elevation: compact ? 2 : 3,
       shadowColor: Colors.black26,
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(compact ? 16 : 20),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
@@ -490,12 +492,13 @@ class _HotelResultCard extends StatelessWidget {
                         ),
                 ),
                 Positioned(
-                  top: 12,
-                  left: 12,
+                  top: compact ? 8 : 12,
+                  left: compact ? 8 : 12,
+                  right: compact ? 8 : null,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: compact ? 8 : 10,
+                      vertical: compact ? 4 : 6,
                     ),
                     decoration: BoxDecoration(
                       color: canAccommodate
@@ -507,91 +510,182 @@ class _HotelResultCard extends StatelessWidget {
                       canAccommodate
                           ? context.tr('rooms_available', {'n': '$available'})
                           : context.tr('limited_availability'),
-                      style: const TextStyle(
+                      maxLines: 2,
+                      softWrap: true,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w700,
-                        fontSize: 11,
+                        fontSize: compact ? 10 : 11,
                       ),
                     ),
                   ),
                 ),
               ],
             ),
-            Padding(
-              padding: EdgeInsets.all(contentPadding),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    name,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
+            if (compact)
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.all(contentPadding),
+                  child: _hotelCardBody(
+                    context,
+                    scheme: scheme,
+                    name: name,
+                    loc: loc,
+                    minPrice: minPrice,
+                    estStay: estStay,
+                    compact: true,
+                    onTap: onTap,
                   ),
-                  if (loc.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Icon(Icons.place_outlined,
-                            size: 14, color: scheme.onSurfaceVariant),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            loc,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(color: scheme.onSurfaceVariant),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                  const SizedBox(height: 14),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      if (minPrice > 0) ...[
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              context.tr('from_price_php', {
-                                'n': minPrice.toStringAsFixed(0),
-                              }),
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleMedium
-                                  ?.copyWith(
-                                    color: scheme.primary,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                            ),
-                            if (estStay > 0)
-                              Text(
-                                context.tr('stay_estimate', {
-                                  'total': estStay.toStringAsFixed(0),
-                                  'n': '$nights',
-                                }),
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                          ],
-                        ),
-                      ],
-                      const Spacer(),
-                      FilledButton.tonalIcon(
-                        onPressed: onTap,
-                        icon: const Icon(Icons.arrow_forward, size: 18),
-                        label: Text(context.tr('view_rooms')),
-                      ),
-                    ],
-                  ),
-                ],
+                ),
+              )
+            else
+              Padding(
+                padding: EdgeInsets.all(contentPadding),
+                child: _hotelCardBody(
+                  context,
+                  scheme: scheme,
+                  name: name,
+                  loc: loc,
+                  minPrice: minPrice,
+                  estStay: estStay,
+                  compact: false,
+                  onTap: onTap,
+                ),
               ),
-            ),
           ],
         ),
       ),
     );
+  }
+
+  Widget _hotelCardBody(
+    BuildContext context, {
+    required ColorScheme scheme,
+    required String name,
+    required String loc,
+    required double minPrice,
+    required double estStay,
+    required bool compact,
+    required VoidCallback onTap,
+  }) {
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: compact ? MainAxisSize.max : MainAxisSize.min,
+      children: [
+        Text(
+          name,
+          maxLines: compact ? 3 : 4,
+          overflow: TextOverflow.ellipsis,
+          softWrap: true,
+          style: (compact
+                  ? Theme.of(context).textTheme.titleSmall
+                  : Theme.of(context).textTheme.titleMedium)
+              ?.copyWith(
+                fontWeight: FontWeight.w800,
+                height: 1.2,
+              ),
+        ),
+        if (loc.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            loc,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            softWrap: true,
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+        ],
+        if (compact) const Spacer(),
+        if (!compact) const SizedBox(height: 14),
+        if (minPrice > 0) ...[
+          if (!compact)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        context.tr('from_price_php', {
+                          'n': minPrice.toStringAsFixed(0),
+                        }),
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              color: scheme.primary,
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
+                      if (estStay > 0)
+                        Text(
+                          context.tr('stay_estimate', {
+                            'total': estStay.toStringAsFixed(0),
+                            'n': '$nights',
+                          }),
+                          maxLines: 2,
+                          softWrap: true,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                    ],
+                  ),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: onTap,
+                  icon: const Icon(Icons.arrow_forward, size: 18),
+                  label: Text(context.tr('view_rooms')),
+                ),
+              ],
+            )
+          else ...[
+            Text(
+              context.tr('from_price_php', {
+                'n': minPrice.toStringAsFixed(0),
+              }),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: scheme.primary,
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            if (estStay > 0)
+              Text(
+                context.tr('stay_estimate', {
+                  'total': estStay.toStringAsFixed(0),
+                  'n': '$nights',
+                }),
+                maxLines: 2,
+                softWrap: true,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonalIcon(
+                onPressed: onTap,
+                icon: const Icon(Icons.arrow_forward, size: 16),
+                label: Text(
+                  context.tr('view_rooms'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  textStyle: const TextStyle(fontSize: 12),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ],
+    );
+
+    return content;
   }
 }

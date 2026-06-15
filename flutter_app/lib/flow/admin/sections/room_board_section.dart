@@ -85,12 +85,14 @@ class RoomBoardSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          hotelName.toUpperCase(),
+          hotelName,
           textAlign: TextAlign.center,
+          softWrap: true,
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w800,
-                letterSpacing: 1.2,
+                letterSpacing: 0.8,
                 color: scheme.primary,
+                height: 1.25,
               ),
         ),
         const SizedBox(height: 10),
@@ -111,9 +113,11 @@ class RoomBoardSection extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         Text(
-          'Tap an available room to book · occupied rooms open details',
+          'Tap an available room to book. Occupied rooms open details.',
+          softWrap: true,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: scheme.onSurfaceVariant,
+                height: 1.35,
               ),
         ),
         const SizedBox(height: 12),
@@ -150,7 +154,7 @@ class RoomBoardSection extends StatelessWidget {
                         crossAxisCount: 3,
                         mainAxisSpacing: 8,
                         crossAxisSpacing: 8,
-                        childAspectRatio: 2.4,
+                        childAspectRatio: 2.1,
                       ),
                       itemCount: list.length,
                       itemBuilder: (context, i) {
@@ -186,10 +190,14 @@ class RoomBoardSection extends StatelessWidget {
                                   Expanded(
                                     child: Text(
                                       no,
+                                      maxLines: 2,
+                                      softWrap: true,
+                                      overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
                                         color: Colors.white,
                                         fontWeight: FontWeight.w700,
-                                        fontSize: 15,
+                                        fontSize: 14,
+                                        height: 1.1,
                                       ),
                                     ),
                                   ),

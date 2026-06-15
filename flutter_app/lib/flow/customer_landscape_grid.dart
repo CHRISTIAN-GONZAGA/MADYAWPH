@@ -170,18 +170,21 @@ class CustomerLandscapeCategoryTile extends StatelessWidget {
                   children: [
                     Text(
                       name,
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
+                      softWrap: true,
                       style: Theme.of(context).textTheme.labelLarge?.copyWith(
                             fontWeight: FontWeight.w800,
+                            height: 1.15,
                           ),
                     ),
                     if (description != null && description!.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text(
                         description!,
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
+                        softWrap: true,
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                               color: scheme.onSurfaceVariant,
                             ),
@@ -199,8 +202,9 @@ class CustomerLandscapeCategoryTile extends StatelessWidget {
                         Expanded(
                           child: Text(
                             availLabel,
-                            maxLines: 1,
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
+                            softWrap: true,
                             style:
                                 Theme.of(context).textTheme.labelSmall?.copyWith(
                                       color: available
@@ -305,10 +309,12 @@ class CustomerLandscapeRoomTile extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
+                    softWrap: true,
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
                           fontWeight: FontWeight.w800,
+                          height: 1.1,
                         ),
                   ),
                   const Spacer(),

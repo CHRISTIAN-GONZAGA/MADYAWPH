@@ -106,7 +106,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
       ),
       const AdminNavItem(
         label: 'Resellers',
-        shortLabel: 'Partner',
+        shortLabel: 'QR',
         icon: Icons.qr_code_scanner_outlined,
       ),
       const AdminNavItem(

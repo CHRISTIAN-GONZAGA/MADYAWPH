@@ -54,8 +54,8 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar>
   double _displayedCenterX = 0;
   int _fromIndex = 0;
 
-  static const _itemWidth = 76.0;
-  static const _barHeight = 68.0;
+  static const _itemWidth = 86.0;
+  static const _barHeight = 72.0;
   static const _bumpRadius = 30.0;
 
   @override
@@ -144,7 +144,7 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar>
         : widget.activeColor;
 
     return Container(
-      height: 92,
+      height: 100,
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
       child: Stack(
         clipBehavior: Clip.none,
@@ -285,7 +285,7 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar>
                                   ),
                                 ),
                               ),
-                              const SizedBox(height: 4),
+                              const SizedBox(height: 2),
                               AnimatedOpacity(
                                 duration: const Duration(milliseconds: 200),
                                 opacity: active ? 1 : 0.85,
@@ -293,27 +293,34 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar>
                                   duration: const Duration(milliseconds: 280),
                                   curve: Curves.easeOutCubic,
                                   style: TextStyle(
-                                    fontSize: active ? 10.5 : 9,
+                                    fontSize: active ? 10 : 9,
                                     fontWeight: active
                                         ? FontWeight.w800
                                         : FontWeight.w500,
+                                    height: 1.15,
                                     color: active
                                         ? activeColor
                                         : scheme.onSurfaceVariant,
-                                    letterSpacing: active ? 0.25 : 0,
+                                    letterSpacing: active ? 0.15 : 0,
                                   ),
-                                  child: Text(
-                                    item.shortLabel ?? item.label,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    textAlign: TextAlign.center,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 2,
+                                    ),
+                                    child: Text(
+                                      item.shortLabel ?? item.label,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.center,
+                                      softWrap: true,
+                                    ),
                                   ),
                                 ),
                               ),
                               AnimatedContainer(
                                 duration: const Duration(milliseconds: 280),
                                 curve: Curves.easeOutCubic,
-                                margin: const EdgeInsets.only(top: 4, bottom: 6),
+                                margin: const EdgeInsets.only(top: 2, bottom: 4),
                                 width: active ? 18 : 0,
                                 height: 3,
                                 decoration: BoxDecoration(

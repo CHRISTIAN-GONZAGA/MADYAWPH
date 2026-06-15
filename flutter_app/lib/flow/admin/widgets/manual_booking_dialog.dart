@@ -3,36 +3,26 @@ import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
 import '../../../widgets/admin_time_slot_field.dart';
+import '../../../widgets/app_input.dart';
 import '../admin_dashboard_models.dart';
 import '../../admin_rooms.dart';
 import 'hourly_billing.dart';
+
+String _roomIdOf(Map<String, dynamic> room) =>
+    (room['id'] ?? room['_id'] ?? '').toString();
 
 Future<bool> showAdminManualBookingDialog({
   required BuildContext context,
   required Map<String, dynamic> room,
   required Future<void> Function() onSuccess,
 }) async {
-  final result = await showModalBottomSheet<bool>(
+  final result = await showDialog<bool>(
     context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    showDragHandle: true,
-    backgroundColor: Theme.of(context).colorScheme.surface,
-    builder: (ctx) {
-      final height = MediaQuery.sizeOf(ctx).height * 0.92;
-      return SizedBox(
-        height: height,
-        child: Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.viewInsetsOf(ctx).bottom,
-          ),
-          child: _ManualBookingSheet(
-            room: room,
-            onSuccess: onSuccess,
-          ),
-        ),
-      );
-    },
+    barrierDismissible: true,
+    builder: (ctx) => _ManualBookingDialog(
+      room: room,
+      onSuccess: onSuccess,
+    ),
   );
 
   return result == true;
@@ -44,7 +34,7 @@ Future<void> handleAdminWalkInRoomTap(
   required Map<String, dynamic> room,
   required Future<void> Function() onSuccess,
 }) async {
-  final roomId = (room['id'] ?? '').toString();
+  final roomId = _roomIdOf(room);
 
   if (AdminDashboardModels.isWalkInBookable(room)) {
     if (roomId.isEmpty) {
@@ -81,8 +71,8 @@ Future<void> handleAdminWalkInRoomTap(
   );
 }
 
-class _ManualBookingSheet extends StatefulWidget {
-  const _ManualBookingSheet({
+class _ManualBookingDialog extends StatefulWidget {
+  const _ManualBookingDialog({
     required this.room,
     required this.onSuccess,
   });
@@ -91,10 +81,10 @@ class _ManualBookingSheet extends StatefulWidget {
   final Future<void> Function() onSuccess;
 
   @override
-  State<_ManualBookingSheet> createState() => _ManualBookingSheetState();
+  State<_ManualBookingDialog> createState() => _ManualBookingDialogState();
 }
 
-class _ManualBookingSheetState extends State<_ManualBookingSheet> {
+class _ManualBookingDialogState extends State<_ManualBookingDialog> {
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
@@ -106,6 +96,14 @@ class _ManualBookingSheetState extends State<_ManualBookingSheet> {
   var _checkInNow = true;
   var _busy = false;
   String? _error;
+  String _paymentMethod = 'Cash';
+
+  static const _paymentMethods = [
+    'Cash',
+    'GCash',
+    'PayMaya',
+    'Credit Card',
+  ];
 
   @override
   void initState() {
@@ -154,19 +152,24 @@ class _ManualBookingSheetState extends State<_ManualBookingSheet> {
       setState(() => _error = 'Check-out must be after check-in.');
       return;
     }
+    final roomId = _roomIdOf(widget.room);
+    if (roomId.isEmpty) {
+      setState(() => _error = 'Room ID missing. Refresh the dashboard and try again.');
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
       await portalDio().post('/admin/bookings', data: {
-        'room_id': (widget.room['id'] ?? '').toString(),
+        'room_id': roomId,
         'guest_name': _nameCtrl.text.trim(),
         'guest_email': _emailCtrl.text.trim(),
         'guest_phone': _phoneCtrl.text.trim(),
         'check_in_at': inAt.toIso8601String(),
         'check_out_at': outAt.toIso8601String(),
-        'payment_method': 'Cash',
+        'payment_method': _paymentMethod,
         'check_in_now': _checkInNow,
       });
       if (!mounted) return;
@@ -217,6 +220,7 @@ class _ManualBookingSheetState extends State<_ManualBookingSheet> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final roomNo = (widget.room['room_number'] ?? '—').toString();
+    final category = AdminDashboardModels.categoryLabel(widget.room);
     final inAt = _checkInAt();
     final outAt = _checkOutAt();
     final validWindow = outAt.isAfter(inAt);
@@ -225,176 +229,192 @@ class _ManualBookingSheetState extends State<_ManualBookingSheet> {
     final stayHours = validWindow ? HourlyBilling.stayHours(inAt, outAt) : 0;
     final isHourly = HourlyBilling.isHourly(widget.room);
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
-      children: [
-            Text(
-              'Walk-in booking',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Room $roomNo · ${HourlyBilling.priceLabel(widget.room)}',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: _nameCtrl,
-              textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(
-                labelText: 'Guest name *',
-                prefixIcon: Icon(Icons.person_outline),
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _emailCtrl,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: 'Email *',
-                prefixIcon: Icon(Icons.email_outlined),
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _phoneCtrl,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: 'Phone *',
-                prefixIcon: Icon(Icons.phone_outlined),
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Stay schedule',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _pickDate(checkIn: true),
-                    icon: const Icon(Icons.calendar_today, size: 18),
-                    label: Text('In ${_fmtDate(_checkInDate)}'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _pickDate(checkIn: false),
-                    icon: const Icon(Icons.event, size: 18),
-                    label: Text('Out ${_fmtDate(_checkOutDate)}'),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            AdminTimeSlotField(
-              label: 'Check-in time',
-              value: _checkInTime,
-              onChanged: (t) {
-                if (t != null) setState(() => _checkInTime = t);
-              },
-            ),
-            const SizedBox(height: 12),
-            AdminTimeSlotField(
-              label: 'Check-out time',
-              value: _checkOutTime,
-              onChanged: (t) {
-                if (t != null) setState(() => _checkOutTime = t);
-              },
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Check in immediately'),
-              subtitle: const Text('Mark guest as checked in after booking'),
-              value: _checkInNow,
-              onChanged: (v) => setState(() => _checkInNow = v),
-            ),
-            if (validWindow) ...[
-              const SizedBox(height: 8),
+    return AlertDialog(
+      title: const Text('Walk-in booking'),
+      content: SizedBox(
+        width: MediaQuery.sizeOf(context).width > 520 ? 480 : double.maxFinite,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
               Card(
                 color: scheme.primaryContainer.withValues(alpha: 0.35),
                 child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Row(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.receipt_long, color: scheme.primary),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Estimated bill',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelLarge
-                                  ?.copyWith(fontWeight: FontWeight.w700),
+                      Text(
+                        'Room $roomNo',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
                             ),
-                            if (isHourly)
-                              Text('$stayHours hour(s) stay'),
-                            Text(
-                              '₱${estimated.toStringAsFixed(0)}',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleLarge
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                    color: scheme.primary,
-                                  ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '$category · ${HourlyBilling.priceLabel(widget.room)}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
                             ),
-                          ],
-                        ),
                       ),
                     ],
                   ),
                 ),
               ),
-            ],
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                _error!,
-                style: TextStyle(color: scheme.error),
+              const SizedBox(height: 16),
+              AppInput(
+                controller: _nameCtrl,
+                label: 'Guest name *',
               ),
-            ],
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _busy ? null : () => Navigator.pop(context, false),
-                    child: const Text('Cancel'),
+              const SizedBox(height: 8),
+              AppInput(
+                controller: _emailCtrl,
+                label: 'Email *',
+                keyboardType: TextInputType.emailAddress,
+              ),
+              const SizedBox(height: 8),
+              AppInput(
+                controller: _phoneCtrl,
+                label: 'Phone *',
+                keyboardType: TextInputType.phone,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Stay schedule',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _pickDate(checkIn: true),
+                      icon: const Icon(Icons.calendar_today, size: 18),
+                      label: Text('In ${_fmtDate(_checkInDate)}'),
+                    ),
                   ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _pickDate(checkIn: false),
+                      icon: const Icon(Icons.event, size: 18),
+                      label: Text('Out ${_fmtDate(_checkOutDate)}'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              AdminTimeSlotField(
+                label: 'Check-in time',
+                value: _checkInTime,
+                onChanged: (t) {
+                  if (t != null) setState(() => _checkInTime = t);
+                },
+              ),
+              const SizedBox(height: 12),
+              AdminTimeSlotField(
+                label: 'Check-out time',
+                value: _checkOutTime,
+                onChanged: (t) {
+                  if (t != null) setState(() => _checkOutTime = t);
+                },
+              ),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Check in immediately'),
+                subtitle: const Text('Mark guest as checked in after booking'),
+                value: _checkInNow,
+                onChanged: (v) => setState(() => _checkInNow = v),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _paymentMethod,
+                decoration: const InputDecoration(
+                  labelText: 'Payment method',
+                  border: OutlineInputBorder(),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  flex: 2,
-                  child: FilledButton(
-                    onPressed: _busy ? null : _submit,
-                    child: _busy
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Create booking'),
+                items: _paymentMethods
+                    .map(
+                      (m) => DropdownMenuItem(value: m, child: Text(m)),
+                    )
+                    .toList(),
+                onChanged: _busy
+                    ? null
+                    : (v) {
+                        if (v != null) setState(() => _paymentMethod = v);
+                      },
+              ),
+              if (validWindow) ...[
+                const SizedBox(height: 12),
+                Card(
+                  color: scheme.secondaryContainer.withValues(alpha: 0.4),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        Icon(Icons.receipt_long, color: scheme.primary),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Estimated bill',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelLarge
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                              if (isHourly) Text('$stayHours hour(s) stay'),
+                              Text(
+                                '₱${estimated.toStringAsFixed(0)}',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleLarge
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                      color: scheme.primary,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],
-            ),
-          ],
-        );
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _error!,
+                  style: TextStyle(color: scheme.error),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _busy ? null : _submit,
+          child: _busy
+              ? const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Create booking'),
+        ),
+      ],
+    );
   }
 }
