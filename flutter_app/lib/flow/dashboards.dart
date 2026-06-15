@@ -28,6 +28,20 @@ import '../widgets/payment_redirect.dart';
 import 'portal_sign_out.dart';
 // --- Admin ---
 
+/// Reserve API only for future check-in; same-day and Book always use /customer/bookings.
+bool customerStayUsesReservationApi({
+  required bool reserveIntent,
+  required String checkInIso,
+}) {
+  if (!reserveIntent) return false;
+  final parsed = DateTime.tryParse(checkInIso.split('T').first);
+  if (parsed == null) return true;
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final checkIn = DateTime(parsed.year, parsed.month, parsed.day);
+  return checkIn.isAfter(today);
+}
+
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key, this.isSuperAdmin = false});
 
@@ -473,40 +487,46 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       children: [
         if (_refreshing) const LinearProgressIndicator(minHeight: 2),
         Expanded(
-          child: AdminDashboardShell(
-      data: _data!,
-      isSuperAdmin: isSuper,
-      onRefresh: () => _load(silent: true),
-      onSignOut: _signOut,
-      busyAction: _busyAction,
-      onRecharge: _showRechargeDialog,
-      onSurgePricing: _showSurgePricingDialog,
-      onThemeReset: () => _runAction('Reset personal theme', () async {
-        await portalDio().delete('/admin/theme/reset');
-        return {'message': 'Personal theme reset.'};
-      }),
-      onProcessReminders: () => _runAction('Process reminders', () async {
-        final res = await portalDio()
-            .post<Map<String, dynamic>>('/checkouts/process-reminders');
-        return {
-          'message': 'Processed ${res.data?['processed'] ?? 0} reminders.',
-        };
-      }),
-      onAmenityAddProduct: _manageAmenityMenu,
-      onOpenActivityLogs: () {
-        Navigator.of(context).push<void>(
-          MaterialPageRoute<void>(
-            builder: (_) => const AdminActivityLogsScreen(),
-          ),
-        );
-      },
-      onOpenAccountSettings: () {
-        Navigator.of(context).push<void>(
-          MaterialPageRoute<void>(
-            builder: (_) => const AdminAccountSettingsScreen(),
-          ),
-        );
-      },
+          child: Navigator(
+            onGenerateRoute: (settings) {
+              return MaterialPageRoute<void>(
+                builder: (_) => AdminDashboardShell(
+                  data: _data!,
+                  isSuperAdmin: isSuper,
+                  onRefresh: () => _load(silent: true),
+                  onSignOut: _signOut,
+                  busyAction: _busyAction,
+                  onRecharge: _showRechargeDialog,
+                  onSurgePricing: _showSurgePricingDialog,
+                  onThemeReset: () => _runAction('Reset personal theme', () async {
+                    await portalDio().delete('/admin/theme/reset');
+                    return {'message': 'Personal theme reset.'};
+                  }),
+                  onProcessReminders: () => _runAction('Process reminders', () async {
+                    final res = await portalDio()
+                        .post<Map<String, dynamic>>('/checkouts/process-reminders');
+                    return {
+                      'message': 'Processed ${res.data?['processed'] ?? 0} reminders.',
+                    };
+                  }),
+                  onAmenityAddProduct: _manageAmenityMenu,
+                  onOpenActivityLogs: () {
+                    Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AdminActivityLogsScreen(),
+                      ),
+                    );
+                  },
+                  onOpenAccountSettings: () {
+                    Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AdminAccountSettingsScreen(),
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
           ),
         ),
       ],
@@ -3211,6 +3231,16 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     }
   }
 
+  bool _searchUsesReservationApi() {
+    final ctx = widget.searchContext;
+    if (ctx == null) return false;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final checkIn =
+        DateTime(ctx.checkIn.year, ctx.checkIn.month, ctx.checkIn.day);
+    return checkIn.isAfter(today);
+  }
+
   Future<void> _bookRoom(
     Map<String, dynamic> room, {
     required bool reserve,
@@ -3330,10 +3360,14 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
             }
             final picked = await showDatePicker(
               context: context,
-              firstDate: checkInDate!.add(const Duration(days: 1)),
+              firstDate: HourlyBilling.isHourly(room) && !forceReserve
+                  ? checkInDate!
+                  : checkInDate!.add(const Duration(days: 1)),
               lastDate: checkInDate!.add(const Duration(days: 365)),
-              initialDate:
-                  checkOutDate ?? checkInDate!.add(const Duration(days: 1)),
+              initialDate: checkOutDate ??
+                  (HourlyBilling.isHourly(room) && !forceReserve
+                      ? checkInDate!
+                      : checkInDate!.add(const Duration(days: 1))),
             );
             if (picked == null) return;
             checkOutDate = picked;
@@ -3612,7 +3646,13 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     if (payload == null || _booking) return;
     setState(() => _booking = true);
     try {
-      final path = forceReserve ? '/customer/reservations' : '/customer/bookings';
+      final checkInIso = (payload['check_in'] ?? '').toString();
+      final path = customerStayUsesReservationApi(
+            reserveIntent: reserve,
+            checkInIso: checkInIso,
+          )
+          ? '/customer/reservations'
+          : '/customer/bookings';
       final discount = (payload['discount_type'] ?? 'none').toString();
       final Map<String, dynamic> body = {
         'hotel_id': widget.hotelId,
@@ -3671,6 +3711,10 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
               '')
           .toString();
       final guestEmail = (payload['guest_email'] ?? '').toString();
+      final usedReservationApi = customerStayUsesReservationApi(
+        reserveIntent: reserve,
+        checkInIso: checkInIso,
+      );
 
       if (fromSearch && ref.isNotEmpty) {
         if (!mounted) return;
@@ -3693,7 +3737,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            forceReserve
+            usedReservationApi
                 ? 'Request sent (ref ${ref.isEmpty ? 'pending' : ref}). Awaiting hotel approval.'
                 : 'Booking submitted: ${ref.isEmpty ? 'Reference generated' : ref}',
           ),
@@ -3925,7 +3969,10 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                               child: FilledButton(
                                 onPressed: _booking
                                     ? null
-                                    : () => _bookRoom(r, reserve: true),
+                                    : () => _bookRoom(
+                                          r,
+                                          reserve: _searchUsesReservationApi(),
+                                        ),
                                 child: const Text('Book this room'),
                               ),
                             )
@@ -4029,7 +4076,12 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                     priceLabel: priceLabel,
                     imageUrl: (r['image_url'] ?? '').toString(),
                     busy: _booking,
-                    onBook: () => _bookRoom(r, reserve: fromSearch),
+                    onBook: () => _bookRoom(
+                          r,
+                          reserve: fromSearch
+                              ? _searchUsesReservationApi()
+                              : false,
+                        ),
                     onReserve: fromSearch
                         ? null
                         : () => _bookRoom(r, reserve: true),

@@ -210,6 +210,37 @@ class CustomerPortalBookingTest extends TestCase
         $show->assertJsonPath('reservation.hotel_id', (string) $hotel->id);
     }
 
+    public function test_same_day_reservation_submits_instant_booking(): void
+    {
+        $hotel = Hotel::create(['name' => 'Same Day Hotel', 'location' => 'Loc']);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '210',
+            'room_type' => 'Single',
+            'price_per_night' => 1500,
+            'status' => RoomStatus::AVAILABLE->value,
+        ]);
+
+        $checkIn = Carbon::today()->toDateString();
+        $checkOut = Carbon::today()->addDay()->toDateString();
+
+        $response = $this->postJson('/api/v1/customer/reservations', [
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'guest_name' => 'Same Day Guest',
+            'guest_email' => 'sameday@example.com',
+            'guest_phone' => '09171234567',
+            'check_in' => $checkIn,
+            'check_out' => $checkOut,
+            'discount_type' => 'none',
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('ok', true);
+        $response->assertJsonStructure(['booking' => ['booking_reference']]);
+        $this->assertSame(0, ExternalReservation::withoutGlobalScopes()->count());
+    }
+
     public function test_instant_booking_rejects_overlapping_pending_reservation(): void
     {
         $hotel = Hotel::create(['name' => 'Conflict Hotel', 'location' => 'Loc']);

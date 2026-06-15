@@ -316,6 +316,11 @@ class CustomerPortalApiController extends Controller
             $validated = $this->mergeGuestIdIntoValidated($request, $validated);
             $validated = $this->mergePaymentIntoValidated($validated);
 
+            $checkIn = Carbon::parse($validated['check_in'])->startOfDay();
+            if (! $checkIn->isAfter(Carbon::today())) {
+                return $this->storeBooking($request);
+            }
+
             return $this->createFutureReservation($validated);
         } catch (HttpResponseException|ValidationException $e) {
             throw $e;
@@ -638,7 +643,7 @@ class CustomerPortalApiController extends Controller
             'guest_email' => ['required', 'email'],
             'guest_phone' => ['required', 'string', 'max:30'],
             'check_in' => ['required', 'date'],
-            'check_out' => ['required', 'date', 'after:check_in'],
+            'check_out' => ['required', 'date', 'after_or_equal:check_in'],
             'discount_type' => ['nullable', 'string', 'in:none,pwd,senior'],
             'discount_id_file' => ['nullable', 'image', 'max:5120'],
             'guest_id_file' => ['nullable', 'image', 'max:5120'],

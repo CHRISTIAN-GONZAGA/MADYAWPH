@@ -162,15 +162,14 @@ class RoomSummarySection extends StatelessWidget {
               : 'Guest: $guest\nStay: $range',
         ),
         isThreeLine: true,
-        trailing: AdminDashboardModels.isWalkInBookable(r)
-            ? const Icon(Icons.person_add_outlined)
-            : const Icon(Icons.chevron_right),
+        trailing: const Icon(Icons.chevron_right),
         onTap: () {
           AdminRoomNavigation.openRoom(
             hostContext,
             room: r,
             onSuccess: onRefresh,
             sheetContext: sheetContext,
+            mode: AdminRoomOpenMode.manageOnly,
           );
         },
       ),
@@ -219,6 +218,7 @@ class RoomSummarySection extends StatelessWidget {
                         room: r,
                         onSuccess: onRefresh,
                         sheetContext: ctx,
+                        mode: AdminRoomOpenMode.manageOnly,
                       );
                     },
                   ),

@@ -1,10 +1,10 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gloretto_mobile/flow/admin/sections/room_board_section.dart';
-import 'package:gloretto_mobile/navigation_keys.dart';
 
 void main() {
-  testWidgets('walk-in tab room tap opens booking form', (tester) async {
+  testWidgets('walk-in tab room tap opens booking form via navigator push',
+      (tester) async {
     final rooms = [
       {
         'id': '674a1b2c3d4e5f6789012345',
@@ -19,13 +19,18 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        navigatorKey: appNavigatorKey,
-        home: Scaffold(
-          body: RoomBoardSection(
-            rooms: rooms,
-            hotelName: 'Test Hotel',
-            onChanged: () async {},
-          ),
+        home: Navigator(
+          onGenerateRoute: (settings) {
+            return MaterialPageRoute<void>(
+              builder: (_) => Scaffold(
+                body: RoomBoardSection(
+                  rooms: rooms,
+                  hotelName: 'Test Hotel',
+                  onChanged: () async {},
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
