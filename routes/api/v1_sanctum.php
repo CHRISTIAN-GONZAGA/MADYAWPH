@@ -63,6 +63,24 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 
+Route::get('/auth/session', function (Request $request) {
+    $user = $request->user();
+    if ($user === null) {
+        return response()->json(['message' => 'Unauthenticated.'], 401);
+    }
+
+    return response()->json([
+        'ok' => true,
+        'user' => [
+            'id' => (string) $user->id,
+            'hotel_id' => (string) ($user->hotel_id ?? ''),
+            'name' => (string) ($user->name ?? ''),
+            'email' => (string) ($user->email ?? ''),
+            'role' => $user->roleValue(),
+        ],
+    ]);
+})->name('api.v1.auth.session');
+
 Route::middleware('role:admin')->group(function (): void {
     Route::get('/admin/dashboard', AdminDashboardApiController::class)->name('api.v1.admin.dashboard');
 

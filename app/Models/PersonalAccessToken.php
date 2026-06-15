@@ -48,12 +48,32 @@ class PersonalAccessToken extends BasePersonalAccessToken
         $hashed = hash('sha256', $plainTextToken);
 
         if ($id !== '') {
-            $instance = static::query()->where('_id', $id)->first() ?? static::find($id);
-            if ($instance && is_string($instance->token) && hash_equals($instance->token, $hashed)) {
-                return $instance;
+            foreach (self::tokenIdLookupValues($id) as $lookupId) {
+                $instance = static::query()->where('_id', $lookupId)->first()
+                    ?? static::find($lookupId);
+                if ($instance && is_string($instance->token) && hash_equals($instance->token, $hashed)) {
+                    return $instance;
+                }
             }
         }
 
         return static::where('token', $hashed)->first();
+    }
+
+    /**
+     * @return list<mixed>
+     */
+    private static function tokenIdLookupValues(string $id): array
+    {
+        $values = [$id];
+        if (preg_match('/^[a-f0-9]{24}$/i', $id) === 1 && class_exists(\MongoDB\BSON\ObjectId::class)) {
+            try {
+                $values[] = new \MongoDB\BSON\ObjectId($id);
+            } catch (\Throwable) {
+                // ignore invalid ObjectId
+            }
+        }
+
+        return array_values(array_unique($values, SORT_REGULAR));
     }
 }

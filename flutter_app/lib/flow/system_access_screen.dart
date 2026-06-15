@@ -71,6 +71,21 @@ class _SystemAccessScreenState extends State<SystemAccessScreen> {
     );
   }
 
+  bool _roleMatchesSavedSession(String expectedRole, String savedRole) {
+    switch (expectedRole) {
+      case 'admin':
+        return savedRole == 'admin' || savedRole == 'super_admin';
+      case 'super_admin':
+        return savedRole == 'super_admin';
+      case 'staff':
+        return savedRole == 'staff';
+      case 'owner':
+        return savedRole == 'owner' || savedRole == 'super_admin';
+      default:
+        return false;
+    }
+  }
+
   Future<bool> _tryResumeWithSavedToken(String expectedRole) async {
     final token = await AuthStorage.portalToken();
     final savedRole = await AuthStorage.portalRole();
@@ -84,23 +99,40 @@ class _SystemAccessScreenState extends State<SystemAccessScreen> {
       return false;
     }
 
+    if (!_roleMatchesSavedSession(expectedRole, savedRole)) {
+      return false;
+    }
+
+    try {
+      final res = await portalDio().get<Map<String, dynamic>>('/auth/session');
+      final apiRole =
+          ((res.data?['user'] as Map<String, dynamic>?)?['role'] ?? '')
+              .toString();
+      if (!_roleMatchesSavedSession(expectedRole, apiRole)) {
+        await AuthStorage.clearPortalAuth();
+        return false;
+      }
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401 || e.response?.statusCode == 403) {
+        await AuthStorage.clearPortalAuth();
+        return false;
+      }
+      rethrow;
+    }
+
     switch (expectedRole) {
       case 'admin':
-        if (savedRole != 'admin' && savedRole != 'super_admin') return false;
         await _openDashboard(
           AdminDashboardScreen(isSuperAdmin: savedRole == 'super_admin'),
         );
         return true;
       case 'super_admin':
-        if (savedRole != 'super_admin') return false;
         await _openDashboard(const AdminDashboardScreen(isSuperAdmin: true));
         return true;
       case 'staff':
-        if (savedRole != 'staff') return false;
         await _openDashboard(const StaffDashboardScreen());
         return true;
       case 'owner':
-        if (savedRole != 'owner' && savedRole != 'super_admin') return false;
         await _openDashboard(const OwnerDashboardScreen());
         return true;
       default:
@@ -132,18 +164,21 @@ class _SystemAccessScreenState extends State<SystemAccessScreen> {
         return;
       }
 
-      if (await _tryResumeWithSavedToken(role)) return;
-
-      final hotelId = widget.session.hotelId;
       final trimmed = _username.text.trim();
       final pass = _password.text;
-      if (trimmed.isEmpty || pass.isEmpty) {
+      final hasCredentials = trimmed.isNotEmpty && pass.isNotEmpty;
+
+      if (!hasCredentials && await _tryResumeWithSavedToken(role)) return;
+
+      if (!hasCredentials) {
         setState(() {
           _error = context.tr('credentials_required');
           _busy = false;
         });
         return;
       }
+
+      final hotelId = widget.session.hotelId;
 
       final body = <String, dynamic>{
         'role': role,

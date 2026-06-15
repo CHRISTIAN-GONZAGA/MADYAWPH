@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\FlexibleUserRoleCast;
 use App\Enums\UserRole;
 use App\Models\Concerns\BelongsToHotel;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
@@ -56,7 +57,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
-            'role' => UserRole::class,
+            'role' => FlexibleUserRoleCast::class,
         ];
     }
 

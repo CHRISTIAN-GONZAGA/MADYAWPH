@@ -21,6 +21,10 @@ String dioErrorMessage(DioException e) {
   if (data is Map) {
     final msg = data['message'];
     if (msg is String && msg.isNotEmpty) {
+      if (response?.statusCode == 401 &&
+          msg.toLowerCase().contains('unauthenticated')) {
+        return 'Session expired. Please sign in again.';
+      }
       return msg;
     }
     final errors = data['errors'];
@@ -96,6 +100,12 @@ Dio _authedDio(_AuthKind kind) {
           }
         }
         handler.next(options);
+      },
+      onError: (error, handler) async {
+        if (kind == _AuthKind.portal && error.response?.statusCode == 401) {
+          await AuthStorage.clearPortalAuth();
+        }
+        handler.next(error);
       },
     ),
   );
