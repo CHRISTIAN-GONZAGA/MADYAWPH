@@ -57,6 +57,18 @@ class AdminDashboardModels {
     return false;
   }
 
+  /// Normalizes Mongo/API room identifiers for booking requests.
+  static String roomIdOf(Map<String, dynamic> room) {
+    final raw = room['id'] ?? room['_id'];
+    if (raw is Map) {
+      final oid = raw[r'$oid'] ?? raw['oid'];
+      if (oid != null) return oid.toString();
+    }
+    final id = (raw ?? '').toString().trim();
+    if (id.isNotEmpty && id != 'null') return id;
+    return '';
+  }
+
   /// Display label: checked_in → Occupied (API value unchanged).
   static String roomStatusLabel(String status) {
     switch (status.toLowerCase().trim()) {

@@ -431,7 +431,9 @@ Route::middleware('role:admin')->group(function (): void {
             'check_in_now' => ['nullable', 'boolean'],
         ]);
 
-        $room = Room::query()->findOrFail($validated['room_id']);
+        $room = Room::withoutGlobalScopes()
+            ->where('hotel_id', (string) $request->user()->hotel_id)
+            ->findOrFail($validated['room_id']);
         if ((string) $room->hotel_id !== (string) $request->user()->hotel_id) {
             return response()->json(['message' => 'Room outside hotel scope.'], 403);
         }

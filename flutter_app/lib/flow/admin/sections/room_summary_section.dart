@@ -92,6 +92,7 @@ class RoomSummarySection extends StatelessWidget {
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
+      useSafeArea: true,
       builder: (ctx) {
         final reservedSoon = list.where((r) {
           final s = AdminDashboardModels.statusOf(r);
@@ -99,46 +100,42 @@ class RoomSummarySection extends StatelessWidget {
           return AdminDashboardModels.isStayEndingSoon(r);
         }).toList();
         final others = list.where((r) => !reservedSoon.contains(r)).toList();
+        final sheetHeight = MediaQuery.sizeOf(ctx).height * 0.78;
 
-        return DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.65,
-          maxChildSize: 0.92,
-          minChildSize: 0.4,
-          builder: (_, scroll) => SafeArea(
-            child: ListView(
-              controller: scroll,
-              padding: const EdgeInsets.all(16),
-              children: [
-                Text(label, style: Theme.of(ctx).textTheme.headlineSmall),
+        return SizedBox(
+          height: sheetHeight,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            children: [
+              Text(label, style: Theme.of(ctx).textTheme.headlineSmall),
+              Text(
+                subtitle ?? '${list.length} room(s) in this category',
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 16),
+              if (reservedSoon.isNotEmpty) ...[
                 Text(
-                  subtitle ?? '${list.length} room(s) in this category',
-                  style: Theme.of(ctx).textTheme.bodySmall,
-                ),
-                const SizedBox(height: 16),
-                if (reservedSoon.isNotEmpty) ...[
-                  Text(
-                    'Departing within 1–2 days',
-                    style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                  const SizedBox(height: 8),
-                  ...reservedSoon
-                      .map((r) => _roomTile(context, r, highlight: true)),
-                  const SizedBox(height: 16),
-                ],
-                Text(
-                  'All rooms',
+                  'Departing within 1–2 days',
                   style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
                 ),
                 const SizedBox(height: 8),
-                ...others.map((r) => _roomTile(context, r)),
-                if (list.isEmpty) const Text('No rooms in this category.'),
+                ...reservedSoon.map(
+                  (r) => _roomTile(context, r, highlight: true),
+                ),
+                const SizedBox(height: 16),
               ],
-            ),
+              Text(
+                'All rooms',
+                style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              ...others.map((r) => _roomTile(context, r)),
+              if (list.isEmpty) const Text('No rooms in this category.'),
+            ],
           ),
         );
       },
@@ -172,21 +169,25 @@ class RoomSummarySection extends StatelessWidget {
             ? const Icon(Icons.person_add_outlined)
             : const Icon(Icons.chevron_right),
         onTap: () async {
+          final hostContext = context;
           if (AdminDashboardModels.isWalkInBookable(r)) {
-            Navigator.of(context).pop();
-            await handleAdminWalkInRoomTap(
-              context,
-              room: r,
-              onSuccess: onRefresh,
-            );
+            Navigator.of(hostContext, rootNavigator: true).pop();
+            WidgetsBinding.instance.addPostFrameCallback((_) async {
+              if (!hostContext.mounted) return;
+              await handleAdminWalkInRoomTap(
+                hostContext,
+                room: r,
+                onSuccess: onRefresh,
+              );
+            });
             return;
           }
-          Navigator.of(context).pop();
-          Navigator.of(context).push<void>(
+          Navigator.of(hostContext, rootNavigator: true).pop();
+          final roomId = AdminDashboardModels.roomIdOf(r);
+          if (roomId.isEmpty) return;
+          await Navigator.of(hostContext).push<void>(
             MaterialPageRoute<void>(
-              builder: (_) => AdminRoomDetailScreen(
-                roomId: (r['id'] ?? '').toString(),
-              ),
+              builder: (_) => AdminRoomDetailScreen(roomId: roomId),
             ),
           );
         },
@@ -232,11 +233,11 @@ class RoomSummarySection extends StatelessWidget {
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () {
                       Navigator.of(ctx).pop();
+                      final roomId = AdminDashboardModels.roomIdOf(r);
+                      if (roomId.isEmpty) return;
                       Navigator.of(context).push<void>(
                         MaterialPageRoute<void>(
-                          builder: (_) => AdminRoomDetailScreen(
-                            roomId: (r['id'] ?? '').toString(),
-                          ),
+                          builder: (_) => AdminRoomDetailScreen(roomId: roomId),
                         ),
                       );
                     },

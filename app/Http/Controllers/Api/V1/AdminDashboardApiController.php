@@ -112,6 +112,7 @@ class AdminDashboardApiController extends Controller
                     ->get();
 
                 return array_merge($room->toArray(), [
+                    'id' => (string) $room->id,
                     'status' => $room->status instanceof RoomStatus
                         ? $room->status->value
                         : (filled($room->status) ? (string) $room->status : RoomStatus::AVAILABLE->value),
