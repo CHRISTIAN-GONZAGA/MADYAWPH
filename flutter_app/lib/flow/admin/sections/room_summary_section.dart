@@ -14,8 +14,11 @@ class RoomSummarySection extends StatelessWidget {
     required this.hotelName,
     required this.localBookingsTotal,
     required this.onlineBookingsTotal,
+    required this.recentBookings24h,
+    required this.pendingReservations,
     required this.onOpenLocalBookings,
     required this.onOpenOnlineBookings,
+    required this.onOpenBookingsAlert,
     required this.onRefresh,
   });
 
@@ -24,8 +27,11 @@ class RoomSummarySection extends StatelessWidget {
   final String hotelName;
   final int localBookingsTotal;
   final int onlineBookingsTotal;
+  final int recentBookings24h;
+  final int pendingReservations;
   final VoidCallback onOpenLocalBookings;
   final VoidCallback onOpenOnlineBookings;
+  final VoidCallback onOpenBookingsAlert;
   final Future<void> Function() onRefresh;
 
   List<Map<String, dynamic>> _filterByStatuses(Set<String> statuses) {
@@ -253,8 +259,11 @@ class RoomSummarySection extends StatelessWidget {
         BookingOverviewCards(
           localTotal: localBookingsTotal,
           onlineTotal: onlineBookingsTotal,
+          recentBookings24h: recentBookings24h,
+          pendingReservations: pendingReservations,
           onLocalTap: onOpenLocalBookings,
           onOnlineTap: onOpenOnlineBookings,
+          onAlertTap: onOpenBookingsAlert,
         ),
         const SizedBox(height: 20),
         Text(

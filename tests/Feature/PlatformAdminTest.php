@@ -129,6 +129,27 @@ class PlatformAdminTest extends TestCase
         );
     }
 
+    public function test_central_admin_can_grant_hotel_credits(): void
+    {
+        $hotel = Hotel::create(['name' => 'Grant Hotel', 'location' => 'City']);
+        $admin = app(CentralAdminAccountService::class)->ensureUser();
+
+        $response = $this->actingAs($admin)->postJson(
+            '/api/v1/platform/hotels/'.(string) $hotel->id.'/credits/grant',
+            ['amount' => 2500, 'reason' => 'Launch bonus']
+        );
+
+        $response->assertOk();
+        $response->assertJsonPath('ok', true);
+        $response->assertJsonPath('amount_granted', 2500);
+
+        $credit = HotelCredit::withoutGlobalScopes()
+            ->where('hotel_id', (string) $hotel->id)
+            ->first();
+        $this->assertNotNull($credit);
+        $this->assertSame(2500.0, (float) $credit->current_credits);
+    }
+
     public function test_hotel_admin_cannot_access_platform_routes(): void
     {
         $hotel = Hotel::create(['name' => 'Regular', 'location' => 'City']);

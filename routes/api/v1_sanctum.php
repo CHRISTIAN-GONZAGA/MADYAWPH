@@ -1694,6 +1694,8 @@ Route::middleware('role:central_admin')->prefix('platform')->group(function () {
     Route::post('/settings/credit-wallet-qr', [$platform, 'uploadCreditWalletQr']);
     Route::post('/settings/member-qr', [$platform, 'uploadMemberQr']);
     Route::get('/hotels', [$platform, 'hotels']);
+    Route::get('/hotels/{hotelId}/credits', [$platform, 'hotelCredits']);
+    Route::post('/hotels/{hotelId}/credits/grant', [$platform, 'grantHotelCredits']);
     Route::delete('/hotels/{hotelId}', [$platform, 'deleteHotel']);
     Route::get('/credit-requests', [$platform, 'creditRequests']);
     Route::post('/credit-requests/{id}/approve', [$platform, 'approveCreditRequest']);

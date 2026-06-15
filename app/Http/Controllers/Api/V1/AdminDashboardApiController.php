@@ -53,6 +53,12 @@ class AdminDashboardApiController extends Controller
             Booking::withoutGlobalScopes()->where('hotel_id', $hotelId),
             'online'
         )->count();
+        $recentBookings = (clone $bookingBase)
+            ->where('created_at', '>=', now()->subHours(24))
+            ->count();
+        $pendingReservations = ExternalReservation::query()
+            ->whereIn('status', ['pending_approval', 'pending'])
+            ->count();
         $bookingsList = Booking::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
             ->with('room')
@@ -159,6 +165,8 @@ class AdminDashboardApiController extends Controller
                 'local_total' => $localTotal,
                 'online_total' => $onlineTotal,
                 'all_total' => $localTotal + $onlineTotal,
+                'recent_24h' => $recentBookings,
+                'pending_reservations' => $pendingReservations,
             ],
             'bookings' => $bookingsList,
             'reservations' => ExternalReservation::query()

@@ -789,8 +789,8 @@ class CustomerPortalApiController extends Controller
             'payment_method' => PaymentMethod::CASH->value,
             'payment_status' => 'unpaid',
             'total_amount' => PriceRounding::nearest50($total),
-            'source' => BookingSource::KIOSK->value,
-            'booking_type' => BookingType::LOCAL->value,
+            'source' => BookingSource::WEB->value,
+            'booking_type' => BookingType::ONLINE->value,
             'booking_source' => 'app-customer',
             'status' => BookingStatus::CONFIRMED->value,
         ];

@@ -269,6 +269,27 @@ class _EmptyResults extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(color: scheme.onSurfaceVariant),
             ),
+            if (search.destinationQuery.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  Chip(
+                    visualDensity: VisualDensity.compact,
+                    label: Text(search.destinationQuery),
+                  ),
+                  Chip(
+                    visualDensity: VisualDensity.compact,
+                    avatar: const Icon(Icons.date_range, size: 16),
+                    label: Text(
+                      '${search.checkInIso} → ${search.checkOutIso}',
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 20),
             OutlinedButton.icon(
               onPressed: () => Navigator.of(context).pop(),

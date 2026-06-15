@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -25,10 +26,12 @@ class PublicHotelSearchScreen extends StatefulWidget {
   State<PublicHotelSearchScreen> createState() => _PublicHotelSearchScreenState();
 }
 
-class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
+class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
+    with WidgetsBindingObserver {
   final _destinationCtrl = TextEditingController();
   List<Map<String, dynamic>> _allHotels = const [];
-  bool _loading = true;
+  bool _loading = false;
+  bool _refreshingDirectory = false;
   bool _searching = false;
   String? _error;
   String? _selectedPresetQuery;
@@ -41,8 +44,17 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _destinationCtrl.addListener(_onDestinationEdited);
-    _loadHotels();
+    _bootstrapHotels();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Recover if a hung network call left the search spinner active.
+    if (state == AppLifecycleState.resumed && _searching && mounted) {
+      setState(() => _searching = false);
+    }
   }
 
   void _onDestinationEdited() {
@@ -54,9 +66,24 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _destinationCtrl.removeListener(_onDestinationEdited);
     _destinationCtrl.dispose();
     super.dispose();
+  }
+
+  static const _directoryTimeout = Duration(seconds: 90);
+  static const _searchTimeout = Duration(seconds: 95);
+
+  Future<void> _bootstrapHotels() async {
+    final cached = await AuthStorage.hotelsDirectoryCache();
+    if (cached != null && cached.isNotEmpty) {
+      try {
+        _parseDirectory(jsonDecode(cached));
+      } catch (_) {}
+    }
+    if (mounted) setState(() => _error = null);
+    unawaited(_refreshHotelsDirectory(showSpinner: false));
   }
 
   Future<void> _loadHotels() async {
@@ -64,27 +91,40 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
       _loading = true;
       _error = null;
     });
+    await _refreshHotelsDirectory(showSpinner: true);
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _refreshHotelsDirectory({required bool showSpinner}) async {
+    if (showSpinner && mounted) {
+      setState(() => _refreshingDirectory = true);
+    }
     try {
-      final cached = await AuthStorage.hotelsDirectoryCache();
-      if (cached != null && cached.isNotEmpty) {
-        _parseDirectory(jsonDecode(cached));
-      }
-      final res = await publicDio().get<Map<String, dynamic>>('/hotels');
+      final res = await publicDio()
+          .get<Map<String, dynamic>>('/hotels')
+          .timeout(_directoryTimeout);
       final data = res.data;
-      if (data != null) {
+      if (data != null && mounted) {
         await AuthStorage.setHotelsDirectoryCache(jsonEncode(data));
         _parseDirectory(data);
       }
+    } on TimeoutException {
+      if (_allHotels.isEmpty && mounted) {
+        setState(() {
+          _error =
+              'Loading properties timed out. You can still search — pull down to retry.';
+        });
+      }
     } on DioException catch (e) {
-      if (_allHotels.isEmpty) {
+      if (_allHotels.isEmpty && mounted) {
         setState(() => _error = dioErrorMessage(e));
       }
     } catch (e) {
-      if (_allHotels.isEmpty) {
+      if (_allHotels.isEmpty && mounted) {
         setState(() => _error = '$e');
       }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _refreshingDirectory = false);
     }
   }
 
@@ -117,11 +157,19 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
       } catch (_) {}
     }
     if (_allHotels.isNotEmpty) return;
-    final res = await publicDio().get<Map<String, dynamic>>('/hotels');
-    final data = res.data;
-    if (data != null) {
-      await AuthStorage.setHotelsDirectoryCache(jsonEncode(data));
-      _parseDirectory(data, notify: false);
+    try {
+      final res = await publicDio()
+          .get<Map<String, dynamic>>('/hotels')
+          .timeout(_directoryTimeout);
+      final data = res.data;
+      if (data != null) {
+        await AuthStorage.setHotelsDirectoryCache(jsonEncode(data));
+        _parseDirectory(data, notify: false);
+      }
+    } on TimeoutException {
+      return;
+    } on DioException {
+      return;
     }
   }
 
@@ -431,10 +479,17 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
   }
 
   Future<void> _search() async {
+    if (_searching) return;
     HapticFeedback.mediumImpact();
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _searching = true);
     try {
-      final result = await _fetchSearchResults();
+      final result = await _fetchSearchResults().timeout(
+        _searchTimeout,
+        onTimeout: () {
+          throw TimeoutException('Hotel search timed out');
+        },
+      );
       final hotels = result.hotels;
       final usedLegacy = result.usedLegacy;
       final broadened = result.broadened;
@@ -474,10 +529,23 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
           transitionDuration: const Duration(milliseconds: 280),
         ),
       );
+    } on TimeoutException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Search took too long. Check your connection, then try again.',
+          ),
+          action: SnackBarAction(label: 'Retry', onPressed: _search),
+        ),
+      );
     } on DioException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
+        SnackBar(
+          content: Text(dioErrorMessage(e)),
+          action: SnackBarAction(label: 'Retry', onPressed: _search),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
@@ -511,7 +579,10 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
     final visual = AppVisual.of(context);
 
     return Scaffold(
-      body: DecoratedBox(
+      body: GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        behavior: HitTestBehavior.translucent,
+        child: DecoratedBox(
         decoration: BoxDecoration(
           gradient: visual.scaffoldGradient(scheme),
         ),
@@ -600,7 +671,10 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                 ),
               ),
               Expanded(
-                child: SingleChildScrollView(
+                child: RefreshIndicator(
+                  onRefresh: _loadHotels,
+                  child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -846,9 +920,7 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                                     height: 54,
                                     width: double.infinity,
                                     child: FilledButton(
-                                      onPressed: (_loading || _searching)
-                                          ? null
-                                          : _search,
+                                      onPressed: _searching ? null : _search,
                                       style: FilledButton.styleFrom(
                                         backgroundColor: Colors.transparent,
                                         shadowColor: Colors.transparent,
@@ -858,14 +930,29 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                                         ),
                                         elevation: 0,
                                       ),
-                                      child: (_loading || _searching)
-                                          ? const SizedBox(
-                                              width: 24,
-                                              height: 24,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2.5,
-                                                color: Colors.white,
-                                              ),
+                                      child: _searching
+                                          ? Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                const SizedBox(
+                                                  width: 22,
+                                                  height: 22,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                    strokeWidth: 2.5,
+                                                    color: Colors.white,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 10),
+                                                Text(
+                                                  context.tr('search_hotels_btn'),
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w700,
+                                                    color: Colors.white,
+                                                  ),
+                                                ),
+                                              ],
                                             )
                                           : Row(
                                               mainAxisAlignment:
@@ -893,7 +980,29 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                         ),
                       if (_error != null) ...[
                         const SizedBox(height: 16),
-                        Text(_error!, textAlign: TextAlign.center),
+                        Material(
+                          color: scheme.errorContainer.withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Icon(Icons.cloud_off_outlined,
+                                    color: scheme.error, size: 22),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    _error!,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                         TextButton(
                           onPressed: _loadHotels,
                           child: Text(context.tr('retry')),
@@ -920,27 +1029,42 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen> {
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
-                                context.tr('properties_nationwide', {
-                                  'n': '${_allHotels.length}',
-                                }),
+                                _allHotels.isEmpty &&
+                                        (_loading || _refreshingDirectory)
+                                    ? 'Loading properties…'
+                                    : context.tr('properties_nationwide', {
+                                        'n': '${_allHotels.length}',
+                                      }),
                                 style: Theme.of(context)
                                     .textTheme
                                     .bodyMedium
                                     ?.copyWith(fontWeight: FontWeight.w600),
                               ),
                             ),
-                            Icon(Icons.verified_outlined,
-                                size: 18, color: scheme.tertiary),
+                            if (_refreshingDirectory && _allHotels.isNotEmpty)
+                              SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: scheme.primary,
+                                ),
+                              )
+                            else
+                              Icon(Icons.verified_outlined,
+                                  size: 18, color: scheme.tertiary),
                           ],
                         ),
                       ),
                     ],
                   ),
                 ),
+                ),
               ),
             ],
           ),
         ),
+      ),
       ),
     );
   }

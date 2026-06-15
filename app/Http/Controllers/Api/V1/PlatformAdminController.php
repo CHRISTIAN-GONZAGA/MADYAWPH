@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Services\ActivityLogService;
 use App\Services\CreditWalletApprovalService;
 use App\Services\MemberSubscriptionApprovalService;
+use App\Services\PlatformHotelCreditService;
 use App\Services\PlatformRevenueAnalyticsService;
 use App\Services\PlatformSettingsService;
 use App\Support\ChatAttachmentUrl;
@@ -32,6 +33,7 @@ class PlatformAdminController extends Controller
         private readonly CreditWalletApprovalService $creditApprovals,
         private readonly MemberSubscriptionApprovalService $memberApprovals,
         private readonly ActivityLogService $activityLog,
+        private readonly PlatformHotelCreditService $hotelCredits,
     ) {}
 
     public function revenueAnalytics(Request $request): JsonResponse
@@ -84,18 +86,66 @@ class PlatformAdminController extends Controller
 
     public function hotels(): JsonResponse
     {
+        $creditRows = HotelCredit::withoutGlobalScopes()
+            ->get()
+            ->keyBy(fn (HotelCredit $c) => (string) $c->hotel_id);
+
         $hotels = Hotel::withoutGlobalScopes()
             ->orderBy('name')
             ->get()
-            ->map(fn (Hotel $h) => [
-                'id' => (string) $h->id,
-                'name' => (string) $h->name,
-                'city' => (string) ($h->city ?? ''),
-                'location' => (string) ($h->location ?? ''),
-                'access_username' => (string) ($h->access_username ?? ''),
-            ]);
+            ->map(function (Hotel $h) use ($creditRows) {
+                $credit = $creditRows->get((string) $h->id);
+                $balance = (float) ($credit->current_credits ?? 0);
+
+                return [
+                    'id' => (string) $h->id,
+                    'name' => (string) $h->name,
+                    'city' => (string) ($h->city ?? ''),
+                    'location' => (string) ($h->location ?? ''),
+                    'access_username' => (string) ($h->access_username ?? ''),
+                    'current_credits' => $balance,
+                    'is_depleted' => $balance <= 0,
+                    'is_low_balance' => $balance > 0 && $balance < (float) config('services.hotel_credits.low_balance_threshold', 3000),
+                ];
+            });
 
         return response()->json(['data' => $hotels]);
+    }
+
+    public function hotelCredits(string $hotelId): JsonResponse
+    {
+        return response()->json($this->hotelCredits->snapshot($hotelId));
+    }
+
+    public function grantHotelCredits(Request $request, string $hotelId): JsonResponse
+    {
+        $validated = $request->validate([
+            'amount' => ['required', 'numeric', 'min:1', 'max:5000000'],
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $result = $this->hotelCredits->grant(
+            $hotelId,
+            (float) $validated['amount'],
+            $request->user(),
+            $validated['reason'] ?? null
+        );
+
+        $this->activityLog->log(
+            'platform',
+            $request->user(),
+            'Platform granted hotel credits',
+            [
+                'hotel_id' => $hotelId,
+                'amount' => $result['amount_granted'],
+                'reason' => $validated['reason'] ?? null,
+            ]
+        );
+
+        return response()->json([
+            'ok' => true,
+            ...$result,
+        ]);
     }
 
     public function deleteHotel(Request $request, string $hotelId): JsonResponse

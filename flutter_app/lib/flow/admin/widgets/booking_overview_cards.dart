@@ -5,21 +5,76 @@ class BookingOverviewCards extends StatelessWidget {
     super.key,
     required this.localTotal,
     required this.onlineTotal,
+    required this.recentBookings24h,
+    required this.pendingReservations,
     required this.onLocalTap,
     required this.onOnlineTap,
+    required this.onAlertTap,
   });
 
   final int localTotal;
   final int onlineTotal;
+  final int recentBookings24h;
+  final int pendingReservations;
   final VoidCallback onLocalTap;
   final VoidCallback onOnlineTap;
+  final VoidCallback onAlertTap;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final alertCount = recentBookings24h + pendingReservations;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (alertCount > 0) ...[
+          Material(
+            color: Colors.orange.shade50,
+            borderRadius: BorderRadius.circular(16),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: onAlertTap,
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: Colors.orange.shade100,
+                      child: Icon(
+                        Icons.notifications_active_outlined,
+                        color: Colors.orange.shade900,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            alertCount == 1
+                                ? '1 booking needs attention'
+                                : '$alertCount bookings need attention',
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          Text(
+                            _alertSubtitle(
+                              recentBookings24h,
+                              pendingReservations,
+                            ),
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right, color: scheme.primary),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
         Text(
           'Booking overview',
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -32,9 +87,9 @@ class BookingOverviewCards extends StatelessWidget {
             Expanded(
               child: _BookingStatCard(
                 label: 'Local bookings',
-                subtitle: 'In-app / customer portal',
+                subtitle: 'Walk-in / front desk',
                 count: localTotal,
-                icon: Icons.smartphone_outlined,
+                icon: Icons.storefront_outlined,
                 color: scheme.primary,
                 onTap: onLocalTap,
               ),
@@ -43,7 +98,7 @@ class BookingOverviewCards extends StatelessWidget {
             Expanded(
               child: _BookingStatCard(
                 label: 'Online bookings',
-                subtitle: 'Website channel (future)',
+                subtitle: 'Customer portal / public app',
                 count: onlineTotal,
                 icon: Icons.language_outlined,
                 color: scheme.tertiary,
@@ -54,6 +109,19 @@ class BookingOverviewCards extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  static String _alertSubtitle(int recent, int pending) {
+    final parts = <String>[];
+    if (recent > 0) {
+      parts.add(recent == 1 ? '1 new in 24h' : '$recent new in 24h');
+    }
+    if (pending > 0) {
+      parts.add(
+        pending == 1 ? '1 pending approval' : '$pending pending approvals',
+      );
+    }
+    return parts.join(' · ');
   }
 }
 

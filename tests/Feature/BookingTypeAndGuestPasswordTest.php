@@ -13,7 +13,7 @@ use Tests\TestCase;
 
 class BookingTypeAndGuestPasswordTest extends TestCase
 {
-    public function test_customer_booking_is_local_and_password_is_four_chars(): void
+    public function test_customer_booking_is_online_and_password_is_four_chars(): void
     {
         $hotel = Hotel::create(['name' => 'Booking Hotel', 'location' => 'Loc']);
         $category = RoomCategory::withoutGlobalScopes()->create([
@@ -46,7 +46,7 @@ class BookingTypeAndGuestPasswordTest extends TestCase
         $this->assertMatchesRegularExpression('/^[A-Z0-9]{4}$/', (string) $room->current_access_code);
 
         $booking = Booking::withoutGlobalScopes()->first();
-        $this->assertSame('local', (string) ($booking->booking_type?->value ?? $booking->booking_type));
+        $this->assertSame('online', (string) ($booking->booking_type?->value ?? $booking->booking_type));
         $this->assertSame(550.0, (float) $booking->total_amount);
     }
 

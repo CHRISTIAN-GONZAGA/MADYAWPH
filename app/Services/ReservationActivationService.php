@@ -78,8 +78,8 @@ class ReservationActivationService
             'payment_reference' => $paymentRef !== '' ? $paymentRef : null,
             'payment_status' => 'unpaid',
             'total_amount' => $total,
-            'source' => BookingSource::KIOSK->value,
-            'booking_type' => BookingType::LOCAL->value,
+            'source' => BookingSource::WEB->value,
+            'booking_type' => BookingType::ONLINE->value,
             'booking_source' => 'app-customer',
             'status' => BookingStatus::CONFIRMED->value,
         ]);

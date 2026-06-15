@@ -325,6 +325,11 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         .toList();
     final localTotal = (bookingStats['local_total'] as num?)?.toInt() ?? 0;
     final onlineTotal = (bookingStats['online_total'] as num?)?.toInt() ?? 0;
+    final recentBookings24h =
+        (bookingStats['recent_24h'] as num?)?.toInt() ?? 0;
+    final pendingReservationsStat =
+        (bookingStats['pending_reservations'] as num?)?.toInt() ??
+            AdminDashboardModels.pendingReservationCount(reservations);
 
     final refreshKey = ValueKey(
       '${_rooms.length}-${reservations.length}-${claims.length}-${tasks.length}-${bookings.length}-${widget.isSuperAdmin}',
@@ -350,6 +355,8 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           hotelName: hotelName,
           localBookingsTotal: localTotal,
           onlineBookingsTotal: onlineTotal,
+          recentBookings24h: recentBookings24h,
+          pendingReservations: pendingReservationsStat,
           onRefresh: widget.onRefresh,
           onOpenLocalBookings: creditsLocked
               ? () => AdminCreditsGate.showActionsBlockedMessage(context)
@@ -357,6 +364,9 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           onOpenOnlineBookings: creditsLocked
               ? () => AdminCreditsGate.showActionsBlockedMessage(context)
               : () => _openBookingsTab('online'),
+          onOpenBookingsAlert: creditsLocked
+              ? () => AdminCreditsGate.showActionsBlockedMessage(context)
+              : () => _openBookingsTab('all'),
         ),
         0,
       ),

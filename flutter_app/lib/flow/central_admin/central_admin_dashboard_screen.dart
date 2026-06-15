@@ -58,6 +58,11 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
       .where((e) => (e['status'] ?? '') == 'pending')
       .length;
 
+  int get _depletedHotels => _hotels
+      .whereType<Map<String, dynamic>>()
+      .where((h) => h['is_depleted'] == true)
+      .length;
+
   @override
   void initState() {
     super.initState();
@@ -181,6 +186,78 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
   Future<void> _rejectMember(String id) async {
     try {
       await portalDio().post('/platform/member-requests/$id/reject');
+      await _loadAll();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dioErrorMessage(e))),
+      );
+    }
+  }
+
+  Future<void> _grantHotelCredits(String hotelId, String hotelName) async {
+    final amountCtrl = TextEditingController(text: '5000');
+    final reasonCtrl = TextEditingController(text: 'Platform credit top-up');
+
+    final payload = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Add credits — $hotelName'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: amountCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Amount (PHP)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Reason (optional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              final amount = double.tryParse(amountCtrl.text.trim()) ?? 0;
+              if (amount <= 0) return;
+              Navigator.pop(ctx, {
+                'amount': amount,
+                'reason': reasonCtrl.text.trim(),
+              });
+            },
+            child: const Text('Grant credits'),
+          ),
+        ],
+      ),
+    );
+    amountCtrl.dispose();
+    reasonCtrl.dispose();
+    if (payload == null) return;
+
+    try {
+      final res = await portalDio().post<Map<String, dynamic>>(
+        '/platform/hotels/$hotelId/credits/grant',
+        data: payload,
+      );
+      if (!mounted) return;
+      final balance = res.data?['current_credits'];
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Granted ₱${payload['amount']}. New balance: ₱$balance',
+          ),
+        ),
+      );
       await _loadAll();
     } on DioException catch (e) {
       if (!mounted) return;
@@ -316,10 +393,12 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
                     _OverviewSection(
                       revenue: _revenue ?? const {},
                       hotelCount: _hotels.length,
+                      depletedHotels: _depletedHotels,
                       pendingCredits: _pendingCredits,
                       pendingMembers: _pendingMembers,
                       onOpenApprovals: () => setState(() => _section = 2),
                       onOpenRevenue: () => setState(() => _section = 1),
+                      onOpenHotels: () => setState(() => _section = 4),
                     ),
                     _RevenueSection(
                       revenue: _revenue ?? const {},
@@ -347,6 +426,7 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
                     _HotelsSection(
                       hotels: _hotels,
                       onDelete: _deleteHotel,
+                      onGrantCredits: _grantHotelCredits,
                     ),
                   ],
                 ),
@@ -487,18 +567,22 @@ class _OverviewSection extends StatelessWidget {
   const _OverviewSection({
     required this.revenue,
     required this.hotelCount,
+    required this.depletedHotels,
     required this.pendingCredits,
     required this.pendingMembers,
     required this.onOpenApprovals,
     required this.onOpenRevenue,
+    required this.onOpenHotels,
   });
 
   final Map<String, dynamic> revenue;
   final int hotelCount;
+  final int depletedHotels;
   final int pendingCredits;
   final int pendingMembers;
   final VoidCallback onOpenApprovals;
   final VoidCallback onOpenRevenue;
+  final VoidCallback onOpenHotels;
 
   @override
   Widget build(BuildContext context) {
@@ -595,7 +679,25 @@ class _OverviewSection extends StatelessWidget {
               ),
             ),
             ),
-          const SizedBox(height: 12),
+          if (depletedHotels > 0)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Card(
+                color: Colors.red.shade50,
+                child: ListTile(
+                  leading: Icon(Icons.warning_amber_outlined,
+                      color: Colors.red.shade800),
+                  title: Text(
+                    '$depletedHotels hotel(s) out of credits',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  subtitle: const Text('Grant credits from the Hotels tab'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: onOpenHotels,
+                ),
+              ),
+            ),
+          if (depletedHotels > 0) const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Card(
@@ -612,6 +714,25 @@ class _OverviewSection extends StatelessWidget {
                 subtitle: const Text('See breakdown for every property'),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: onOpenRevenue,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Card(
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: _kPlatformNavy.withValues(alpha: 0.12),
+                  child: const Icon(Icons.apartment_outlined, color: _kPlatformNavy),
+                ),
+                title: const Text(
+                  'Manage hotels & credits',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text('$hotelCount registered properties'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: onOpenHotels,
               ),
             ),
           ),
@@ -1159,60 +1280,286 @@ class _QrUploadCard extends StatelessWidget {
   }
 }
 
-class _HotelsSection extends StatelessWidget {
-  const _HotelsSection({required this.hotels, required this.onDelete});
+class _HotelsSection extends StatefulWidget {
+  const _HotelsSection({
+    required this.hotels,
+    required this.onDelete,
+    required this.onGrantCredits,
+  });
 
   final List<dynamic> hotels;
   final Future<void> Function(String id, String name) onDelete;
+  final Future<void> Function(String id, String name) onGrantCredits;
+
+  @override
+  State<_HotelsSection> createState() => _HotelsSectionState();
+}
+
+class _HotelsSectionState extends State<_HotelsSection> {
+  String _query = '';
+
+  List<Map<String, dynamic>> get _filtered {
+    final q = _query.trim().toLowerCase();
+    return widget.hotels
+        .whereType<Map<String, dynamic>>()
+        .where((h) {
+          if (q.isEmpty) return true;
+          final name = (h['name'] ?? '').toString().toLowerCase();
+          final city = (h['city'] ?? h['location'] ?? '').toString().toLowerCase();
+          return name.contains(q) || city.contains(q);
+        })
+        .toList();
+  }
+
+  double get _totalCredits => widget.hotels
+      .whereType<Map<String, dynamic>>()
+      .fold<double>(
+        0,
+        (sum, h) => sum + ((h['current_credits'] as num?)?.toDouble() ?? 0),
+      );
 
   @override
   Widget build(BuildContext context) {
-    if (hotels.isEmpty) {
-      return Column(
-        children: [
-          const _PlatformSectionHeader(
-            icon: Icons.apartment_outlined,
-            title: 'Hotels',
-            subtitle: 'Manage registered properties',
-          ),
-          const Expanded(child: Center(child: Text('No hotels registered.'))),
-        ],
-      );
-    }
-    return ListView.separated(
-      padding: const EdgeInsets.only(bottom: 24),
-      itemCount: hotels.length + 1,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (_, i) {
-        if (i == 0) {
-          return const _PlatformSectionHeader(
-            icon: Icons.apartment_outlined,
-            title: 'Hotels',
-            subtitle: 'Manage registered properties',
-          );
-        }
-        final h = hotels[i - 1] as Map<String, dynamic>;
-        final id = (h['id'] ?? '').toString();
-        final name = (h['name'] ?? 'Hotel').toString();
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Card(
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: _kPlatformNavy.withValues(alpha: 0.12),
-              foregroundColor: _kPlatformNavy,
-              child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?'),
-            ),
-            title: Text(name, style: const TextStyle(fontWeight: FontWeight.w700)),
-            subtitle: Text((h['city'] ?? h['location'] ?? '').toString()),
-            trailing: IconButton(
-              icon: const Icon(Icons.delete_outline, color: Colors.red),
-              onPressed: () => onDelete(id, name),
-            ),
+    final filtered = _filtered;
+    final depleted = widget.hotels
+        .whereType<Map<String, dynamic>>()
+        .where((h) => h['is_depleted'] == true)
+        .length;
+
+    return Column(
+      children: [
+        const _PlatformSectionHeader(
+          icon: Icons.apartment_outlined,
+          title: 'Hotels',
+          subtitle: 'Credits, search, and property management',
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: _MiniStatChip(
+                  label: 'Properties',
+                  value: '${widget.hotels.length}',
+                  icon: Icons.apartment_outlined,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _MiniStatChip(
+                  label: 'Total credits',
+                  value: '₱${_fmtCredits(_totalCredits)}',
+                  icon: Icons.account_balance_wallet_outlined,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _MiniStatChip(
+                  label: 'Depleted',
+                  value: '$depleted',
+                  icon: Icons.warning_amber_outlined,
+                  warn: depleted > 0,
+                ),
+              ),
+            ],
           ),
         ),
-        );
-      },
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: TextField(
+            decoration: InputDecoration(
+              hintText: 'Search hotels…',
+              prefixIcon: const Icon(Icons.search),
+              isDense: true,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onChanged: (v) => setState(() => _query = v),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: filtered.isEmpty
+              ? Center(
+                  child: Text(
+                    widget.hotels.isEmpty
+                        ? 'No hotels registered.'
+                        : 'No hotels match your search.',
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  itemCount: filtered.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (_, i) {
+                    final h = filtered[i];
+                    final id = (h['id'] ?? '').toString();
+                    final name = (h['name'] ?? 'Hotel').toString();
+                    final credits =
+                        (h['current_credits'] as num?)?.toDouble() ?? 0;
+                    final isDepleted = h['is_depleted'] == true;
+                    final isLow = h['is_low_balance'] == true;
+
+                    return Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                CircleAvatar(
+                                  backgroundColor:
+                                      _kPlatformNavy.withValues(alpha: 0.12),
+                                  foregroundColor: _kPlatformNavy,
+                                  child: Text(
+                                    name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        name,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                      Text(
+                                        (h['city'] ?? h['location'] ?? '')
+                                            .toString(),
+                                        style:
+                                            Theme.of(context).textTheme.bodySmall,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (isDepleted)
+                                  _StatusPill(
+                                    label: 'Empty',
+                                    color: Colors.red.shade700,
+                                  )
+                                else if (isLow)
+                                  _StatusPill(
+                                    label: 'Low',
+                                    color: Colors.orange.shade800,
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Icon(Icons.payments_outlined,
+                                    size: 18, color: _kPlatformGold),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '₱${_fmtCredits(credits)} credits',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () =>
+                                        widget.onGrantCredits(id, name),
+                                    icon: const Icon(Icons.add_circle_outline),
+                                    label: const Text('Add credits'),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  tooltip: 'Delete hotel',
+                                  onPressed: () => widget.onDelete(id, name),
+                                  icon: const Icon(
+                                    Icons.delete_outline,
+                                    color: Colors.red,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  static String _fmtCredits(double n) {
+    if (n >= 1000) return n.toStringAsFixed(0);
+    return n.toStringAsFixed(2);
+  }
+}
+
+class _MiniStatChip extends StatelessWidget {
+  const _MiniStatChip({
+    required this.label,
+    required this.value,
+    required this.icon,
+    this.warn = false,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final bool warn;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = warn ? Colors.orange.shade800 : _kPlatformNavy;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(fontWeight: FontWeight.w800, color: color, fontSize: 13),
+          ),
+          Text(label, style: Theme.of(context).textTheme.labelSmall),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
     );
   }
 }
