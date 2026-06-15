@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 /// Solid-background scaffold for admin routes pushed over the dashboard.
-/// Avoids the transparent [AppScaffold] gradient looking like an empty gray screen.
 class AdminOpaqueScaffold extends StatelessWidget {
   const AdminOpaqueScaffold({
     super.key,
@@ -20,13 +19,17 @@ class AdminOpaqueScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      resizeToAvoidBottomInset: resizeToAvoidBottomInset,
-      appBar: appBar,
-      body: body,
-      floatingActionButton: floatingActionButton,
-      bottomNavigationBar: bottomNavigationBar,
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surface,
+      child: Scaffold(
+        backgroundColor: scheme.surface,
+        resizeToAvoidBottomInset: resizeToAvoidBottomInset,
+        appBar: appBar,
+        body: body,
+        floatingActionButton: floatingActionButton,
+        bottomNavigationBar: bottomNavigationBar,
+      ),
     );
   }
 }

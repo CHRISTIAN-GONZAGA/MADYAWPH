@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../admin_dashboard_models.dart';
-import '../../admin_rooms.dart';
+import '../admin_room_detail_screen.dart';
 import 'manual_booking_dialog.dart';
 
 /// Centralized navigation for admin room tiles, sheets, walk-in, and manage-rooms.
@@ -62,9 +62,10 @@ abstract final class AdminRoomNavigation {
     required Map<String, dynamic> room,
     required Future<void> Function() onSuccess,
   }) async {
-    final result = await Navigator.of(context, rootNavigator: true).push<bool>(
+    final navigator = Navigator.of(context);
+    final result = await navigator.push<bool>(
       MaterialPageRoute<bool>(
-        builder: (_) => AdminWalkInBookingScreen(
+        builder: (routeContext) => AdminWalkInBookingScreen(
           room: room,
           onSuccess: onSuccess,
         ),
@@ -79,19 +80,18 @@ abstract final class AdminRoomNavigation {
       _missingRoomId(context);
       return;
     }
-    await Navigator.of(context, rootNavigator: true).push<void>(
+    await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (_) => AdminRoomDetailScreen(roomId: id),
+        builder: (routeContext) => AdminRoomDetailScreen(roomId: id),
       ),
     );
   }
 
   static Future<void> _dismissSheet(BuildContext? sheetContext) async {
     if (sheetContext == null) return;
-    final root = Navigator.of(sheetContext, rootNavigator: true);
-    if (root.canPop()) {
-      await root.maybePop();
-      await Future<void>.delayed(const Duration(milliseconds: 100));
+    final navigator = Navigator.of(sheetContext);
+    if (navigator.canPop()) {
+      await navigator.maybePop();
     }
   }
 

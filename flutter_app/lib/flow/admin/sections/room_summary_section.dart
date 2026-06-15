@@ -88,7 +88,6 @@ class RoomSummarySection extends StatelessWidget {
   }) {
     showModalBottomSheet<void>(
       context: context,
-      useRootNavigator: true,
       showDragHandle: true,
       isScrollControlled: true,
       useSafeArea: true,
@@ -187,7 +186,6 @@ class RoomSummarySection extends StatelessWidget {
     HapticFeedback.selectionClick();
     showModalBottomSheet<void>(
       context: context,
-      useRootNavigator: true,
       showDragHandle: true,
       builder: (ctx) {
         final maint =
