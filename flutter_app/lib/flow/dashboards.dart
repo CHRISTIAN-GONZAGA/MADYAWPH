@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../auth_storage.dart';
 import '../locale_controller.dart';
 import '../dio_client.dart';
+import '../navigation_keys.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_input.dart';
@@ -14,6 +15,7 @@ import '../widgets/app_scaffold.dart';
 import 'admin/widgets/admin_opaque_scaffold.dart';
 import '../widgets/app_state_views.dart';
 import '../widgets/dashboard_clock.dart';
+import '../widgets/dashboard_exit_guard.dart';
 import 'admin/admin_dashboard_models.dart';
 import 'admin/admin_dashboard_shell.dart';
 import 'admin/widgets/admin_room_navigation.dart';
@@ -60,6 +62,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   bool _refreshing = false;
   bool _busyAction = false;
   Timer? _dashboardPoll;
+  bool Function()? _shellBackHandler;
 
   @override
   void initState() {
@@ -454,8 +457,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: _buildBody(context),
+    return DashboardExitGuard(
+      navigatorKey: adminDashboardNavigatorKey,
+      onRequestInnerPop: () => _shellBackHandler?.call() ?? false,
+      child: Scaffold(
+        body: _buildBody(context),
+      ),
     );
   }
 
@@ -488,11 +495,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         if (_refreshing) const LinearProgressIndicator(minHeight: 2),
         Expanded(
           child: Navigator(
+            key: adminDashboardNavigatorKey,
             onGenerateRoute: (settings) {
               return MaterialPageRoute<void>(
                 builder: (_) => AdminDashboardShell(
                   data: _data!,
                   isSuperAdmin: isSuper,
+                  onBindBackHandler: (handler) {
+                    _shellBackHandler = handler;
+                  },
                   onRefresh: () => _load(silent: true),
                   onSignOut: _signOut,
                   busyAction: _busyAction,
@@ -1104,7 +1115,8 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return AppScaffold(
+    return DashboardExitGuard(
+      child: AppScaffold(
       appBar: AppBar(
         title: const Text('Staff dashboard'),
         actions: [
@@ -1121,6 +1133,7 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
         ],
       ),
       body: _buildBody(),
+    ),
     );
   }
 

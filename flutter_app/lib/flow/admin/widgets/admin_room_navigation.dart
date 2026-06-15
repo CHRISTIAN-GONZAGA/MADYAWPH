@@ -5,6 +5,7 @@ import 'package:flutter/scheduler.dart';
 
 import '../admin_dashboard_models.dart';
 import '../admin_room_detail_screen.dart';
+import 'admin_dashboard_routes.dart';
 import 'manual_booking_dialog.dart';
 
 /// How a room tile should open from the admin dashboard.
@@ -111,6 +112,13 @@ abstract final class AdminRoomNavigation {
     required Map<String, dynamic> room,
     required Future<void> Function() onSuccess,
   }) async {
+    final routes = AdminDashboardRoutes.maybeOf(context);
+    if (routes != null) {
+      final completer = Completer<bool>();
+      routes.openWalkIn(room, onSuccess, completer);
+      return completer.future;
+    }
+
     final result = await _pushRoute<bool>(
       context,
       AdminWalkInBookingScreen(
@@ -125,6 +133,12 @@ abstract final class AdminRoomNavigation {
     final id = AdminDashboardModels.normalizeRoomIdString(roomId);
     if (id.isEmpty) {
       _missingRoomId(context);
+      return;
+    }
+
+    final routes = AdminDashboardRoutes.maybeOf(context);
+    if (routes != null) {
+      routes.openDetail(id);
       return;
     }
 

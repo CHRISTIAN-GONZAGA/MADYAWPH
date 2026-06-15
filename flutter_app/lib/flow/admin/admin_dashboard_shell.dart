@@ -19,6 +19,9 @@ import 'sections/room_summary_section.dart';
 import 'sections/resellers_section.dart';
 import 'sections/settings_section.dart';
 import 'sections/super_admin_control_section.dart';
+import 'admin_room_detail_screen.dart';
+import 'widgets/admin_dashboard_routes.dart';
+import 'widgets/manual_booking_dialog.dart';
 
 class AdminDashboardShell extends StatefulWidget {
   const AdminDashboardShell({
@@ -35,6 +38,7 @@ class AdminDashboardShell extends StatefulWidget {
     required this.onAmenityAddProduct,
     required this.onOpenActivityLogs,
     required this.onOpenAccountSettings,
+    this.onBindBackHandler,
   });
 
   final Map<String, dynamic> data;
@@ -49,6 +53,7 @@ class AdminDashboardShell extends StatefulWidget {
   final Future<void> Function() onAmenityAddProduct;
   final VoidCallback onOpenActivityLogs;
   final VoidCallback onOpenAccountSettings;
+  final ValueChanged<bool Function()>? onBindBackHandler;
 
   @override
   State<AdminDashboardShell> createState() => _AdminDashboardShellState();
@@ -59,6 +64,10 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
   String _bookingListFilter = 'all';
   Map<String, dynamic>? _inbox;
   Timer? _chatPoll;
+  Map<String, dynamic>? _walkInRoom;
+  Future<void> Function()? _walkInOnSuccess;
+  Completer<bool>? _walkInCompleter;
+  String? _detailRoomId;
 
   List<AdminNavItem> _navItemsFor(Map<String, dynamic> d) {
     final reservations = d['reservations'] as List<dynamic>? ?? const [];
@@ -133,6 +142,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     _pollInbox();
     _chatPoll = Timer.periodic(const Duration(seconds: 10), (_) => _pollInbox());
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      widget.onBindBackHandler?.call(_handleInnerBack);
       if (!mounted) return;
       final credits = widget.data['credits'] as Map<String, dynamic>?;
       final balance =
@@ -180,6 +190,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
 
   @override
   void dispose() {
+    widget.onBindBackHandler?.call(() => false);
     _chatPoll?.cancel();
     super.dispose();
   }
@@ -206,8 +217,92 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         .toList();
   }
 
+  bool get _isFullScreenOpen => _walkInRoom != null || _detailRoomId != null;
+
+  void _openWalkIn(
+    Map<String, dynamic> room,
+    Future<void> Function() onSuccess,
+    Completer<bool> completer,
+  ) {
+    setState(() {
+      _walkInRoom = room;
+      _walkInOnSuccess = onSuccess;
+      _walkInCompleter = completer;
+      _detailRoomId = null;
+    });
+  }
+
+  void _openDetail(String roomId) {
+    setState(() {
+      _detailRoomId = roomId;
+      _walkInRoom = null;
+      _walkInOnSuccess = null;
+      _walkInCompleter = null;
+    });
+  }
+
+  void _closeWalkIn({required bool success}) {
+    final completer = _walkInCompleter;
+    setState(() {
+      _walkInRoom = null;
+      _walkInOnSuccess = null;
+      _walkInCompleter = null;
+    });
+    completer?.complete(success);
+  }
+
+  void _closeDetail() {
+    setState(() => _detailRoomId = null);
+  }
+
+  bool _handleInnerBack() {
+    if (_walkInRoom != null) {
+      _closeWalkIn(success: false);
+      return true;
+    }
+    if (_detailRoomId != null) {
+      _closeDetail();
+      return true;
+    }
+    return false;
+  }
+
+  Widget _buildFullScreen() {
+    if (_walkInRoom != null) {
+      final room = _walkInRoom!;
+      return AdminWalkInBookingScreen(
+        room: room,
+        onSuccess: () async {
+          await _walkInOnSuccess?.call();
+          if (mounted) _closeWalkIn(success: true);
+        },
+        onClose: (success) {
+          if (success) return;
+          _closeWalkIn(success: false);
+        },
+      );
+    }
+    if (_detailRoomId != null) {
+      return AdminRoomDetailScreen(
+        roomId: _detailRoomId!,
+        onClose: _closeDetail,
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_isFullScreenOpen) {
+      return AdminDashboardRoutes(
+        openWalkIn: _openWalkIn,
+        openDetail: _openDetail,
+        closeFullScreen: () => _handleInnerBack(),
+        isFullScreenOpen: true,
+        child: _buildFullScreen(),
+      );
+    }
+
     final d = widget.data;
     final auth = d['auth'] as Map<String, dynamic>?;
     final user = auth?['user'] as Map<String, dynamic>?;
@@ -226,7 +321,12 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     final creditsLocked = HotelCreditsPolicy.areActionsLocked(creditAmount);
     final settingsTab = _settingsTabIndex(d);
 
-    return Scaffold(
+    return AdminDashboardRoutes(
+      openWalkIn: _openWalkIn,
+      openDetail: _openDetail,
+      closeFullScreen: () => _handleInnerBack(),
+      isFullScreenOpen: false,
+      child: Scaffold(
       backgroundColor: const Color(0xFFF5F2FF),
       body: Stack(
         fit: StackFit.expand,
@@ -304,6 +404,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           if (!creditsLocked) const ThemeFab(),
         ],
       ),
+    ),
     );
   }
 
