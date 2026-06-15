@@ -208,9 +208,11 @@ class _AdminRoomsScreenState extends State<AdminRoomsScreen> {
                         room: r,
                         categoryFallback: cat,
                         onOpenDetail: () async {
-                          final id = AdminDashboardModels.roomIdOf(r);
-                          await AdminRoomNavigation.openDetailById(context, id);
-                          await _load();
+                          await AdminRoomNavigation.openRoom(
+                            context,
+                            room: r,
+                            onSuccess: _load,
+                          );
                         },
                       ),
                   ],

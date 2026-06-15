@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../../navigation_keys.dart';
 import '../admin_dashboard_models.dart';
 import '../admin_room_detail_screen.dart';
+import 'admin_pushed_route.dart';
 import 'manual_booking_dialog.dart';
 
 /// Centralized navigation for admin room tiles, sheets, walk-in, and manage-rooms.
@@ -28,9 +32,40 @@ abstract final class AdminRoomNavigation {
     required Future<void> Function() onSuccess,
     BuildContext? sheetContext,
   }) async {
-    await _dismissSheet(sheetContext);
-    if (!context.mounted) return;
+    if (sheetContext != null) {
+      final sheetNavigator = Navigator.of(sheetContext);
+      if (sheetNavigator.canPop()) {
+        sheetNavigator.pop();
+      }
+      // Push on the next frame so the sheet route is fully gone first.
+      final completer = Completer<void>();
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        try {
+          if (!context.mounted) return;
+          await _openRoomNow(
+            context,
+            room: room,
+            onSuccess: onSuccess,
+          );
+        } finally {
+          if (!completer.isCompleted) completer.complete();
+        }
+      });
+      return completer.future;
+    }
 
+    await _openRoomNow(
+      context,
+      room: room,
+      onSuccess: onSuccess,
+    );
+  }
+
+  static Future<void> _openRoomNow(
+    BuildContext context, {
+    required Map<String, dynamic> room,
+    required Future<void> Function() onSuccess,
+  }) async {
     if (AdminDashboardModels.isWalkInBookable(room)) {
       final roomId = AdminDashboardModels.roomIdOf(room);
       if (roomId.isEmpty) {
@@ -62,13 +97,11 @@ abstract final class AdminRoomNavigation {
     required Map<String, dynamic> room,
     required Future<void> Function() onSuccess,
   }) async {
-    final navigator = Navigator.of(context);
-    final result = await navigator.push<bool>(
-      MaterialPageRoute<bool>(
-        builder: (routeContext) => AdminWalkInBookingScreen(
-          room: room,
-          onSuccess: onSuccess,
-        ),
+    final result = await _pushAdmin<bool>(
+      context,
+      AdminWalkInBookingScreen(
+        room: room,
+        onSuccess: onSuccess,
       ),
     );
     return result == true;
@@ -80,19 +113,20 @@ abstract final class AdminRoomNavigation {
       _missingRoomId(context);
       return;
     }
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (routeContext) => AdminRoomDetailScreen(roomId: id),
-      ),
+    await _pushAdmin<void>(
+      context,
+      AdminRoomDetailScreen(roomId: id),
     );
   }
 
-  static Future<void> _dismissSheet(BuildContext? sheetContext) async {
-    if (sheetContext == null) return;
-    final navigator = Navigator.of(sheetContext);
-    if (navigator.canPop()) {
-      await navigator.maybePop();
-    }
+  static Future<T?> _pushAdmin<T>(BuildContext context, Widget page) {
+    final navigator = appNavigatorKey.currentState ?? Navigator.of(context);
+    return navigator.push<T>(
+      AdminPushedRoute<T>(
+        hostContext: context,
+        child: page,
+      ),
+    );
   }
 
   static void _missingRoomId(BuildContext context) {

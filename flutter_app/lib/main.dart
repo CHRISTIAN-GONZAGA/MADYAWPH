@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'intro/app_bootstrap.dart';
 import 'locale_controller.dart';
+import 'navigation_keys.dart';
 import 'theme_controller.dart';
 import 'ui/app_theme.dart';
 import 'ui/design_tokens.dart';
@@ -32,6 +33,7 @@ class MadyawPhApp extends StatelessWidget {
               valueListenable: appLocaleNotifier,
               builder: (context, appLocale, _) {
                 return MaterialApp(
+                  navigatorKey: appNavigatorKey,
                   title: 'MADYAWPH',
                   debugShowCheckedModeBanner: false,
                   locale: appLocale,
