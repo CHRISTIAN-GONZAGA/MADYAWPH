@@ -1,11 +1,9 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../../../navigation_keys.dart';
 import '../admin_dashboard_models.dart';
 import '../admin_room_detail_screen.dart';
-import 'admin_pushed_route.dart';
+import 'admin_room_overlay.dart';
 import 'manual_booking_dialog.dart';
 
 /// Centralized navigation for admin room tiles, sheets, walk-in, and manage-rooms.
@@ -37,22 +35,9 @@ abstract final class AdminRoomNavigation {
       if (sheetNavigator.canPop()) {
         sheetNavigator.pop();
       }
-      // Push on the next frame so the sheet route is fully gone first.
-      final completer = Completer<void>();
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        try {
-          if (!context.mounted) return;
-          await _openRoomNow(
-            context,
-            room: room,
-            onSuccess: onSuccess,
-          );
-        } finally {
-          if (!completer.isCompleted) completer.complete();
-        }
-      });
-      return completer.future;
     }
+
+    if (!context.mounted) return;
 
     await _openRoomNow(
       context,
@@ -97,7 +82,12 @@ abstract final class AdminRoomNavigation {
     required Map<String, dynamic> room,
     required Future<void> Function() onSuccess,
   }) async {
-    final result = await _pushAdmin<bool>(
+    final overlay = AdminRoomOverlayHost.instance;
+    if (overlay.isActive) {
+      return overlay.openWalkIn(room: room, onSuccess: onSuccess);
+    }
+
+    final result = await _pushRoute<bool>(
       context,
       AdminWalkInBookingScreen(
         room: room,
@@ -113,18 +103,25 @@ abstract final class AdminRoomNavigation {
       _missingRoomId(context);
       return;
     }
-    await _pushAdmin<void>(
+
+    final overlay = AdminRoomOverlayHost.instance;
+    if (overlay.isActive) {
+      await overlay.openDetail(id);
+      return;
+    }
+
+    await _pushRoute<void>(
       context,
       AdminRoomDetailScreen(roomId: id),
     );
   }
 
-  static Future<T?> _pushAdmin<T>(BuildContext context, Widget page) {
+  static Future<T?> _pushRoute<T>(BuildContext context, Widget page) {
+    if (!context.mounted) return Future.value(null);
     final navigator = appNavigatorKey.currentState ?? Navigator.of(context);
     return navigator.push<T>(
-      AdminPushedRoute<T>(
-        hostContext: context,
-        child: page,
+      MaterialPageRoute<T>(
+        builder: (routeContext) => page,
       ),
     );
   }

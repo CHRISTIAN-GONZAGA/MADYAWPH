@@ -19,6 +19,7 @@ import 'sections/room_summary_section.dart';
 import 'sections/resellers_section.dart';
 import 'sections/settings_section.dart';
 import 'sections/super_admin_control_section.dart';
+import 'widgets/admin_room_overlay.dart';
 
 class AdminDashboardShell extends StatefulWidget {
   const AdminDashboardShell({
@@ -59,6 +60,8 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
   String _bookingListFilter = 'all';
   Map<String, dynamic>? _inbox;
   Timer? _chatPoll;
+  AdminWalkInOverlayRequest? _walkInOverlay;
+  String? _detailOverlayId;
 
   List<AdminNavItem> _navItemsFor(Map<String, dynamic> d) {
     final reservations = d['reservations'] as List<dynamic>? ?? const [];
@@ -130,6 +133,20 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
   @override
   void initState() {
     super.initState();
+    AdminRoomOverlayHost.instance.bind(
+      showWalkIn: (request) => setState(() {
+        _walkInOverlay = request;
+        _detailOverlayId = null;
+      }),
+      showDetail: (roomId) => setState(() {
+        _detailOverlayId = roomId;
+        _walkInOverlay = null;
+      }),
+      hide: () => setState(() {
+        _walkInOverlay = null;
+        _detailOverlayId = null;
+      }),
+    );
     _pollInbox();
     _chatPoll = Timer.periodic(const Duration(seconds: 10), (_) => _pollInbox());
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -180,6 +197,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
 
   @override
   void dispose() {
+    AdminRoomOverlayHost.instance.unbind();
     _chatPoll?.cancel();
     super.dispose();
   }
@@ -301,6 +319,17 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
             ),
           ),
           if (!creditsLocked) const ThemeFab(),
+          if (_walkInOverlay != null || _detailOverlayId != null)
+            Positioned.fill(
+              child: AdminRoomOverlayLayer(
+                walkIn: _walkInOverlay,
+                detailRoomId: _detailOverlayId,
+                onClose: () => setState(() {
+                  _walkInOverlay = null;
+                  _detailOverlayId = null;
+                }),
+              ),
+            ),
         ],
       ),
     );

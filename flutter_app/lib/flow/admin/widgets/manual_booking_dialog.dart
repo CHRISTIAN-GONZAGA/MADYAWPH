@@ -17,10 +17,13 @@ class AdminWalkInBookingScreen extends StatefulWidget {
     super.key,
     required this.room,
     required this.onSuccess,
+    this.onClose,
   });
 
   final Map<String, dynamic> room;
   final Future<void> Function() onSuccess;
+  /// When set (dashboard overlay), closes without [Navigator.pop].
+  final void Function(bool success)? onClose;
 
   @override
   State<AdminWalkInBookingScreen> createState() =>
@@ -102,6 +105,14 @@ class _AdminWalkInBookingScreenState extends State<AdminWalkInBookingScreen> {
     });
   }
 
+  void _close({required bool success}) {
+    if (widget.onClose != null) {
+      widget.onClose!(success);
+      return;
+    }
+    Navigator.of(context).pop(success);
+  }
+
   Future<void> _submit() async {
     if (_nameCtrl.text.trim().isEmpty ||
         _emailCtrl.text.trim().isEmpty ||
@@ -133,7 +144,7 @@ class _AdminWalkInBookingScreenState extends State<AdminWalkInBookingScreen> {
       if (!mounted) return;
       await widget.onSuccess();
       if (!mounted) return;
-      Navigator.of(context).pop(true);
+      _close(success: true);
     } on DioException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -183,9 +194,19 @@ class _AdminWalkInBookingScreenState extends State<AdminWalkInBookingScreen> {
         validWindow ? HourlyBilling.stayCharge(widget.room, inAt, outAt) : 0.0;
     final stayHours = validWindow ? HourlyBilling.stayHours(inAt, outAt) : 0;
 
-    return AdminOpaqueScaffold(
+    return PopScope(
+      canPop: widget.onClose == null,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && widget.onClose != null) {
+          widget.onClose!(false);
+        }
+      },
+      child: AdminOpaqueScaffold(
       appBar: AppBar(
         title: Text('Walk-in · Room $roomNo'),
+        leading: widget.onClose != null
+            ? BackButton(onPressed: () => _close(success: false))
+            : null,
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -339,11 +360,12 @@ class _AdminWalkInBookingScreenState extends State<AdminWalkInBookingScreen> {
           ),
           const SizedBox(height: 8),
           OutlinedButton(
-            onPressed: _busy ? null : () => Navigator.of(context).pop(false),
+            onPressed: _busy ? null : () => _close(success: false),
             child: const Text('Cancel'),
           ),
         ],
       ),
+    ),
     );
   }
 }

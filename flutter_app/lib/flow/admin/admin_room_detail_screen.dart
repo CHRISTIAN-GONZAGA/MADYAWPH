@@ -9,9 +9,14 @@ import 'widgets/admin_opaque_scaffold.dart';
 import 'widgets/stay_receipt_dialog.dart';
 
 class AdminRoomDetailScreen extends StatefulWidget {
-  const AdminRoomDetailScreen({super.key, required this.roomId});
+  const AdminRoomDetailScreen({
+    super.key,
+    required this.roomId,
+    this.onClose,
+  });
 
   final String roomId;
+  final VoidCallback? onClose;
 
   @override
   State<AdminRoomDetailScreen> createState() => _AdminRoomDetailScreenState();
@@ -728,16 +733,35 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     }
   }
 
+  void _close() {
+    if (widget.onClose != null) {
+      widget.onClose!();
+      return;
+    }
+    Navigator.of(context).maybePop();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return AdminOpaqueScaffold(
+    return PopScope(
+      canPop: widget.onClose == null,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && widget.onClose != null) {
+          widget.onClose!();
+        }
+      },
+      child: AdminOpaqueScaffold(
       appBar: AppBar(
         title: const Text('Room details'),
+        leading: widget.onClose != null
+            ? BackButton(onPressed: _close)
+            : null,
         actions: [
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
         ],
       ),
       body: _buildBody(),
+    ),
     );
   }
 
