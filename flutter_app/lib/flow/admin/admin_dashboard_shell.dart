@@ -21,7 +21,6 @@ import 'sections/settings_section.dart';
 import 'sections/super_admin_control_section.dart';
 import 'admin_room_detail_screen.dart';
 import 'widgets/admin_dashboard_routes.dart';
-import 'widgets/manual_booking_dialog.dart';
 
 class AdminDashboardShell extends StatefulWidget {
   const AdminDashboardShell({
@@ -216,25 +215,6 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
 
   bool get _isFullScreenOpen => _detailRoomId != null;
 
-  void _openWalkIn(
-    Map<String, dynamic> room,
-    Future<void> Function() onSuccess,
-    Completer<bool> completer,
-  ) async {
-    final booked = await showAdminWalkInBookingDialog(
-      context: context,
-      room: room,
-    );
-    if (!mounted) {
-      completer.complete(false);
-      return;
-    }
-    if (booked) {
-      await onSuccess();
-    }
-    completer.complete(booked);
-  }
-
   void _openDetail(String roomId) {
     setState(() {
       _detailRoomId = roomId;
@@ -267,7 +247,6 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
   Widget build(BuildContext context) {
     if (_isFullScreenOpen) {
       return AdminDashboardRoutes(
-        openWalkIn: _openWalkIn,
         openDetail: _openDetail,
         closeFullScreen: () => _handleInnerBack(),
         isFullScreenOpen: true,
@@ -294,7 +273,6 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     final settingsTab = _settingsTabIndex(d);
 
     return AdminDashboardRoutes(
-      openWalkIn: _openWalkIn,
       openDetail: _openDetail,
       closeFullScreen: () => _handleInnerBack(),
       isFullScreenOpen: false,

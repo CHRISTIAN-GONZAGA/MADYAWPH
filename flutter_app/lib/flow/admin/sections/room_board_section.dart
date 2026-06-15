@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../../widgets/room_status_label.dart';
 import '../admin_dashboard_models.dart';
 import '../widgets/admin_room_navigation.dart';
+import '../widgets/manual_booking_dialog.dart';
 
 /// Visual room board grouped by category — tap a room to book or manage.
 class RoomBoardSection extends StatelessWidget {
@@ -21,6 +22,9 @@ class RoomBoardSection extends StatelessWidget {
   Color _tileColor(Map<String, dynamic> room, ColorScheme scheme) {
     if (AdminDashboardModels.isWalkInBookable(room)) {
       return const Color(0xFFB0BEC5);
+    }
+    if (AdminDashboardModels.isStayArrivingSoon(room)) {
+      return Colors.blue.shade600;
     }
     final status = AdminDashboardModels.displayStatusForRoom(room);
     switch (status) {
@@ -40,6 +44,27 @@ class RoomBoardSection extends StatelessWidget {
 
   Future<void> _onRoomTap(BuildContext context, Map<String, dynamic> room) async {
     HapticFeedback.selectionClick();
+    if (AdminDashboardModels.isWalkInBookable(room)) {
+      final roomId = AdminDashboardModels.roomIdOf(room);
+      if (roomId.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Room ID missing. Pull to refresh the dashboard and try again.',
+            ),
+          ),
+        );
+        return;
+      }
+      final booked = await showAdminWalkInBookingDialog(
+        context: context,
+        room: room,
+      );
+      if (booked) {
+        await onChanged();
+      }
+      return;
+    }
     await AdminRoomNavigation.handleRoomTap(
       context,
       room: room,

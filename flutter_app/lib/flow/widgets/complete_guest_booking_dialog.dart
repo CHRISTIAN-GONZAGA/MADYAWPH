@@ -140,12 +140,18 @@ Future<CompleteGuestBookingPayload?> showCompleteGuestBookingDialog({
   required Map<String, dynamic> room,
   required CompleteGuestBookingConfig config,
 }) {
+  final theme = Theme.of(context);
   return showDialog<CompleteGuestBookingPayload>(
     context: context,
+    useRootNavigator: true,
     barrierDismissible: false,
-    builder: (dialogContext) => _CompleteGuestBookingDialog(
-      room: room,
-      config: config,
+    barrierColor: Colors.black54,
+    builder: (dialogContext) => Theme(
+      data: theme,
+      child: _CompleteGuestBookingDialog(
+        room: room,
+        config: config,
+      ),
     ),
   );
 }
@@ -381,6 +387,8 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
           ];
 
     return AlertDialog(
+      backgroundColor: scheme.surface,
+      surfaceTintColor: scheme.surfaceTint,
       title: Text(config.title),
       content: SingleChildScrollView(
         child: Column(

@@ -68,6 +68,19 @@ final class SafeModelAttributes
         return trim((string) ($raw ?? ''));
     }
 
+    public static function rawFloat(Model $model, string $key): float
+    {
+        $raw = $model->getAttributes()[$key] ?? null;
+        if ($raw instanceof \MongoDB\BSON\Decimal128) {
+            return (float) $raw->__toString();
+        }
+        if (is_numeric($raw)) {
+            return (float) $raw;
+        }
+
+        return 0.0;
+    }
+
     public static function paymentMethodLabel(Model $booking): string
     {
         $raw = $booking->getAttributes()['payment_method'] ?? null;

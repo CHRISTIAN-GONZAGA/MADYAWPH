@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\FlexibleStaffRoleCast;
 use App\Enums\StaffRole;
 use App\Models\Concerns\BelongsToHotel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -26,7 +27,7 @@ class StaffMember extends Model
     protected function casts(): array
     {
         return [
-            'role' => StaffRole::class,
+            'role' => FlexibleStaffRoleCast::class,
             'daily_tasks' => 'array',
         ];
     }

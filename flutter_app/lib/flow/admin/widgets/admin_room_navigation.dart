@@ -103,13 +103,6 @@ abstract final class AdminRoomNavigation {
     required Map<String, dynamic> room,
     required Future<void> Function() onSuccess,
   }) async {
-    final routes = AdminDashboardRoutes.maybeOf(context);
-    if (routes != null) {
-      final completer = Completer<bool>();
-      routes.openWalkIn(room, onSuccess, completer);
-      return completer.future;
-    }
-
     final booked = await showAdminWalkInBookingDialog(
       context: context,
       room: room,

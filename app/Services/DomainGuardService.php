@@ -5,10 +5,14 @@ namespace App\Services;
 use App\Enums\BookingStatus;
 use App\Enums\RoomStatus;
 use App\Models\Room;
+use Carbon\CarbonInterface;
 use Illuminate\Validation\ValidationException;
 
 class DomainGuardService
 {
+    public function __construct(
+        private readonly HotelAvailabilityService $hotelAvailabilityService,
+    ) {}
     public function ensureRoomBelongsToHotel(Room $room, ?string $hotelId): void
     {
         if ($hotelId !== null && (string) $room->hotel_id !== (string) $hotelId) {
@@ -37,6 +41,46 @@ class DomainGuardService
         if (! in_array($status, [RoomStatus::AVAILABLE, RoomStatus::RESERVED], true)) {
             throw ValidationException::withMessages([
                 'room_id' => 'Room is unavailable.',
+            ]);
+        }
+    }
+
+    public function ensureRoomCanBeBookedForStay(
+        Room $room,
+        CarbonInterface $checkIn,
+        CarbonInterface $checkOut,
+        ?string $hotelId = null,
+    ): void {
+        $this->ensureRoomBelongsToHotel($room, $hotelId);
+
+        $status = $room->status instanceof RoomStatus
+            ? $room->status
+            : RoomStatus::tryFrom(strtolower(trim((string) ($room->status ?? ''))));
+
+        if ($status === RoomStatus::MAINTENANCE) {
+            throw ValidationException::withMessages([
+                'room_id' => 'Room is under maintenance.',
+            ]);
+        }
+
+        if ($status === RoomStatus::CHECKED_IN) {
+            throw ValidationException::withMessages([
+                'room_id' => 'Room is currently occupied.',
+            ]);
+        }
+
+        $roomId = (string) $room->id;
+        $scopedHotelId = (string) ($hotelId ?? $room->hotel_id);
+
+        if ($this->hotelAvailabilityService->roomHasStayConflict(
+            $roomId,
+            $scopedHotelId,
+            $checkIn->toDateString(),
+            $checkOut->toDateString(),
+            null,
+        )) {
+            throw ValidationException::withMessages([
+                'check_in_at' => 'Selected dates conflict with an existing stay or reservation.',
             ]);
         }
     }

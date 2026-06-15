@@ -93,9 +93,14 @@ class BookingService
                 ->firstOrFail();
 
             $this->domainGuardService->ensureRoomBelongsToHotel($room, $data['hotel_id'] ?? null);
-            $this->domainGuardService->ensureRoomCanBeBooked($room);
 
             $stay = $this->resolveStayWindow($data);
+            $this->domainGuardService->ensureRoomCanBeBookedForStay(
+                $room,
+                $stay['check_in'],
+                $stay['check_out'],
+                $data['hotel_id'] ?? null,
+            );
             $charge = RoomBillingSupport::computeStayCharge(
                 $room,
                 $stay['check_in'],

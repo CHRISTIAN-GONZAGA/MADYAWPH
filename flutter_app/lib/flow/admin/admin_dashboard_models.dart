@@ -51,7 +51,16 @@ class AdminDashboardModels {
   /// True when front desk can create a walk-in booking for this room.
   static bool isWalkInBookable(Map<String, dynamic> room) {
     final status = statusOf(room);
+    if (status == 'maintenance' || status == 'checked_in') return false;
     if (status == 'available' || status == 'reserved') return true;
+    if (status == 'booked') {
+      final start = stayStartDate(room);
+      if (start == null) return true;
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final startDay = DateTime(start.year, start.month, start.day);
+      return startDay.isAfter(today);
+    }
     if (status.isEmpty) {
       final guest = (room['current_guest_name'] ?? '').toString().trim();
       return guest.isEmpty;

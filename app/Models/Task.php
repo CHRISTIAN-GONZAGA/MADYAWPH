@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Casts\FlexibleTaskPriorityCast;
+use App\Casts\FlexibleTaskStatusCast;
 use App\Enums\TaskPriority;
 use App\Enums\TaskStatus;
 use App\Models\Concerns\BelongsToHotel;
@@ -28,8 +30,8 @@ class Task extends Model
     {
         return [
             'deadline' => 'datetime',
-            'status' => TaskStatus::class,
-            'priority' => TaskPriority::class,
+            'status' => FlexibleTaskStatusCast::class,
+            'priority' => FlexibleTaskPriorityCast::class,
         ];
     }
 
