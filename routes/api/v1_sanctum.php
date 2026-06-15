@@ -54,6 +54,7 @@ use App\Support\PortalPassword;
 use App\Support\PriceRounding;
 use App\Support\RoomImageUploadRules;
 use App\Support\RoomMediaStorage;
+use App\Support\StayDisplayPresenter;
 use App\Support\StayManagementPolicy;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -487,51 +488,8 @@ Route::middleware('role:admin')->group(function (): void {
         return response()->json(['ok' => true]);
     })->name('api.v1.admin.theme.reset');
 
-    Route::post('/admin/chat/reply', function (Request $request) {
-        $validated = $request->validate([
-            'room_id' => ['required', 'string'],
-            'room_number' => ['required', 'string'],
-            'guest_name' => ['required', 'string', 'max:255'],
-            'message' => ['required', 'string', 'max:500'],
-            'image_url' => ['nullable', 'url'],
-            'image_file' => ['nullable', 'image', 'max:4096'],
-        ]);
-        $hotelId = (string) $request->user()->hotel_id;
-        HotelScopeGuard::assertRoomBelongsToHotel($hotelId, $validated['room_id']);
-        $uploadedImageUrl = null;
-        if ($request->hasFile('image_file')) {
-            $uploadedImageUrl = ChatAttachmentUrl::storeUploadedFile(
-                $request->file('image_file'),
-                'chat/admin'
-            );
-        }
-
-        $reply = GuestMessage::withoutGlobalScopes()->create([
-            'hotel_id' => $hotelId,
-            'room_id' => $validated['room_id'],
-            'room_number' => $validated['room_number'],
-            'guest_name' => $validated['guest_name'],
-            'message' => $validated['message'],
-            'sender_role' => 'admin',
-            'attachment_url' => $uploadedImageUrl ?? ChatAttachmentUrl::fromStoredUrl($validated['image_url'] ?? null),
-            'attachment_type' => ($uploadedImageUrl || ! empty($validated['image_url'])) ? 'image' : null,
-            'is_read' => true,
-            'read_at' => now(),
-            'sent_at' => now(),
-        ]);
-
-        app(ActivityLogService::class)->log(
-            (string) $request->user()->hotel_id,
-            $request->user(),
-            "Replied to guest chat for room {$validated['room_number']}",
-            ['message_id' => (string) $reply->id, 'room_id' => $validated['room_id']]
-        );
-
-        return response()->json([
-            'ok' => true,
-            'message' => GuestMessageResource::one($reply),
-        ], 201);
-    })->name('api.v1.admin.chat.reply');
+    Route::post('/admin/chat/reply', [AdminChatController::class, 'reply'])
+        ->name('api.v1.admin.chat.reply');
 
     Route::get('/admin/bookings/{booking}/bill-summary', function (Request $request, Booking $booking) {
         $hotelId = (string) $request->user()->hotel_id;
@@ -1183,11 +1141,11 @@ Route::post('/admin/reservations/{id}/approve', function (Request $request, stri
         return response()->json(['message' => 'Room is no longer available for this reservation.'], 422);
     }
     $roomStatus = $room->status?->value ?? (string) $room->status;
-    if ($roomStatus !== RoomStatus::AVAILABLE->value) {
+    if (! in_array($roomStatus, [RoomStatus::AVAILABLE->value, RoomStatus::RESERVED->value], true)) {
         return response()->json(['message' => 'Room must be available to approve this reservation.'], 422);
     }
-    $in = Carbon::parse($res->check_in_date)->startOfDay()->toDateString();
-    $out = Carbon::parse($res->check_out_date)->startOfDay()->toDateString();
+    $in = Carbon::parse($res->check_in_date)->startOfDay();
+    $out = Carbon::parse($res->check_out_date)->startOfDay();
     $overlap = ExternalReservation::withoutGlobalScopes()
         ->where('hotel_id', $hotelId)
         ->where('assigned_room_id', (string) $room->id)
@@ -1600,25 +1558,11 @@ Route::get('/admin/rooms/{room}', function (Request $request, Room $room) {
         ? BillingCharge::withoutGlobalScopes()->where('hotel_id', $hotelId)->where('booking_id', (string) $booking->id)->latest()->limit(50)->get()
         : collect();
     $chargesTotal = (float) $charges->sum(fn ($charge) => (float) ($charge->amount ?? 0));
-    $nights = $booking && $booking->check_in_date && $booking->check_out_date
-        ? max(1, Carbon::parse($booking->check_in_date)->diffInDays(Carbon::parse($booking->check_out_date)))
-        : null;
 
     $bookingPayload = null;
     if ($booking) {
         try {
-            $ci = Carbon::parse($booking->check_in_date)->startOfDay();
-            $co = Carbon::parse($booking->check_out_date)->startOfDay();
-            $bookingPayload = array_merge($booking->toArray(), [
-                'stay_nights' => $nights,
-                'check_in_datetime_iso' => $ci->toIso8601String(),
-                'check_out_datetime_iso' => $co->toIso8601String(),
-                'stay_duration_label' => $nights !== null
-                    ? "{$nights} night".($nights === 1 ? '' : 's').' · '
-                        .$ci->format('M j, Y').' → '.$co->format('M j, Y')
-                    : null,
-                'check_in_display' => $ci->format('l, M j, Y').' · after 3:00 PM',
-                'check_out_display' => $co->format('l, M j, Y').' · before 11:00 AM',
+            $bookingPayload = array_merge($booking->toArray(), StayDisplayPresenter::roomDetailExtras($booking), [
                 'payment_method' => (string) ($booking->payment_method?->value ?? $booking->payment_method ?? ''),
                 'payment_status' => (string) ($booking->payment_status ?? 'unpaid'),
                 'paid_at_iso' => optional($booking->paid_at)->toIso8601String(),

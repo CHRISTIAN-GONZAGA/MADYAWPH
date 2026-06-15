@@ -371,6 +371,7 @@ class ReportController extends Controller
             : now();
 
         return response()->json([
+            'anchor_date' => $anchor->toDateString(),
             'daily' => $this->financialSummary(
                 $anchor->copy()->startOfDay(),
                 $anchor->copy()->endOfDay()
@@ -765,6 +766,10 @@ class ReportController extends Controller
         $resellerCommissions = $this->resellerCommissionTotal($from, $to);
         $netRevenue = $grossRevenue + $refunds + $transferAdjustments;
         $refundExpense = abs(min(0, $refunds));
+        if ($refunds > 0) {
+            $refundExpense += $refunds;
+            $netRevenue -= $refunds;
+        }
         $totalExpenses = $refundExpense + $resellerCommissions;
         $profitAfterReseller = $netRevenue - $resellerCommissions;
 

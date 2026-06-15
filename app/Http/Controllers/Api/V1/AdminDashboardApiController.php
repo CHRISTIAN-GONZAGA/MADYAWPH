@@ -20,7 +20,9 @@ use App\Models\StayReview;
 use App\Models\SystemSetting;
 use App\Models\Task;
 use App\Models\UserSetting;
+use App\Enums\BookingStatus;
 use App\Enums\RoomStatus;
+use App\Services\AutoCheckoutService;
 use App\Support\AdminBookingPresenter;
 use App\Support\BookingTypeResolver;
 use Illuminate\Http\JsonResponse;
@@ -29,7 +31,7 @@ use Illuminate\Support\Facades\Log;
 
 class AdminDashboardApiController extends Controller
 {
-    public function __invoke(Request $request): JsonResponse
+    public function __invoke(Request $request, AutoCheckoutService $autoCheckoutService): JsonResponse
     {
         try {
             $user = $request->user();
@@ -44,24 +46,42 @@ class AdminDashboardApiController extends Controller
             }
             $hotel = Hotel::withoutGlobalScopes()->find($user?->hotel_id);
             $hotelId = (string) $user->hotel_id;
+            $autoCheckoutService->processOverdueRooms($hotelId);
             $rooms = Room::query()->get();
         $bookingBase = Booking::withoutGlobalScopes()->where('hotel_id', $hotelId);
         $localTotal = BookingTypeResolver::applyFilter(
-            Booking::withoutGlobalScopes()->where('hotel_id', $hotelId),
+            Booking::withoutGlobalScopes()->where('hotel_id', $hotelId)
+                ->whereNotIn('status', [
+                    BookingStatus::COMPLETED->value,
+                    BookingStatus::CANCELLED->value,
+                ]),
             'local'
         )->count();
         $onlineTotal = BookingTypeResolver::applyFilter(
-            Booking::withoutGlobalScopes()->where('hotel_id', $hotelId),
+            Booking::withoutGlobalScopes()->where('hotel_id', $hotelId)
+                ->whereNotIn('status', [
+                    BookingStatus::COMPLETED->value,
+                    BookingStatus::CANCELLED->value,
+                ]),
             'online'
         )->count();
         $recentBookings = (clone $bookingBase)
-            ->where('created_at', '>=', now()->subHours(24))
+            ->where('status', BookingStatus::RESERVED->value)
             ->count();
         $pendingReservations = ExternalReservation::query()
             ->whereIn('status', ['pending_approval', 'pending'])
             ->count();
+        $today = now()->toDateString();
         $bookingsList = Booking::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
+            ->whereNotIn('status', [
+                BookingStatus::COMPLETED->value,
+                BookingStatus::CANCELLED->value,
+            ])
+            ->where(function ($q) use ($today) {
+                $q->whereNull('check_out_date')
+                    ->orWhere('check_out_date', '>=', $today);
+            })
             ->with('room')
             ->latest('created_at')
             ->limit(120)
@@ -125,6 +145,10 @@ class AdminDashboardApiController extends Controller
                         'guest_phone' => $booking->guest_phone,
                         'check_in_date' => optional($booking->check_in_date)->toDateString(),
                         'check_out_date' => optional($booking->check_out_date)->toDateString(),
+                        'check_in_time' => (string) ($booking->check_in_time ?? ''),
+                        'check_out_time' => (string) ($booking->check_out_time ?? ''),
+                        'nights' => (int) ($booking->nights ?? 0),
+                        'billing_mode' => (string) ($booking->billing_mode ?? ''),
                         'total_amount' => (float) $booking->total_amount,
                         'created_at' => optional($booking->created_at)->toISOString(),
                     ] : null,

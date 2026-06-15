@@ -11,6 +11,8 @@ use App\Models\BillingCharge;
 use App\Models\Booking;
 use App\Models\ExternalReservation;
 use App\Models\Room;
+use App\Support\CustomerStayPricing;
+use App\Support\PriceRounding;
 use Carbon\Carbon;
 use Illuminate\Support\Str;
 
@@ -50,30 +52,32 @@ class ReservationActivationService
 
         $checkIn = Carbon::parse($res->check_in_date)->startOfDay();
         $checkOut = Carbon::parse($res->check_out_date)->startOfDay();
-        $nights = max(1, $checkIn->diffInDays($checkOut));
+        $window = CustomerStayPricing::resolveStayWindow($room, $checkIn, $checkOut);
+        $charge = CustomerStayPricing::computeCharge(
+            $room,
+            $checkIn,
+            $checkOut,
+            $this->financialComputationService,
+            $this->roomPricingService,
+        );
         $hotelId = (string) $room->hotel_id;
-        $nightly = $this->roomPricingService->applySurge($hotelId, (float) $room->price_per_night);
-        $total = $this->financialComputationService->computeRoomCharge($nightly, $nights);
-
         $meta = is_array($res->metadata) ? $res->metadata : [];
+        $total = isset($meta['estimated_total']) && (float) $meta['estimated_total'] > 0
+            ? PriceRounding::nearest50((float) $meta['estimated_total'])
+            : (float) $charge['amount'];
+
         $paymentMethod = strcasecmp((string) ($meta['payment_method'] ?? ''), 'Online') === 0
             ? PaymentMethod::GCASH->value
             : PaymentMethod::CASH->value;
         $paymentRef = (string) ($meta['payment_reference'] ?? '');
-        if ($paymentRef === '' && isset($meta['estimated_total'])) {
-            $total = (float) $meta['estimated_total'];
-        }
 
-        $booking = Booking::withoutGlobalScopes()->create([
+        $bookingAttrs = [
             'hotel_id' => $hotelId,
             'booking_reference' => 'BK'.now()->format('YmdHis').strtoupper(Str::random(4)),
             'room_id' => (string) $room->id,
             'guest_name' => $res->guest_name,
             'guest_email' => $res->guest_email,
             'guest_phone' => $res->guest_phone,
-            'check_in_date' => $checkIn->toDateString(),
-            'check_out_date' => $checkOut->toDateString(),
-            'nights' => $nights,
             'payment_method' => $paymentMethod,
             'payment_reference' => $paymentRef !== '' ? $paymentRef : null,
             'payment_status' => 'unpaid',
@@ -82,30 +86,44 @@ class ReservationActivationService
             'booking_type' => BookingType::ONLINE->value,
             'booking_source' => 'app-customer',
             'status' => BookingStatus::CONFIRMED->value,
-        ]);
+        ];
+        if (! empty($meta['discount_type']) && ($meta['discount_type'] ?? 'none') !== 'none') {
+            $bookingAttrs['discount_type'] = (string) $meta['discount_type'];
+            $bookingAttrs['discount_percent'] = round((float) ($meta['discount_percent'] ?? 0), 2);
+            $bookingAttrs['discount_id_url'] = $meta['discount_id_url'] ?? null;
+        }
+
+        $booking = Booking::withoutGlobalScopes()->create(array_merge(
+            $bookingAttrs,
+            CustomerStayPricing::bookingFieldsFromCharge($charge, $window),
+        ));
+
+        $chargeLabel = $charge['label'];
+        if (! empty($meta['discount_percent']) && (float) $meta['discount_percent'] > 0) {
+            $chargeLabel .= ' — '.strtoupper((string) ($meta['discount_type'] ?? 'discount'))
+                .' '.(float) $meta['discount_percent'].'% off applied';
+        }
 
         BillingCharge::withoutGlobalScopes()->create([
             'hotel_id' => $hotelId,
             'booking_id' => (string) $booking->id,
             'room_id' => (string) $room->id,
             'type' => 'room',
-            'label' => 'Room charge ('.$nights.' night'.($nights > 1 ? 's' : '').')',
+            'label' => $chargeLabel,
             'amount' => $total,
             'quantity' => 1,
             'is_manual' => false,
-            'metadata' => [
-                'nightly_rate' => $nightly,
-                'nights' => $nights,
+            'metadata' => array_merge($charge['metadata'] ?? [], [
                 'from_reservation' => (string) $res->external_reference,
-            ],
+            ]),
         ]);
 
         $generatedPassword = $this->guestRoomAccessCodeService->generateUnique();
         $room->update([
             'status' => RoomStatus::BOOKED->value,
             'current_guest_name' => $res->guest_name,
-            'current_check_in' => $checkIn->toDateString(),
-            'current_check_out' => $checkOut->toDateString(),
+            'current_check_in' => $window['check_in_date'],
+            'current_check_out' => $window['check_out_date'],
             'current_access_code' => $generatedPassword,
         ]);
 

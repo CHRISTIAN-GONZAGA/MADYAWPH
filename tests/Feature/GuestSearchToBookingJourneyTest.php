@@ -42,10 +42,10 @@ class GuestSearchToBookingJourneyTest extends TestCase
             'price_per_night' => 3000,
             'status' => RoomStatus::AVAILABLE->value,
         ]);
-        SystemSetting::withoutGlobalScopes()->create([
-            'hotel_id' => (string) $hotel->id,
-            'payment_qr_url' => 'payment-qr/test-qr.png',
-        ]);
+        SystemSetting::withoutGlobalScopes()->updateOrCreate(
+            ['hotel_id' => (string) $hotel->id],
+            ['payment_qr_url' => 'payment-qr/test-qr.png'],
+        );
 
         $checkIn = Carbon::today()->addDays(4)->toDateString();
         $checkOut = Carbon::today()->addDays(6)->toDateString();

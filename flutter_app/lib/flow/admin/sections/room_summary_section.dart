@@ -95,9 +95,7 @@ class RoomSummarySection extends StatelessWidget {
       useSafeArea: true,
       builder: (ctx) {
         final reservedSoon = list.where((r) {
-          final s = AdminDashboardModels.statusOf(r);
-          if (s != 'reserved' && s != 'booked') return false;
-          return AdminDashboardModels.isStayEndingSoon(r);
+          return AdminDashboardModels.isStayArrivingSoon(r);
         }).toList();
         final others = list.where((r) => !reservedSoon.contains(r)).toList();
         final sheetHeight = MediaQuery.sizeOf(ctx).height * 0.78;
@@ -115,7 +113,7 @@ class RoomSummarySection extends StatelessWidget {
               const SizedBox(height: 16),
               if (reservedSoon.isNotEmpty) ...[
                 Text(
-                  'Departing within 1–2 days',
+                  'Arriving (today–2 days)',
                   style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
@@ -147,7 +145,7 @@ class RoomSummarySection extends StatelessWidget {
     Map<String, dynamic> r, {
     bool highlight = false,
   }) {
-    final status = AdminDashboardModels.statusOf(r);
+    final status = AdminDashboardModels.displayStatusForRoom(r);
     final guest = AdminDashboardModels.guestName(r);
     final range = AdminDashboardModels.formatStayRange(r);
     return Card(
@@ -408,14 +406,17 @@ class RoomSummarySection extends StatelessWidget {
               },
             ),
             _TotalStatCard(
-              label: 'Booked',
+              label: 'Booked / reserved',
               value: '${AdminDashboardModels.bookedRoomCount(rooms)}',
               icon: Icons.event_available_outlined,
               color: Colors.blue.shade700,
               onTap: () => _openRooms(
                 context,
                 title: 'Booked / reserved',
-                list: _filterByStatuses({'booked', 'reserved'}),
+                list: rooms
+                    .where(AdminDashboardModels.isAwaitingCheckIn)
+                    .toList(),
+                subtitle: 'Awaiting guest check-in',
               ),
             ),
           ],
@@ -473,10 +474,10 @@ class _CategoryCard extends StatelessWidget {
               const SizedBox(height: 10),
               Text('Total: ${stats['total']}'),
               Text('Vacant: ${stats['vacant']}'),
-              Text('Occupied: ${stats['occupied'] ?? stats['checked_in']}'),
-              Text('Booked: ${stats['booked']}'),
+              Text('Occupied: ${stats['checked_in']}'),
+              Text('Booked / reserved: ${stats['awaiting_check_in']}'),
               Text(
-                'Reserved (1–2 days): ${stats['reserved_soon']}',
+                'Arriving (today–2 days): ${stats['reserved_soon']}',
                 style: TextStyle(
                   color: (stats['reserved_soon'] as int) > 0
                       ? Colors.orange.shade800

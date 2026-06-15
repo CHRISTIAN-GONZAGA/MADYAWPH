@@ -9,6 +9,7 @@ use App\Models\ExternalReservation;
 use App\Models\Hotel;
 use App\Models\Room;
 use App\Support\ChatAttachmentUrl;
+use App\Support\CustomerStayPricing;
 use App\Support\HotelDirectory;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -88,7 +89,10 @@ class HotelAvailabilityService
         string $checkOutDate,
         ?string $excludeReservationId = null,
     ): bool {
-        if ($this->reservationOverlaps($hotelId, $roomId, $checkInDate, $checkOutDate, $excludeReservationId)) {
+        $in = Carbon::parse($checkInDate)->startOfDay();
+        $out = Carbon::parse($checkOutDate)->startOfDay();
+
+        if ($this->reservationOverlaps($hotelId, $roomId, $in, $out, $excludeReservationId)) {
             return true;
         }
 
@@ -99,24 +103,24 @@ class HotelAvailabilityService
                 BookingStatus::CANCELLED->value,
                 BookingStatus::COMPLETED->value,
             ])
-            ->where('check_in_date', '<', $checkOutDate)
-            ->where('check_out_date', '>', $checkInDate)
+            ->where('check_in_date', '<', $out)
+            ->where('check_out_date', '>', $in)
             ->exists();
     }
 
     private function reservationOverlaps(
         string $hotelId,
         string $roomId,
-        string $checkInDate,
-        string $checkOutDate,
+        CarbonInterface $checkIn,
+        CarbonInterface $checkOut,
         ?string $excludeReservationId,
     ): bool {
         $q = ExternalReservation::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
             ->where('assigned_room_id', $roomId)
             ->whereIn('status', ['pending_approval', 'approved', 'reserved', 'booked'])
-            ->where('check_in_date', '<', $checkOutDate)
-            ->where('check_out_date', '>', $checkInDate);
+            ->where('check_in_date', '<', $checkOut)
+            ->where('check_out_date', '>', $checkIn);
         if ($excludeReservationId !== null && $excludeReservationId !== '') {
             $q->where('id', '!=', $excludeReservationId);
         }
@@ -165,6 +169,14 @@ class HotelAvailabilityService
             $availableCount = count($this->availableRoomIdsForStay($hid, $checkIn, $checkOut));
             $price = $stats[$hid] ?? ['min_price' => 0.0, 'max_price' => 0.0, 'room_count' => 0];
             $canAccommodate = $availableCount >= $roomsNeeded;
+            $stayEstimate = 0.0;
+            if ($canAccommodate) {
+                try {
+                    $stayEstimate = $this->estimateCheapestStayForHotel($hid, $checkIn, $checkOut);
+                } catch (\Throwable) {
+                    $stayEstimate = 0.0;
+                }
+            }
 
             $out[] = [
                 'id' => $hid,
@@ -181,6 +193,7 @@ class HotelAvailabilityService
                 'longitude' => $hotel->longitude,
                 'min_price' => (float) ($price['min_price'] ?? 0),
                 'max_price' => (float) ($price['max_price'] ?? 0),
+                'est_stay_estimate' => $stayEstimate,
                 'available_rooms' => $availableCount,
                 'room_count' => (int) ($price['room_count'] ?? 0),
                 'can_accommodate' => $canAccommodate,
@@ -266,5 +279,40 @@ class HotelAvailabilityService
         $lower = preg_replace('/\s+/', ' ', $lower) ?? $lower;
 
         return trim($lower);
+    }
+
+    private function estimateCheapestStayForHotel(
+        string $hotelId,
+        CarbonInterface $checkIn,
+        CarbonInterface $checkOut,
+    ): float {
+        $financial = app(FinancialComputationService::class);
+        $pricing = app(RoomPricingService::class);
+        $min = null;
+
+        $rooms = Room::withoutGlobalScopes()->where('hotel_id', $hotelId)->get();
+        foreach ($rooms as $room) {
+            if (! $this->isRoomAvailableForStay((string) $room->id, $hotelId, $checkIn, $checkOut, null)) {
+                continue;
+            }
+
+            try {
+                $charge = CustomerStayPricing::computeCharge(
+                    $room,
+                    $checkIn,
+                    $checkOut,
+                    $financial,
+                    $pricing,
+                );
+                $amount = (float) $charge['amount'];
+                if ($min === null || $amount < $min) {
+                    $min = $amount;
+                }
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+
+        return $min ?? 0.0;
     }
 }

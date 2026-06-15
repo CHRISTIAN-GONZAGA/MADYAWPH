@@ -6,6 +6,7 @@ import '../dio_client.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_state_views.dart';
+import '../widgets/admin_month_calendar.dart';
 
 /// Revenue and operations charts with daily / weekly / monthly / annual granularity.
 class AdminReportsScreen extends StatefulWidget {
@@ -26,8 +27,13 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   Map<String, dynamic>? _profitOverview;
   Map<String, dynamic>? _resellerPayments;
   bool _loading = true;
+  bool _refreshing = false;
   String? _error;
   String _granularity = 'week';
+  DateTime _selectedDay = DateUtils.dateOnly(DateTime.now());
+  DateTime _commissionMonth =
+      DateTime(DateTime.now().year, DateTime.now().month);
+  Map<String, double> _commissionByDay = {};
 
   static const _granularityLabels = {
     'day': 'Daily',
@@ -42,13 +48,31 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     _load();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  String _fmtDay(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent || _profitOverview == null) {
+      setState(() {
+        if (!silent) {
+          _loading = true;
+        } else {
+          _refreshing = true;
+        }
+        _error = null;
+      });
+    } else {
+      setState(() => _refreshing = true);
+    }
     try {
+      final monthStart = DateTime(_commissionMonth.year, _commissionMonth.month, 1);
+      final monthEnd = DateTime(_commissionMonth.year, _commissionMonth.month + 1, 0);
       final qp = {'granularity': _granularity};
+      final commissionQp = {
+        'granularity': 'day',
+        'from': _fmtDay(monthStart),
+        'to': _fmtDay(monthEnd),
+      };
       final results = await Future.wait([
         portalDio().get<Map<String, dynamic>>(
           '/reports/sales/timeseries',
@@ -61,12 +85,25 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         portalDio().get<Map<String, dynamic>>('/reports/transfers'),
         portalDio().get<Map<String, dynamic>>('/reports/tasks/performance'),
         portalDio().get<Map<String, dynamic>>('/reports/room-occupancy'),
-        portalDio().get<Map<String, dynamic>>('/reports/profit-overview'),
+        portalDio().get<Map<String, dynamic>>(
+          '/reports/profit-overview',
+          queryParameters: {'anchor_date': _fmtDay(_selectedDay)},
+        ),
         portalDio().get<Map<String, dynamic>>(
           '/reports/reseller-payments/timeseries',
-          queryParameters: qp,
+          queryParameters: commissionQp,
         ),
       ]);
+      final commissionPoints =
+          (results[6].data?['points'] as List<dynamic>?) ?? const [];
+      final byDay = <String, double>{};
+      for (final raw in commissionPoints) {
+        if (raw is! Map) continue;
+        final label = (raw['period_label'] ?? '').toString();
+        if (label.isEmpty) continue;
+        byDay[label] = (raw['total_paid'] as num?)?.toDouble() ?? 0;
+      }
+      if (!mounted) return;
       setState(() {
         _sales = results[0].data;
         _timeline = results[1].data;
@@ -75,17 +112,23 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         _occupancy = results[4].data;
         _profitOverview = results[5].data;
         _resellerPayments = results[6].data;
+        _commissionByDay = byDay;
         _loading = false;
+        _refreshing = false;
       });
     } on DioException catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = dioErrorMessage(e);
         _loading = false;
+        _refreshing = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = '$e';
         _loading = false;
+        _refreshing = false;
       });
     }
   }
@@ -97,6 +140,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (_refreshing) const LinearProgressIndicator(minHeight: 2),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
             child: Row(
@@ -110,7 +154,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   ),
                 ),
                 IconButton(
-                  onPressed: _load,
+                  onPressed: () => _load(silent: true),
                   icon: const Icon(Icons.refresh),
                   tooltip: 'Refresh',
                 ),
@@ -125,16 +169,25 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       appBar: AppBar(
         title: const Text('Reports & analytics'),
         actions: [
-          IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
+          IconButton(onPressed: () => _load(silent: true), icon: const Icon(Icons.refresh)),
         ],
       ),
-      body: body,
+      body: Column(
+        children: [
+          if (_refreshing) const LinearProgressIndicator(minHeight: 2),
+          Expanded(child: body),
+        ],
+      ),
     );
   }
 
   Widget _buildBody() {
-    if (_loading) return const AppLoadingView();
-    if (_error != null) return AppErrorView(message: _error!, onRetry: _load);
+    if (_loading && _profitOverview == null) {
+      return const AppLoadingView();
+    }
+    if (_error != null && _profitOverview == null) {
+      return AppErrorView(message: _error!, onRetry: _load);
+    }
     final scheme = Theme.of(context).colorScheme;
     final salesSummary = (_sales?['totals'] as Map<String, dynamic>?) ?? {};
     final salesPoints = (_sales?['points'] as List<dynamic>?) ?? [];
@@ -146,14 +199,54 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     final resellerPay = _resellerPayments ?? const {};
     final resellerTotals = resellerPay['totals'] as Map<String, dynamic>? ?? {};
     final resellerPoints = (resellerPay['points'] as List<dynamic>?) ?? [];
+    final selectedDayCommission =
+        _commissionByDay[_fmtDay(_selectedDay)] ?? 0.0;
+    final isToday = DateUtils.isSameDay(_selectedDay, DateTime.now());
     final reportFrom = (_sales?['from'] ?? '').toString();
     final reportTo = (_sales?['to'] ?? '').toString();
 
     return RefreshIndicator(
-      onRefresh: _load,
+      onRefresh: () => _load(silent: true),
       child: ListView(
         padding: EdgeInsets.fromLTRB(16, widget.embedded ? 8 : 16, 16, 32),
         children: [
+          AppSectionCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Commission calendar',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Tap a date to view payouts for that day. Daily totals reset each calendar day.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                ),
+                const SizedBox(height: 12),
+                AdminMonthCalendar(
+                  focusedMonth: _commissionMonth,
+                  selectedDay: _selectedDay,
+                  hasEvent: (d) => (_commissionByDay[_fmtDay(d)] ?? 0) > 0,
+                  eventCount: (d) =>
+                      (_commissionByDay[_fmtDay(d)] ?? 0).round(),
+                  onDaySelected: (d) {
+                    setState(() => _selectedDay = d);
+                    _load(silent: true);
+                  },
+                  onMonthChanged: (m) {
+                    setState(() => _commissionMonth = m);
+                    _load(silent: true);
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
           AppSectionCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -168,8 +261,18 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                           ),
                     ),
                   ),
+                Text(
+                  isToday
+                      ? 'Selected: Today (${_fmtDay(_selectedDay)})'
+                      : 'Selected: ${_fmtDay(_selectedDay)}',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 12),
                 _PeriodFinanceRow(
-                  label: 'Today (daily)',
+                  label: 'Daily (selected date)',
                   data: overview['daily'] as Map<String, dynamic>?,
                 ),
                 const Divider(height: 20),
@@ -201,12 +304,16 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                         fontWeight: FontWeight.w800,
                       ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 Text(
-                  'Period total: ₱${_fmtNum(resellerTotals['total_paid'] ?? 0)}',
-                  style: Theme.of(context).textTheme.titleSmall,
+                  'Selected day: ₱${_fmtNum(selectedDayCommission)}',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: scheme.primary,
+                      ),
                 ),
                 Text(
+                  'Month total: ₱${_fmtNum(resellerTotals['total_paid'] ?? 0)} · '
                   '${resellerTotals['payment_count'] ?? 0} payment(s)',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: scheme.onSurfaceVariant,
@@ -214,7 +321,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 ),
                 const SizedBox(height: 16),
                 _ResellerPeriodRow(
-                  label: 'Today',
+                  label: isToday ? 'Today (selected)' : 'Selected day',
                   data: (overview['reseller_payments'] as Map?)?['daily']
                       as Map<String, dynamic>?,
                 ),
@@ -236,21 +343,27 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 if (resellerPoints.isNotEmpty) ...[
                   const SizedBox(height: 16),
                   Text(
-                    'Chart period breakdown',
+                    'Daily payouts this month',
                     style: Theme.of(context).textTheme.labelLarge,
                   ),
                   const SizedBox(height: 8),
-                  ...resellerPoints.whereType<Map>().map((p) {
-                    final m = Map<String, dynamic>.from(p);
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Text(
-                        '${m['period_label']}: ₱${_fmtNum(m['total_paid'])} '
-                        '(${m['payment_count']} payments)',
-                        style: Theme.of(context).textTheme.bodyMedium,
+                  SizedBox(
+                    height: 180,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 8, top: 8),
+                      child: BarChart(
+                        _resellerBarData(resellerPoints, scheme),
                       ),
-                    );
-                  }),
+                    ),
+                  ),
+                ] else ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'No reseller payouts recorded for this month.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                  ),
                 ],
               ],
             ),
@@ -475,6 +588,76 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   short,
                   style: const TextStyle(fontSize: 9),
                 ),
+              );
+            },
+          ),
+        ),
+      ),
+      barGroups: groups,
+    );
+  }
+
+  BarChartData _resellerBarData(List<dynamic> points, ColorScheme scheme) {
+    final groups = <BarChartGroupData>[];
+    final maxShow = points.length > 31 ? 31 : points.length;
+    var maxY = 1.0;
+    for (var i = 0; i < maxShow; i++) {
+      final m = points[i] as Map<String, dynamic>;
+      final v = (m['total_paid'] ?? 0).toDouble();
+      if (v > maxY) maxY = v;
+      groups.add(
+        BarChartGroupData(
+          x: i,
+          barRods: [
+            BarChartRodData(
+              toY: v,
+              width: 8,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+              color: scheme.tertiary,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return BarChartData(
+      maxY: maxY * 1.15,
+      gridData: FlGridData(
+        show: true,
+        drawVerticalLine: false,
+        horizontalInterval: maxY > 0 ? maxY / 4 : 1,
+        getDrawingHorizontalLine: (_) => FlLine(
+          color: scheme.outlineVariant.withValues(alpha: 0.5),
+          strokeWidth: 1,
+        ),
+      ),
+      borderData: FlBorderData(show: false),
+      titlesData: FlTitlesData(
+        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        leftTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            reservedSize: 44,
+            getTitlesWidget: (v, _) => Text(
+              v >= 1000 ? '${(v / 1000).toStringAsFixed(1)}k' : v.toInt().toString(),
+              style: const TextStyle(fontSize: 10),
+            ),
+          ),
+        ),
+        bottomTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            reservedSize: 28,
+            getTitlesWidget: (xv, _) {
+              final i = xv.toInt();
+              if (i < 0 || i >= maxShow) return const SizedBox.shrink();
+              final m = points[i] as Map<String, dynamic>;
+              final raw = (m['period_label'] ?? '').toString();
+              final day = raw.length >= 10 ? raw.substring(8, 10) : raw;
+              return Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(day, style: const TextStyle(fontSize: 9)),
               );
             },
           ),
@@ -1034,6 +1217,18 @@ class _ResellerPeriodRow extends StatelessWidget {
     final count = data?['payment_count'] ?? 0;
     final resellers = data?['unique_resellers'] ?? 0;
     final byCat = data?['by_category'] as Map<String, dynamic>? ?? {};
+
+    if (data == null) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Text(
+          '$label: no payouts recorded',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+        ),
+      );
+    }
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),

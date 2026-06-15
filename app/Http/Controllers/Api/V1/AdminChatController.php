@@ -4,11 +4,15 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\GuestMessage;
+use App\Services\ActivityLogService;
+use App\Support\ChatAttachmentUrl;
 use App\Support\GuestMessageResource;
 use App\Support\HotelScopeGuard;
+use App\Support\SafeModelAttributes;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Throwable;
 
 class AdminChatController extends Controller
@@ -26,9 +30,11 @@ class AdminChatController extends Controller
 
             $mapThread = function ($msgs): array {
                 $latest = $msgs->first();
-                $roomId = (string) ($latest?->room_id ?? '');
+                $roomId = $this->normalizeRoomId($latest?->room_id);
                 $isStaff = str_starts_with($roomId, 'STAFF-ADMIN:');
-                $sentAt = $latest?->sent_at ?? $latest?->created_at;
+                $sentAt = $latest !== null
+                    ? SafeModelAttributes::carbonFromModel($latest, 'sent_at', 'created_at')
+                    : null;
 
                 return [
                     'room_id' => $roomId,
@@ -37,14 +43,19 @@ class AdminChatController extends Controller
                     'staff_user_id' => $isStaff ? str_replace('STAFF-ADMIN:', '', $roomId) : null,
                     'latest_message' => (string) ($latest?->message ?? ''),
                     'latest_sender_role' => (string) ($latest?->sender_role ?? ''),
-                    'latest_sent_at' => $sentAt ? $sentAt->toIso8601String() : null,
+                    'latest_sent_at' => $sentAt?->toIso8601String(),
                     'unread_count' => (int) $msgs->where('is_read', false)->where('sender_role', '!=', 'admin')->count(),
                     'is_staff_thread' => $isStaff,
                 ];
             };
 
             $threads = $messages
-                ->groupBy('room_id')
+                ->map(function (GuestMessage $message) {
+                    $message->setAttribute('room_id', $this->normalizeRoomId($message->room_id));
+
+                    return $message;
+                })
+                ->groupBy(fn (GuestMessage $m) => $this->normalizeRoomId($m->room_id))
                 ->map($mapThread)
                 ->values();
 
@@ -82,6 +93,7 @@ class AdminChatController extends Controller
     {
         try {
             $hotelId = (string) $request->user()->hotel_id;
+            $roomId = $this->normalizeRoomId(urldecode($roomId));
             HotelScopeGuard::assertRoomBelongsToHotel($hotelId, $roomId);
 
             $viewerLocale = (string) $request->query(
@@ -116,7 +128,7 @@ class AdminChatController extends Controller
                 ),
             ]);
         } catch (Throwable $e) {
-            if ($e instanceof \Symfony\Component\HttpKernel\Exception\HttpException && $e->getStatusCode() === 403) {
+            if ($e instanceof HttpException && $e->getStatusCode() === 403) {
                 throw $e;
             }
 
@@ -134,5 +146,96 @@ class AdminChatController extends Controller
                 'messages' => [],
             ], 500);
         }
+    }
+
+    public function reply(Request $request, ActivityLogService $activityLogService): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'room_id' => ['required', 'string'],
+                'room_number' => ['nullable', 'string', 'max:50'],
+                'guest_name' => ['required', 'string', 'max:255'],
+                'message' => ['required', 'string', 'max:500'],
+                'image_url' => ['nullable', 'url'],
+                'image_file' => ['nullable', 'image', 'max:4096'],
+            ]);
+
+            $hotelId = (string) $request->user()->hotel_id;
+            $roomId = $this->normalizeRoomId($validated['room_id']);
+            HotelScopeGuard::assertRoomBelongsToHotel($hotelId, $roomId);
+
+            $roomNumber = trim((string) ($validated['room_number'] ?? ''));
+            if ($roomNumber === '') {
+                $roomNumber = str_starts_with($roomId, 'STAFF-ADMIN:') ? 'STAFF' : '—';
+            }
+
+            $uploadedImageUrl = null;
+            if ($request->hasFile('image_file')) {
+                $uploadedImageUrl = ChatAttachmentUrl::storeUploadedFile(
+                    $request->file('image_file'),
+                    'chat/admin'
+                );
+            }
+
+            $reply = GuestMessage::withoutGlobalScopes()->create([
+                'hotel_id' => $hotelId,
+                'room_id' => $roomId,
+                'room_number' => $roomNumber,
+                'guest_name' => $validated['guest_name'],
+                'message' => $validated['message'],
+                'sender_role' => 'admin',
+                'attachment_url' => $uploadedImageUrl ?? ChatAttachmentUrl::fromStoredUrl($validated['image_url'] ?? null),
+                'attachment_type' => ($uploadedImageUrl || ! empty($validated['image_url'])) ? 'image' : null,
+                'is_read' => true,
+                'read_at' => now(),
+                'sent_at' => now(),
+            ]);
+
+            $activityLogService->log(
+                $hotelId,
+                $request->user(),
+                str_starts_with($roomId, 'STAFF-ADMIN:')
+                    ? "Replied to staff chat ({$validated['guest_name']})"
+                    : "Replied to guest chat for room {$roomNumber}",
+                ['message_id' => (string) $reply->id, 'room_id' => $roomId]
+            );
+
+            return response()->json([
+                'ok' => true,
+                'message' => GuestMessageResource::one($reply),
+            ], 201);
+        } catch (Throwable $e) {
+            if ($e instanceof HttpException) {
+                throw $e;
+            }
+
+            Log::error('Admin chat reply failed', [
+                'hotel_id' => (string) ($request->user()->hotel_id ?? ''),
+                'room_id' => (string) ($request->input('room_id') ?? ''),
+                'message' => $e->getMessage(),
+            ]);
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not send your reply.',
+            ], 500);
+        }
+    }
+
+    private function normalizeRoomId(mixed $roomId): string
+    {
+        if ($roomId === null) {
+            return '';
+        }
+        if (is_array($roomId)) {
+            $oid = $roomId['$oid'] ?? $roomId['oid'] ?? null;
+            if ($oid !== null) {
+                return (string) $oid;
+            }
+        }
+
+        return trim((string) $roomId);
     }
 }

@@ -444,7 +444,10 @@ class _HotelResultCard extends StatelessWidget {
     final minPrice = (hotel['min_price'] as num?)?.toDouble() ?? 0;
     final available = (hotel['available_rooms'] as num?)?.toInt() ?? 0;
     final canAccommodate = hotel['can_accommodate'] != false && available > 0;
-    final estStay = minPrice > 0 ? minPrice * nights : 0.0;
+    final estFromApi = (hotel['est_stay_estimate'] as num?)?.toDouble() ?? 0;
+    final estStay = estFromApi > 0
+        ? estFromApi
+        : (minPrice > 0 ? minPrice * nights : 0.0);
     final banner = ChatAttachment.resolveMediaUrl(
       (hotel['banner_url'] ?? '').toString(),
     );

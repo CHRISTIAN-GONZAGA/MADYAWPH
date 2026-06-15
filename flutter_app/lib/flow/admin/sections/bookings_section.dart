@@ -59,7 +59,20 @@ class _BookingsSectionState extends State<BookingsSection>
   }
 
   List<Map<String, dynamic>> get _filteredBookings {
-    var list = widget.bookings;
+    final today = DateUtils.dateOnly(DateTime.now());
+    var list = widget.bookings.where((b) {
+      final status = (b['status'] ?? '').toString().toLowerCase();
+      if (status == 'completed' || status == 'cancelled') {
+        return false;
+      }
+      final checkOut = AdminDashboardModels.parseDate(
+        (b['check_out_date'] ?? '').toString(),
+      );
+      if (checkOut != null && checkOut.isBefore(today)) {
+        return false;
+      }
+      return true;
+    }).toList();
     if (_recordFilter == 'local') {
       list = list
           .where((b) => (b['booking_type'] ?? 'local').toString() == 'local')
@@ -101,12 +114,22 @@ class _BookingsSectionState extends State<BookingsSection>
       .where((r) => (r['status'] ?? '').toString() == 'pending_approval')
       .toList();
 
-  List<Map<String, dynamic>> get _approvedReservations => _resList
-      .where((r) {
-        final s = (r['status'] ?? '').toString();
-        return s == 'approved' || s == 'reserved';
-      })
-      .toList();
+  List<Map<String, dynamic>> get _approvedReservations {
+    final today = DateUtils.dateOnly(DateTime.now());
+    return _resList.where((r) {
+      final s = (r['status'] ?? '').toString();
+      if (s != 'approved' && s != 'reserved') {
+        return false;
+      }
+      final checkIn = AdminDashboardModels.parseDate(
+        (r['check_in_date'] ?? '').toString(),
+      );
+      if (checkIn != null && !checkIn.isAfter(today)) {
+        return false;
+      }
+      return true;
+    }).toList();
+  }
 
   String _resolveId(Map<String, dynamic> m) =>
       (m['id'] ?? m['_id'] ?? '').toString();
@@ -301,8 +324,12 @@ class _BookingsSectionState extends State<BookingsSection>
         inDate.add(const Duration(days: 1));
     var checkInDate = inDate;
     var checkOutDate = outDate;
-    TimeOfDay? checkInTime = const TimeOfDay(hour: 15, minute: 0);
-    TimeOfDay? checkOutTime = const TimeOfDay(hour: 11, minute: 0);
+    TimeOfDay? checkInTime =
+        AdminDashboardModels.bookingTimeOfDay(room, 'check_in_time') ??
+            const TimeOfDay(hour: 15, minute: 0);
+    TimeOfDay? checkOutTime =
+        AdminDashboardModels.bookingTimeOfDay(room, 'check_out_time') ??
+            const TimeOfDay(hour: 11, minute: 0);
 
     final ok = await showDialog<bool>(
       context: context,
@@ -667,7 +694,7 @@ class _BookingsSectionState extends State<BookingsSection>
   Widget _calendarView() {
     final events = _eventsOnDay(_selectedDay);
     final monthBookings = _calendarBookings.length;
-    final bookedRooms = AdminDashboardModels.bookedRoomCount(widget.rooms);
+    final bookedRooms = AdminDashboardModels.activeStayRoomCount(widget.rooms);
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),

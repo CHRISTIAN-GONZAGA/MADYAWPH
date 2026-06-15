@@ -53,18 +53,25 @@ AdminChatBadgeInfo adminChatBadgeFromData({
     }
   }
 
-  if (guestUnread == 0) {
-    for (final raw in guestMessages) {
-      if (raw is! Map<String, dynamic>) continue;
-      if (raw['is_read'] == true) continue;
-      guestUnread++;
-      if (preview.isEmpty) {
-        preview = (raw['message'] ?? raw['body'] ?? '').toString();
-      }
-      if (raw['priority'] == 'urgent' || raw['is_urgent'] == true) {
-        kind = 'urgent';
-      }
+  var messageFallbackUnread = 0;
+  for (final raw in guestMessages) {
+    if (raw is! Map<String, dynamic>) continue;
+    if (raw['is_read'] == true) continue;
+    final role = (raw['sender_role'] ?? '').toString().toLowerCase();
+    if (role == 'admin') continue;
+    messageFallbackUnread++;
+    if (preview.isEmpty) {
+      preview = (raw['message'] ?? raw['body'] ?? '').toString();
     }
+    if (raw['priority'] == 'urgent' || raw['is_urgent'] == true) {
+      kind = 'urgent';
+    }
+  }
+
+  if (guestUnread == 0 && messageFallbackUnread > 0) {
+    guestUnread = messageFallbackUnread;
+  } else if (guestUnread < messageFallbackUnread) {
+    guestUnread = messageFallbackUnread;
   }
 
   return AdminChatBadgeInfo(

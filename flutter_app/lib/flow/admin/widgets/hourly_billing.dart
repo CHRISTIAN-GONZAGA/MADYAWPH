@@ -8,7 +8,7 @@ class HourlyBilling {
       (room['billing_mode'] ?? 'nightly').toString().toLowerCase() == 'hourly';
 
   static int blockHours(Map<String, dynamic> room) =>
-      (room['block_hours'] as num?)?.toInt() ?? 3;
+      (room['block_hours'] as num?)?.toInt() ?? 1;
 
   static double pricePerBlock(Map<String, dynamic> room) =>
       (room['price_per_block'] as num?)?.toDouble() ??
@@ -62,6 +62,55 @@ class HourlyBilling {
     );
   }
 
+  /// Mirrors backend [CustomerStayPricing] for date-only customer bookings.
+  static DateTime customerStayCheckIn(DateTime checkInDate) => DateTime(
+        checkInDate.year,
+        checkInDate.month,
+        checkInDate.day,
+        14,
+        0,
+      );
+
+  static DateTime customerStayCheckOut(
+    Map<String, dynamic> room,
+    DateTime checkInDate,
+    DateTime checkOutDate,
+  ) {
+    if (!isHourly(room)) {
+      return DateTime(
+        checkOutDate.year,
+        checkOutDate.month,
+        checkOutDate.day,
+      );
+    }
+    final inAt = customerStayCheckIn(checkInDate);
+    final sameDay = checkInDate.year == checkOutDate.year &&
+        checkInDate.month == checkOutDate.month &&
+        checkInDate.day == checkOutDate.day;
+    if (sameDay) {
+      return inAt.add(Duration(hours: blockHours(room)));
+    }
+    return DateTime(
+      checkOutDate.year,
+      checkOutDate.month,
+      checkOutDate.day,
+      11,
+      0,
+    );
+  }
+
+  static double customerDateStayCharge(
+    Map<String, dynamic> room,
+    DateTime checkInDate,
+    DateTime checkOutDate,
+  ) {
+    return stayCharge(
+      room,
+      customerStayCheckIn(checkInDate),
+      customerStayCheckOut(room, checkInDate, checkOutDate),
+    );
+  }
+
   static String priceLabel(Map<String, dynamic> room) {
     if (isHourly(room)) {
       final price = pricePerBlock(room);
@@ -79,4 +128,6 @@ class HourlyBilling {
   }
 
   static double _round50(double value) => (value / 50).round() * 50;
+
+  static double round50(double value) => _round50(value);
 }

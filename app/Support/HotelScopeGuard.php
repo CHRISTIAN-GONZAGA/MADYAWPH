@@ -31,9 +31,16 @@ final class HotelScopeGuard
                 ->exists();
         }
 
-        return Room::withoutGlobalScopes()
+        if (Room::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
             ->where('id', $roomId)
+            ->exists()) {
+            return true;
+        }
+
+        return GuestMessage::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where('room_id', $roomId)
             ->exists();
     }
 

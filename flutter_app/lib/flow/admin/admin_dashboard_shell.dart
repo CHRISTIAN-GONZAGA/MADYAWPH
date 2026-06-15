@@ -131,7 +131,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
   void initState() {
     super.initState();
     _pollInbox();
-    _chatPoll = Timer.periodic(const Duration(seconds: 15), (_) => _pollInbox());
+    _chatPoll = Timer.periodic(const Duration(seconds: 10), (_) => _pollInbox());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final credits = widget.data['credits'] as Map<String, dynamic>?;
@@ -149,6 +149,11 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     if (oldWidget.data != widget.data) {
       _pollInbox();
       _maybeRedirectToCreditsTab(oldWidget.data, widget.data);
+    }
+    final oldMsgs = oldWidget.data['guestMessages'] as List? ?? const [];
+    final newMsgs = widget.data['guestMessages'] as List? ?? const [];
+    if (oldMsgs != newMsgs && mounted) {
+      setState(() {});
     }
   }
 
@@ -186,8 +191,13 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
       if (!mounted) return;
       setState(() => _inbox = res.data);
     } on DioException {
-      // Keep last inbox snapshot.
+      // Keep last inbox snapshot; guestMessages fallback still drives badge.
     }
+  }
+
+  AdminChatBadgeInfo _chatBadge(Map<String, dynamic> d) {
+    final chats = d['guestMessages'] as List<dynamic>? ?? [];
+    return adminChatBadgeFromData(inbox: _inbox, guestMessages: chats);
   }
 
   List<Map<String, dynamic>> get _rooms {
@@ -204,16 +214,12 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     final hotelName =
         (user?['hotelName'] ?? user?['hotel_name'] ?? 'Hotel').toString();
     final adminName = (user?['name'] ?? user?['username'] ?? 'Admin').toString();
-    final chats = d['guestMessages'] as List<dynamic>? ?? [];
     final credits = d['credits'] as Map<String, dynamic>?;
     final creditAmount = (credits?['currentCredits'] as num?)?.toDouble() ?? 0;
     final balance =
         credits != null ? '${credits['currentCredits'] ?? ''}' : '—';
 
-    final badge = adminChatBadgeFromData(
-      inbox: _inbox,
-      guestMessages: chats,
-    );
+    final badge = _chatBadge(d);
 
     final navItems = _navItemsFor(d);
     final safeTab = _tab.clamp(0, navItems.length - 1);

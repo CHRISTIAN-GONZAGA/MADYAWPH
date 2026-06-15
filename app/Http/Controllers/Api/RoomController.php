@@ -145,9 +145,9 @@ class RoomController extends Controller
         );
         $bookingId = $bookingBefore ? (string) $bookingBefore->id : null;
 
-        StayManagementPolicy::assertAllowedStatusChange($bookingBefore, (string) $validated['status']);
+        StayManagementPolicy::assertAllowedStatusChange($bookingBefore, (string) $validated['status'], $room);
         if (in_array((string) $validated['status'], [RoomStatus::CHECKED_OUT->value], true)) {
-            StayManagementPolicy::denyUnlessCanManage($bookingBefore);
+            StayManagementPolicy::denyUnlessCanManage($bookingBefore, $room);
         }
 
         $result = $this->roomCheckoutService->applyStatusChange(
@@ -180,7 +180,7 @@ class RoomController extends Controller
             (string) $room->hotel_id,
             (string) $room->id
         );
-        StayManagementPolicy::denyUnlessCanManage($bookingBefore);
+        StayManagementPolicy::denyUnlessCanManage($bookingBefore, $room);
         $room = $this->roomCheckoutService->checkoutGuest($room, $request->user());
         $bookingId = $bookingBefore ? (string) $bookingBefore->id : null;
         $booking = $bookingId

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\RoomStatus;
 use App\Models\BillingCharge;
 use App\Models\Booking;
+use App\Models\ExternalReservation;
 use App\Models\Hotel;
 use App\Models\Room;
 use Carbon\Carbon;
@@ -207,5 +208,46 @@ class CustomerPortalBookingTest extends TestCase
         $show->assertOk();
         $show->assertJsonPath('reservation.payment_reference', $paymentRef);
         $show->assertJsonPath('reservation.hotel_id', (string) $hotel->id);
+    }
+
+    public function test_instant_booking_rejects_overlapping_pending_reservation(): void
+    {
+        $hotel = Hotel::create(['name' => 'Conflict Hotel', 'location' => 'Loc']);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '306',
+            'room_type' => 'Single',
+            'price_per_night' => 1500,
+            'status' => RoomStatus::AVAILABLE->value,
+        ]);
+
+        $checkIn = Carbon::today()->toDateString();
+        $checkOut = Carbon::today()->addDay()->toDateString();
+
+        ExternalReservation::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'source' => 'test',
+            'assigned_room_id' => (string) $room->id,
+            'guest_name' => 'Reserved Guest',
+            'guest_email' => 'reserved@test.local',
+            'guest_phone' => '09170000099',
+            'check_in_date' => $checkIn,
+            'check_out_date' => $checkOut,
+            'status' => 'pending_approval',
+            'external_reference' => 'RES-CONFLICT-1',
+        ]);
+
+        $response = $this->postJson('/api/v1/customer/bookings', [
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'guest_name' => 'Walk-in Guest',
+            'guest_email' => 'walkin@test.local',
+            'guest_phone' => '09171234567',
+            'check_in' => $checkIn,
+            'check_out' => $checkOut,
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertSame(0, Booking::withoutGlobalScopes()->count());
     }
 }

@@ -146,4 +146,51 @@ class HourlyRoomBillingTest extends TestCase
         $options = RoomBillingSupport::extensionHourOptions($room, 4);
         $this->assertSame([12, 24, 36, 48], $options);
     }
+
+    public function test_customer_booking_on_hourly_room_uses_block_pricing(): void
+    {
+        $hotel = Hotel::create(['name' => 'Customer Hourly', 'location' => 'Loc']);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '412',
+            'room_type' => 'Single',
+            'billing_mode' => 'hourly',
+            'price_per_block' => 900,
+            'block_hours' => 3,
+            'price_per_night' => 5000,
+            'status' => RoomStatus::AVAILABLE->value,
+        ]);
+
+        $checkIn = now()->toDateString();
+        $checkOut = now()->addDay()->toDateString();
+
+        $response = $this->postJson('/api/v1/customer/bookings', [
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'guest_name' => 'Hourly Guest',
+            'guest_email' => 'hourly-guest@test.local',
+            'guest_phone' => '09171234567',
+            'check_in' => $checkIn,
+            'check_out' => $checkOut,
+        ]);
+
+        $response->assertOk();
+
+        $booking = Booking::withoutGlobalScopes()->latest('created_at')->first();
+        $this->assertNotNull($booking);
+        $this->assertSame('hourly', (string) $booking->billing_mode);
+        $this->assertSame(21, (int) $booking->stay_hours);
+        $this->assertSame(6300.0, (float) $booking->total_amount);
+
+        $charge = BillingCharge::withoutGlobalScopes()
+            ->where('booking_id', (string) $booking->id)
+            ->where('type', 'room')
+            ->first();
+        $this->assertNotNull($charge);
+        $this->assertStringContainsString('hr', (string) $charge->label);
+        $this->assertSame(6300.0, (float) $charge->amount);
+
+        $room->refresh();
+        $this->assertSame('hourly', RoomBillingSupport::billingMode($room));
+    }
 }

@@ -380,6 +380,8 @@ class _TicketCard extends StatelessWidget {
             _row(context.tr('lbl_hotel'), hotelName),
             _row(context.tr('lbl_guest'), '${reservation['guest_name']}'),
             _row(context.tr('lbl_room'), 'Room ${reservation['room_number']}'),
+            if ((reservation['stay_summary'] ?? '').toString().isNotEmpty)
+              _row('Stay', (reservation['stay_summary'] ?? '').toString()),
             _row(context.tr('lbl_checkin'), '${reservation['check_in_date']}'),
             _row(context.tr('lbl_checkout'), '${reservation['check_out_date']}'),
             _row(context.tr('lbl_reservation'), resRef),

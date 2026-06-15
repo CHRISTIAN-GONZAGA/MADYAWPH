@@ -4,24 +4,22 @@ import 'package:flutter/material.dart';
 import '../../../dio_client.dart';
 import '../../../widgets/admin_time_slot_field.dart';
 import '../../../widgets/app_input.dart';
-import '../../../widgets/app_scaffold.dart';
 import '../admin_dashboard_models.dart';
 import '../../admin_rooms.dart';
 import 'hourly_billing.dart';
 
-/// Opens the walk-in booking form as a full screen (reliable on all orientations).
+/// Opens the walk-in booking form (dialog — same pattern as public customer booking).
 Future<bool> showAdminManualBookingDialog({
   required BuildContext context,
   required Map<String, dynamic> room,
   required Future<void> Function() onSuccess,
 }) async {
-  final result = await Navigator.of(context, rootNavigator: true).push<bool>(
-    MaterialPageRoute<bool>(
-      fullscreenDialog: true,
-      builder: (_) => AdminWalkInBookingScreen(
-        room: room,
-        onSuccess: onSuccess,
-      ),
+  final result = await showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => _AdminWalkInBookingDialog(
+      room: room,
+      onSuccess: onSuccess,
     ),
   );
   return result == true;
@@ -70,10 +68,8 @@ Future<void> handleAdminWalkInRoomTap(
   );
 }
 
-/// Full-screen walk-in booking form for front desk.
-class AdminWalkInBookingScreen extends StatefulWidget {
-  const AdminWalkInBookingScreen({
-    super.key,
+class _AdminWalkInBookingDialog extends StatefulWidget {
+  const _AdminWalkInBookingDialog({
     required this.room,
     required this.onSuccess,
   });
@@ -82,11 +78,11 @@ class AdminWalkInBookingScreen extends StatefulWidget {
   final Future<void> Function() onSuccess;
 
   @override
-  State<AdminWalkInBookingScreen> createState() =>
-      _AdminWalkInBookingScreenState();
+  State<_AdminWalkInBookingDialog> createState() =>
+      _AdminWalkInBookingDialogState();
 }
 
-class _AdminWalkInBookingScreenState extends State<AdminWalkInBookingScreen> {
+class _AdminWalkInBookingDialogState extends State<_AdminWalkInBookingDialog> {
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
@@ -106,6 +102,8 @@ class _AdminWalkInBookingScreenState extends State<AdminWalkInBookingScreen> {
     'PayMaya',
     'Credit Card',
   ];
+
+  bool get _isHourly => HourlyBilling.isHourly(widget.room);
 
   @override
   void initState() {
@@ -141,6 +139,24 @@ class _AdminWalkInBookingScreenState extends State<AdminWalkInBookingScreen> {
         _checkOutTime.minute,
       );
 
+  String _fmtDate(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  Future<void> _submitViaAdminApi(String roomId) async {
+    final inAt = _checkInAt();
+    final outAt = _checkOutAt();
+    await portalDio().post('/admin/bookings', data: {
+      'room_id': roomId,
+      'guest_name': _nameCtrl.text.trim(),
+      'guest_email': _emailCtrl.text.trim(),
+      'guest_phone': _phoneCtrl.text.trim(),
+      'check_in_at': inAt.toIso8601String(),
+      'check_out_at': outAt.toIso8601String(),
+      'payment_method': _paymentMethod,
+      'check_in_now': _checkInNow,
+    });
+  }
+
   Future<void> _submit() async {
     if (_nameCtrl.text.trim().isEmpty ||
         _emailCtrl.text.trim().isEmpty ||
@@ -161,21 +177,14 @@ class _AdminWalkInBookingScreenState extends State<AdminWalkInBookingScreen> {
       });
       return;
     }
+
     setState(() {
       _busy = true;
       _error = null;
     });
+
     try {
-      await portalDio().post('/admin/bookings', data: {
-        'room_id': roomId,
-        'guest_name': _nameCtrl.text.trim(),
-        'guest_email': _emailCtrl.text.trim(),
-        'guest_phone': _phoneCtrl.text.trim(),
-        'check_in_at': inAt.toIso8601String(),
-        'check_out_at': outAt.toIso8601String(),
-        'payment_method': _paymentMethod,
-        'check_in_now': _checkInNow,
-      });
+      await _submitViaAdminApi(roomId);
       if (!mounted) return;
       await widget.onSuccess();
       if (!mounted) return;
@@ -217,9 +226,6 @@ class _AdminWalkInBookingScreenState extends State<AdminWalkInBookingScreen> {
     });
   }
 
-  String _fmtDate(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -231,216 +237,141 @@ class _AdminWalkInBookingScreenState extends State<AdminWalkInBookingScreen> {
     final estimated =
         validWindow ? HourlyBilling.stayCharge(widget.room, inAt, outAt) : 0.0;
     final stayHours = validWindow ? HourlyBilling.stayHours(inAt, outAt) : 0;
-    final isHourly = HourlyBilling.isHourly(widget.room);
 
-    return AppScaffold(
-      appBar: AppBar(
-        title: const Text('Walk-in booking'),
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: _busy ? null : () => Navigator.of(context).pop(false),
-        ),
-        actions: [
-          TextButton(
-            onPressed: _busy ? null : _submit,
-            child: _busy
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Book'),
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-        children: [
-          Card(
-            color: scheme.primaryContainer.withValues(alpha: 0.35),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    return AlertDialog(
+      title: Text('Walk-in · Room $roomNo'),
+      content: SingleChildScrollView(
+        child: SizedBox(
+          width: MediaQuery.sizeOf(context).width > 500 ? 420 : double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '$category · ${HourlyBilling.priceLabel(widget.room)}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 16),
+              AppInput(controller: _nameCtrl, label: 'Guest name *'),
+              const SizedBox(height: 10),
+              AppInput(
+                controller: _emailCtrl,
+                label: 'Email *',
+                keyboardType: TextInputType.emailAddress,
+              ),
+              const SizedBox(height: 10),
+              AppInput(
+                controller: _phoneCtrl,
+                label: 'Phone *',
+                keyboardType: TextInputType.phone,
+              ),
+              const SizedBox(height: 14),
+              Row(
                 children: [
-                  Text(
-                    'Room $roomNo',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _busy ? null : () => _pickDate(checkIn: true),
+                      icon: const Icon(Icons.calendar_today, size: 18),
+                      label: Text('In ${_fmtDate(_checkInDate)}'),
+                    ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '$category · ${HourlyBilling.priceLabel(widget.room)}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _busy ? null : () => _pickDate(checkIn: false),
+                      icon: const Icon(Icons.event, size: 18),
+                      label: Text('Out ${_fmtDate(_checkOutDate)}'),
+                    ),
                   ),
                 ],
               ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            'Guest details',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
+              if (_isHourly || _checkInNow) ...[
+                const SizedBox(height: 12),
+                AdminTimeSlotField(
+                  label: 'Check-in time',
+                  value: _checkInTime,
+                  onChanged: (t) {
+                    if (t != null) setState(() => _checkInTime = t);
+                  },
                 ),
-          ),
-          const SizedBox(height: 12),
-          AppInput(controller: _nameCtrl, label: 'Guest name *'),
-          const SizedBox(height: 10),
-          AppInput(
-            controller: _emailCtrl,
-            label: 'Email *',
-            keyboardType: TextInputType.emailAddress,
-          ),
-          const SizedBox(height: 10),
-          AppInput(
-            controller: _phoneCtrl,
-            label: 'Phone *',
-            keyboardType: TextInputType.phone,
-          ),
-          const SizedBox(height: 20),
-          Text(
-            'Stay schedule',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
+                const SizedBox(height: 12),
+                AdminTimeSlotField(
+                  label: 'Check-out time',
+                  value: _checkOutTime,
+                  onChanged: (t) {
+                    if (t != null) setState(() => _checkOutTime = t);
+                  },
                 ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _busy ? null : () => _pickDate(checkIn: true),
-                  icon: const Icon(Icons.calendar_today, size: 18),
-                  label: Text('In ${_fmtDate(_checkInDate)}'),
+              ],
+              if (!_isHourly) ...[
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Check in immediately'),
+                  subtitle: const Text('Mark guest as checked in after booking'),
+                  value: _checkInNow,
+                  onChanged: _busy ? null : (v) => setState(() => _checkInNow = v),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _busy ? null : () => _pickDate(checkIn: false),
-                  icon: const Icon(Icons.event, size: 18),
-                  label: Text('Out ${_fmtDate(_checkOutDate)}'),
+              ],
+              if (_isHourly || _checkInNow) ...[
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  initialValue: _paymentMethod,
+                  decoration: const InputDecoration(
+                    labelText: 'Payment method',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: _paymentMethods
+                      .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                      .toList(),
+                  onChanged: _busy
+                      ? null
+                      : (v) {
+                          if (v != null) setState(() => _paymentMethod = v);
+                        },
                 ),
-              ),
+              ],
+              if (validWindow && (_isHourly || estimated > 0)) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _isHourly
+                      ? 'Est. ₱${estimated.toStringAsFixed(0)} · $stayHours hr(s)'
+                      : 'Est. ₱${estimated.toStringAsFixed(0)}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: scheme.primary,
+                  ),
+                ),
+              ],
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _error!,
+                  style: TextStyle(color: scheme.error, fontSize: 13),
+                ),
+              ],
             ],
           ),
-          const SizedBox(height: 12),
-          AdminTimeSlotField(
-            label: 'Check-in time',
-            value: _checkInTime,
-            onChanged: (t) {
-              if (t != null) setState(() => _checkInTime = t);
-            },
-          ),
-          const SizedBox(height: 12),
-          AdminTimeSlotField(
-            label: 'Check-out time',
-            value: _checkOutTime,
-            onChanged: (t) {
-              if (t != null) setState(() => _checkOutTime = t);
-            },
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Check in immediately'),
-            subtitle: const Text('Mark guest as checked in after booking'),
-            value: _checkInNow,
-            onChanged: _busy ? null : (v) => setState(() => _checkInNow = v),
-          ),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
-            initialValue: _paymentMethod,
-            decoration: const InputDecoration(
-              labelText: 'Payment method',
-              border: OutlineInputBorder(),
-            ),
-            items: _paymentMethods
-                .map((m) => DropdownMenuItem(value: m, child: Text(m)))
-                .toList(),
-            onChanged: _busy
-                ? null
-                : (v) {
-                    if (v != null) setState(() => _paymentMethod = v);
-                  },
-          ),
-          if (validWindow) ...[
-            const SizedBox(height: 16),
-            Card(
-              color: scheme.secondaryContainer.withValues(alpha: 0.4),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Row(
-                  children: [
-                    Icon(Icons.receipt_long, color: scheme.primary),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Estimated bill',
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelLarge
-                                ?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                          if (isHourly) Text('$stayHours hour(s) stay'),
-                          Text(
-                            '₱${estimated.toStringAsFixed(0)}',
-                            style: Theme.of(context)
-                                .textTheme
-                                .headlineSmall
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  color: scheme.primary,
-                                ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-          if (_error != null) ...[
-            const SizedBox(height: 16),
-            Material(
-              color: scheme.errorContainer.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(12),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.error_outline, color: scheme.error),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _error!,
-                        style: TextStyle(color: scheme.onErrorContainer),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-          const SizedBox(height: 24),
-          FilledButton.icon(
-            onPressed: _busy ? null : _submit,
-            icon: const Icon(Icons.check_circle_outline),
-            label: const Text('Create booking'),
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
-          ),
-        ],
+        ),
       ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _busy ? null : _submit,
+          child: _busy
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Book'),
+        ),
+      ],
     );
   }
 }

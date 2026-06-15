@@ -52,5 +52,36 @@ class AdminChatInboxTest extends TestCase
         $this->getJson('/api/v1/admin/chat/rooms/'.(string) $room->id.'?translate=0')
             ->assertOk()
             ->assertJsonStructure(['messages']);
+
+        $this->postJson('/api/v1/admin/chat/reply', [
+            'room_id' => (string) $room->id,
+            'room_number' => '101',
+            'guest_name' => 'In-House Guest',
+            'message' => 'Hello from admin',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('ok', true);
+
+        $staffThread = 'STAFF-ADMIN:'.(string) $admin->id;
+        GuestMessage::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => $staffThread,
+            'room_number' => 'STAFF',
+            'guest_name' => 'Staff Member',
+            'message' => 'Staff needs help',
+            'sender_role' => 'staff',
+            'sent_at' => now(),
+        ]);
+
+        $encodedStaffThread = rawurlencode($staffThread);
+        $this->getJson('/api/v1/admin/chat/rooms/'.$encodedStaffThread.'?translate=0')
+            ->assertOk();
+
+        $this->postJson('/api/v1/admin/chat/reply', [
+            'room_id' => $staffThread,
+            'guest_name' => 'Staff Member',
+            'message' => 'Admin reply to staff',
+        ])
+            ->assertCreated();
     }
 }

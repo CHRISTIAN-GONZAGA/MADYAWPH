@@ -9,9 +9,9 @@ use App\Models\Room;
 final class StayManagementPolicy
 {
     /** @var list<string> */
-    private const MANAGEABLE_BOOKING_STATUSES = ['booked', 'checked_in', 'confirmed'];
+    private const ACTIVE_BOOKING_STATUSES = ['booked', 'checked_in', 'confirmed'];
 
-    public static function canManageGuestStay(?Booking $booking): bool
+    public static function hasActiveBooking(?Booking $booking): bool
     {
         if ($booking === null) {
             return false;
@@ -19,7 +19,26 @@ final class StayManagementPolicy
 
         $status = strtolower((string) ($booking->status?->value ?? $booking->status ?? ''));
 
-        return in_array($status, self::MANAGEABLE_BOOKING_STATUSES, true);
+        return in_array($status, self::ACTIVE_BOOKING_STATUSES, true);
+    }
+
+    /**
+     * Guest stay fees, payment, checkout, and transfers — only after check-in.
+     */
+    public static function canManageGuestStay(?Booking $booking, ?Room $room = null): bool
+    {
+        if ($booking === null) {
+            return false;
+        }
+
+        $room ??= Room::withoutGlobalScopes()->find($booking->room_id);
+        if ($room === null || ! self::hasActiveBooking($booking)) {
+            return false;
+        }
+
+        $roomStatus = strtolower((string) ($room->status?->value ?? $room->status ?? ''));
+
+        return $roomStatus === 'checked_in';
     }
 
     public static function pendingReservationForRoom(string $hotelId, string $roomId): ?ExternalReservation
@@ -41,15 +60,16 @@ final class StayManagementPolicy
     public static function roomDetailFlags(?Booking $booking, Room $room, string $hotelId): array
     {
         $pending = self::pendingReservationForRoom($hotelId, (string) $room->id);
-        $canManage = self::canManageGuestStay($booking);
+        $canManage = self::canManageGuestStay($booking, $room);
         $reason = null;
 
         if ($pending !== null && ! $canManage) {
-            $canManage = false;
             $reason = 'Approve this reservation in the Bookings tab before managing the guest stay here.';
         } elseif (! $canManage) {
             $roomStatus = strtolower((string) ($room->status?->value ?? $room->status ?? ''));
-            if ($booking === null && in_array($roomStatus, ['reserved', 'booked'], true)) {
+            if ($booking !== null && self::hasActiveBooking($booking) && $roomStatus !== 'checked_in') {
+                $reason = 'Check the guest in from the Bookings tab before adding fees or editing payment here.';
+            } elseif ($booking === null && in_array($roomStatus, ['reserved', 'booked'], true)) {
                 $reason = 'This room is on hold. Confirm the stay in the Bookings tab first.';
             } elseif ($booking !== null) {
                 $reason = 'This booking is not active yet. Manage it from the Bookings tab.';
@@ -72,20 +92,30 @@ final class StayManagementPolicy
         ];
     }
 
-    public static function denyUnlessCanManage(?Booking $booking): void
+    public static function denyUnlessCanManage(?Booking $booking, ?Room $room = null): void
     {
-        if (! self::canManageGuestStay($booking)) {
-            abort(422, 'Manage this stay from the Bookings tab after it is confirmed.');
+        if (! self::canManageGuestStay($booking, $room)) {
+            abort(422, 'Check the guest in from the Bookings tab before managing fees or payment here.');
         }
     }
 
-    public static function assertAllowedStatusChange(?Booking $booking, string $newStatus): void
+    public static function assertAllowedStatusChange(?Booking $booking, string $newStatus, ?Room $room = null): void
     {
         $newStatus = strtolower(trim($newStatus));
         $occupantStatuses = ['booked', 'checked_in', 'checked_out', 'reserved'];
 
-        if (in_array($newStatus, $occupantStatuses, true) && ! self::canManageGuestStay($booking)) {
-            abort(422, 'Change guest stay status from the Bookings tab after the booking is confirmed.');
+        if (! in_array($newStatus, $occupantStatuses, true)) {
+            return;
         }
+
+        if (self::canManageGuestStay($booking, $room)) {
+            return;
+        }
+
+        if ($booking !== null && self::hasActiveBooking($booking)) {
+            abort(422, 'Check the guest in from the Bookings tab before changing stay status here.');
+        }
+
+        abort(422, 'Change guest stay status from the Bookings tab after the booking is confirmed.');
     }
 }

@@ -22,7 +22,7 @@ class RoomBoardSection extends StatelessWidget {
     if (AdminDashboardModels.isWalkInBookable(room)) {
       return const Color(0xFFB0BEC5);
     }
-    final status = AdminDashboardModels.statusOf(room);
+    final status = AdminDashboardModels.displayStatusForRoom(room);
     switch (status) {
       case 'available':
         return const Color(0xFFB0BEC5);

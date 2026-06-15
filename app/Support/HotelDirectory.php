@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\Hotel;
 use App\Models\Room;
+use Illuminate\Database\Eloquent\Model;
 
 final class HotelDirectory
 {
@@ -68,11 +69,11 @@ final class HotelDirectory
         $stats = [];
         $rooms = Room::withoutGlobalScopes()
             ->whereIn('hotel_id', $hotelIds)
-            ->get(['hotel_id', 'price_per_night']);
+            ->get(['hotel_id', 'price_per_night', 'billing_mode', 'price_per_block', 'block_hours']);
 
         foreach ($rooms as $room) {
             $hid = (string) $room->hotel_id;
-            $price = (float) ($room->price_per_night ?? 0);
+            $price = self::displayRateForRoom($room);
             $stats[$hid] ??= ['min_price' => 0.0, 'max_price' => 0.0, 'room_count' => 0];
             $stats[$hid]['room_count']++;
             if ($price <= 0) {
@@ -88,6 +89,15 @@ final class HotelDirectory
         }
 
         return $stats;
+    }
+
+    public static function displayRateForRoom(Model $room): float
+    {
+        if (RoomBillingSupport::isHourly($room)) {
+            return RoomBillingSupport::hourlyConfig($room)['price_per_block'];
+        }
+
+        return RoomBillingSupport::toFloat($room->getAttributes()['price_per_night'] ?? 0);
     }
 
     /**

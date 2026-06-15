@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\BookingStatus;
 use App\Enums\RoomStatus;
 use App\Enums\UserRole;
+use App\Models\BillingCharge;
 use App\Models\Booking;
 use App\Models\ExternalReservation;
 use App\Models\Hotel;
@@ -15,7 +16,7 @@ use Tests\TestCase;
 
 class StayManagementPolicyTest extends TestCase
 {
-    public function test_room_detail_blocks_payment_until_booking_is_manageable(): void
+    public function test_room_detail_blocks_guest_management_until_check_in(): void
     {
         $hotel = Hotel::withoutGlobalScopes()->create([
             'name' => 'Policy Hotel',
@@ -68,6 +69,35 @@ class StayManagementPolicyTest extends TestCase
             'payment_status' => 'unpaid',
             'total_amount' => 2000,
         ]);
+        $room->update([
+            'status' => RoomStatus::BOOKED->value,
+            'current_guest_name' => 'Booked Guest',
+            'current_check_in' => now()->toDateString(),
+            'current_check_out' => now()->addDay()->toDateString(),
+        ]);
+
+        $this->getJson('/api/v1/admin/rooms/'.(string) $room->id)
+            ->assertOk()
+            ->assertJsonPath('can_edit_guest_stay', false);
+
+        $this->postJson('/api/v1/admin/bookings/'.$booking->id.'/payment-status', [
+            'payment_status' => 'paid',
+            'payment_method' => 'Cash',
+        ])->assertStatus(422);
+
+        $this->postJson('/api/v1/billing/charges', [
+            'booking_id' => (string) $booking->id,
+            'room_id' => (string) $room->id,
+            'type' => 'manual',
+            'label' => 'Minibar',
+            'amount' => 150,
+            'quantity' => 1,
+            'is_manual' => true,
+        ])->assertStatus(422);
+
+        $this->assertSame(0, BillingCharge::withoutGlobalScopes()->count());
+
+        $room->update(['status' => RoomStatus::CHECKED_IN->value]);
 
         $this->getJson('/api/v1/admin/rooms/'.(string) $room->id)
             ->assertOk()

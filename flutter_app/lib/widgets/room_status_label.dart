@@ -6,6 +6,14 @@ import '../flow/admin/admin_dashboard_models.dart';
 String roomStatusLabel(String status) =>
     AdminDashboardModels.roomStatusLabel(status);
 
+String roomStatusLabelForRoom(Map<String, dynamic> room) =>
+    AdminDashboardModels.roomStatusLabel(
+      AdminDashboardModels.displayStatusForRoom(room),
+    );
+
+Color roomStatusColorForRoom(Map<String, dynamic> room) =>
+    roomStatusColor(AdminDashboardModels.displayStatusForRoom(room));
+
 Color roomStatusColor(String status) {
   switch (status.toLowerCase().trim()) {
     case 'checked_in':

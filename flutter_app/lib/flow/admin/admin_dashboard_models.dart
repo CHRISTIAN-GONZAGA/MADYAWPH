@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 /// Pure helpers for admin dashboard UI (no API changes).
 class AdminDashboardModels {
   AdminDashboardModels._();
@@ -90,10 +92,21 @@ class AdminDashboardModels {
     }
   }
 
+  /// Rooms with a booking not yet checked in (booked or reserved only).
+  static bool isAwaitingCheckIn(Map<String, dynamic> room) {
+    final s = statusOf(room);
+    return s == 'booked' || s == 'reserved';
+  }
+
   static int bookedRoomCount(List<Map<String, dynamic>> rooms) {
+    return rooms.where(isAwaitingCheckIn).length;
+  }
+
+  /// Checked in, booked, or reserved — active guest stays.
+  static int activeStayRoomCount(List<Map<String, dynamic>> rooms) {
     return rooms.where((r) {
       final s = statusOf(r);
-      return s == 'booked' || s == 'checked_in' || s == 'reserved';
+      return s == 'checked_in' || s == 'booked' || s == 'reserved';
     }).length;
   }
 
@@ -146,13 +159,35 @@ class AdminDashboardModels {
     };
   }
 
-  /// Default hotel checkout time 11:00 AM on check-out date.
+  /// Checkout moment using booking time when available (defaults 11:00 AM).
   static DateTime? checkoutDateTime(Map<String, dynamic> room) {
-    final raw = (room['current_check_out'] ?? '').toString();
+    final booking = room['latest_booking'] as Map?;
+    final raw = (room['current_check_out'] ??
+            booking?['check_out_date'] ??
+            '')
+        .toString();
     if (raw.isEmpty) return null;
     final d = DateTime.tryParse(raw.split('T').first);
     if (d == null) return null;
+    final timeRaw = (booking?['check_out_time'] ?? '').toString();
+    if (timeRaw.contains(':')) {
+      final parts = timeRaw.split(':');
+      final h = int.tryParse(parts[0]) ?? 11;
+      final m = int.tryParse(parts.length > 1 ? parts[1] : '0') ?? 0;
+      return DateTime(d.year, d.month, d.day, h, m);
+    }
     return DateTime(d.year, d.month, d.day, 11, 0);
+  }
+
+  static TimeOfDay? bookingTimeOfDay(Map<String, dynamic> room, String field) {
+    final booking = room['latest_booking'] as Map?;
+    final raw = (booking?[field] ?? '').toString();
+    if (!raw.contains(':')) return null;
+    final parts = raw.split(':');
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts.length > 1 ? parts[1] : '0');
+    if (h == null || m == null) return null;
+    return TimeOfDay(hour: h, minute: m);
   }
 
   static int? minutesUntilCheckout(Map<String, dynamic> room) {
@@ -185,7 +220,7 @@ class AdminDashboardModels {
     return parseDate(raw);
   }
 
-  /// Reserved/booked stays ending within [withinDays] (default 2).
+  /// Departures within [withinDays] (default 2).
   static bool isStayEndingSoon(Map<String, dynamic> room, {int withinDays = 2}) {
     final end = stayEndDate(room);
     if (end == null) return false;
@@ -194,6 +229,33 @@ class AdminDashboardModels {
     final endDay = DateTime(end.year, end.month, end.day);
     final days = endDay.difference(today).inDays;
     return days >= 0 && days <= withinDays;
+  }
+
+  /// Arrivals today through [withinDays] ahead for reserved/booked rooms.
+  static bool isStayArrivingSoon(Map<String, dynamic> room, {int withinDays = 2}) {
+    final status = statusOf(room);
+    if (status == 'checked_in') return false;
+    if (status != 'reserved' && status != 'booked') return false;
+    final start = stayStartDate(room);
+    if (start == null) return false;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final startDay = DateTime(start.year, start.month, start.day);
+    final days = startDay.difference(today).inDays;
+    return days >= 0 && days <= withinDays;
+  }
+
+  /// Same-day or past check-in still marked reserved → treat as booked in UI.
+  static String displayStatusForRoom(Map<String, dynamic> room) {
+    final status = statusOf(room);
+    if (status != 'reserved') return status;
+    final start = stayStartDate(room);
+    if (start == null) return status;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final startDay = DateTime(start.year, start.month, start.day);
+    if (!startDay.isAfter(today)) return 'booked';
+    return status;
   }
 
   static String guestName(Map<String, dynamic> room) {
@@ -212,14 +274,8 @@ class AdminDashboardModels {
     return '${fmt(inD)} → ${fmt(outD)}';
   }
 
-  static int reservedClosingSoonCount(List<Map<String, dynamic>> rooms) {
-    return rooms
-        .where((r) {
-          final s = statusOf(r);
-          if (s != 'reserved' && s != 'booked') return false;
-          return isStayEndingSoon(r);
-        })
-        .length;
+  static int reservedArrivingSoonCount(List<Map<String, dynamic>> rooms) {
+    return rooms.where(isStayArrivingSoon).length;
   }
 
   static Map<String, dynamic> categoryStats(
@@ -239,7 +295,8 @@ class AdminDashboardModels {
       if (s == 'booked') booked++;
       if (s == 'maintenance') maintenance++;
     }
-    final reservedSoon = reservedClosingSoonCount(rooms);
+    final reservedSoon = reservedArrivingSoonCount(rooms);
+    final awaitingCheckIn = booked + reserved;
     final total = rooms.length;
     final occ = total > 0 ? ((total - vacant) / total * 100).round() : 0;
     return {
@@ -247,10 +304,11 @@ class AdminDashboardModels {
       'total': total,
       'vacant': vacant,
       'checked_in': checkedIn,
-      'occupied': checkedIn,
+      'occupied': checkedIn + booked + reserved,
       'reserved': reserved,
       'reserved_soon': reservedSoon,
       'booked': booked,
+      'awaiting_check_in': awaitingCheckIn,
       'maintenance': maintenance,
       'occupancy': occ,
     };

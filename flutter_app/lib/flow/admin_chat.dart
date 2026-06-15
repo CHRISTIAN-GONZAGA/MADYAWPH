@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'dart:async';
 
 import '../dio_client.dart';
 import '../widgets/admin_notification_badge.dart';
@@ -232,7 +233,7 @@ class _AdminChatInboxScreenState extends State<AdminChatInboxScreen> {
                   MaterialPageRoute<void>(
                     builder: (_) => AdminChatRoomScreen(
                       roomId: roomId,
-                      roomNumber: roomNo,
+                      roomNumber: roomNo.isNotEmpty ? roomNo : '—',
                       displayTitle: title,
                       replyGuestName: replyName,
                       isStaffThread: isStaff,
@@ -275,24 +276,29 @@ class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
   bool _loading = true;
   bool _sending = false;
   final _ctrl = TextEditingController();
+  Timer? _poll;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _poll = Timer.periodic(const Duration(seconds: 8), (_) => _load(silent: true));
   }
 
   @override
   void dispose() {
+    _poll?.cancel();
     _ctrl.dispose();
     super.dispose();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final locale = AppLocales.code(appLocaleNotifier.value);
       final encodedRoomId = Uri.encodeComponent(widget.roomId);
@@ -308,15 +314,21 @@ class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
         _loading = false;
       });
     } on DioException catch (e) {
-      setState(() {
-        _error = dioErrorMessage(e);
-        _loading = false;
-      });
+      if (!mounted) return;
+      if (!silent || _messages.isEmpty) {
+        setState(() {
+          _error = dioErrorMessage(e);
+          _loading = false;
+        });
+      }
     } catch (e) {
-      setState(() {
-        _error = '$e';
-        _loading = false;
-      });
+      if (!mounted) return;
+      if (!silent || _messages.isEmpty) {
+        setState(() {
+          _error = '$e';
+          _loading = false;
+        });
+      }
     }
   }
 

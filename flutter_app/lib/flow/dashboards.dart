@@ -36,39 +36,78 @@ class AdminDashboardScreen extends StatefulWidget {
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
 }
 
-class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
+class _AdminDashboardScreenState extends State<AdminDashboardScreen>
+    with WidgetsBindingObserver {
   Map<String, dynamic>? _data;
   String? _error;
   bool _loading = true;
+  bool _refreshing = false;
   bool _busyAction = false;
+  Timer? _dashboardPoll;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+    _dashboardPoll = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (mounted) _load(silent: true);
+    });
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      _load(silent: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _dashboardPoll?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent || _data == null) {
+      setState(() {
+        if (!silent) {
+          _loading = true;
+        } else {
+          _refreshing = true;
+        }
+        _error = null;
+      });
+    } else {
+      setState(() => _refreshing = true);
+    }
     try {
       final res =
           await portalDio().get<Map<String, dynamic>>('/admin/dashboard');
+      if (!mounted) return;
       setState(() {
         _data = res.data;
         _loading = false;
+        _refreshing = false;
       });
     } on DioException catch (e) {
+      if (!mounted) return;
       setState(() {
-        _error = dioErrorMessage(e);
+        if (_data == null) {
+          _error = dioErrorMessage(e);
+        }
         _loading = false;
+        _refreshing = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
-        _error = '$e';
+        if (_data == null) {
+          _error = '$e';
+        }
         _loading = false;
+        _refreshing = false;
       });
     }
   }
@@ -95,7 +134,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       if (!mounted) return;
       final msg = payload?['message']?.toString() ?? '$label completed.';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-      await _load();
+      await _load(silent: true);
     } on DioException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -405,8 +444,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildBody(BuildContext context) {
-    if (_loading) return const AppLoadingView();
-    if (_error != null) {
+    if (_loading && _data == null) return const AppLoadingView();
+    if (_error != null && _data == null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -415,7 +454,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             children: [
               Text(_error!, textAlign: TextAlign.center),
               const SizedBox(height: 16),
-              FilledButton(onPressed: _load, child: const Text('Retry')),
+              FilledButton(onPressed: () => _load(), child: const Text('Retry')),
             ],
           ),
         ),
@@ -428,10 +467,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       isSuper = true;
     }
 
-    return AdminDashboardShell(
+    return Column(
+      children: [
+        if (_refreshing) const LinearProgressIndicator(minHeight: 2),
+        Expanded(
+          child: AdminDashboardShell(
       data: _data!,
       isSuperAdmin: isSuper,
-      onRefresh: _load,
+      onRefresh: () => _load(silent: true),
       onSignOut: _signOut,
       busyAction: _busyAction,
       onRecharge: _showRechargeDialog,
@@ -462,6 +505,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
         );
       },
+          ),
+        ),
+      ],
     );
   }
 }
@@ -3179,7 +3225,6 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     final phoneCtrl = TextEditingController(text: savedGuest?.phone ?? '');
     final checkInCtrl = TextEditingController();
     final checkOutCtrl = TextEditingController();
-    final pricePerNight = (room['price_per_night'] as num?)?.toDouble() ?? 0;
     DateTime? checkInDate = fromSearch ? widget.searchContext!.checkIn : null;
     DateTime? checkOutDate = fromSearch ? widget.searchContext!.checkOut : null;
     if (fromSearch) {
@@ -3216,13 +3261,39 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
               ? checkOutDate!.difference(checkInDate!).inDays
               : 0;
           final safeNights = nights > 0 ? nights : 0;
-          final estTotal = safeNights * pricePerNight;
+          final estTotal = (checkInDate != null && checkOutDate != null)
+              ? HourlyBilling.customerDateStayCharge(
+                  room,
+                  checkInDate!,
+                  checkOutDate!,
+                )
+              : 0.0;
           final discountPct = switch (discountType) {
             'pwd' => 20.0,
             'senior' => 20.0,
             _ => 0.0,
           };
-          final estAfterDiscount = estTotal * (1 - (discountPct / 100));
+          final estAfterDiscount = HourlyBilling.round50(
+            estTotal * (1 - (discountPct / 100)),
+          );
+          final durationLabel = (checkInDate != null && checkOutDate != null)
+              ? (HourlyBilling.isHourly(room)
+                  ? () {
+                      final inAt = HourlyBilling.customerStayCheckIn(checkInDate!);
+                      final outAt = HourlyBilling.customerStayCheckOut(
+                        room,
+                        checkInDate!,
+                        checkOutDate!,
+                      );
+                      final hours = HourlyBilling.stayHours(inAt, outAt);
+                      final blocks = HourlyBilling.blocksForStay(
+                        hours,
+                        HourlyBilling.blockHours(room),
+                      );
+                      return '$hours hr(s) · $blocks block(s) of ${HourlyBilling.blockHours(room)}h';
+                    }()
+                  : '$safeNights night${safeNights == 1 ? '' : 's'}')
+              : '';
 
           final now = DateTime.now();
           final today = DateTime(now.year, now.month, now.day);
@@ -3234,7 +3305,9 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
             final picked = await showDatePicker(
               context: context,
               firstDate: firstCheckIn,
-              lastDate: today.add(const Duration(days: 365)),
+              lastDate: forceReserve
+                  ? today.add(const Duration(days: 365))
+                  : today,
               initialDate: checkInDate ?? firstCheckIn,
             );
             if (picked == null) return;
@@ -3453,13 +3526,13 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                     alignment: Alignment.centerLeft,
                     child: Text(
                       fromSearch
-                          ? 'Duration: $safeNights night${safeNights == 1 ? '' : 's'}\n'
+                          ? 'Duration: $durationLabel\n'
                               'Estimated: ₱${estTotal.toStringAsFixed(2)}'
                               '${discountPct > 0 ? ' → ₱${estAfterDiscount.toStringAsFixed(2)} after discount' : ''}\n'
                               'Your request will be reviewed by the hotel.'
                           : forceReserve
                               ? 'The hotel will approve your dates. You will be notified when the stay is activated on check-in day.'
-                              : 'Duration: $safeNights night${safeNights == 1 ? '' : 's'}\n'
+                              : 'Duration: $durationLabel\n'
                                   'Estimated: ₱${estTotal.toStringAsFixed(2)}'
                                   '${discountPct > 0 ? ' → ₱${estAfterDiscount.toStringAsFixed(2)} after discount' : ''}',
                     ),

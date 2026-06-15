@@ -23,7 +23,7 @@ class BookingOverviewCards extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final alertCount = recentBookings24h + pendingReservations;
+    final alertCount = pendingReservations;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -53,15 +53,12 @@ class BookingOverviewCards extends StatelessWidget {
                         children: [
                           Text(
                             alertCount == 1
-                                ? '1 booking needs attention'
-                                : '$alertCount bookings need attention',
+                                ? '1 reservation needs attention'
+                                : '$alertCount reservations need attention',
                             style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
                           Text(
-                            _alertSubtitle(
-                              recentBookings24h,
-                              pendingReservations,
-                            ),
+                            _alertSubtitle(pendingReservations),
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ],
@@ -111,17 +108,13 @@ class BookingOverviewCards extends StatelessWidget {
     );
   }
 
-  static String _alertSubtitle(int recent, int pending) {
-    final parts = <String>[];
-    if (recent > 0) {
-      parts.add(recent == 1 ? '1 new in 24h' : '$recent new in 24h');
-    }
+  static String _alertSubtitle(int pending) {
     if (pending > 0) {
-      parts.add(
-        pending == 1 ? '1 pending approval' : '$pending pending approvals',
-      );
+      return pending == 1
+          ? '1 reservation awaiting approval'
+          : '$pending reservations awaiting approval';
     }
-    return parts.join(' · ');
+    return 'Review in bookings tab';
   }
 }
 

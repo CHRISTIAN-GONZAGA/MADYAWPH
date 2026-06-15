@@ -582,10 +582,7 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
     final wideLandscape = customerUseWideBrowseLayout(context) && size.width >= 640;
 
     return Scaffold(
-      body: GestureDetector(
-        onTap: () => FocusScope.of(context).unfocus(),
-        behavior: HitTestBehavior.translucent,
-        child: DecoratedBox(
+      body: DecoratedBox(
         decoration: BoxDecoration(
           gradient: visual.scaffoldGradient(scheme),
         ),
@@ -694,6 +691,8 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                           onRefresh: _loadHotels,
                           child: SingleChildScrollView(
                             physics: const AlwaysScrollableScrollPhysics(),
+                            keyboardDismissBehavior:
+                                ScrollViewKeyboardDismissBehavior.onDrag,
                             padding: const EdgeInsets.fromLTRB(8, 4, 20, 20),
                             child: _buildSearchScrollContent(context, scheme, visual),
                           ),
@@ -763,6 +762,8 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                   onRefresh: _loadHotels,
                   child: SingleChildScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
                   child: _buildSearchScrollContent(context, scheme, visual),
                 ),
@@ -772,7 +773,6 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
             ],
           ),
         ),
-      ),
       ),
     );
   }
@@ -1195,42 +1195,46 @@ class _DateTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onTap,
+    return Material(
+      color: scheme.surfaceContainerLowest,
       borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: scheme.outlineVariant),
-          color: scheme.surfaceContainerLowest,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: scheme.outlineVariant),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(Icons.calendar_today_outlined,
+                      size: 16, color: scheme.primary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      value,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      softWrap: true,
+                      maxLines: 2,
+                    ),
                   ),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Icon(Icons.calendar_today_outlined,
-                    size: 16, color: scheme.primary),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    value,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                    softWrap: true,
-                    maxLines: 2,
-                  ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

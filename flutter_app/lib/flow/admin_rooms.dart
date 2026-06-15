@@ -1060,7 +1060,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
             backgroundColor: Colors.orange.shade50,
             content: Text(
               _managementBlockedReason ??
-                  'Confirm this stay in the Bookings tab before changing guest or payment details here.',
+                  'Check the guest in from the Bookings tab before adding fees or editing payment here.',
             ),
             actions: [
               TextButton(
