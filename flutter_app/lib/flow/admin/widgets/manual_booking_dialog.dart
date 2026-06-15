@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
 import '../../../widgets/admin_time_slot_field.dart';
+import '../admin_dashboard_models.dart';
+import '../../admin_rooms.dart';
 import 'hourly_billing.dart';
 
 Future<bool> showAdminManualBookingDialog({
@@ -16,18 +18,67 @@ Future<bool> showAdminManualBookingDialog({
     useSafeArea: true,
     showDragHandle: true,
     backgroundColor: Theme.of(context).colorScheme.surface,
-    builder: (ctx) => Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.viewInsetsOf(ctx).bottom,
-      ),
-      child: _ManualBookingSheet(
-        room: room,
-        onSuccess: onSuccess,
-      ),
-    ),
+    builder: (ctx) {
+      final height = MediaQuery.sizeOf(ctx).height * 0.92;
+      return SizedBox(
+        height: height,
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(ctx).bottom,
+          ),
+          child: _ManualBookingSheet(
+            room: room,
+            onSuccess: onSuccess,
+          ),
+        ),
+      );
+    },
   );
 
   return result == true;
+}
+
+/// Tap on room board tile — book if vacant, otherwise open room details.
+Future<void> handleAdminWalkInRoomTap(
+  BuildContext context, {
+  required Map<String, dynamic> room,
+  required Future<void> Function() onSuccess,
+}) async {
+  final roomId = (room['id'] ?? '').toString();
+
+  if (AdminDashboardModels.isWalkInBookable(room)) {
+    if (roomId.isEmpty) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Room data is incomplete. Pull to refresh the dashboard.',
+          ),
+        ),
+      );
+      return;
+    }
+    final booked = await showAdminManualBookingDialog(
+      context: context,
+      room: room,
+      onSuccess: onSuccess,
+    );
+    if (booked && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Room ${room['room_number']} booked successfully.'),
+        ),
+      );
+    }
+    return;
+  }
+
+  if (roomId.isEmpty) return;
+  await Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      builder: (_) => AdminRoomDetailScreen(roomId: roomId),
+    ),
+  );
 }
 
 class _ManualBookingSheet extends StatefulWidget {
@@ -174,16 +225,9 @@ class _ManualBookingSheetState extends State<_ManualBookingSheet> {
     final stayHours = validWindow ? HourlyBilling.stayHours(inAt, outAt) : 0;
     final isHourly = HourlyBilling.isHourly(widget.room);
 
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.92,
-      minChildSize: 0.5,
-      maxChildSize: 0.96,
-      builder: (context, scrollController) {
-        return ListView(
-          controller: scrollController,
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
-          children: [
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+      children: [
             Text(
               'Walk-in booking',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
@@ -352,7 +396,5 @@ class _ManualBookingSheetState extends State<_ManualBookingSheet> {
             ),
           ],
         );
-      },
-    );
   }
 }

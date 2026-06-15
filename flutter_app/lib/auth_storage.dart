@@ -176,8 +176,13 @@ class AuthStorage {
   }) async {
     await _ensureMigrated();
     final prefs = await _preferences();
+    final previousId = prefs.getString(_kHotelId);
     await prefs.setString(_kHotelId, id);
     await prefs.setString(_kHotelName, name);
+    if (previousId != null && previousId.isNotEmpty && previousId != id) {
+      await clearPortalAuth();
+      await clearGuestAuth();
+    }
   }
 
   static Future<void> setPortalAuth({

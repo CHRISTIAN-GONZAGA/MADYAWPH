@@ -5,6 +5,7 @@ import '../auth_storage.dart';
 import '../locale_controller.dart';
 import '../ui/app_visual.dart';
 import '../widgets/chat_attachment.dart';
+import 'customer_browse_layout.dart';
 import 'customer_search_context.dart';
 import 'dashboards.dart';
 import 'member_subscription_flow.dart';
@@ -59,8 +60,108 @@ class HotelSearchResultsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final destination = search.destinationQuery.trim();
-
     final visual = AppVisual.of(context);
+    final wideLandscape = customerUseWideBrowseLayout(context);
+
+    final summaryCard = Container(
+      margin: EdgeInsets.fromLTRB(wideLandscape ? 12 : 16, 0, wideLandscape ? 8 : 16, 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            scheme.primaryContainer,
+            scheme.surface,
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (destination.isNotEmpty)
+            Row(
+              children: [
+                Icon(Icons.place_outlined, size: 18, color: scheme.primary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    destination,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ],
+            ),
+          if (destination.isNotEmpty) const SizedBox(height: 8),
+          Text(
+            context.tr('search_summary_line', {
+              'checkin': _fmtDate(search.checkIn),
+              'checkout': _fmtDate(search.checkOut),
+              'nights': context.tr('nights_count', {'n': '$_nights'}),
+              'party': context.tr('guest_party_line', {
+                'rooms': '${search.rooms}',
+                'adults': '${search.adults}',
+                'children': '${search.children}',
+              }),
+            }),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+          ),
+        ],
+      ),
+    );
+
+  final memberBanner = Padding(
+      padding: EdgeInsets.fromLTRB(wideLandscape ? 12 : 16, 0, wideLandscape ? 12 : 16, 8),
+      child: _MemberPromoBanner(
+        onTap: () {
+          Navigator.of(context).push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => const MemberRegistrationScreen(),
+            ),
+          );
+        },
+      ),
+    );
+
+    Widget resultsBody;
+    if (hotels.isEmpty) {
+      resultsBody = _EmptyResults(search: search);
+    } else if (wideLandscape) {
+      resultsBody = GridView.builder(
+        padding: const EdgeInsets.fromLTRB(12, 4, 16, 24),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 1.35,
+        ),
+        itemCount: hotels.length,
+        itemBuilder: (context, i) {
+          return _AnimatedHotelCard(
+            index: i,
+            hotel: hotels[i],
+            nights: _nights,
+            onTap: () => _openHotel(context, hotels[i]),
+            compact: true,
+          );
+        },
+      );
+    } else {
+      resultsBody = ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+        itemCount: hotels.length,
+        itemBuilder: (context, i) {
+          return _AnimatedHotelCard(
+            index: i,
+            hotel: hotels[i],
+            nights: _nights,
+            onTap: () => _openHotel(context, hotels[i]),
+          );
+        },
+      );
+    }
 
     return Scaffold(
       body: DecoratedBox(
@@ -87,82 +188,29 @@ class HotelSearchResultsScreen extends StatelessWidget {
                 ),
               ],
             ),
-            Container(
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  scheme.primaryContainer,
-                  scheme.surface,
-                ],
-              ),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (destination.isNotEmpty)
-                  Row(
-                    children: [
-                      Icon(Icons.place_outlined, size: 18, color: scheme.primary),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          destination,
-                          style: const TextStyle(fontWeight: FontWeight.w800),
-                        ),
+            if (wideLandscape && hotels.isNotEmpty)
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(
+                      width: 280,
+                      child: Column(
+                        children: [
+                          summaryCard,
+                          memberBanner,
+                        ],
                       ),
-                    ],
-                  ),
-                if (destination.isNotEmpty) const SizedBox(height: 8),
-                Text(
-                  context.tr('search_summary_line', {
-                    'checkin': _fmtDate(search.checkIn),
-                    'checkout': _fmtDate(search.checkOut),
-                    'nights': context.tr('nights_count', {'n': '$_nights'}),
-                    'party': context.tr('guest_party_line', {
-                      'rooms': '${search.rooms}',
-                      'adults': '${search.adults}',
-                      'children': '${search.children}',
-                    }),
-                  }),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
+                    ),
+                    Expanded(child: resultsBody),
+                  ],
                 ),
-              ],
-            ),
-          ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: _MemberPromoBanner(
-                onTap: () {
-                  Navigator.of(context).push<void>(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const MemberRegistrationScreen(),
-                    ),
-                  );
-                },
-              ),
-            ),
-            Expanded(
-              child: hotels.isEmpty
-                  ? _EmptyResults(search: search)
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                      itemCount: hotels.length,
-                      itemBuilder: (context, i) {
-                        return _AnimatedHotelCard(
-                          index: i,
-                          hotel: hotels[i],
-                          nights: _nights,
-                          onTap: () => _openHotel(context, hotels[i]),
-                        );
-                      },
-                    ),
-            ),
+              )
+            else ...[
+            summaryCard,
+            memberBanner,
+            Expanded(child: resultsBody),
+            ],
           ],
         ),
       ),
@@ -309,12 +357,14 @@ class _AnimatedHotelCard extends StatefulWidget {
     required this.hotel,
     required this.nights,
     required this.onTap,
+    this.compact = false,
   });
 
   final int index;
   final Map<String, dynamic> hotel;
   final int nights;
   final VoidCallback onTap;
+  final bool compact;
 
   @override
   State<_AnimatedHotelCard> createState() => _AnimatedHotelCardState();
@@ -356,11 +406,12 @@ class _AnimatedHotelCardState extends State<_AnimatedHotelCard>
       child: SlideTransition(
         position: _slide,
         child: Padding(
-          padding: const EdgeInsets.only(bottom: 14),
+          padding: EdgeInsets.only(bottom: widget.compact ? 0 : 14),
           child: _HotelResultCard(
             hotel: widget.hotel,
             nights: widget.nights,
             onTap: widget.onTap,
+            compact: widget.compact,
           ),
         ),
       ),
@@ -373,11 +424,13 @@ class _HotelResultCard extends StatelessWidget {
     required this.hotel,
     required this.nights,
     required this.onTap,
+    this.compact = false,
   });
 
   final Map<String, dynamic> hotel;
   final int nights;
   final VoidCallback onTap;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -393,6 +446,8 @@ class _HotelResultCard extends StatelessWidget {
     final banner = ChatAttachment.resolveMediaUrl(
       (hotel['banner_url'] ?? '').toString(),
     );
+    final bannerHeight = compact ? 100.0 : 160.0;
+    final contentPadding = compact ? 12.0 : 16.0;
 
     return Material(
       elevation: 3,
@@ -407,7 +462,7 @@ class _HotelResultCard extends StatelessWidget {
             Stack(
               children: [
                 SizedBox(
-                  height: 160,
+                  height: bannerHeight,
                   child: banner.isEmpty
                       ? Container(
                           decoration: BoxDecoration(
@@ -420,12 +475,12 @@ class _HotelResultCard extends StatelessWidget {
                           ),
                           alignment: Alignment.center,
                           child: Icon(Icons.apartment,
-                              size: 52, color: scheme.primary),
+                              size: compact ? 36 : 52, color: scheme.primary),
                         )
                       : NetworkMediaImage(
                           url: banner,
                           fit: BoxFit.cover,
-                          height: 160,
+                          height: bannerHeight,
                           width: double.infinity,
                           error: Container(
                             color: scheme.surfaceContainerHighest,
@@ -463,7 +518,7 @@ class _HotelResultCard extends StatelessWidget {
               ],
             ),
             Padding(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.all(contentPadding),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../auth_storage.dart';
 import '../widgets/app_scaffold.dart';
 import 'admin_reports.dart';
 import 'dashboards.dart';
-import 'flow_state.dart';
-import 'public_hotel_search_screen.dart';
+import 'portal_sign_out.dart';
 
 /// Hotel owner workspace: financial summaries and activity audit trail.
 class OwnerDashboardScreen extends StatefulWidget {
@@ -19,13 +17,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   int _tab = 0;
 
   Future<void> _signOut() async {
-    await AuthStorage.clearPortalAuth();
-    hotelSessionNotifier.value = null;
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute<void>(builder: (_) => const PublicHotelSearchScreen()),
-      (_) => false,
-    );
+    await confirmAndSignOutPortalToRoleSelection(context);
   }
 
   @override

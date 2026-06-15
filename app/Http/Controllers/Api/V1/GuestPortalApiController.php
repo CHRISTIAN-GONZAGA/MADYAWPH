@@ -69,7 +69,8 @@ class GuestPortalApiController extends Controller
             ], 422);
         }
 
-        if (! $room->current_access_code || $validated['password'] !== (string) $room->current_access_code) {
+        $accessCode = (string) ($room->current_access_code ?? '');
+        if ($accessCode === '' || ! hash_equals($accessCode, (string) $validated['password'])) {
             return response()->json(['message' => 'Invalid room password.'], 422);
         }
 

@@ -66,7 +66,9 @@ Route::middleware('role:admin')->group(function (): void {
     Route::get('/admin/dashboard', AdminDashboardApiController::class)->name('api.v1.admin.dashboard');
 
     Route::get('/admin/bookings/{id}/room-password', function (Request $request, string $id) {
-        $booking = Booking::query()->findOrFail($id);
+        $booking = Booking::query()
+            ->where('hotel_id', (string) $request->user()->hotel_id)
+            ->findOrFail($id);
         $room = Room::query()->find((string) $booking->room_id);
         $password = (string) ($room?->current_access_code ?? '');
         if ($password === '') {
@@ -291,7 +293,9 @@ Route::middleware('role:admin')->group(function (): void {
     })->name('api.v1.admin.password.change');
 
     Route::patch('/admin/amenity-claims/{id}/fulfill', function (Request $request, string $id) {
-        $claim = AmenityClaim::query()->findOrFail($id);
+        $claim = AmenityClaim::query()
+            ->where('hotel_id', (string) $request->user()->hotel_id)
+            ->findOrFail($id);
         $claim->update([
             'status' => 'fulfilled',
             'fulfilled_at' => now(),
@@ -745,15 +749,17 @@ Route::middleware('role:staff')->group(function (): void {
  * to avoid "route not found" when the mobile baseUrl is `/api/v1`.
  */
 
-// Rooms
-Route::get('/rooms', [RoomController::class, 'index']);
-Route::get('/rooms/available', [RoomController::class, 'available']);
-Route::get('/rooms/{room}', [RoomController::class, 'show']);
-Route::post('/rooms', [RoomController::class, 'store'])->middleware('role:admin');
-Route::put('/rooms/{room}', [RoomController::class, 'update'])->middleware('role:admin');
-Route::put('/rooms/{room}/status', [RoomController::class, 'updateStatus'])->middleware('role:admin,staff');
-Route::post('/rooms/{room}/checkout', [RoomController::class, 'checkout'])->middleware('role:admin,staff');
-Route::delete('/rooms/{room}', [RoomController::class, 'destroy'])->middleware('role:admin');
+// Rooms (hotel staff only — blocks platform central_admin tokens)
+Route::middleware(['hotel.staff', 'role:admin,staff'])->group(function (): void {
+    Route::get('/rooms', [RoomController::class, 'index']);
+    Route::get('/rooms/available', [RoomController::class, 'available']);
+    Route::get('/rooms/{room}', [RoomController::class, 'show']);
+    Route::post('/rooms', [RoomController::class, 'store'])->middleware('role:admin');
+    Route::put('/rooms/{room}', [RoomController::class, 'update'])->middleware('role:admin');
+    Route::put('/rooms/{room}/status', [RoomController::class, 'updateStatus']);
+    Route::post('/rooms/{room}/checkout', [RoomController::class, 'checkout']);
+    Route::delete('/rooms/{room}', [RoomController::class, 'destroy'])->middleware('role:admin');
+});
 
 // Room categories
 Route::get('/room-categories', [RoomCategoryController::class, 'index'])->middleware('role:admin,staff');

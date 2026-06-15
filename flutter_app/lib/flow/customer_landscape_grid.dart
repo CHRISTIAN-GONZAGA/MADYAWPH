@@ -1,32 +1,20 @@
 import 'package:flutter/material.dart';
 
 import '../widgets/chat_attachment.dart';
+import 'customer_browse_layout.dart';
 
-const kCustomerLandscapePageSize = 9;
-const kCustomerLandscapeColumns = 3;
-
-List<List<T>> chunkList<T>(List<T> items, int size) {
-  if (items.isEmpty) return const [];
-  final pages = <List<T>>[];
-  for (var i = 0; i < items.length; i += size) {
-    final end = i + size > items.length ? items.length : i + size;
-    pages.add(items.sublist(i, end));
-  }
-  return pages;
-}
-
-/// Landscape layout: up to 9 tappable cells per page (3×3), swipe between pages.
+/// Landscape layout: paged grid with adaptive columns/rows, swipe between pages.
 class CustomerLandscapePagedGrid extends StatefulWidget {
   const CustomerLandscapePagedGrid({
     super.key,
     required this.itemCount,
     required this.itemBuilder,
-    this.pageSize = kCustomerLandscapePageSize,
+    this.layout,
   });
 
   final int itemCount;
   final Widget Function(BuildContext context, int index) itemBuilder;
-  final int pageSize;
+  final CustomerLandscapeGridLayout? layout;
 
   @override
   State<CustomerLandscapePagedGrid> createState() =>
@@ -49,11 +37,11 @@ class _CustomerLandscapePagedGridState extends State<CustomerLandscapePagedGrid>
       return const SizedBox.shrink();
     }
 
-    final pages = (widget.itemCount / widget.pageSize).ceil();
-    final startIndices = List.generate(
-      pages,
-      (p) => p * widget.pageSize,
-    );
+    final layout =
+        widget.layout ?? CustomerLandscapeGridLayout.forSize(MediaQuery.sizeOf(context));
+    final pageSize = layout.pageSize;
+    final pages = (widget.itemCount / pageSize).ceil();
+    final startIndices = List.generate(pages, (p) => p * pageSize);
 
     return Column(
       children: [
@@ -66,21 +54,23 @@ class _CustomerLandscapePagedGridState extends State<CustomerLandscapePagedGrid>
               final start = startIndices[pageIndex];
               final countOnPage = (pageIndex == pages - 1)
                   ? widget.itemCount - start
-                  : widget.pageSize;
+                  : pageSize;
 
               return LayoutBuilder(
                 builder: (context, constraints) {
-                  const spacing = 8.0;
-                  const rows = kCustomerLandscapeColumns;
+                  const spacing = 10.0;
+                  final columns = layout.crossAxisCount;
+                  final rows = layout.rowCount;
                   final cellW =
-                      (constraints.maxWidth - spacing * (rows - 1)) / rows;
+                      (constraints.maxWidth - spacing * (columns - 1)) / columns;
                   final cellH =
                       (constraints.maxHeight - spacing * (rows - 1)) / rows;
 
                   return GridView.builder(
                     physics: const NeverScrollableScrollPhysics(),
+                    padding: EdgeInsets.zero,
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: rows,
+                      crossAxisCount: columns,
                       mainAxisSpacing: spacing,
                       crossAxisSpacing: spacing,
                       childAspectRatio: cellW / cellH,
@@ -95,7 +85,7 @@ class _CustomerLandscapePagedGridState extends State<CustomerLandscapePagedGrid>
           ),
         ),
         if (pages > 1) ...[
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(pages, (i) {
@@ -114,7 +104,7 @@ class _CustomerLandscapePagedGridState extends State<CustomerLandscapePagedGrid>
               );
             }),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
         ],
       ],
     );
@@ -129,6 +119,7 @@ class CustomerLandscapeCategoryTile extends StatelessWidget {
     required this.availLabel,
     required this.available,
     required this.onTap,
+    this.description,
   });
 
   final String name;
@@ -136,6 +127,7 @@ class CustomerLandscapeCategoryTile extends StatelessWidget {
   final String availLabel;
   final bool available;
   final VoidCallback onTap;
+  final String? description;
 
   @override
   Widget build(BuildContext context) {
@@ -144,6 +136,8 @@ class CustomerLandscapeCategoryTile extends StatelessWidget {
       color: scheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(14),
       clipBehavior: Clip.antiAlias,
+      elevation: 1,
+      shadowColor: scheme.shadow.withValues(alpha: 0.08),
       child: InkWell(
         onTap: onTap,
         child: Column(
@@ -170,7 +164,7 @@ class CustomerLandscapeCategoryTile extends StatelessWidget {
             Expanded(
               flex: 2,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+                padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -182,17 +176,41 @@ class CustomerLandscapeCategoryTile extends StatelessWidget {
                             fontWeight: FontWeight.w800,
                           ),
                     ),
+                    if (description != null && description!.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        description!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                      ),
+                    ],
                     const Spacer(),
-                    Text(
-                      availLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: available
-                                ? scheme.primary
-                                : scheme.error,
-                            fontWeight: FontWeight.w700,
+                    Row(
+                      children: [
+                        Icon(
+                          available ? Icons.check_circle_outline : Icons.block,
+                          size: 12,
+                          color: available ? scheme.primary : scheme.error,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            availLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style:
+                                Theme.of(context).textTheme.labelSmall?.copyWith(
+                                      color: available
+                                          ? scheme.primary
+                                          : scheme.error,
+                                      fontWeight: FontWeight.w700,
+                                    ),
                           ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -211,87 +229,122 @@ class CustomerLandscapeRoomTile extends StatelessWidget {
     required this.title,
     required this.priceLabel,
     required this.imageUrl,
-    required this.onTap,
+    required this.onBook,
+    this.onReserve,
     this.busy = false,
   });
 
   final String title;
   final String priceLabel;
   final String imageUrl;
-  final VoidCallback onTap;
+  final VoidCallback onBook;
+  final VoidCallback? onReserve;
   final bool busy;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final showReserve = onReserve != null;
+
     return Material(
       color: scheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(14),
       clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: busy ? null : onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              flex: 3,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  NetworkMediaImage(
-                    url: imageUrl,
-                    fit: BoxFit.cover,
-                    error: ColoredBox(
-                      color: scheme.surfaceContainerHighest,
-                      child: Icon(Icons.bed_outlined,
-                          color: scheme.outline, size: 28),
+      elevation: 1,
+      shadowColor: scheme.shadow.withValues(alpha: 0.08),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            flex: 3,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                NetworkMediaImage(
+                  url: imageUrl,
+                  fit: BoxFit.cover,
+                  error: ColoredBox(
+                    color: scheme.surfaceContainerHighest,
+                    child: Icon(Icons.bed_outlined,
+                        color: scheme.outline, size: 28),
+                  ),
+                ),
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.black87,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 4,
+                      ),
+                      child: Text(
+                        priceLabel,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 10,
+                        ),
+                      ),
                     ),
                   ),
-                  Positioned(
-                    top: 4,
-                    right: 4,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 3,
-                        ),
-                        child: Text(
-                          priceLabel,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 10,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-            Expanded(
-              flex: 2,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
+          ),
+          Expanded(
+            flex: 2,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 5, 8, 7),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const Spacer(),
+                  if (showReserve)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: busy ? null : onReserve,
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 5),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            child: const Text('Reserve', style: TextStyle(fontSize: 10)),
                           ),
-                    ),
-                    const Spacer(),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: busy ? null : onBook,
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 5),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            child: const Text('Book', style: TextStyle(fontSize: 10)),
+                          ),
+                        ),
+                      ],
+                    )
+                  else
                     FilledButton(
-                      onPressed: busy ? null : onTap,
+                      onPressed: busy ? null : onBook,
                       style: FilledButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 6),
                         minimumSize: Size.zero,
@@ -302,12 +355,11 @@ class CustomerLandscapeRoomTile extends StatelessWidget {
                         style: const TextStyle(fontSize: 11),
                       ),
                     ),
-                  ],
-                ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

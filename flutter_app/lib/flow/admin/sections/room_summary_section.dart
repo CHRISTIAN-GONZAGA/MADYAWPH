@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../../widgets/room_status_label.dart';
 import '../admin_dashboard_models.dart';
 import '../widgets/booking_overview_cards.dart';
+import '../widgets/manual_booking_dialog.dart';
 import '../../admin_rooms.dart';
 
 class RoomSummarySection extends StatelessWidget {
@@ -167,8 +168,19 @@ class RoomSummarySection extends StatelessWidget {
               : 'Guest: $guest\nStay: $range',
         ),
         isThreeLine: true,
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () {
+        trailing: AdminDashboardModels.isWalkInBookable(r)
+            ? const Icon(Icons.person_add_outlined)
+            : const Icon(Icons.chevron_right),
+        onTap: () async {
+          if (AdminDashboardModels.isWalkInBookable(r)) {
+            Navigator.of(context).pop();
+            await handleAdminWalkInRoomTap(
+              context,
+              room: r,
+              onSuccess: onRefresh,
+            );
+            return;
+          }
           Navigator.of(context).pop();
           Navigator.of(context).push<void>(
             MaterialPageRoute<void>(
@@ -249,7 +261,7 @@ class RoomSummarySection extends StatelessWidget {
     final maintIssues = _issueRoomsFromTasks('maintenance');
     final occupiedRooms =
         _filterByStatuses({'checked_in', 'booked', 'reserved'});
-    final vacantRooms = _filterByStatuses({'available'});
+    final vacantRooms = rooms.where(AdminDashboardModels.isWalkInBookable).toList();
     final maintenanceRooms = _maintenanceRooms();
 
     return ListView(

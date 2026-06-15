@@ -76,6 +76,14 @@ class _SystemAccessScreenState extends State<SystemAccessScreen> {
     final savedRole = await AuthStorage.portalRole();
     if (token == null || token.isEmpty || savedRole == null) return false;
 
+    final savedHotelId = await AuthStorage.hotelId();
+    if (savedHotelId == null ||
+        savedHotelId.isEmpty ||
+        savedHotelId != widget.session.hotelId) {
+      await AuthStorage.clearPortalAuth();
+      return false;
+    }
+
     switch (expectedRole) {
       case 'admin':
         if (savedRole != 'admin' && savedRole != 'super_admin') return false;

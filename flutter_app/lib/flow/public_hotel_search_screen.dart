@@ -13,6 +13,7 @@ import '../locale_controller.dart';
 import '../ui/app_visual.dart';
 import '../widgets/language_picker_button.dart';
 import '../widgets/philippine_destination_field.dart';
+import 'customer_browse_layout.dart';
 import 'customer_search_context.dart';
 import 'hotel_search_results_screen.dart';
 import 'guest_portal_qr_scan_screen.dart';
@@ -577,6 +578,8 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final visual = AppVisual.of(context);
+    final size = MediaQuery.sizeOf(context);
+    final wideLandscape = customerUseWideBrowseLayout(context) && size.width >= 640;
 
     return Scaffold(
       body: GestureDetector(
@@ -590,11 +593,11 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
           child: Column(
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 10, 12, 0),
+                padding: EdgeInsets.fromLTRB(16, wideLandscape ? 6 : 10, 12, 0),
                 child: Row(
                   children: [
-                    const MadyawLogoWidget(
-                      size: 52,
+                    MadyawLogoWidget(
+                      size: wideLandscape ? 44 : 52,
                       glowStrength: 0.15,
                       showWordmark: true,
                       showBrandLine: false,
@@ -615,6 +618,91 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                   ],
                 ),
               ),
+              if (wideLandscape)
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 8, 12, 16),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: scheme.primaryContainer
+                                      .withValues(alpha: 0.65),
+                                  borderRadius: BorderRadius.circular(24),
+                                  border: Border.all(
+                                    color: scheme.primary.withValues(alpha: 0.2),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.travel_explore,
+                                        size: 18, color: scheme.primary),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      context.tr('book_a_stay'),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: scheme.onPrimaryContainer,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                              Text(
+                                context.tr('where_to_go'),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .headlineMedium
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: -0.5,
+                                      height: 1.12,
+                                    ),
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                context.tr('search_stays_sub'),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(
+                                      color: scheme.onSurfaceVariant,
+                                      height: 1.35,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 3,
+                        child: RefreshIndicator(
+                          onRefresh: _loadHotels,
+                          child: SingleChildScrollView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(8, 4, 20, 20),
+                            child: _buildSearchScrollContent(context, scheme, visual),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else ...[
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
                 child: Column(
@@ -676,396 +764,371 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                   child: SingleChildScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          borderRadius: visual.radiusLg,
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              scheme.surfaceContainerLow,
-                              scheme.surfaceContainerHighest
-                                  .withValues(alpha: 0.55),
-                            ],
-                          ),
-                          boxShadow: visual.elevatedShadow,
-                          border: Border.all(
-                            color: scheme.primary.withValues(alpha: 0.12),
-                          ),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(18),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(10),
-                                    decoration: BoxDecoration(
-                                      color: scheme.primary
-                                          .withValues(alpha: 0.12),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Icon(Icons.map_outlined,
-                                        color: scheme.primary),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          context.tr('find_your_room'),
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleMedium
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.w800,
-                                              ),
-                                        ),
-                                        Text(
-                                          context.tr('tap_city_search'),
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .bodySmall
-                                              ?.copyWith(
-                                                color: scheme.onSurfaceVariant,
-                                              ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              PhilippineDestinationField(
-                                controller: _destinationCtrl,
-                                hintText: context.tr('browse_ph_cities'),
-                                onSelected: (entry) {
-                                  setState(() {
-                                    _selectedPresetQuery = entry.searchQuery;
-                                  });
-                                },
-                              ),
-                                const SizedBox(height: 14),
-                                Text(
-                                  context.tr('popular_destinations'),
-                                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                ),
-                                const SizedBox(height: 10),
-                                SizedBox(
-                                  height: 42,
-                                  child: ListView.separated(
-                                    scrollDirection: Axis.horizontal,
-                                    itemCount: PhilippineDestinationPresets.popular.length + 1,
-                                    separatorBuilder: (_, __) =>
-                                        const SizedBox(width: 8),
-                                    itemBuilder: (context, i) {
-                                      if (i == PhilippineDestinationPresets.popular.length) {
-                                        return ActionChip(
-                                          avatar: const Icon(Icons.grid_view, size: 18),
-                                          label: Text(context.tr('all_cities')),
-                                          onPressed: _openDestinationPicker,
-                                        );
-                                      }
-                                      final preset =
-                                          PhilippineDestinationPresets.popular[i];
-                                      final selected = _selectedPresetQuery ==
-                                          preset.searchQuery;
-                                      return FilterChip(
-                                        label: Text(
-                                          '${preset.icon} ${preset.label}',
-                                          style: TextStyle(
-                                            fontWeight: selected
-                                                ? FontWeight.w700
-                                                : FontWeight.w500,
-                                          ),
-                                        ),
-                                        selected: selected,
-                                        selectedColor:
-                                            scheme.primaryContainer,
-                                        checkmarkColor: scheme.primary,
-                                        onSelected: (_) => _selectPreset(preset),
-                                      );
-                                    },
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _DateTile(
-                                        label: context.tr('check_in'),
-                                        value: _fmtDate(_checkIn),
-                                        onTap: () => _pickDate(checkIn: true),
-                                      ),
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                                      child: Column(
-                                        children: [
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 4,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: scheme.primaryContainer,
-                                              borderRadius: BorderRadius.circular(20),
-                                            ),
-                                            child: Text(
-                                              context.tr('nights_count', {
-                                                'n': '$_nightCount',
-                                              }),
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w700,
-                                                color: scheme.onPrimaryContainer,
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Icon(Icons.arrow_forward,
-                                              size: 16, color: scheme.outline),
-                                        ],
-                                      ),
-                                    ),
-                                    Expanded(
-                                      child: _DateTile(
-                                        label: context.tr('check_out'),
-                                        value: _fmtDate(_checkOut),
-                                        onTap: () => _pickDate(checkIn: false),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 14),
-                                InkWell(
-                                  onTap: _pickGuests,
-                                  borderRadius: BorderRadius.circular(14),
-                                  child: Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 14,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(14),
-                                      border: Border.all(
-                                        color: scheme.outlineVariant,
-                                      ),
-                                      color: scheme.surfaceContainerLowest,
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.people_outline,
-                                            color: scheme.primary),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                context.tr('guests'),
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .labelSmall
-                                                    ?.copyWith(
-                                                      color: scheme.onSurfaceVariant,
-                                                    ),
-                                              ),
-                                              Text(
-                                                _guestPartyLine(context),
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        Icon(Icons.chevron_right,
-                                            color: scheme.outline),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 18),
-                                DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(14),
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        scheme.primary,
-                                        scheme.primary.withValues(alpha: 0.82),
-                                      ],
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: scheme.primary
-                                            .withValues(alpha: 0.28),
-                                        blurRadius: 14,
-                                        offset: const Offset(0, 6),
-                                      ),
-                                    ],
-                                  ),
-                                  child: SizedBox(
-                                    height: 54,
-                                    width: double.infinity,
-                                    child: FilledButton(
-                                      onPressed: _searching ? null : _search,
-                                      style: FilledButton.styleFrom(
-                                        backgroundColor: Colors.transparent,
-                                        shadowColor: Colors.transparent,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(14),
-                                        ),
-                                        elevation: 0,
-                                      ),
-                                      child: _searching
-                                          ? Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              children: [
-                                                const SizedBox(
-                                                  width: 22,
-                                                  height: 22,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                    strokeWidth: 2.5,
-                                                    color: Colors.white,
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 10),
-                                                Text(
-                                                  context.tr('search_hotels_btn'),
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.w700,
-                                                    color: Colors.white,
-                                                  ),
-                                                ),
-                                              ],
-                                            )
-                                          : Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              children: [
-                                                const Icon(Icons.search,
-                                                    size: 22),
-                                                const SizedBox(width: 10),
-                                                Text(
-                                                  context.tr('search_hotels_btn'),
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.w800,
-                                                    letterSpacing: 1.1,
-                                                    fontSize: 15,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      if (_error != null) ...[
-                        const SizedBox(height: 16),
-                        Material(
-                          color: scheme.errorContainer.withValues(alpha: 0.45),
-                          borderRadius: BorderRadius.circular(12),
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Icon(Icons.cloud_off_outlined,
-                                    color: scheme.error, size: 22),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(
-                                    _error!,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: _loadHotels,
-                          child: Text(context.tr('retry')),
-                        ),
-                      ],
-                      const SizedBox(height: 18),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                        decoration: BoxDecoration(
-                          color: scheme.surfaceContainerLow
-                              .withValues(alpha: 0.7),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: scheme.outlineVariant.withValues(alpha: 0.4),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.apartment,
-                                size: 20, color: scheme.primary),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                _allHotels.isEmpty &&
-                                        (_loading || _refreshingDirectory)
-                                    ? 'Loading properties…'
-                                    : context.tr('properties_nationwide', {
-                                        'n': '${_allHotels.length}',
-                                      }),
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodyMedium
-                                    ?.copyWith(fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                            if (_refreshingDirectory && _allHotels.isNotEmpty)
-                              SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: scheme.primary,
-                                ),
-                              )
-                            else
-                              Icon(Icons.verified_outlined,
-                                  size: 18, color: scheme.tertiary),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                  child: _buildSearchScrollContent(context, scheme, visual),
                 ),
                 ),
               ),
+              ],
             ],
           ),
         ),
       ),
       ),
+    );
+  }
+
+  Widget _buildSearchScrollContent(
+    BuildContext context,
+    ColorScheme scheme,
+    AppVisual visual,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: visual.radiusLg,
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                scheme.surfaceContainerLow,
+                scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+              ],
+            ),
+            boxShadow: visual.elevatedShadow,
+            border: Border.all(
+              color: scheme.primary.withValues(alpha: 0.12),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: scheme.primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(Icons.map_outlined, color: scheme.primary),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            context.tr('find_your_room'),
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w800),
+                          ),
+                          Text(
+                            context.tr('tap_city_search'),
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                PhilippineDestinationField(
+                  controller: _destinationCtrl,
+                  hintText: context.tr('browse_ph_cities'),
+                  onSelected: (entry) {
+                    setState(() {
+                      _selectedPresetQuery = entry.searchQuery;
+                    });
+                  },
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  context.tr('popular_destinations'),
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 42,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: PhilippineDestinationPresets.popular.length + 1,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (context, i) {
+                      if (i == PhilippineDestinationPresets.popular.length) {
+                        return ActionChip(
+                          avatar: const Icon(Icons.grid_view, size: 18),
+                          label: Text(context.tr('all_cities')),
+                          onPressed: _openDestinationPicker,
+                        );
+                      }
+                      final preset = PhilippineDestinationPresets.popular[i];
+                      final selected =
+                          _selectedPresetQuery == preset.searchQuery;
+                      return FilterChip(
+                        label: Text(
+                          '${preset.icon} ${preset.label}',
+                          style: TextStyle(
+                            fontWeight:
+                                selected ? FontWeight.w700 : FontWeight.w500,
+                          ),
+                        ),
+                        selected: selected,
+                        selectedColor: scheme.primaryContainer,
+                        checkmarkColor: scheme.primary,
+                        onSelected: (_) => _selectPreset(preset),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _DateTile(
+                        label: context.tr('check_in'),
+                        value: _fmtDate(_checkIn),
+                        onTap: () => _pickDate(checkIn: true),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: scheme.primaryContainer,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              context.tr('nights_count', {
+                                'n': '$_nightCount',
+                              }),
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: scheme.onPrimaryContainer,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Icon(Icons.arrow_forward,
+                              size: 16, color: scheme.outline),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: _DateTile(
+                        label: context.tr('check_out'),
+                        value: _fmtDate(_checkOut),
+                        onTap: () => _pickDate(checkIn: false),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                InkWell(
+                  onTap: _pickGuests,
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 14,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: scheme.outlineVariant),
+                      color: scheme.surfaceContainerLowest,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.people_outline, color: scheme.primary),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                context.tr('guests'),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelSmall
+                                    ?.copyWith(color: scheme.onSurfaceVariant),
+                              ),
+                              Text(
+                                _guestPartyLine(context),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.chevron_right, color: scheme.outline),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    gradient: LinearGradient(
+                      colors: [
+                        scheme.primary,
+                        scheme.primary.withValues(alpha: 0.82),
+                      ],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: scheme.primary.withValues(alpha: 0.28),
+                        blurRadius: 14,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: SizedBox(
+                    height: 54,
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: _searching ? null : _search,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: _searching
+                          ? Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  context.tr('search_hotels_btn'),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.search, size: 22),
+                                const SizedBox(width: 10),
+                                Text(
+                                  context.tr('search_hotels_btn'),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 1.1,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: 16),
+          Material(
+            color: scheme.errorContainer.withValues(alpha: 0.45),
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.cloud_off_outlined,
+                      color: scheme.error, size: 22),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _error!,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: _loadHotels,
+            child: Text(context.tr('retry')),
+          ),
+        ],
+        const SizedBox(height: 18),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerLow.withValues(alpha: 0.7),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: scheme.outlineVariant.withValues(alpha: 0.4),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.apartment, size: 20, color: scheme.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  _allHotels.isEmpty && (_loading || _refreshingDirectory)
+                      ? 'Loading properties…'
+                      : context.tr('properties_nationwide', {
+                          'n': '${_allHotels.length}',
+                        }),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ),
+              if (_refreshingDirectory && _allHotels.isNotEmpty)
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: scheme.primary,
+                  ),
+                )
+              else
+                Icon(Icons.verified_outlined,
+                    size: 18, color: scheme.tertiary),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

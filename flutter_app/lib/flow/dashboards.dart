@@ -15,6 +15,7 @@ import '../widgets/app_state_views.dart';
 import '../widgets/dashboard_clock.dart';
 import 'admin_rooms.dart';
 import 'customer_booking_status_screen.dart';
+import 'customer_browse_layout.dart';
 import 'customer_landscape_grid.dart';
 import 'customer_search_context.dart';
 import 'customer_tools.dart';
@@ -22,6 +23,7 @@ import '../widgets/chat_attachment.dart';
 import '../widgets/payment_redirect.dart';
 import 'admin/admin_dashboard_shell.dart';
 import 'admin/widgets/hourly_billing.dart';
+import 'portal_sign_out.dart';
 // --- Admin ---
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -72,8 +74,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Future<void> _signOut() async {
-    await AuthStorage.clearPortalAuth();
-    if (mounted) Navigator.of(context).pop();
+    await confirmAndSignOutPortalToRoleSelection(context);
   }
 
   Future<void> _runAction(
@@ -1033,8 +1034,7 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
   }
 
   Future<void> _signOut() async {
-    await AuthStorage.clearPortalAuth();
-    if (mounted) Navigator.of(context).pop();
+    await confirmAndSignOutPortalToRoleSelection(context);
   }
 
   @override
@@ -2651,14 +2651,16 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
 
     final scheme = Theme.of(context).colorScheme;
     final search = widget.searchContext;
-    if (MediaQuery.orientationOf(context) == Orientation.landscape &&
-        categories.isNotEmpty) {
-      return _buildLandscapeCategories(
-        context,
-        hotelName: hotelName,
-        categories: categories,
-        scheme: scheme,
-        search: search,
+    if (customerUseWideBrowseLayout(context)) {
+      return CustomerBrowseRefresh(
+        onRefresh: _load,
+        child: _buildLandscapeCategories(
+          context,
+          hotelName: hotelName,
+          categories: categories,
+          scheme: scheme,
+          search: search,
+        ),
       );
     }
     return RefreshIndicator(
@@ -2907,22 +2909,23 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
     required CustomerSearchContext? search,
   }) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(10),
                 child: Image.asset(
                   'assets/branding/madyaw_logo.png',
-                  height: 44,
-                  width: 44,
+                  height: 40,
+                  width: 40,
                   fit: BoxFit.contain,
                   errorBuilder: (_, __, ___) => Icon(
                     Icons.sailing_outlined,
-                    size: 36,
+                    size: 32,
                     color: scheme.primary,
                   ),
                 ),
@@ -2950,52 +2953,89 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                 ),
               ),
               if (search != null)
-                Chip(
-                  visualDensity: VisualDensity.compact,
-                  label: Text(
-                    '${search.checkInIso} → ${search.checkOutIso}',
-                    style: const TextStyle(fontSize: 10),
+                Flexible(
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: scheme.primaryContainer.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '${search.checkInIso} → ${search.checkOutIso}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
                   ),
                 ),
             ],
           ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: CustomerLandscapePagedGrid(
-              itemCount: categories.length,
-              itemBuilder: (context, i) {
-                final m = categories[i] as Map<String, dynamic>;
-                final id = '${m['id']}';
-                final name = '${m['name']}';
-                final imageUrl =
-                    ChatAttachment.resolveMediaUrl('${m['image_url'] ?? ''}');
-                final available = (m['available_rooms'] as num?)?.toInt() ?? 0;
-                final availLabel = available == 1
-                    ? context.tr('one_room_available')
-                    : context.tr('rooms_available_label', {'n': '$available'});
-                return CustomerLandscapeCategoryTile(
-                  name: name,
-                  imageUrl: imageUrl,
-                  availLabel: availLabel,
-                  available: available > 0,
-                  onTap: () {
-                    Navigator.of(context).push<void>(
-                      MaterialPageRoute<void>(
-                        builder: (_) => CustomerRoomsScreen(
-                          hotelId: widget.hotelId,
-                          categoryId: id,
-                          categoryName: name,
-                          categoryImageUrl: imageUrl,
-                          searchContext: widget.searchContext,
-                          hotelName: hotelName,
-                        ),
+          const SizedBox(height: 10),
+          if (categories.isEmpty)
+            Expanded(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.event_busy_outlined,
+                          size: 48, color: scheme.outline),
+                      const SizedBox(height: 12),
+                      Text(
+                        search != null
+                            ? context.tr('no_rooms_for_dates')
+                            : context.tr('no_categories_available'),
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleSmall,
                       ),
-                    );
-                  },
-                );
-              },
+                    ],
+                  ),
+                ),
+              ),
+            )
+          else
+            Expanded(
+              child: CustomerLandscapePagedGrid(
+                itemCount: categories.length,
+                itemBuilder: (context, i) {
+                  final m = categories[i] as Map<String, dynamic>;
+                  final id = '${m['id']}';
+                  final name = '${m['name']}';
+                  final imageUrl =
+                      ChatAttachment.resolveMediaUrl('${m['image_url'] ?? ''}');
+                  final desc = '${m['description'] ?? ''}'.trim();
+                  final available = (m['available_rooms'] as num?)?.toInt() ?? 0;
+                  final availLabel = available == 1
+                      ? context.tr('one_room_available')
+                      : context.tr('rooms_available_label', {'n': '$available'});
+                  return CustomerLandscapeCategoryTile(
+                    name: name,
+                    imageUrl: imageUrl,
+                    availLabel: availLabel,
+                    available: available > 0,
+                    description: desc.isEmpty ? null : desc,
+                    onTap: () {
+                      Navigator.of(context).push<void>(
+                        MaterialPageRoute<void>(
+                          builder: (_) => CustomerRoomsScreen(
+                            hotelId: widget.hotelId,
+                            categoryId: id,
+                            categoryName: name,
+                            categoryImageUrl: imageUrl,
+                            searchContext: widget.searchContext,
+                            hotelName: hotelName,
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -3638,9 +3678,11 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
       '${category?['image_url'] ?? widget.categoryImageUrl}',
     );
     final scheme = Theme.of(context).colorScheme;
-    if (MediaQuery.orientationOf(context) == Orientation.landscape &&
-        rooms.isNotEmpty) {
-      return _buildLandscapeRooms(context, rooms, scheme);
+    if (customerUseWideBrowseLayout(context)) {
+      return CustomerBrowseRefresh(
+        onRefresh: _load,
+        child: _buildLandscapeRooms(context, rooms, scheme),
+      );
     }
     if (rooms.isEmpty) {
       return RefreshIndicator(
@@ -3850,7 +3892,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
   ) {
     final fromSearch = widget.searchContext != null;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -3866,32 +3908,57 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                       ),
                 ),
               ),
-              Text(
-                '${rooms.length} available',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-              ),
+              if (rooms.isNotEmpty)
+                Text(
+                  '${rooms.length} available',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
             ],
           ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: CustomerLandscapePagedGrid(
-              itemCount: rooms.length,
-              itemBuilder: (context, i) {
-                final r = rooms[i] as Map<String, dynamic>;
-                final title = '${r['display_name'] ?? r['room_number']}';
-                final priceLabel = HourlyBilling.priceLabel(r);
-                return CustomerLandscapeRoomTile(
-                  title: title,
-                  priceLabel: priceLabel,
-                  imageUrl: (r['image_url'] ?? '').toString(),
-                  busy: _booking,
-                  onTap: () => _bookRoom(r, reserve: fromSearch),
-                );
-              },
+          const SizedBox(height: 10),
+          if (rooms.isEmpty)
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.bed_outlined, size: 48, color: scheme.outline),
+                    const SizedBox(height: 12),
+                    Text(
+                      widget.searchContext != null
+                          ? 'No rooms free for your dates in this category.'
+                          : 'No rooms available in this category.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            Expanded(
+              child: CustomerLandscapePagedGrid(
+                itemCount: rooms.length,
+                itemBuilder: (context, i) {
+                  final r = rooms[i] as Map<String, dynamic>;
+                  final title = '${r['display_name'] ?? r['room_number']}';
+                  final priceLabel = HourlyBilling.priceLabel(r);
+                  return CustomerLandscapeRoomTile(
+                    title: title,
+                    priceLabel: priceLabel,
+                    imageUrl: (r['image_url'] ?? '').toString(),
+                    busy: _booking,
+                    onBook: () => _bookRoom(r, reserve: fromSearch),
+                    onReserve: fromSearch
+                        ? null
+                        : () => _bookRoom(r, reserve: true),
+                  );
+                },
+              ),
             ),
-          ),
         ],
       ),
     );

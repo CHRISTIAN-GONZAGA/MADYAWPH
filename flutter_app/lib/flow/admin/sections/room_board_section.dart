@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import '../../../widgets/room_status_label.dart';
 import '../admin_dashboard_models.dart';
 import '../widgets/manual_booking_dialog.dart';
-import '../../admin_rooms.dart';
 
 /// Visual room board grouped by category — tap a room to book or manage.
 class RoomBoardSection extends StatelessWidget {
@@ -19,9 +18,11 @@ class RoomBoardSection extends StatelessWidget {
   final String hotelName;
   final Future<void> Function() onChanged;
 
-  static const _tileStatusesAvailable = {'available'};
-
-  Color _tileColor(String status, ColorScheme scheme) {
+  Color _tileColor(Map<String, dynamic> room, ColorScheme scheme) {
+    if (AdminDashboardModels.isWalkInBookable(room)) {
+      return const Color(0xFFB0BEC5);
+    }
+    final status = AdminDashboardModels.statusOf(room);
     switch (status) {
       case 'available':
         return const Color(0xFFB0BEC5);
@@ -39,32 +40,10 @@ class RoomBoardSection extends StatelessWidget {
 
   Future<void> _onRoomTap(BuildContext context, Map<String, dynamic> room) async {
     HapticFeedback.selectionClick();
-    final status = AdminDashboardModels.statusOf(room);
-    final roomId = (room['id'] ?? '').toString();
-
-    if (_tileStatusesAvailable.contains(status)) {
-      final booked = await showAdminManualBookingDialog(
-        context: context,
-        room: room,
-        onSuccess: onChanged,
-      );
-      if (booked && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Room ${room['room_number']} booked successfully.',
-            ),
-          ),
-        );
-      }
-      return;
-    }
-
-    if (roomId.isEmpty) return;
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => AdminRoomDetailScreen(roomId: roomId),
-      ),
+    await handleAdminWalkInRoomTap(
+      context,
+      room: room,
+      onSuccess: onChanged,
     );
   }
 
@@ -176,13 +155,12 @@ class RoomBoardSection extends StatelessWidget {
                       itemCount: list.length,
                       itemBuilder: (context, i) {
                         final r = list[i];
-                        final status = AdminDashboardModels.statusOf(r);
                         final no = (r['room_number'] ?? '—').toString();
                         final guest = AdminDashboardModels.guestName(r);
                         final hasGuest = guest != '—';
 
                         return Material(
-                          color: _tileColor(status, scheme),
+                          color: _tileColor(r, scheme),
                           borderRadius: BorderRadius.circular(10),
                           clipBehavior: Clip.antiAlias,
                           child: InkWell(
@@ -240,8 +218,7 @@ class RoomBoardSection extends StatelessWidget {
   }
 
   String statusOfCategory(List<Map<String, dynamic>> list) {
-    final vacant =
-        list.where((r) => AdminDashboardModels.statusOf(r) == 'available').length;
+    final vacant = list.where(AdminDashboardModels.isWalkInBookable).length;
     if (vacant == list.length) return 'all available';
     if (vacant == 0) return 'no vacancies';
     return '$vacant available';

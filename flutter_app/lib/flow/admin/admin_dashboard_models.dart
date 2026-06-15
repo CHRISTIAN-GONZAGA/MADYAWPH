@@ -35,12 +35,26 @@ class AdminDashboardModels {
   static String statusOf(Map<String, dynamic> room) {
     final raw = room['status'];
     if (raw is Map) {
-      return (raw['value'] ?? raw['name'] ?? '')
+      final fromMap = (raw['value'] ?? raw['name'] ?? '')
           .toString()
           .toLowerCase()
           .trim();
+      if (fromMap.isNotEmpty) return fromMap;
     }
-    return (raw ?? '').toString().toLowerCase().trim();
+    final s = (raw ?? '').toString().toLowerCase().trim();
+    if (s.isEmpty || s == 'null') return '';
+    return s;
+  }
+
+  /// True when front desk can create a walk-in booking for this room.
+  static bool isWalkInBookable(Map<String, dynamic> room) {
+    final status = statusOf(room);
+    if (status == 'available' || status == 'reserved') return true;
+    if (status.isEmpty) {
+      final guest = (room['current_guest_name'] ?? '').toString().trim();
+      return guest.isEmpty;
+    }
+    return false;
   }
 
   /// Display label: checked_in → Occupied (API value unchanged).

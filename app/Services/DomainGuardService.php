@@ -20,7 +20,21 @@ class DomainGuardService
 
     public function ensureRoomCanBeBooked(Room $room): void
     {
-        if (! in_array($room->status, [RoomStatus::AVAILABLE, RoomStatus::RESERVED], true)) {
+        $status = $room->status instanceof RoomStatus
+            ? $room->status
+            : RoomStatus::tryFrom(strtolower(trim((string) ($room->status ?? ''))));
+
+        if ($status === null) {
+            if (blank($room->current_guest_name)) {
+                return;
+            }
+
+            throw ValidationException::withMessages([
+                'room_id' => 'Room is unavailable.',
+            ]);
+        }
+
+        if (! in_array($status, [RoomStatus::AVAILABLE, RoomStatus::RESERVED], true)) {
             throw ValidationException::withMessages([
                 'room_id' => 'Room is unavailable.',
             ]);

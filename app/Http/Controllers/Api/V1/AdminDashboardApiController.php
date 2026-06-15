@@ -20,6 +20,7 @@ use App\Models\StayReview;
 use App\Models\SystemSetting;
 use App\Models\Task;
 use App\Models\UserSetting;
+use App\Enums\RoomStatus;
 use App\Support\AdminBookingPresenter;
 use App\Support\BookingTypeResolver;
 use Illuminate\Http\JsonResponse;
@@ -111,6 +112,9 @@ class AdminDashboardApiController extends Controller
                     ->get();
 
                 return array_merge($room->toArray(), [
+                    'status' => $room->status instanceof RoomStatus
+                        ? $room->status->value
+                        : (filled($room->status) ? (string) $room->status : RoomStatus::AVAILABLE->value),
                     'floor' => (int) preg_replace('/\D/', '', substr((string) $room->room_number, 0, 1)) ?: 1,
                     'latest_booking' => $booking ? [
                         'id' => (string) $booking->id,

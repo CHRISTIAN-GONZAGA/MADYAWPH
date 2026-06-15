@@ -7,6 +7,7 @@ import '../../dio_client.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/chat_attachment.dart';
 import '../public_hotel_search_screen.dart';
+import '../portal_sign_out.dart';
 
 const _kPlatformNavy = Color(0xFF1A2B4A);
 const _kPlatformNavyDeep = Color(0xFF0F1A2E);
@@ -295,6 +296,8 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
   }
 
   Future<void> _signOut() async {
+    final confirmed = await confirmPortalSignOut(context);
+    if (!confirmed || !mounted) return;
     await AuthStorage.clearPortalAuth();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(

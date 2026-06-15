@@ -100,12 +100,7 @@ class _HotelPropertyLoginScreenState extends State<HotelPropertyLoginScreen> {
       }
 
       HapticFeedback.lightImpact();
-      final previousId = await AuthStorage.hotelId();
       await AuthStorage.setHotelContext(id: hid, name: name);
-      if (previousId != hid) {
-        await AuthStorage.clearPortalAuth();
-        await AuthStorage.clearGuestAuth();
-      }
 
       final session = HotelSession(hotelId: hid, hotelName: name);
       hotelSessionNotifier.value = session;
