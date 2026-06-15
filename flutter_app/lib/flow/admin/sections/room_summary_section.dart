@@ -120,7 +120,7 @@ class RoomSummarySection extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 ...reservedSoon.map(
-                  (r) => _roomTile(context, r, highlight: true),
+                  (r) => _roomTile(ctx, context, r, highlight: true),
                 ),
                 const SizedBox(height: 16),
               ],
@@ -131,7 +131,7 @@ class RoomSummarySection extends StatelessWidget {
                     ),
               ),
               const SizedBox(height: 8),
-              ...others.map((r) => _roomTile(context, r)),
+              ...others.map((r) => _roomTile(ctx, context, r)),
               if (list.isEmpty) const Text('No rooms in this category.'),
             ],
           ),
@@ -141,7 +141,8 @@ class RoomSummarySection extends StatelessWidget {
   }
 
   Widget _roomTile(
-    BuildContext context,
+    BuildContext sheetContext,
+    BuildContext hostContext,
     Map<String, dynamic> r, {
     bool highlight = false,
   }) {
@@ -166,28 +167,35 @@ class RoomSummarySection extends StatelessWidget {
         trailing: AdminDashboardModels.isWalkInBookable(r)
             ? const Icon(Icons.person_add_outlined)
             : const Icon(Icons.chevron_right),
-        onTap: () async {
-          final hostContext = context;
-          if (AdminDashboardModels.isWalkInBookable(r)) {
-            Navigator.of(hostContext, rootNavigator: true).pop();
-            WidgetsBinding.instance.addPostFrameCallback((_) async {
-              if (!hostContext.mounted) return;
+        onTap: () {
+          Navigator.of(sheetContext).pop();
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
+            if (!hostContext.mounted) return;
+            if (AdminDashboardModels.isWalkInBookable(r)) {
               await handleAdminWalkInRoomTap(
                 hostContext,
                 room: r,
                 onSuccess: onRefresh,
               );
-            });
-            return;
-          }
-          Navigator.of(hostContext, rootNavigator: true).pop();
-          final roomId = AdminDashboardModels.roomIdOf(r);
-          if (roomId.isEmpty) return;
-          await Navigator.of(hostContext).push<void>(
-            MaterialPageRoute<void>(
-              builder: (_) => AdminRoomDetailScreen(roomId: roomId),
-            ),
-          );
+              return;
+            }
+            final roomId = AdminDashboardModels.roomIdOf(r);
+            if (roomId.isEmpty) {
+              ScaffoldMessenger.of(hostContext).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Room ID missing. Pull to refresh the dashboard.',
+                  ),
+                ),
+              );
+              return;
+            }
+            await Navigator.of(hostContext).push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) => AdminRoomDetailScreen(roomId: roomId),
+              ),
+            );
+          });
         },
       ),
     );

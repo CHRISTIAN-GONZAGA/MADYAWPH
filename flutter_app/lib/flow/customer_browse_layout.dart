@@ -40,13 +40,33 @@ class CustomerBrowseRefresh extends StatelessWidget {
     super.key,
     required this.onRefresh,
     required this.child,
+    this.landscape = false,
   });
 
   final Future<void> Function() onRefresh;
   final Widget child;
+  final bool landscape;
 
   @override
   Widget build(BuildContext context) {
+    if (landscape) {
+      return RefreshIndicator(
+        onRefresh: onRefresh,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: SizedBox(
+                height: constraints.maxHeight,
+                width: constraints.maxWidth,
+                child: child,
+              ),
+            );
+          },
+        ),
+      );
+    }
+
     return RefreshIndicator(
       onRefresh: onRefresh,
       child: LayoutBuilder(

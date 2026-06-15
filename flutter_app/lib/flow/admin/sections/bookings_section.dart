@@ -632,10 +632,12 @@ class _BookingsSectionState extends State<BookingsSection>
           child: const Text('Check in'),
         ),
         onTap: () {
+          final roomId = AdminDashboardModels.roomIdOf(room);
+          if (roomId.isEmpty) return;
           Navigator.of(context).push<void>(
             MaterialPageRoute<void>(
               builder: (_) => AdminRoomDetailScreen(
-                roomId: (room['id'] ?? '').toString(),
+                roomId: roomId,
               ),
             ),
           );

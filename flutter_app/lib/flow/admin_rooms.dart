@@ -295,6 +295,12 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   bool _updatingPayment = false;
   bool _issuingRefund = false;
 
+  static Map<String, dynamic>? _asMap(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return null;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1003,8 +1009,14 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       return AppErrorView(message: _error!, onRetry: _load);
     }
 
-    final room = _data!['room'] as Map<String, dynamic>;
-    final booking = _data!['active_booking'] as Map<String, dynamic>?;
+    final room = _asMap(_data!['room']);
+    if (room == null) {
+      return AppErrorView(
+        message: 'Room data is unavailable. Pull to refresh.',
+        onRetry: _load,
+      );
+    }
+    final booking = _asMap(_data!['active_booking']);
     final charges = (_data!['booking_charges'] as List<dynamic>?) ?? const [];
     final chargesTotal =
         ((_data!['booking_charges_total'] as num?)?.toDouble() ?? 0);

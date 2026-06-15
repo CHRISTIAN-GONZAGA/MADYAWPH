@@ -2700,6 +2700,7 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
     if (customerUseWideBrowseLayout(context)) {
       return CustomerBrowseRefresh(
         onRefresh: _load,
+        landscape: true,
         child: _buildLandscapeCategories(
           context,
           hotelName: hotelName,
@@ -3758,6 +3759,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     if (customerUseWideBrowseLayout(context)) {
       return CustomerBrowseRefresh(
         onRefresh: _load,
+        landscape: true,
         child: _buildLandscapeRooms(context, rooms, scheme),
       );
     }

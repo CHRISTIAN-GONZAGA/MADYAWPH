@@ -4,22 +4,27 @@ import 'package:flutter/material.dart';
 import '../../../dio_client.dart';
 import '../../../widgets/admin_time_slot_field.dart';
 import '../../../widgets/app_input.dart';
+import '../../../widgets/app_scaffold.dart';
 import '../admin_dashboard_models.dart';
 import '../../admin_rooms.dart';
 import 'hourly_billing.dart';
 
-/// Opens the walk-in booking form (dialog — same pattern as public customer booking).
+const _inputDecoration = InputDecoration(
+  border: OutlineInputBorder(),
+);
+
+/// Opens the walk-in booking form (full screen — mirrors public customer booking).
 Future<bool> showAdminManualBookingDialog({
   required BuildContext context,
   required Map<String, dynamic> room,
   required Future<void> Function() onSuccess,
 }) async {
-  final result = await showDialog<bool>(
-    context: context,
-    barrierDismissible: false,
-    builder: (_) => _AdminWalkInBookingDialog(
-      room: room,
-      onSuccess: onSuccess,
+  final result = await Navigator.of(context).push<bool>(
+    MaterialPageRoute<bool>(
+      builder: (_) => AdminWalkInBookingScreen(
+        room: room,
+        onSuccess: onSuccess,
+      ),
     ),
   );
   return result == true;
@@ -68,8 +73,9 @@ Future<void> handleAdminWalkInRoomTap(
   );
 }
 
-class _AdminWalkInBookingDialog extends StatefulWidget {
-  const _AdminWalkInBookingDialog({
+class AdminWalkInBookingScreen extends StatefulWidget {
+  const AdminWalkInBookingScreen({
+    super.key,
     required this.room,
     required this.onSuccess,
   });
@@ -78,11 +84,11 @@ class _AdminWalkInBookingDialog extends StatefulWidget {
   final Future<void> Function() onSuccess;
 
   @override
-  State<_AdminWalkInBookingDialog> createState() =>
-      _AdminWalkInBookingDialogState();
+  State<AdminWalkInBookingScreen> createState() =>
+      _AdminWalkInBookingScreenState();
 }
 
-class _AdminWalkInBookingDialogState extends State<_AdminWalkInBookingDialog> {
+class _AdminWalkInBookingScreenState extends State<AdminWalkInBookingScreen> {
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
@@ -238,140 +244,167 @@ class _AdminWalkInBookingDialogState extends State<_AdminWalkInBookingDialog> {
         validWindow ? HourlyBilling.stayCharge(widget.room, inAt, outAt) : 0.0;
     final stayHours = validWindow ? HourlyBilling.stayHours(inAt, outAt) : 0;
 
-    return AlertDialog(
-      title: Text('Walk-in · Room $roomNo'),
-      content: SingleChildScrollView(
-        child: SizedBox(
-          width: MediaQuery.sizeOf(context).width > 500 ? 420 : double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    return AppScaffold(
+      appBar: AppBar(
+        title: Text('Walk-in · Room $roomNo'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text(
+            '$category · ${HourlyBilling.priceLabel(widget.room)}',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Guest details',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+          ),
+          const SizedBox(height: 12),
+          AppInput(
+            controller: _nameCtrl,
+            label: 'Guest name *',
+            decoration: _inputDecoration,
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: 12),
+          AppInput(
+            controller: _emailCtrl,
+            label: 'Email *',
+            keyboardType: TextInputType.emailAddress,
+            decoration: _inputDecoration,
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: 12),
+          AppInput(
+            controller: _phoneCtrl,
+            label: 'Phone *',
+            keyboardType: TextInputType.phone,
+            decoration: _inputDecoration,
+            textInputAction: TextInputAction.done,
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Stay dates & times',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+          ),
+          const SizedBox(height: 12),
+          Row(
             children: [
-              Text(
-                '$category · ${HourlyBilling.priceLabel(widget.room)}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : () => _pickDate(checkIn: true),
+                  icon: const Icon(Icons.calendar_today, size: 18),
+                  label: Text('Check-in\n${_fmtDate(_checkInDate)}'),
+                ),
               ),
-              const SizedBox(height: 16),
-              AppInput(controller: _nameCtrl, label: 'Guest name *'),
-              const SizedBox(height: 10),
-              AppInput(
-                controller: _emailCtrl,
-                label: 'Email *',
-                keyboardType: TextInputType.emailAddress,
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : () => _pickDate(checkIn: false),
+                  icon: const Icon(Icons.event, size: 18),
+                  label: Text('Check-out\n${_fmtDate(_checkOutDate)}'),
+                ),
               ),
-              const SizedBox(height: 10),
-              AppInput(
-                controller: _phoneCtrl,
-                label: 'Phone *',
-                keyboardType: TextInputType.phone,
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _busy ? null : () => _pickDate(checkIn: true),
-                      icon: const Icon(Icons.calendar_today, size: 18),
-                      label: Text('In ${_fmtDate(_checkInDate)}'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _busy ? null : () => _pickDate(checkIn: false),
-                      icon: const Icon(Icons.event, size: 18),
-                      label: Text('Out ${_fmtDate(_checkOutDate)}'),
-                    ),
-                  ),
-                ],
-              ),
-              if (_isHourly || _checkInNow) ...[
-                const SizedBox(height: 12),
-                AdminTimeSlotField(
-                  label: 'Check-in time',
-                  value: _checkInTime,
-                  onChanged: (t) {
-                    if (t != null) setState(() => _checkInTime = t);
-                  },
-                ),
-                const SizedBox(height: 12),
-                AdminTimeSlotField(
-                  label: 'Check-out time',
-                  value: _checkOutTime,
-                  onChanged: (t) {
-                    if (t != null) setState(() => _checkOutTime = t);
-                  },
-                ),
-              ],
-              if (!_isHourly) ...[
-                const SizedBox(height: 8),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Check in immediately'),
-                  subtitle: const Text('Mark guest as checked in after booking'),
-                  value: _checkInNow,
-                  onChanged: _busy ? null : (v) => setState(() => _checkInNow = v),
-                ),
-              ],
-              if (_isHourly || _checkInNow) ...[
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  initialValue: _paymentMethod,
-                  decoration: const InputDecoration(
-                    labelText: 'Payment method',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: _paymentMethods
-                      .map((m) => DropdownMenuItem(value: m, child: Text(m)))
-                      .toList(),
-                  onChanged: _busy
-                      ? null
-                      : (v) {
-                          if (v != null) setState(() => _paymentMethod = v);
-                        },
-                ),
-              ],
-              if (validWindow && (_isHourly || estimated > 0)) ...[
-                const SizedBox(height: 12),
-                Text(
-                  _isHourly
-                      ? 'Est. ₱${estimated.toStringAsFixed(0)} · $stayHours hr(s)'
-                      : 'Est. ₱${estimated.toStringAsFixed(0)}',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: scheme.primary,
-                  ),
-                ),
-              ],
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(
-                  _error!,
-                  style: TextStyle(color: scheme.error, fontSize: 13),
-                ),
-              ],
             ],
           ),
-        ),
+          const SizedBox(height: 12),
+          AdminTimeSlotField(
+            label: 'Check-in time',
+            value: _checkInTime,
+            onChanged: (t) {
+              if (t != null) setState(() => _checkInTime = t);
+            },
+          ),
+          const SizedBox(height: 12),
+          AdminTimeSlotField(
+            label: 'Check-out time',
+            value: _checkOutTime,
+            onChanged: (t) {
+              if (t != null) setState(() => _checkOutTime = t);
+            },
+          ),
+          if (!_isHourly) ...[
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Check in immediately'),
+              subtitle: const Text(
+                'Mark guest as checked in after booking',
+              ),
+              value: _checkInNow,
+              onChanged: _busy ? null : (v) => setState(() => _checkInNow = v),
+            ),
+          ],
+          const SizedBox(height: 16),
+          Text(
+            'Payment',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: _paymentMethod,
+            decoration: _inputDecoration.copyWith(labelText: 'Payment method'),
+            items: _paymentMethods
+                .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                .toList(),
+            onChanged: _busy
+                ? null
+                : (v) {
+                    if (v != null) setState(() => _paymentMethod = v);
+                  },
+          ),
+          if (validWindow && estimated > 0) ...[
+            const SizedBox(height: 16),
+            Card(
+              color: scheme.primaryContainer.withValues(alpha: 0.35),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Text(
+                  _isHourly
+                      ? 'Estimated total: ₱${estimated.toStringAsFixed(0)} · $stayHours hr(s)'
+                      : 'Estimated total: ₱${estimated.toStringAsFixed(0)}',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: scheme.primary,
+                      ),
+                ),
+              ),
+            ),
+          ],
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _error!,
+              style: TextStyle(color: scheme.error),
+            ),
+          ],
+          const SizedBox(height: 24),
+          FilledButton(
+            onPressed: _busy ? null : _submit,
+            child: _busy
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Book guest'),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton(
+            onPressed: _busy ? null : () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: _busy ? null : () => Navigator.of(context).pop(false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _busy ? null : _submit,
-          child: _busy
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Book'),
-        ),
-      ],
     );
   }
 }

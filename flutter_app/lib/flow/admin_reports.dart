@@ -51,6 +51,12 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   String _fmtDay(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
+  static Map<String, dynamic>? _asStringKeyedMap(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return null;
+  }
+
   Future<void> _load({bool silent = false}) async {
     if (!silent || _profitOverview == null) {
       setState(() {
@@ -199,6 +205,12 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     final resellerPay = _resellerPayments ?? const {};
     final resellerTotals = resellerPay['totals'] as Map<String, dynamic>? ?? {};
     final resellerPoints = (resellerPay['points'] as List<dynamic>?) ?? [];
+    final resellerOverview =
+        _asStringKeyedMap(overview['reseller_payments']);
+    final hasChartData = resellerPoints.any((raw) {
+      if (raw is! Map) return false;
+      return ((raw['total_paid'] as num?)?.toDouble() ?? 0) > 0;
+    });
     final selectedDayCommission =
         _commissionByDay[_fmtDay(_selectedDay)] ?? 0.0;
     final isToday = DateUtils.isSameDay(_selectedDay, DateTime.now());
@@ -322,25 +334,41 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 const SizedBox(height: 16),
                 _ResellerPeriodRow(
                   label: isToday ? 'Today (selected)' : 'Selected day',
-                  data: (overview['reseller_payments'] as Map?)?['daily']
-                      as Map<String, dynamic>?,
+                  data: _asStringKeyedMap(resellerOverview?['daily']),
                 ),
                 _ResellerPeriodRow(
                   label: 'This week',
-                  data: (overview['reseller_payments'] as Map?)?['weekly']
-                      as Map<String, dynamic>?,
+                  data: _asStringKeyedMap(resellerOverview?['weekly']),
                 ),
                 _ResellerPeriodRow(
                   label: 'This month',
-                  data: (overview['reseller_payments'] as Map?)?['monthly']
-                      as Map<String, dynamic>?,
+                  data: _asStringKeyedMap(resellerOverview?['monthly']),
                 ),
                 _ResellerPeriodRow(
                   label: 'This year',
-                  data: (overview['reseller_payments'] as Map?)?['annual']
-                      as Map<String, dynamic>?,
+                  data: _asStringKeyedMap(resellerOverview?['annual']),
                 ),
-                if (resellerPoints.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 12),
+                Text(
+                  'Record reseller payout',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Log a cash or bank payout to a partner. This updates activity logs and the totals above.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                ),
+                const SizedBox(height: 12),
+                _ResellerCommissionRecordForm(
+                  onRecorded: () => _load(silent: true),
+                ),
+                if (hasChartData) ...[
                   const SizedBox(height: 16),
                   Text(
                     'Daily payouts this month',
@@ -602,7 +630,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     final maxShow = points.length > 31 ? 31 : points.length;
     var maxY = 1.0;
     for (var i = 0; i < maxShow; i++) {
-      final m = points[i] as Map<String, dynamic>;
+      final raw = points[i];
+      if (raw is! Map) continue;
+      final m = Map<String, dynamic>.from(raw);
       final v = (m['total_paid'] ?? 0).toDouble();
       if (v > maxY) maxY = v;
       groups.add(
@@ -652,9 +682,12 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
             getTitlesWidget: (xv, _) {
               final i = xv.toInt();
               if (i < 0 || i >= maxShow) return const SizedBox.shrink();
-              final m = points[i] as Map<String, dynamic>;
-              final raw = (m['period_label'] ?? '').toString();
-              final day = raw.length >= 10 ? raw.substring(8, 10) : raw;
+              final raw = points[i];
+              if (raw is! Map) return const SizedBox.shrink();
+              final m = Map<String, dynamic>.from(raw);
+              final rawLabel = (m['period_label'] ?? '').toString();
+              final day =
+                  rawLabel.length >= 10 ? rawLabel.substring(8, 10) : rawLabel;
               return Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(day, style: const TextStyle(fontSize: 9)),
@@ -1265,6 +1298,190 @@ class _ResellerPeriodRow extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+class _ResellerCommissionRecordForm extends StatefulWidget {
+  const _ResellerCommissionRecordForm({required this.onRecorded});
+
+  final Future<void> Function() onRecorded;
+
+  @override
+  State<_ResellerCommissionRecordForm> createState() =>
+      _ResellerCommissionRecordFormState();
+}
+
+class _ResellerCommissionRecordFormState
+    extends State<_ResellerCommissionRecordForm> {
+  final _amountCtrl = TextEditingController();
+  final _noteCtrl = TextEditingController();
+  List<Map<String, dynamic>> _resellers = [];
+  String? _selectedResellerId;
+  bool _loadingResellers = true;
+  bool _submitting = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadResellers();
+  }
+
+  @override
+  void dispose() {
+    _amountCtrl.dispose();
+    _noteCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadResellers() async {
+    try {
+      final res = await portalDio().get<Map<String, dynamic>>('/admin/resellers');
+      final list = (res.data?['data'] as List<dynamic>?) ?? const [];
+      if (!mounted) return;
+      setState(() {
+        _resellers = list
+            .whereType<Map>()
+            .map((m) => Map<String, dynamic>.from(m))
+            .toList();
+        _loadingResellers = false;
+        if (_resellers.isNotEmpty && _selectedResellerId == null) {
+          _selectedResellerId = (_resellers.first['id'] ?? '').toString();
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingResellers = false;
+        _error = '$e';
+      });
+    }
+  }
+
+  Future<void> _submit() async {
+    final id = _selectedResellerId ?? '';
+    final amount = double.tryParse(_amountCtrl.text.trim()) ?? 0;
+    if (id.isEmpty) {
+      setState(() => _error = 'Select a reseller.');
+      return;
+    }
+    if (amount <= 0) {
+      setState(() => _error = 'Enter a commission amount greater than zero.');
+      return;
+    }
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      await portalDio().post<Map<String, dynamic>>(
+        '/admin/resellers/$id/commissions',
+        data: {
+          'amount': amount,
+          'note': _noteCtrl.text.trim(),
+        },
+      );
+      if (!mounted) return;
+      _amountCtrl.clear();
+      _noteCtrl.clear();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Commission ₱${amount.toStringAsFixed(2)} recorded.',
+          ),
+        ),
+      );
+      await widget.onRecorded();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      setState(() => _error = dioErrorMessage(e));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loadingResellers) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: LinearProgressIndicator(minHeight: 2),
+      );
+    }
+    if (_resellers.isEmpty) {
+      return Text(
+        'No resellers yet. Add partners under the Resellers tab first.',
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DropdownButtonFormField<String>(
+          initialValue: _selectedResellerId,
+          decoration: const InputDecoration(
+            labelText: 'Reseller *',
+            border: OutlineInputBorder(),
+          ),
+          items: _resellers.map((r) {
+            final id = (r['id'] ?? '').toString();
+            final name = (r['name'] ?? 'Partner').toString();
+            final category = (r['category'] ?? '').toString();
+            return DropdownMenuItem(
+              value: id,
+              child: Text(
+                category.isEmpty ? name : '$name · $category',
+              ),
+            );
+          }).toList(),
+          onChanged: _submitting
+              ? null
+              : (v) => setState(() => _selectedResellerId = v),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _amountCtrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            labelText: 'Commission amount (PHP) *',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _noteCtrl,
+          decoration: const InputDecoration(
+            labelText: 'Note (optional)',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            _error!,
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ],
+        const SizedBox(height: 12),
+        FilledButton.icon(
+          onPressed: _submitting ? null : _submit,
+          icon: _submitting
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.payments_outlined),
+          label: const Text('Record payout'),
+        ),
+      ],
     );
   }
 }
