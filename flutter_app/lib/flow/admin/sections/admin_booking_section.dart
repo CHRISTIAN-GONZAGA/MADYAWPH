@@ -4,21 +4,23 @@ import 'package:flutter/material.dart';
 import '../../../dio_client.dart';
 import '../../../locale_controller.dart';
 import '../../../widgets/app_state_views.dart';
-import '../../../widgets/chat_attachment.dart';
 import '../../../widgets/hotel_credits_policy.dart';
-import '../../dashboards.dart';
+import '../admin_dashboard_models.dart';
+import 'admin_walk_in_category_rooms_screen.dart';
 
-/// Admin local booking — same browse UI as public customers, submits to `/admin/bookings`.
+/// Admin walk-in booking — pick a category, then a color-coded room list.
 class AdminBookingSection extends StatefulWidget {
   const AdminBookingSection({
     super.key,
     required this.hotelId,
     required this.hotelName,
+    required this.rooms,
     required this.onChanged,
   });
 
   final String hotelId;
   final String hotelName;
+  final List<Map<String, dynamic>> rooms;
   final Future<void> Function() onChanged;
 
   @override
@@ -78,6 +80,39 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
     if (mounted) await _load();
   }
 
+  void _openCategory({
+    required String categoryId,
+    required String categoryName,
+  }) {
+    final categoryRooms = AdminDashboardModels.roomsForCategory(
+      widget.rooms,
+      categoryId: categoryId,
+      categoryName: categoryName,
+    );
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => AdminWalkInCategoryRoomsScreen(
+          categoryName: categoryName,
+          rooms: categoryRooms,
+          onBooked: _onBooked,
+        ),
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> _fallbackCategoriesFromRooms() {
+    final grouped = AdminDashboardModels.groupByCategory(widget.rooms);
+    final keys = grouped.keys.toList()..sort();
+    return keys
+        .map(
+          (label) => {
+            'id': label,
+            'name': label,
+          },
+        )
+        .toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!AdminCreditsGate.canPerformActions(context)) {
@@ -85,7 +120,8 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(24),
         children: [
-          Icon(Icons.lock_outline, size: 48, color: Theme.of(context).colorScheme.outline),
+          Icon(Icons.lock_outline,
+              size: 48, color: Theme.of(context).colorScheme.outline),
           const SizedBox(height: 12),
           Text(
             'Credits depleted. Top up in Settings to book walk-in guests.',
@@ -111,7 +147,11 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
       );
     }
 
-    final categories = (_categoriesRes?['categories'] as List<dynamic>?) ?? [];
+    final apiCategories =
+        (_categoriesRes?['categories'] as List<dynamic>?) ?? [];
+    final categories = apiCategories.isNotEmpty
+        ? apiCategories
+        : _fallbackCategoriesFromRooms();
     final scheme = Theme.of(context).colorScheme;
 
     return RefreshIndicator(
@@ -121,14 +161,14 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
         children: [
           Text(
-            'Local booking',
+            'Walk-in',
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.w800,
                 ),
           ),
           const SizedBox(height: 6),
           Text(
-            'Same room browse as the public customer portal. Bookings here are saved as Local (front desk), not Online.',
+            'Pick a category, then tap a green available room to book a local walk-in stay.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: scheme.onSurfaceVariant,
                   height: 1.35,
@@ -144,6 +184,8 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
                 ),
           ),
           const SizedBox(height: 16),
+          _WalkInStatusLegend(scheme: scheme),
+          const SizedBox(height: 16),
           Text(
             context.tr('find_your_room'),
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -152,7 +194,7 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Pick a category, choose an available room, then complete the booking form.',
+            'Categories show all rooms. Green = available, orange = reserved, red = occupied.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),
@@ -164,7 +206,8 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   children: [
-                    Icon(Icons.event_busy_outlined, size: 48, color: scheme.outline),
+                    Icon(Icons.event_busy_outlined,
+                        size: 48, color: scheme.outline),
                     const SizedBox(height: 12),
                     Text(
                       context.tr('no_categories_available'),
@@ -184,98 +227,65 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
             final m = c as Map<String, dynamic>;
             final id = '${m['id']}';
             final name = '${m['name']}';
-            final imageUrl =
-                ChatAttachment.resolveMediaUrl('${m['image_url'] ?? ''}');
-            final available = (m['available_rooms'] as num?)?.toInt() ?? 0;
-            final availLabel = available == 1
-                ? context.tr('one_room_available')
-                : context.tr('rooms_available_label', {'n': '$available'});
+            final categoryRooms = AdminDashboardModels.roomsForCategory(
+              widget.rooms,
+              categoryId: id,
+              categoryName: name,
+            );
+            final counts =
+                AdminDashboardModels.walkInStatusCounts(categoryRooms);
+            final summary = categoryRooms.isEmpty
+                ? 'No rooms linked'
+                : '${counts['available']} available · '
+                    '${counts['reserved']} reserved · '
+                    '${counts['occupied']} occupied';
 
             return Padding(
-              padding: const EdgeInsets.only(bottom: 14),
+              padding: const EdgeInsets.only(bottom: 10),
               child: Material(
                 color: scheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(16),
                 clipBehavior: Clip.antiAlias,
                 child: InkWell(
-                  onTap: available <= 0
-                      ? null
-                      : () {
-                          Navigator.of(context).push<void>(
-                            MaterialPageRoute<void>(
-                              builder: (_) => CustomerRoomsScreen(
-                                hotelId: widget.hotelId,
-                                categoryId: id,
-                                categoryName: name,
-                                categoryImageUrl: imageUrl,
-                                hotelName: widget.hotelName,
-                                adminLocalBooking: true,
-                                onBooked: _onBooked,
-                              ),
-                            ),
-                          );
-                        },
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (imageUrl.isEmpty)
-                        Container(
-                          height: 120,
-                          color: scheme.surfaceContainerHighest,
-                          alignment: Alignment.center,
-                          child: Icon(Icons.category_outlined,
-                              size: 40, color: scheme.outline),
-                        )
-                      else
-                        NetworkMediaImage(
-                          url: imageUrl,
-                          height: 120,
-                          width: double.infinity,
-                          error: Container(
-                            height: 120,
-                            color: scheme.surfaceContainerHighest,
-                            alignment: Alignment.center,
-                            child: Icon(Icons.broken_image_outlined,
-                                color: scheme.outline),
-                          ),
+                  onTap: () => _openCategory(
+                    categoryId: id,
+                    categoryName: name,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 12, 16),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: scheme.primaryContainer,
+                          child: Icon(Icons.king_bed_outlined,
+                              color: scheme.onPrimaryContainer),
                         ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
                                 name,
                                 style: Theme.of(context)
                                     .textTheme
                                     .titleMedium
                                     ?.copyWith(fontWeight: FontWeight.w800),
                               ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: available > 0
-                                    ? scheme.primaryContainer
-                                    : scheme.errorContainer
-                                        .withValues(alpha: 0.5),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                availLabel,
+                              const SizedBox(height: 4),
+                              Text(
+                                summary,
                                 style: Theme.of(context)
                                     .textTheme
-                                    .labelMedium
-                                    ?.copyWith(fontWeight: FontWeight.w700),
+                                    .bodySmall
+                                    ?.copyWith(color: scheme.onSurfaceVariant),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                        Icon(Icons.chevron_right, color: scheme.primary),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -283,6 +293,63 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
           }),
         ],
       ),
+    );
+  }
+}
+
+class _WalkInStatusLegend extends StatelessWidget {
+  const _WalkInStatusLegend({required this.scheme});
+
+  final ColorScheme scheme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      color: scheme.surfaceContainerLow,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Wrap(
+          spacing: 16,
+          runSpacing: 8,
+          alignment: WrapAlignment.center,
+          children: [
+            _legendDot(
+              AdminDashboardModels.walkInTileColor('available'),
+              'Available',
+            ),
+            _legendDot(
+              AdminDashboardModels.walkInTileColor('reserved'),
+              'Reserved',
+            ),
+            _legendDot(
+              AdminDashboardModels.walkInTileColor('occupied'),
+              'Occupied',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _legendDot(Color color, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: scheme.onSurface,
+          ),
+        ),
+      ],
     );
   }
 }

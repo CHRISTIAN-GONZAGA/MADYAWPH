@@ -120,14 +120,121 @@ class AdminDashboardModels {
     }
   }
 
-  /// Rooms with a booking not yet checked in (booked or reserved only).
+  /// Check-in is today or later (excludes stale reserved/booked rows).
+  static bool hasCheckInTodayOrLater(Map<String, dynamic> room) {
+    final start = stayStartDate(room);
+    if (start == null) return true;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final startDay = DateTime(start.year, start.month, start.day);
+    return !startDay.isBefore(today);
+  }
+
+  /// Rooms with a booking not yet checked in (booked or reserved, check-in today+).
   static bool isAwaitingCheckIn(Map<String, dynamic> room) {
     final s = statusOf(room);
-    return s == 'booked' || s == 'reserved';
+    if (s != 'booked' && s != 'reserved') return false;
+    return hasCheckInTodayOrLater(room);
   }
 
   static int bookedRoomCount(List<Map<String, dynamic>> rooms) {
     return rooms.where(isAwaitingCheckIn).length;
+  }
+
+  /// Walk-in tile grouping: available | reserved | occupied.
+  static String walkInTileStatus(Map<String, dynamic> room) {
+    final status = statusOf(room);
+    if (status == 'maintenance' || status == 'checked_in') return 'occupied';
+    if (status == 'available') return 'available';
+    if (status.isEmpty) {
+      final guest = (room['current_guest_name'] ?? '').toString().trim();
+      return guest.isEmpty ? 'available' : 'occupied';
+    }
+    if (status == 'reserved' || status == 'booked') {
+      final start = stayStartDate(room);
+      if (start == null) {
+        return status == 'reserved' ? 'reserved' : 'occupied';
+      }
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final startDay = DateTime(start.year, start.month, start.day);
+      if (startDay.isAfter(today)) return 'reserved';
+      return 'occupied';
+    }
+    return 'occupied';
+  }
+
+  static Color walkInTileColor(String walkInStatus) {
+    switch (walkInStatus) {
+      case 'available':
+        return Colors.green.shade600;
+      case 'reserved':
+        return Colors.orange.shade700;
+      default:
+        return Colors.red.shade600;
+    }
+  }
+
+  static String walkInTileStatusLabel(String walkInStatus) {
+    switch (walkInStatus) {
+      case 'available':
+        return 'Available';
+      case 'reserved':
+        return 'Reserved';
+      default:
+        return 'Occupied';
+    }
+  }
+
+  static String roomListTitle(Map<String, dynamic> room) {
+    final number = (room['room_number'] ?? '').toString().trim();
+    final name = (room['display_name'] ?? '').toString().trim();
+    if (number.isEmpty && name.isEmpty) return 'Room';
+    if (name.isEmpty) return 'Room $number';
+    if (number.isEmpty) return name;
+    return 'Room $number · $name';
+  }
+
+  static List<Map<String, dynamic>> roomsForCategory(
+    List<Map<String, dynamic>> rooms, {
+    required String categoryId,
+    required String categoryName,
+  }) {
+    final nameKey = categoryName.trim().toLowerCase();
+    final filtered = rooms.where((r) {
+      final cid = (r['category_id'] ?? '').toString().trim();
+      if (cid.isNotEmpty && cid == categoryId) return true;
+      final label = categoryLabel(r).trim().toLowerCase();
+      if (label.isEmpty || nameKey.isEmpty) return false;
+      return label == nameKey;
+    }).toList();
+    filtered.sort((a, b) {
+      final an = (a['room_number'] ?? '').toString();
+      final bn = (b['room_number'] ?? '').toString();
+      return an.compareTo(bn);
+    });
+    return filtered;
+  }
+
+  static Map<String, int> walkInStatusCounts(List<Map<String, dynamic>> rooms) {
+    var available = 0;
+    var reserved = 0;
+    var occupied = 0;
+    for (final r in rooms) {
+      switch (walkInTileStatus(r)) {
+        case 'available':
+          available++;
+        case 'reserved':
+          reserved++;
+        default:
+          occupied++;
+      }
+    }
+    return {
+      'available': available,
+      'reserved': reserved,
+      'occupied': occupied,
+    };
   }
 
   /// Checked in, booked, or reserved — active guest stays.
@@ -319,8 +426,8 @@ class AdminDashboardModels {
       final s = statusOf(r);
       if (s == 'available') vacant++;
       if (s == 'checked_in') checkedIn++;
-      if (s == 'reserved') reserved++;
-      if (s == 'booked') booked++;
+      if (s == 'reserved' && hasCheckInTodayOrLater(r)) reserved++;
+      if (s == 'booked' && hasCheckInTodayOrLater(r)) booked++;
       if (s == 'maintenance') maintenance++;
     }
     final reservedSoon = reservedArrivingSoonCount(rooms);

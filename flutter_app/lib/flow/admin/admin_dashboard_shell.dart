@@ -98,9 +98,9 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         badgeColor: const Color(0xFF6A1B9A),
       ),
       const AdminNavItem(
-        label: 'Book',
-        shortLabel: 'Book',
-        icon: Icons.event_available_outlined,
+        label: 'Walk-in',
+        shortLabel: 'Walk-in',
+        icon: Icons.meeting_room_outlined,
       ),
       AdminNavItem(
         label: 'Amenities',
@@ -453,6 +453,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           key: refreshKey,
           hotelId: hotelId,
           hotelName: hotelName,
+          rooms: _rooms,
           onChanged: widget.onRefresh,
         ),
         4,

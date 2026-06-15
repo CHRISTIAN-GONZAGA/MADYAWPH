@@ -398,7 +398,7 @@ class RoomSummarySection extends StatelessWidget {
                 list: rooms
                     .where(AdminDashboardModels.isAwaitingCheckIn)
                     .toList(),
-                subtitle: 'Awaiting guest check-in',
+                subtitle: 'Check-in today or later',
               ),
             ),
           ],
