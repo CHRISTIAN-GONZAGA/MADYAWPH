@@ -1,6 +1,7 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gloretto_mobile/flow/admin/sections/room_board_section.dart';
+import 'package:gloretto_mobile/flow/widgets/complete_guest_booking_dialog.dart';
 
 void main() {
   testWidgets('walk-in tab room tap opens booking form via navigator push',
@@ -22,7 +23,7 @@ void main() {
         home: Navigator(
           onGenerateRoute: (settings) {
             return MaterialPageRoute<void>(
-              builder: (_) => Scaffold(
+              builder: (ctx) => Scaffold(
                 body: RoomBoardSection(
                   rooms: rooms,
                   hotelName: 'Test Hotel',
@@ -38,6 +39,47 @@ void main() {
     await tester.tap(find.text('101'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Guest details'), findsOneWidget);
+    expect(find.text('Complete your booking'), findsOneWidget);
+    expect(find.text('Submit booking'), findsOneWidget);
+  });
+
+  testWidgets('complete booking dialog renders customer-style fields',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: FilledButton(
+                onPressed: () {
+                  showCompleteGuestBookingDialog(
+                    context: context,
+                    room: const {
+                      'id': 'room-1',
+                      'room_number': '101',
+                      'status': 'available',
+                      'price_per_night': 1500,
+                      'billing_mode': 'nightly',
+                    },
+                    config: CompleteGuestBookingConfig.adminWalkIn(const {
+                      'room_number': '101',
+                    }),
+                  );
+                },
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Complete your booking'), findsOneWidget);
+    expect(find.text('Full name'), findsOneWidget);
+    expect(find.text('Upload government ID *'), findsOneWidget);
+    expect(find.text('Discount (optional)'), findsOneWidget);
   });
 }

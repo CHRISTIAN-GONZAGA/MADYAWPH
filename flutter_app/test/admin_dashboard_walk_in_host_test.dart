@@ -1,14 +1,12 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gloretto_mobile/flow/admin/sections/room_board_section.dart';
 import 'package:gloretto_mobile/flow/admin/widgets/admin_dashboard_routes.dart';
-import 'package:gloretto_mobile/flow/admin/widgets/admin_room_navigation.dart';
-import 'package:gloretto_mobile/flow/admin/widgets/manual_booking_dialog.dart';
+import 'package:gloretto_mobile/flow/widgets/complete_guest_booking_dialog.dart';
 
 void main() {
-  testWidgets('walk-in tab uses dashboard full-screen host', (tester) async {
+  testWidgets('walk-in tab uses complete booking dialog via dashboard host',
+      (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: _DashboardHostHarness(
@@ -33,8 +31,9 @@ void main() {
     await tester.tap(find.text('101'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Guest details'), findsOneWidget);
-    expect(find.textContaining('Walk-in'), findsOneWidget);
+    expect(find.text('Complete your booking'), findsOneWidget);
+    expect(find.text('Upload government ID *'), findsOneWidget);
+    expect(find.text('Submit booking'), findsOneWidget);
   });
 }
 
@@ -48,54 +47,17 @@ class _DashboardHostHarness extends StatefulWidget {
 }
 
 class _DashboardHostHarnessState extends State<_DashboardHostHarness> {
-  Map<String, dynamic>? _walkInRoom;
-  Future<void> Function()? _onSuccess;
-  Completer<bool>? _completer;
-
-  void _openWalkIn(
-    Map<String, dynamic> room,
-    Future<void> Function() onSuccess,
-    Completer<bool> completer,
-  ) {
-    setState(() {
-      _walkInRoom = room;
-      _onSuccess = onSuccess;
-      _completer = completer;
-    });
-  }
-
-  void _closeWalkIn({required bool success}) {
-    _completer?.complete(success);
-    setState(() {
-      _walkInRoom = null;
-      _onSuccess = null;
-      _completer = null;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    if (_walkInRoom != null) {
-      return AdminDashboardRoutes(
-        openWalkIn: _openWalkIn,
-        openDetail: (_) {},
-        closeFullScreen: () => _closeWalkIn(success: false),
-        isFullScreenOpen: true,
-        child: AdminWalkInBookingScreen(
-          room: _walkInRoom!,
-          onSuccess: () async {
-            await _onSuccess?.call();
-            _closeWalkIn(success: true);
-          },
-          onClose: (success) {
-            if (!success) _closeWalkIn(success: false);
-          },
-        ),
-      );
-    }
-
     return AdminDashboardRoutes(
-      openWalkIn: _openWalkIn,
+      openWalkIn: (room, onSuccess, completer) async {
+        final payload = await showCompleteGuestBookingDialog(
+          context: context,
+          room: room,
+          config: CompleteGuestBookingConfig.adminWalkIn(room),
+        );
+        completer.complete(payload != null);
+      },
       openDetail: (_) {},
       closeFullScreen: () => false,
       isFullScreenOpen: false,

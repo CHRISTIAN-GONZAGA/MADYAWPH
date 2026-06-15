@@ -87,20 +87,11 @@ abstract final class AdminRoomNavigation {
         _missingRoomId(context);
         return;
       }
-      final booked = await openWalkInBooking(
+      await openWalkInBooking(
         context,
         room: room,
         onSuccess: onSuccess,
       );
-      if (booked && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Room ${room['room_number']} booked successfully.',
-            ),
-          ),
-        );
-      }
       return;
     }
 
@@ -119,14 +110,14 @@ abstract final class AdminRoomNavigation {
       return completer.future;
     }
 
-    final result = await _pushRoute<bool>(
-      context,
-      AdminWalkInBookingScreen(
-        room: room,
-        onSuccess: onSuccess,
-      ),
+    final booked = await showAdminWalkInBookingDialog(
+      context: context,
+      room: room,
     );
-    return result == true;
+    if (booked) {
+      await onSuccess();
+    }
+    return booked;
   }
 
   static Future<void> openDetailById(BuildContext context, String roomId) async {

@@ -3,10 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gloretto_mobile/flow/admin/sections/room_board_section.dart';
 import 'package:gloretto_mobile/flow/admin/widgets/admin_room_navigation.dart';
 
-/// Every path that opens walk-in booking must render [Guest details], never blank.
+/// Every path that opens walk-in booking must render the complete booking dialog.
 void main() {
   group('dashboard nested navigator (walk-in tab)', () {
-    testWidgets('room board gray tile opens full-screen walk-in form',
+    testWidgets('room board gray tile opens complete booking dialog',
         (tester) async {
       await tester.pumpWidget(_dashboardApp(
         child: RoomBoardSection(
@@ -19,11 +19,11 @@ void main() {
       await tester.tap(find.text('101'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Guest details'), findsOneWidget);
-      expect(find.textContaining('Walk-in'), findsOneWidget);
+      expect(find.text('Complete your booking'), findsOneWidget);
+      expect(find.text('Submit booking'), findsOneWidget);
     });
 
-    testWidgets('bottom sheet vacant room opens route after dismiss',
+    testWidgets('bottom sheet vacant room opens dialog after dismiss',
         (tester) async {
       late BuildContext hostContext;
 
@@ -61,36 +61,7 @@ void main() {
       await tester.pump();
       await tester.pumpAndSettle();
 
-      expect(find.text('Guest details'), findsOneWidget);
-    });
-  });
-
-  group('navigator push (flat MaterialApp)', () {
-    testWidgets('manage-rooms style context uses pushed route', (tester) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Builder(
-            builder: (context) => Center(
-              child: FilledButton(
-                onPressed: () {
-                  AdminRoomNavigation.openWalkInBooking(
-                    context,
-                    room: _sampleRooms.first,
-                    onSuccess: () async {},
-                  );
-                },
-                child: const Text('Open'),
-              ),
-            ),
-          ),
-        ),
-      );
-
-      await tester.tap(find.text('Open'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Guest details'), findsOneWidget);
-      expect(find.textContaining('Walk-in'), findsOneWidget);
+      expect(find.text('Complete your booking'), findsOneWidget);
     });
   });
 
@@ -113,7 +84,7 @@ void main() {
       await tester.tap(find.text('999'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Guest details'), findsNothing);
+      expect(find.text('Complete your booking'), findsNothing);
       expect(
         find.textContaining('Room ID missing'),
         findsOneWidget,

@@ -64,9 +64,6 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
   String _bookingListFilter = 'all';
   Map<String, dynamic>? _inbox;
   Timer? _chatPoll;
-  Map<String, dynamic>? _walkInRoom;
-  Future<void> Function()? _walkInOnSuccess;
-  Completer<bool>? _walkInCompleter;
   String? _detailRoomId;
 
   List<AdminNavItem> _navItemsFor(Map<String, dynamic> d) {
@@ -217,38 +214,31 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         .toList();
   }
 
-  bool get _isFullScreenOpen => _walkInRoom != null || _detailRoomId != null;
+  bool get _isFullScreenOpen => _detailRoomId != null;
 
   void _openWalkIn(
     Map<String, dynamic> room,
     Future<void> Function() onSuccess,
     Completer<bool> completer,
-  ) {
-    setState(() {
-      _walkInRoom = room;
-      _walkInOnSuccess = onSuccess;
-      _walkInCompleter = completer;
-      _detailRoomId = null;
-    });
+  ) async {
+    final booked = await showAdminWalkInBookingDialog(
+      context: context,
+      room: room,
+    );
+    if (!mounted) {
+      completer.complete(false);
+      return;
+    }
+    if (booked) {
+      await onSuccess();
+    }
+    completer.complete(booked);
   }
 
   void _openDetail(String roomId) {
     setState(() {
       _detailRoomId = roomId;
-      _walkInRoom = null;
-      _walkInOnSuccess = null;
-      _walkInCompleter = null;
     });
-  }
-
-  void _closeWalkIn({required bool success}) {
-    final completer = _walkInCompleter;
-    setState(() {
-      _walkInRoom = null;
-      _walkInOnSuccess = null;
-      _walkInCompleter = null;
-    });
-    completer?.complete(success);
   }
 
   void _closeDetail() {
@@ -256,10 +246,6 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
   }
 
   bool _handleInnerBack() {
-    if (_walkInRoom != null) {
-      _closeWalkIn(success: false);
-      return true;
-    }
     if (_detailRoomId != null) {
       _closeDetail();
       return true;
@@ -268,20 +254,6 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
   }
 
   Widget _buildFullScreen() {
-    if (_walkInRoom != null) {
-      final room = _walkInRoom!;
-      return AdminWalkInBookingScreen(
-        room: room,
-        onSuccess: () async {
-          await _walkInOnSuccess?.call();
-          if (mounted) _closeWalkIn(success: true);
-        },
-        onClose: (success) {
-          if (success) return;
-          _closeWalkIn(success: false);
-        },
-      );
-    }
     if (_detailRoomId != null) {
       return AdminRoomDetailScreen(
         roomId: _detailRoomId!,

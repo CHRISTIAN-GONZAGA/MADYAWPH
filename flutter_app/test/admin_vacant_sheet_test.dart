@@ -58,6 +58,6 @@ void main() {
     await tester.pump();
     await tester.pumpAndSettle();
 
-    expect(find.text('Guest details'), findsOneWidget);
+    expect(find.text('Complete your booking'), findsOneWidget);
   });
 }

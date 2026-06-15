@@ -430,7 +430,16 @@ Route::middleware('role:admin')->group(function (): void {
             'check_out_at' => ['required', 'date', 'after:check_in_at'],
             'payment_method' => ['required', 'in:Cash,GCash,PayMaya,Credit Card'],
             'check_in_now' => ['nullable', 'boolean'],
+            'discount_type' => ['nullable', 'string', 'in:none,pwd,senior'],
+            'guest_id_file' => ['nullable', 'image', 'max:5120'],
+            'discount_id_file' => ['nullable', 'image', 'max:5120'],
         ]);
+
+        $discountType = strtolower((string) ($validated['discount_type'] ?? 'none'));
+        $discountPercent = in_array($discountType, ['pwd', 'senior'], true) ? 20.0 : 0.0;
+        if ($discountType === 'none') {
+            $discountPercent = 0.0;
+        }
 
         $room = Room::withoutGlobalScopes()
             ->where('hotel_id', (string) $request->user()->hotel_id)
@@ -439,11 +448,18 @@ Route::middleware('role:admin')->group(function (): void {
             return response()->json(['message' => 'Room outside hotel scope.'], 403);
         }
 
-        $booking = $bookingService->create([
+        $bookingData = [
             ...$validated,
             'hotel_id' => (string) $room->hotel_id,
             'source' => 'admin',
-        ], $request->user());
+        ];
+        if ($discountPercent > 0) {
+            $bookingData['discount_type'] = $discountType;
+            $bookingData['discount_percent'] = $discountPercent;
+        }
+        unset($bookingData['guest_id_file'], $bookingData['discount_id_file']);
+
+        $booking = $bookingService->create($bookingData, $request->user());
 
         if ($request->boolean('check_in_now')) {
             $checkIn = Carbon::parse($validated['check_in_at']);

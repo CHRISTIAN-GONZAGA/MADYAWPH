@@ -30,11 +30,12 @@ void main() {
     await tester.tap(find.text('999'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Guest details'), findsNothing);
+    expect(find.text('Complete your booking'), findsNothing);
     expect(find.textContaining('Room ID missing'), findsOneWidget);
   });
 
-  testWidgets('hourly available room opens booking route', (tester) async {
+  testWidgets('hourly available room opens complete booking dialog',
+      (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Navigator(
@@ -65,6 +66,6 @@ void main() {
     await tester.tap(find.text('202'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Guest details'), findsOneWidget);
+    expect(find.text('Complete your booking'), findsOneWidget);
   });
 }
