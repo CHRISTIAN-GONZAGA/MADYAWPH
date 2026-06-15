@@ -3,7 +3,6 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../dio_client.dart';
 import '../../locale_controller.dart';
-import '../../widgets/app_overlay.dart';
 import '../admin/widgets/hourly_billing.dart';
 import '../customer_search_context.dart' as customer;
 import '../../widgets/app_button.dart';
@@ -147,16 +146,7 @@ Future<CompleteGuestBookingPayload?> showCompleteGuestBookingDialog({
     config: config,
   );
 
-  // Admin walk-in: same popup pattern as the public customer browse screen,
-  // shown on the app root navigator so it is never blank inside the dashboard.
-  if (config.showAdminPaymentMethods) {
-    return showAppOverlayDialog<CompleteGuestBookingPayload>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => dialog,
-    );
-  }
-
+  // Admin walk-in: plain dialog on the current navigator (same as customer browse).
   return showDialog<CompleteGuestBookingPayload>(
     context: context,
     barrierDismissible: false,

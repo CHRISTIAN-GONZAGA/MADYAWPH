@@ -20,6 +20,8 @@ import 'admin/admin_dashboard_models.dart';
 import 'admin/admin_dashboard_shell.dart';
 import 'admin/widgets/admin_room_navigation.dart';
 import 'admin/widgets/hourly_billing.dart';
+import 'admin/widgets/manual_booking_dialog.dart';
+import 'widgets/complete_guest_booking_dialog.dart';
 import 'customer_booking_status_screen.dart';
 import 'customer_browse_layout.dart';
 import 'customer_landscape_grid.dart';
@@ -3117,6 +3119,8 @@ class CustomerRoomsScreen extends StatefulWidget {
     this.categoryImageUrl = '',
     this.searchContext,
     this.hotelName = 'Hotel',
+    this.adminLocalBooking = false,
+    this.onBooked,
   });
 
   final String hotelId;
@@ -3125,6 +3129,9 @@ class CustomerRoomsScreen extends StatefulWidget {
   final String categoryImageUrl;
   final CustomerSearchContext? searchContext;
   final String hotelName;
+  /// When true, booking form matches customer UI but saves via `/admin/bookings` (local).
+  final bool adminLocalBooking;
+  final Future<void> Function()? onBooked;
 
   @override
   State<CustomerRoomsScreen> createState() => _CustomerRoomsScreenState();
@@ -3187,8 +3194,9 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     Map<String, dynamic> room, {
     required bool reserve,
   }) async {
+    final adminLocal = widget.adminLocalBooking;
     final fromSearch = widget.searchContext != null;
-    final forceReserve = fromSearch || reserve;
+    final forceReserve = !adminLocal && (fromSearch || reserve);
     final savedGuest = await AuthStorage.customerGuestContact();
     if (!mounted) return;
 
@@ -3199,9 +3207,18 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     final checkOutCtrl = TextEditingController();
     DateTime? checkInDate = fromSearch ? widget.searchContext!.checkIn : null;
     DateTime? checkOutDate = fromSearch ? widget.searchContext!.checkOut : null;
+    if (adminLocal && !fromSearch) {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      checkInDate = today;
+      checkOutDate = today.add(const Duration(days: 1));
+    }
     if (fromSearch) {
       checkInCtrl.text = widget.searchContext!.checkInIso;
       checkOutCtrl.text = widget.searchContext!.checkOutIso;
+    } else if (adminLocal && checkInDate != null && checkOutDate != null) {
+      checkInCtrl.text = checkInDate.toIso8601String().split('T').first;
+      checkOutCtrl.text = checkOutDate.toIso8601String().split('T').first;
     }
     var discountType = 'none';
     var paymentMethod = 'Cash';
@@ -3319,11 +3336,13 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
 
           return AlertDialog(
             title: Text(
-              fromSearch
-                  ? context.tr('complete_booking')
-                  : (forceReserve
-                      ? context.tr('request_reservation')
-                      : context.tr('book_room_title')),
+              adminLocal
+                  ? 'Complete your booking'
+                  : (fromSearch
+                      ? context.tr('complete_booking')
+                      : (forceReserve
+                          ? context.tr('request_reservation')
+                          : context.tr('book_room_title'))),
             ),
             content: SingleChildScrollView(
               child: Column(
@@ -3387,7 +3406,9 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                     icon: const Icon(Icons.credit_card_outlined),
                     label: Text(
                       guestIdFile == null
-                          ? 'Upload government ID *'
+                          ? (fromSearch
+                              ? 'Upload government ID *'
+                              : 'Upload government ID (optional)')
                           : 'ID attached — tap to replace',
                     ),
                   ),
@@ -3448,7 +3469,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                     onTap: fromSearch ? null : pickCheckOut,
                     suffixIcon: const Icon(Icons.calendar_month_outlined),
                   ),
-                  if (fromSearch) ...[
+                  if (fromSearch || adminLocal) ...[
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
                       value: paymentMethod,
@@ -3456,19 +3477,31 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                         labelText: 'Payment method',
                         border: OutlineInputBorder(),
                       ),
-                      items: const [
-                        DropdownMenuItem(value: 'Cash', child: Text('Cash at hotel')),
-                        DropdownMenuItem(value: 'Online', child: Text('Online (QR Ph)')),
-                      ],
+                      items: adminLocal
+                          ? const [
+                              DropdownMenuItem(value: 'Cash', child: Text('Cash')),
+                              DropdownMenuItem(value: 'GCash', child: Text('GCash')),
+                              DropdownMenuItem(value: 'PayMaya', child: Text('PayMaya')),
+                              DropdownMenuItem(
+                                value: 'Credit Card',
+                                child: Text('Credit Card'),
+                              ),
+                            ]
+                          : const [
+                              DropdownMenuItem(value: 'Cash', child: Text('Cash at hotel')),
+                              DropdownMenuItem(value: 'Online', child: Text('Online (QR Ph)')),
+                            ],
                       onChanged: (v) async {
                         final next = v ?? 'Cash';
                         setLocal(() => paymentMethod = next);
-                        if (next == 'Online' && paymentQrUrl.isEmpty) {
+                        if (!adminLocal &&
+                            next == 'Online' &&
+                            paymentQrUrl.isEmpty) {
                           await loadPaymentQr(setLocal);
                         }
                       },
                     ),
-                    if (paymentMethod == 'Online') ...[
+                    if (!adminLocal && paymentMethod == 'Online') ...[
                       const SizedBox(height: 12),
                       if (qrLoading)
                         const Center(child: CircularProgressIndicator())
@@ -3522,7 +3555,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                 child: const Text('Cancel'),
               ),
               AppPrimaryButton(
-                label: fromSearch
+                label: adminLocal || fromSearch
                     ? 'Submit booking'
                     : (forceReserve ? 'Submit request' : 'Book now'),
                 onPressed: () {
@@ -3576,7 +3609,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                     'check_in': checkInCtrl.text.trim(),
                     'check_out': checkOutCtrl.text.trim(),
                     'discount_type': discountType,
-                    if (fromSearch) 'payment_method': paymentMethod,
+                    if (fromSearch || adminLocal) 'payment_method': paymentMethod,
                   });
                 },
               ),
@@ -3586,6 +3619,50 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
       ),
     );
     if (payload == null || _booking) return;
+
+    if (adminLocal) {
+      setState(() => _booking = true);
+      try {
+        await submitAdminWalkInBooking(
+          room: room,
+          payload: CompleteGuestBookingPayload(
+            guestName: (payload['guest_name'] ?? '').toString(),
+            guestEmail: (payload['guest_email'] ?? '').toString(),
+            guestPhone: (payload['guest_phone'] ?? '').toString(),
+            checkIn: (payload['check_in'] ?? '').toString(),
+            checkOut: (payload['check_out'] ?? '').toString(),
+            discountType: (payload['discount_type'] ?? 'none').toString(),
+            paymentMethod: (payload['payment_method'] ?? 'Cash').toString(),
+            guestIdFile: guestIdFile,
+            discountIdFile: discountIdFile,
+          ),
+        );
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Room ${room['room_number']} booked as a local walk-in.',
+            ),
+          ),
+        );
+        await widget.onBooked?.call();
+        await _load();
+      } on DioException catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(dioErrorMessage(e))),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$e')),
+        );
+      } finally {
+        if (mounted) setState(() => _booking = false);
+      }
+      return;
+    }
+
     setState(() => _booking = true);
     try {
       final checkInIso = (payload['check_in'] ?? '').toString();
@@ -3905,7 +3982,17 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                                 ?.copyWith(color: scheme.onSurfaceVariant),
                           ),
                           const SizedBox(height: 12),
-                          if (widget.searchContext != null)
+                          if (widget.adminLocalBooking)
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton(
+                                onPressed: _booking
+                                    ? null
+                                    : () => _bookRoom(r, reserve: false),
+                                child: const Text('Book this room'),
+                              ),
+                            )
+                          else if (widget.searchContext != null)
                             SizedBox(
                               width: double.infinity,
                               child: FilledButton(
@@ -4020,11 +4107,13 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                     busy: _booking,
                     onBook: () => _bookRoom(
                           r,
-                          reserve: fromSearch
-                              ? _searchUsesReservationApi()
-                              : false,
+                          reserve: widget.adminLocalBooking
+                              ? false
+                              : (fromSearch
+                                  ? _searchUsesReservationApi()
+                                  : false),
                         ),
-                    onReserve: fromSearch
+                    onReserve: widget.adminLocalBooking || fromSearch
                         ? null
                         : () => _bookRoom(r, reserve: true),
                   );
