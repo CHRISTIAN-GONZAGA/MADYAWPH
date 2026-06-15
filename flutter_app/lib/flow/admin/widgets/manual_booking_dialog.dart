@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
+import '../../../widgets/app_overlay.dart';
 import '../admin_dashboard_models.dart';
 import '../../widgets/complete_guest_booking_dialog.dart';
 import 'hourly_billing.dart';
@@ -21,7 +22,7 @@ Future<bool> showAdminWalkInBookingDialog({
   try {
     await submitAdminWalkInBooking(room: room, payload: payload);
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnackBar(
         SnackBar(
           content: Text(
             'Room ${room['room_number']} booked successfully.',
@@ -32,14 +33,14 @@ Future<bool> showAdminWalkInBookingDialog({
     return true;
   } on DioException catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnackBar(
         SnackBar(content: Text(dioErrorMessage(e))),
       );
     }
     return false;
   } catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnackBar(
         SnackBar(content: Text('$e')),
       );
     }

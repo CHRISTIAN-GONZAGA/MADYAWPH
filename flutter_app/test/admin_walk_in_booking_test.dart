@@ -1,19 +1,20 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gloretto_mobile/flow/admin/widgets/manual_booking_dialog.dart';
-import 'package:gloretto_mobile/flow/widgets/complete_guest_booking_dialog.dart';
+import 'package:gloretto_mobile/navigation_keys.dart';
 
 void main() {
   testWidgets('showAdminWalkInBookingDialog opens complete booking popup',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
+        navigatorKey: appNavigatorKey,
         home: Builder(
           builder: (context) => Scaffold(
             body: Center(
               child: FilledButton(
                 onPressed: () {
-                  showCompleteGuestBookingDialog(
+                  showAdminWalkInBookingDialog(
                     context: context,
                     room: const {
                       'id': 'room-1',
@@ -23,9 +24,6 @@ void main() {
                       'category_name': 'Standard',
                       'billing_mode': 'nightly',
                     },
-                    config: CompleteGuestBookingConfig.adminWalkIn(const {
-                      'room_number': '101',
-                    }),
                   );
                 },
                 child: const Text('Open'),

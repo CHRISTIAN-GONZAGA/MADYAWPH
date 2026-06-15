@@ -3,6 +3,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../dio_client.dart';
 import '../../locale_controller.dart';
+import '../../widgets/app_overlay.dart';
 import '../admin/widgets/hourly_billing.dart';
 import '../customer_search_context.dart' as customer;
 import '../../widgets/app_button.dart';
@@ -49,6 +50,7 @@ class CompleteGuestBookingConfig {
     this.reserveMode = false,
     this.hotelId,
     this.showOnlinePayment = false,
+    this.fullScreen = false,
   });
 
   final String title;
@@ -64,6 +66,7 @@ class CompleteGuestBookingConfig {
   final bool reserveMode;
   final String? hotelId;
   final bool showOnlinePayment;
+  final bool fullScreen;
 
   factory CompleteGuestBookingConfig.adminWalkIn(Map<String, dynamic> room) {
     final now = DateTime.now();
@@ -76,8 +79,9 @@ class CompleteGuestBookingConfig {
       children: 0,
       initialCheckIn: today,
       initialCheckOut: today.add(const Duration(days: 1)),
-      requireGuestId: true,
+      requireGuestId: false,
       showAdminPaymentMethods: true,
+      fullScreen: true,
     );
   }
 
@@ -141,18 +145,25 @@ Future<CompleteGuestBookingPayload?> showCompleteGuestBookingDialog({
   required CompleteGuestBookingConfig config,
 }) {
   final theme = Theme.of(context);
-  return showDialog<CompleteGuestBookingPayload>(
-    context: context,
-    useRootNavigator: true,
-    barrierDismissible: false,
-    barrierColor: Colors.black54,
-    builder: (dialogContext) => Theme(
-      data: theme,
-      child: _CompleteGuestBookingDialog(
-        room: room,
-        config: config,
-      ),
+  final child = Theme(
+    data: theme,
+    child: _CompleteGuestBookingDialog(
+      room: room,
+      config: config,
     ),
+  );
+
+  if (config.fullScreen) {
+    return showAppOverlayPage<CompleteGuestBookingPayload>(
+      context: context,
+      builder: (_) => child,
+    );
+  }
+
+  return showAppOverlayDialog<CompleteGuestBookingPayload>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => child,
   );
 }
 
@@ -386,203 +397,280 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
             DropdownMenuItem(value: 'Online', child: Text('Online (QR Ph)')),
           ];
 
-    return AlertDialog(
-      backgroundColor: scheme.surface,
-      surfaceTintColor: scheme.surfaceTint,
-      title: Text(config.title),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Card(
-              color: scheme.primaryContainer.withValues(alpha: 0.35),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    final formFields = _buildFormFields(
+      context,
+      scheme,
+      checkInLabel,
+      paymentItems,
+      durationLabel,
+      estTotal,
+      estAfterDiscount,
+      discountPct,
+    );
+
+    final formBody = SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: formFields,
+      ),
+    );
+
+    final submitLabel =
+        config.reserveMode ? 'Submit request' : 'Submit booking';
+
+    if (config.fullScreen) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(config.title),
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ),
+        body: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: formBody,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
                   children: [
-                    Text(
-                      config.summaryTitle,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      context.tr('guest_party_line', {
-                        'rooms': '${config.rooms}',
-                        'adults': '${config.adults}',
-                        'children': '${config.children}',
-                      }),
-                    ),
-                    if (_checkInDate != null && _checkOutDate != null)
-                      Text(
-                        '${_fmtDate(_checkInDate!)} → ${_fmtDate(_checkOutDate!)}',
-                        style: Theme.of(context).textTheme.bodySmall,
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Cancel'),
                       ),
-                    Text(
-                      HourlyBilling.priceLabel(room),
-                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: AppPrimaryButton(
+                        label: submitLabel,
+                        onPressed: _submit,
+                      ),
                     ),
                   ],
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            AppInput(
-              controller: _nameCtrl,
-              label: context.tr('full_name'),
-            ),
-            const SizedBox(height: 8),
-            AppInput(
-              controller: _emailCtrl,
-              label: context.tr('email_gmail'),
-              keyboardType: TextInputType.emailAddress,
-            ),
-            const SizedBox(height: 8),
-            AppInput(
-              controller: _phoneCtrl,
-              label: context.tr('phone_number'),
-              keyboardType: TextInputType.phone,
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: () async {
-                final file = await ChatAttachment.pick(context);
-                if (file != null) setState(() => _guestIdFile = file);
-              },
-              icon: const Icon(Icons.credit_card_outlined),
-              label: Text(
-                _guestIdFile == null
-                    ? 'Upload government ID *'
-                    : 'ID attached — tap to replace',
-              ),
-            ),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              initialValue: _discountType,
-              decoration: const InputDecoration(
-                labelText: 'Discount (optional)',
-                border: OutlineInputBorder(),
-              ),
-              items: const [
-                DropdownMenuItem(value: 'none', child: Text('No discount')),
-                DropdownMenuItem(value: 'pwd', child: Text('PWD (20% off)')),
-                DropdownMenuItem(
-                  value: 'senior',
-                  child: Text('Senior citizen (20% off)'),
-                ),
-              ],
-              onChanged: (v) => setState(() {
-                _discountType = v ?? 'none';
-                if (_discountType == 'none') _discountIdFile = null;
-              }),
-            ),
-            if (_discountType != 'none') ...[
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: () async {
-                  final file = await ChatAttachment.pick(context);
-                  if (file != null) setState(() => _discountIdFile = file);
-                },
-                icon: const Icon(Icons.badge_outlined),
-                label: Text(
-                  _discountIdFile == null
-                      ? 'Upload discount ID photo'
-                      : 'Discount ID attached — tap to replace',
-                ),
-              ),
             ],
-            const SizedBox(height: 8),
-            AppInput(
-              controller: _checkInCtrl,
-              label: checkInLabel,
-              hint: config.lockDates ? null : 'Tap to open calendar',
-              readOnly: true,
-              onTap: config.lockDates ? null : _pickCheckIn,
-              suffixIcon: const Icon(Icons.calendar_month_outlined),
-            ),
-            const SizedBox(height: 8),
-            AppInput(
-              controller: _checkOutCtrl,
-              label: 'Check-out date',
-              hint: config.lockDates ? null : 'Tap to open calendar',
-              readOnly: true,
-              onTap: config.lockDates ? null : _pickCheckOut,
-              suffixIcon: const Icon(Icons.calendar_month_outlined),
-            ),
-            if (config.showOnlinePayment || config.showAdminPaymentMethods) ...[
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: _paymentMethod,
-                decoration: const InputDecoration(
-                  labelText: 'Payment method',
-                  border: OutlineInputBorder(),
-                ),
-                items: paymentItems,
-                onChanged: (v) async {
-                  final next = v ?? 'Cash';
-                  setState(() => _paymentMethod = next);
-                  if (next == 'Online' &&
-                      config.showOnlinePayment &&
-                      _paymentQrUrl.isEmpty) {
-                    await _loadPaymentQr();
-                  }
-                },
-              ),
-              if (_paymentMethod == 'Online' && config.showOnlinePayment) ...[
-                const SizedBox(height: 12),
-                if (_qrLoading)
-                  const Center(child: CircularProgressIndicator())
-                else if (_paymentQrUrl.isEmpty)
-                  const Text(
-                    'Hotel has not uploaded a payment QR yet. You may still submit — pay at the desk if needed.',
-                    style: TextStyle(fontSize: 12),
-                  )
-                else
-                  Center(
-                    child: Column(
-                      children: [
-                        const Text(
-                          'Scan to pay via GCash / Maya / QR Ph',
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(height: 8),
-                        NetworkMediaImage(
-                          url: _paymentQrUrl,
-                          width: 200,
-                          height: 200,
-                          fit: BoxFit.contain,
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            ],
-            const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                config.reserveMode
-                    ? 'The hotel will approve your dates. You will be notified when the stay is activated on check-in day.'
-                    : 'Duration: $durationLabel\n'
-                        'Estimated: ₱${estTotal.toStringAsFixed(2)}'
-                        '${discountPct > 0 ? ' → ₱${estAfterDiscount.toStringAsFixed(2)} after discount' : ''}',
-              ),
-            ),
-          ],
+          ),
         ),
-      ),
+      );
+    }
+
+    return AlertDialog(
+      backgroundColor: scheme.surface,
+      surfaceTintColor: scheme.surfaceTint,
+      title: Text(config.title),
+      content: formBody,
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
         AppPrimaryButton(
-          label: config.reserveMode ? 'Submit request' : 'Submit booking',
+          label: submitLabel,
           onPressed: _submit,
         ),
       ],
     );
+  }
+
+  List<Widget> _buildFormFields(
+    BuildContext context,
+    ColorScheme scheme,
+    String checkInLabel,
+    List<DropdownMenuItem<String>> paymentItems,
+    String durationLabel,
+    double estTotal,
+    double estAfterDiscount,
+    double discountPct,
+  ) {
+    return [
+      Card(
+        color: scheme.primaryContainer.withValues(alpha: 0.35),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                config.summaryTitle,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                context.tr('guest_party_line', {
+                  'rooms': '${config.rooms}',
+                  'adults': '${config.adults}',
+                  'children': '${config.children}',
+                }),
+              ),
+              if (_checkInDate != null && _checkOutDate != null)
+                Text(
+                  '${_fmtDate(_checkInDate!)} → ${_fmtDate(_checkOutDate!)}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              Text(
+                HourlyBilling.priceLabel(room),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height: 12),
+      AppInput(
+        controller: _nameCtrl,
+        label: context.tr('full_name'),
+      ),
+      const SizedBox(height: 8),
+      AppInput(
+        controller: _emailCtrl,
+        label: context.tr('email_gmail'),
+        keyboardType: TextInputType.emailAddress,
+      ),
+      const SizedBox(height: 8),
+      AppInput(
+        controller: _phoneCtrl,
+        label: context.tr('phone_number'),
+        keyboardType: TextInputType.phone,
+      ),
+      const SizedBox(height: 8),
+      OutlinedButton.icon(
+        onPressed: () async {
+          final file = await ChatAttachment.pick(context);
+          if (file != null) setState(() => _guestIdFile = file);
+        },
+        icon: const Icon(Icons.credit_card_outlined),
+        label: Text(
+          _guestIdFile == null
+              ? (config.requireGuestId
+                  ? 'Upload government ID *'
+                  : 'Upload government ID (optional)')
+              : 'ID attached — tap to replace',
+        ),
+      ),
+      const SizedBox(height: 8),
+      DropdownButtonFormField<String>(
+        initialValue: _discountType,
+        decoration: const InputDecoration(
+          labelText: 'Discount (optional)',
+          border: OutlineInputBorder(),
+        ),
+        items: const [
+          DropdownMenuItem(value: 'none', child: Text('No discount')),
+          DropdownMenuItem(value: 'pwd', child: Text('PWD (20% off)')),
+          DropdownMenuItem(
+            value: 'senior',
+            child: Text('Senior citizen (20% off)'),
+          ),
+        ],
+        onChanged: (v) => setState(() {
+          _discountType = v ?? 'none';
+          if (_discountType == 'none') _discountIdFile = null;
+        }),
+      ),
+      if (_discountType != 'none') ...[
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () async {
+            final file = await ChatAttachment.pick(context);
+            if (file != null) setState(() => _discountIdFile = file);
+          },
+          icon: const Icon(Icons.badge_outlined),
+          label: Text(
+            _discountIdFile == null
+                ? 'Upload discount ID photo'
+                : 'Discount ID attached — tap to replace',
+          ),
+        ),
+      ],
+      const SizedBox(height: 8),
+      AppInput(
+        controller: _checkInCtrl,
+        label: checkInLabel,
+        hint: config.lockDates ? null : 'Tap to open calendar',
+        readOnly: true,
+        onTap: config.lockDates ? null : _pickCheckIn,
+        suffixIcon: const Icon(Icons.calendar_month_outlined),
+      ),
+      const SizedBox(height: 8),
+      AppInput(
+        controller: _checkOutCtrl,
+        label: 'Check-out date',
+        hint: config.lockDates ? null : 'Tap to open calendar',
+        readOnly: true,
+        onTap: config.lockDates ? null : _pickCheckOut,
+        suffixIcon: const Icon(Icons.calendar_month_outlined),
+      ),
+      if (config.showOnlinePayment || config.showAdminPaymentMethods) ...[
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          initialValue: _paymentMethod,
+          decoration: const InputDecoration(
+            labelText: 'Payment method',
+            border: OutlineInputBorder(),
+          ),
+          items: paymentItems,
+          onChanged: (v) async {
+            final next = v ?? 'Cash';
+            setState(() => _paymentMethod = next);
+            if (next == 'Online' &&
+                config.showOnlinePayment &&
+                _paymentQrUrl.isEmpty) {
+              await _loadPaymentQr();
+            }
+          },
+        ),
+        if (_paymentMethod == 'Online' && config.showOnlinePayment) ...[
+          const SizedBox(height: 12),
+          if (_qrLoading)
+            const Center(child: CircularProgressIndicator())
+          else if (_paymentQrUrl.isEmpty)
+            const Text(
+              'Hotel has not uploaded a payment QR yet. You may still submit — pay at the desk if needed.',
+              style: TextStyle(fontSize: 12),
+            )
+          else
+            Center(
+              child: Column(
+                children: [
+                  const Text(
+                    'Scan to pay via GCash / Maya / QR Ph',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  NetworkMediaImage(
+                    url: _paymentQrUrl,
+                    width: 200,
+                    height: 200,
+                    fit: BoxFit.contain,
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ],
+      const SizedBox(height: 10),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          config.reserveMode
+              ? 'The hotel will approve your dates. You will be notified when the stay is activated on check-in day.'
+              : 'Duration: $durationLabel\n'
+                  'Estimated: ₱${estTotal.toStringAsFixed(2)}'
+                  '${discountPct > 0 ? ' → ₱${estAfterDiscount.toStringAsFixed(2)} after discount' : ''}',
+        ),
+      ),
+    ];
   }
 }

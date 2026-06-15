@@ -81,6 +81,8 @@ class HourlyBilling {
         checkOutDate.year,
         checkOutDate.month,
         checkOutDate.day,
+        11,
+        0,
       );
     }
     final inAt = customerStayCheckIn(checkInDate);

@@ -10,7 +10,9 @@ class FinancialComputationService
 {
     public function computeNights(CarbonInterface $checkIn, CarbonInterface $checkOut): int
     {
-        $nights = (int) $checkIn->diffInDays($checkOut);
+        $inDay = $checkIn->copy()->startOfDay();
+        $outDay = $checkOut->copy()->startOfDay();
+        $nights = (int) $inDay->diffInDays($outDay);
         if ($nights <= 0) {
             throw ValidationException::withMessages([
                 'check_out_date' => 'Check-out must be after check-in.',

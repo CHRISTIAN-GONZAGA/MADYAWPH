@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../widgets/hotel_credits_policy.dart';
 import '../../../widgets/room_status_label.dart';
 import '../admin_dashboard_models.dart';
 import '../widgets/admin_room_navigation.dart';
@@ -44,6 +45,10 @@ class RoomBoardSection extends StatelessWidget {
 
   Future<void> _onRoomTap(BuildContext context, Map<String, dynamic> room) async {
     HapticFeedback.selectionClick();
+    if (!AdminCreditsGate.canPerformActions(context)) {
+      AdminCreditsGate.showActionsBlockedMessage(context);
+      return;
+    }
     if (AdminDashboardModels.isWalkInBookable(room)) {
       final roomId = AdminDashboardModels.roomIdOf(room);
       if (roomId.isEmpty) {

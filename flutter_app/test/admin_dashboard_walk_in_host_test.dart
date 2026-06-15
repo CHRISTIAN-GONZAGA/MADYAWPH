@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gloretto_mobile/flow/admin/sections/room_board_section.dart';
 import 'package:gloretto_mobile/flow/admin/widgets/admin_dashboard_routes.dart';
+import 'package:gloretto_mobile/navigation_keys.dart';
 
 void main() {
   testWidgets('walk-in tab opens complete booking dialog on root navigator',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
+        navigatorKey: appNavigatorKey,
         home: Navigator(
           onGenerateRoute: (settings) {
             return MaterialPageRoute<void>(
@@ -42,7 +44,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Complete your booking'), findsOneWidget);
-    expect(find.text('Upload government ID *'), findsOneWidget);
+    expect(find.textContaining('Upload government ID'), findsOneWidget);
     expect(find.text('Submit booking'), findsOneWidget);
   });
 }

@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gloretto_mobile/flow/admin/sections/room_board_section.dart';
 import 'package:gloretto_mobile/flow/admin/widgets/admin_room_navigation.dart';
 
+import 'package:gloretto_mobile/navigation_keys.dart';
+
 /// Every path that opens walk-in booking must render the complete booking dialog.
 void main() {
   group('dashboard nested navigator (walk-in tab)', () {
@@ -106,6 +108,7 @@ const _sampleRooms = [
 
 Widget _dashboardApp({required Widget child}) {
   return MaterialApp(
+    navigatorKey: appNavigatorKey,
     home: Navigator(
       onGenerateRoute: (settings) {
         return MaterialPageRoute<void>(
