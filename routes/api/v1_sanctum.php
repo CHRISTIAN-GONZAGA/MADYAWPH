@@ -1532,14 +1532,18 @@ Route::get('/admin/rooms', function (Request $request) {
         ->orderBy('room_number')
         ->get()
         ->map(fn ($room) => array_merge($room->toArray(), [
+            'id' => (string) $room->id,
             'room_access_password' => (string) ($room->current_access_code ?? ''),
         ]));
 
     return response()->json(['data' => $rooms]);
 })->middleware('role:admin');
 
-Route::get('/admin/rooms/{room}', function (Request $request, Room $room) {
+Route::get('/admin/rooms/{id}', function (Request $request, string $id) {
     $hotelId = (string) $request->user()->hotel_id;
+    $room = Room::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->findOrFail($id);
     if ((string) $room->hotel_id !== $hotelId) {
         return response()->json(['message' => 'Room is outside your hotel scope.'], 403);
     }
@@ -1580,6 +1584,7 @@ Route::get('/admin/rooms/{room}', function (Request $request, Room $room) {
 
     return response()->json([
         'room' => array_merge($room->toArray(), [
+            'id' => (string) $room->id,
             'room_access_password' => (string) ($room->current_access_code ?? ''),
         ]),
         'active_booking' => $bookingPayload,

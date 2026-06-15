@@ -4,74 +4,13 @@ import 'package:flutter/material.dart';
 import '../../../dio_client.dart';
 import '../../../widgets/admin_time_slot_field.dart';
 import '../../../widgets/app_input.dart';
-import '../../../widgets/app_scaffold.dart';
 import '../admin_dashboard_models.dart';
-import '../../admin_rooms.dart';
+import 'admin_opaque_scaffold.dart';
 import 'hourly_billing.dart';
 
 const _inputDecoration = InputDecoration(
   border: OutlineInputBorder(),
 );
-
-/// Opens the walk-in booking form (full screen — mirrors public customer booking).
-Future<bool> showAdminManualBookingDialog({
-  required BuildContext context,
-  required Map<String, dynamic> room,
-  required Future<void> Function() onSuccess,
-}) async {
-  final result = await Navigator.of(context).push<bool>(
-    MaterialPageRoute<bool>(
-      builder: (_) => AdminWalkInBookingScreen(
-        room: room,
-        onSuccess: onSuccess,
-      ),
-    ),
-  );
-  return result == true;
-}
-
-/// Tap on room board tile — book if vacant, otherwise open room details.
-Future<void> handleAdminWalkInRoomTap(
-  BuildContext context, {
-  required Map<String, dynamic> room,
-  required Future<void> Function() onSuccess,
-}) async {
-  final roomId = AdminDashboardModels.roomIdOf(room);
-
-  if (AdminDashboardModels.isWalkInBookable(room)) {
-    if (roomId.isEmpty) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Room data is incomplete. Pull to refresh the dashboard.',
-          ),
-        ),
-      );
-      return;
-    }
-    final booked = await showAdminManualBookingDialog(
-      context: context,
-      room: room,
-      onSuccess: onSuccess,
-    );
-    if (booked && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Room ${room['room_number']} booked successfully.'),
-        ),
-      );
-    }
-    return;
-  }
-
-  if (roomId.isEmpty) return;
-  await Navigator.of(context).push<void>(
-    MaterialPageRoute<void>(
-      builder: (_) => AdminRoomDetailScreen(roomId: roomId),
-    ),
-  );
-}
 
 class AdminWalkInBookingScreen extends StatefulWidget {
   const AdminWalkInBookingScreen({
@@ -244,7 +183,7 @@ class _AdminWalkInBookingScreenState extends State<AdminWalkInBookingScreen> {
         validWindow ? HourlyBilling.stayCharge(widget.room, inAt, outAt) : 0.0;
     final stayHours = validWindow ? HourlyBilling.stayHours(inAt, outAt) : 0;
 
-    return AppScaffold(
+    return AdminOpaqueScaffold(
       appBar: AppBar(
         title: Text('Walk-in · Room $roomNo'),
       ),

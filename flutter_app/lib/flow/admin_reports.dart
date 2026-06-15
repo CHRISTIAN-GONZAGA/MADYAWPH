@@ -207,10 +207,10 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     final resellerPoints = (resellerPay['points'] as List<dynamic>?) ?? [];
     final resellerOverview =
         _asStringKeyedMap(overview['reseller_payments']);
-    final hasChartData = resellerPoints.any((raw) {
+    final monthDaysWithPayouts = resellerPoints.where((raw) {
       if (raw is! Map) return false;
       return ((raw['total_paid'] as num?)?.toDouble() ?? 0) > 0;
-    });
+    }).toList();
     final selectedDayCommission =
         _commissionByDay[_fmtDay(_selectedDay)] ?? 0.0;
     final isToday = DateUtils.isSameDay(_selectedDay, DateTime.now());
@@ -368,30 +368,28 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 _ResellerCommissionRecordForm(
                   onRecorded: () => _load(silent: true),
                 ),
-                if (hasChartData) ...[
+                if (monthDaysWithPayouts.isNotEmpty) ...[
                   const SizedBox(height: 16),
+                  const Divider(),
+                  const SizedBox(height: 8),
                   Text(
                     'Daily payouts this month',
-                    style: Theme.of(context).textTheme.labelLarge,
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    height: 180,
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 8, top: 8),
-                      child: BarChart(
-                        _resellerBarData(resellerPoints, scheme),
-                      ),
-                    ),
-                  ),
-                ] else ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    'No reseller payouts recorded for this month.',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: scheme.onSurfaceVariant,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
                         ),
                   ),
+                  const SizedBox(height: 8),
+                  ...monthDaysWithPayouts.map((raw) {
+                    final m = Map<String, dynamic>.from(raw as Map);
+                    final label = (m['period_label'] ?? '').toString();
+                    final paid = (m['total_paid'] as num?)?.toDouble() ?? 0;
+                    final count = m['payment_count'] ?? 0;
+                    return _MetricLine(
+                      label: label.isEmpty ? 'Day' : label,
+                      value:
+                          '₱${_fmtNum(paid)} · $count payment${count == 1 ? '' : 's'}',
+                    );
+                  }),
                 ],
               ],
             ),
@@ -616,81 +614,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   short,
                   style: const TextStyle(fontSize: 9),
                 ),
-              );
-            },
-          ),
-        ),
-      ),
-      barGroups: groups,
-    );
-  }
-
-  BarChartData _resellerBarData(List<dynamic> points, ColorScheme scheme) {
-    final groups = <BarChartGroupData>[];
-    final maxShow = points.length > 31 ? 31 : points.length;
-    var maxY = 1.0;
-    for (var i = 0; i < maxShow; i++) {
-      final raw = points[i];
-      if (raw is! Map) continue;
-      final m = Map<String, dynamic>.from(raw);
-      final v = (m['total_paid'] ?? 0).toDouble();
-      if (v > maxY) maxY = v;
-      groups.add(
-        BarChartGroupData(
-          x: i,
-          barRods: [
-            BarChartRodData(
-              toY: v,
-              width: 8,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
-              color: scheme.tertiary,
-            ),
-          ],
-        ),
-      );
-    }
-
-    return BarChartData(
-      maxY: maxY * 1.15,
-      gridData: FlGridData(
-        show: true,
-        drawVerticalLine: false,
-        horizontalInterval: maxY > 0 ? maxY / 4 : 1,
-        getDrawingHorizontalLine: (_) => FlLine(
-          color: scheme.outlineVariant.withValues(alpha: 0.5),
-          strokeWidth: 1,
-        ),
-      ),
-      borderData: FlBorderData(show: false),
-      titlesData: FlTitlesData(
-        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        leftTitles: AxisTitles(
-          sideTitles: SideTitles(
-            showTitles: true,
-            reservedSize: 44,
-            getTitlesWidget: (v, _) => Text(
-              v >= 1000 ? '${(v / 1000).toStringAsFixed(1)}k' : v.toInt().toString(),
-              style: const TextStyle(fontSize: 10),
-            ),
-          ),
-        ),
-        bottomTitles: AxisTitles(
-          sideTitles: SideTitles(
-            showTitles: true,
-            reservedSize: 28,
-            getTitlesWidget: (xv, _) {
-              final i = xv.toInt();
-              if (i < 0 || i >= maxShow) return const SizedBox.shrink();
-              final raw = points[i];
-              if (raw is! Map) return const SizedBox.shrink();
-              final m = Map<String, dynamic>.from(raw);
-              final rawLabel = (m['period_label'] ?? '').toString();
-              final day =
-                  rawLabel.length >= 10 ? rawLabel.substring(8, 10) : rawLabel;
-              return Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(day, style: const TextStyle(fontSize: 9)),
               );
             },
           ),
@@ -1407,9 +1330,11 @@ class _ResellerCommissionRecordFormState
   @override
   Widget build(BuildContext context) {
     if (_loadingResellers) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 8),
-        child: LinearProgressIndicator(minHeight: 2),
+      return Text(
+        'Loading partners…',
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
       );
     }
     if (_resellers.isEmpty) {

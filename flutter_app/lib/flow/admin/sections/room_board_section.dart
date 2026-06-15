@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../../widgets/room_status_label.dart';
 import '../admin_dashboard_models.dart';
-import '../widgets/manual_booking_dialog.dart';
+import '../widgets/admin_room_navigation.dart';
 
 /// Visual room board grouped by category — tap a room to book or manage.
 class RoomBoardSection extends StatelessWidget {
@@ -40,7 +40,7 @@ class RoomBoardSection extends StatelessWidget {
 
   Future<void> _onRoomTap(BuildContext context, Map<String, dynamic> room) async {
     HapticFeedback.selectionClick();
-    await handleAdminWalkInRoomTap(
+    await AdminRoomNavigation.handleRoomTap(
       context,
       room: room,
       onSuccess: onChanged,

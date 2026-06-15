@@ -2,9 +2,11 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../dio_client.dart';
-import '../widgets/app_scaffold.dart';
 import '../widgets/app_state_views.dart';
 import '../widgets/room_status_label.dart';
+import 'admin/admin_dashboard_models.dart';
+import 'admin/widgets/admin_opaque_scaffold.dart';
+import 'admin/widgets/admin_room_navigation.dart';
 import 'admin/widgets/stay_receipt_dialog.dart';
 import 'admin_categories.dart';
 
@@ -103,13 +105,13 @@ class _AdminRoomsScreenState extends State<AdminRoomsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return AppScaffold(
+    return AdminOpaqueScaffold(
       appBar: AppBar(
         title: const Text('Manage rooms'),
         actions: [
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
           IconButton(
-            onPressed: () => Navigator.of(context).push<void>(
+            onPressed: () => Navigator.of(context, rootNavigator: true).push<void>(
               MaterialPageRoute<void>(
                   builder: (_) => const AdminCategoriesScreen()),
             ),
@@ -205,14 +207,8 @@ class _AdminRoomsScreenState extends State<AdminRoomsScreen> {
                         room: r,
                         categoryFallback: cat,
                         onOpenDetail: () async {
-                          final id =
-                              (r['id'] ?? r['_id'] ?? '').toString();
-                          await Navigator.of(context).push<void>(
-                            MaterialPageRoute<void>(
-                              builder: (_) =>
-                                  AdminRoomDetailScreen(roomId: id),
-                            ),
-                          );
+                          final id = AdminDashboardModels.roomIdOf(r);
+                          await AdminRoomNavigation.openDetailById(context, id);
                           await _load();
                         },
                       ),
@@ -294,6 +290,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   bool _checkingOut = false;
   bool _updatingPayment = false;
   bool _issuingRefund = false;
+  late final String _roomId;
 
   static Map<String, dynamic>? _asMap(dynamic value) {
     if (value is Map<String, dynamic>) return value;
@@ -304,20 +301,32 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _roomId = AdminDashboardModels.normalizeRoomIdString(widget.roomId);
     _load();
   }
 
   Future<void> _load() async {
+    if (_roomId.isEmpty) {
+      setState(() {
+        _loading = false;
+        _error = 'Invalid room ID. Go back and try again.';
+      });
+      return;
+    }
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final res = await portalDio()
-          .get<Map<String, dynamic>>('/admin/rooms/${widget.roomId}');
+          .get<Map<String, dynamic>>('/admin/rooms/$_roomId');
+      if (!mounted) return;
       setState(() {
         _data = res.data;
         _loading = false;
+        if (_data == null || _data!.isEmpty) {
+          _error = 'No room data returned from the server.';
+        }
       });
     } on DioException catch (e) {
       setState(() {
@@ -336,7 +345,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     final booking = _data?['active_booking'] as Map<String, dynamic>?;
     final room = _data?['room'] as Map<String, dynamic>?;
     final bookingId = booking?['id']?.toString() ?? '';
-    final roomId = room?['id']?.toString() ?? widget.roomId;
+    final roomId = room?['id']?.toString() ?? _roomId;
     if (bookingId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('No active booking for this room.')));
@@ -425,7 +434,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   Future<void> _checkoutGuest() async {
     final room = _data?['room'] as Map<String, dynamic>?;
     final booking = _data?['active_booking'] as Map<String, dynamic>?;
-    final roomId = (room?['id'] ?? widget.roomId).toString();
+    final roomId = (room?['id'] ?? _roomId).toString();
     final guest = (room?['current_guest_name'] ?? booking?['guest_name'] ?? 'Guest').toString();
     final paid = (booking?['payment_status'] ?? '').toString() == 'paid';
 
@@ -485,7 +494,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   Future<void> _changeStatus() async {
     final room = _data?['room'] as Map<String, dynamic>?;
     final booking = _data?['active_booking'] as Map<String, dynamic>?;
-    final roomId = (room?['id'] ?? widget.roomId).toString();
+    final roomId = (room?['id'] ?? _roomId).toString();
     final current = (room?['status'] ?? 'available').toString();
     final paid = (booking?['payment_status'] ?? '').toString() == 'paid';
     final hasStay = current == 'checked_in' ||
@@ -596,7 +605,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     final booking = _data?['active_booking'] as Map<String, dynamic>?;
     final room = _data?['room'] as Map<String, dynamic>?;
     final bookingId = (booking?['id'] ?? '').toString();
-    final fromRoomId = (room?['id'] ?? widget.roomId).toString();
+    final fromRoomId = (room?['id'] ?? _roomId).toString();
     if (bookingId.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -985,7 +994,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return AppScaffold(
+    return AdminOpaqueScaffold(
       appBar: AppBar(
         title: const Text('Room details'),
         actions: [
@@ -1007,6 +1016,12 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     if (_loading) return const AppLoadingView();
     if (_error != null) {
       return AppErrorView(message: _error!, onRetry: _load);
+    }
+    if (_data == null) {
+      return AppErrorView(
+        message: 'Room data is unavailable.',
+        onRetry: _load,
+      );
     }
 
     final room = _asMap(_data!['room']);
@@ -1227,7 +1242,8 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
           const Text('No charges yet.')
         else
           ...charges.take(20).map((c) {
-            final m = c as Map<String, dynamic>;
+            if (c is! Map) return const SizedBox.shrink();
+            final m = Map<String, dynamic>.from(c);
             return Card(
               child: ListTile(
                 leading: const Icon(Icons.receipt_long_outlined),

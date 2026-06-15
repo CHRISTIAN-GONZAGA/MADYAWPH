@@ -221,6 +221,11 @@ class AppStrings {
           'Your request was submitted. Save your reference and contact the hotel — they will confirm by email or phone.',
       'updates_automatically':
           'You can leave this screen open — it updates automatically.',
+      'leave_booking_title': 'Are you sure?',
+      'leave_booking_message':
+          'Your booking is still being processed. If you leave now, save your reference number so you can track it later.',
+      'stay_on_screen': 'Stay',
+      'leave_screen': 'Leave',
       'complete_online_payment': 'Complete online payment',
       'pay_qr_hint':
           'Pay via GCash, Maya, or QR Ph using the hotel QR below. The hotel will verify your payment reference when approving.',
@@ -406,6 +411,11 @@ class AppStrings {
           'Naipasa na ang iyong request. I-save ang reference at kontakin ang hotel — kumpirmahin nila sa email o telepono.',
       'updates_automatically':
           'Maaari mong iwanan ang screen na ito — awtomatikong mag-u-update.',
+      'leave_booking_title': 'Sigurado ka ba?',
+      'leave_booking_message':
+          'Pinoproseso pa ang iyong booking. Kung aalis ka ngayon, i-save ang reference number para masubaybayan ito mamaya.',
+      'stay_on_screen': 'Manatili',
+      'leave_screen': 'Umalis',
       'complete_online_payment': 'Kumpletuhin ang online payment',
       'pay_qr_hint':
           'Magbayad gamit ang GCash, Maya, o QR Ph sa QR ng hotel sa ibaba. Biveripika ng hotel ang payment reference kapag inaprubahan.',

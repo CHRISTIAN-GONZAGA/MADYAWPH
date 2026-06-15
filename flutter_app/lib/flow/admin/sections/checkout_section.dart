@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
 import '../admin_dashboard_models.dart';
-import '../../admin_rooms.dart';
+import '../widgets/admin_room_navigation.dart';
 import '../widgets/stay_receipt_dialog.dart';
 
 class CheckoutSection extends StatefulWidget {
@@ -257,12 +257,9 @@ class _CheckoutRoomCard extends StatelessWidget {
         isThreeLine: true,
         trailing: const Icon(Icons.chevron_right),
         onTap: () {
-          Navigator.of(context).push<void>(
-            MaterialPageRoute<void>(
-              builder: (_) => AdminRoomDetailScreen(
-                roomId: (room['id'] ?? '').toString(),
-              ),
-            ),
+          AdminRoomNavigation.openDetailById(
+            context,
+            AdminDashboardModels.roomIdOf(room),
           );
         },
       ),

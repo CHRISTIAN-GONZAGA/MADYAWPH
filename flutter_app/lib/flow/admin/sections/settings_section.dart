@@ -115,7 +115,7 @@ class SettingsSection extends StatelessWidget {
               subtitle: 'Add, edit, passwords, fees, checkout',
               enabled: !creditsLocked,
               onTap: () async {
-                await Navigator.of(context).push<void>(
+                await Navigator.of(context, rootNavigator: true).push<void>(
                   MaterialPageRoute<void>(
                     builder: (_) => const AdminRoomsScreen(),
                   ),

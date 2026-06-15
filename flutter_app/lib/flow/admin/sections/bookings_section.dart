@@ -6,7 +6,7 @@ import '../../../widgets/insufficient_hotel_credits.dart';
 import '../../../widgets/admin_month_calendar.dart';
 import '../../../widgets/admin_time_slot_field.dart';
 import '../admin_dashboard_models.dart';
-import '../../admin_rooms.dart';
+import '../widgets/admin_room_navigation.dart';
 import '../../admin_chat.dart';
 
 class BookingsSection extends StatefulWidget {
@@ -316,7 +316,7 @@ class _BookingsSectionState extends State<BookingsSection>
   }
 
   Future<void> _checkInRoom(Map<String, dynamic> room) async {
-    final roomId = (room['id'] ?? '').toString();
+    final roomId = AdminDashboardModels.roomIdOf(room);
     if (roomId.isEmpty) return;
 
     final inDate = AdminDashboardModels.stayStartDate(room) ?? DateTime.now();
@@ -632,14 +632,9 @@ class _BookingsSectionState extends State<BookingsSection>
           child: const Text('Check in'),
         ),
         onTap: () {
-          final roomId = AdminDashboardModels.roomIdOf(room);
-          if (roomId.isEmpty) return;
-          Navigator.of(context).push<void>(
-            MaterialPageRoute<void>(
-              builder: (_) => AdminRoomDetailScreen(
-                roomId: roomId,
-              ),
-            ),
+          AdminRoomNavigation.openDetailById(
+            context,
+            AdminDashboardModels.roomIdOf(room),
           );
         },
       ),

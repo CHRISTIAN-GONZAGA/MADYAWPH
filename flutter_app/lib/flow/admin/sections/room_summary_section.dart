@@ -4,9 +4,7 @@ import 'package:flutter/services.dart';
 import '../../../widgets/room_status_label.dart';
 import '../admin_dashboard_models.dart';
 import '../widgets/booking_overview_cards.dart';
-import '../widgets/manual_booking_dialog.dart';
-import '../../admin_rooms.dart';
-
+import '../widgets/admin_room_navigation.dart';
 class RoomSummarySection extends StatelessWidget {
   const RoomSummarySection({
     super.key,
@@ -90,6 +88,7 @@ class RoomSummarySection extends StatelessWidget {
   }) {
     showModalBottomSheet<void>(
       context: context,
+      useRootNavigator: true,
       showDragHandle: true,
       isScrollControlled: true,
       useSafeArea: true,
@@ -168,34 +167,12 @@ class RoomSummarySection extends StatelessWidget {
             ? const Icon(Icons.person_add_outlined)
             : const Icon(Icons.chevron_right),
         onTap: () {
-          Navigator.of(sheetContext).pop();
-          WidgetsBinding.instance.addPostFrameCallback((_) async {
-            if (!hostContext.mounted) return;
-            if (AdminDashboardModels.isWalkInBookable(r)) {
-              await handleAdminWalkInRoomTap(
-                hostContext,
-                room: r,
-                onSuccess: onRefresh,
-              );
-              return;
-            }
-            final roomId = AdminDashboardModels.roomIdOf(r);
-            if (roomId.isEmpty) {
-              ScaffoldMessenger.of(hostContext).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    'Room ID missing. Pull to refresh the dashboard.',
-                  ),
-                ),
-              );
-              return;
-            }
-            await Navigator.of(hostContext).push<void>(
-              MaterialPageRoute<void>(
-                builder: (_) => AdminRoomDetailScreen(roomId: roomId),
-              ),
-            );
-          });
+          AdminRoomNavigation.openRoom(
+            hostContext,
+            room: r,
+            onSuccess: onRefresh,
+            sheetContext: sheetContext,
+          );
         },
       ),
     );
@@ -210,6 +187,7 @@ class RoomSummarySection extends StatelessWidget {
     HapticFeedback.selectionClick();
     showModalBottomSheet<void>(
       context: context,
+      useRootNavigator: true,
       showDragHandle: true,
       builder: (ctx) {
         final maint =
@@ -238,13 +216,11 @@ class RoomSummarySection extends StatelessWidget {
                         Text((r['display_name'] ?? 'Maintenance').toString()),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () {
-                      Navigator.of(ctx).pop();
-                      final roomId = AdminDashboardModels.roomIdOf(r);
-                      if (roomId.isEmpty) return;
-                      Navigator.of(context).push<void>(
-                        MaterialPageRoute<void>(
-                          builder: (_) => AdminRoomDetailScreen(roomId: roomId),
-                        ),
+                      AdminRoomNavigation.openRoom(
+                        context,
+                        room: r,
+                        onSuccess: onRefresh,
+                        sheetContext: ctx,
                       );
                     },
                   ),

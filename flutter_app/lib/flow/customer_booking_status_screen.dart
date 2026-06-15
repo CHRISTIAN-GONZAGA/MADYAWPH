@@ -106,13 +106,44 @@ class _CustomerBookingStatusScreenState
     return method.toLowerCase() == 'online';
   }
 
+  bool get _isProcessing => !_isApproved && !_isRejected;
+
+  Future<bool> _confirmLeave() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(context.tr('leave_booking_title')),
+        content: Text(context.tr('leave_booking_message')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(context.tr('stay_on_screen')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(context.tr('leave_screen')),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final status = (_reservation?['status'] ?? 'pending_approval').toString();
 
     return LocaleScope(
-      builder: (context, _) => AppScaffold(
+      builder: (context, _) => PopScope(
+        canPop: !_isProcessing,
+        onPopInvokedWithResult: (didPop, _) async {
+          if (didPop) return;
+          if (await _confirmLeave() && context.mounted) {
+            Navigator.of(context).pop();
+          }
+        },
+        child: AppScaffold(
       appBar: AppBar(title: Text(context.tr('booking_status'))),
       body: _error != null && _reservation == null
           ? Center(
@@ -232,6 +263,7 @@ class _CustomerBookingStatusScreenState
             ),
           ),
     ),
+      ),
     );
   }
 

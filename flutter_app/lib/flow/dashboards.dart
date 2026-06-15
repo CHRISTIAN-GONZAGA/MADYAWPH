@@ -11,9 +11,13 @@ import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_input.dart';
 import '../widgets/app_scaffold.dart';
+import 'admin/widgets/admin_opaque_scaffold.dart';
 import '../widgets/app_state_views.dart';
 import '../widgets/dashboard_clock.dart';
-import 'admin_rooms.dart';
+import 'admin/admin_dashboard_models.dart';
+import 'admin/admin_dashboard_shell.dart';
+import 'admin/widgets/admin_room_navigation.dart';
+import 'admin/widgets/hourly_billing.dart';
 import 'customer_booking_status_screen.dart';
 import 'customer_browse_layout.dart';
 import 'customer_landscape_grid.dart';
@@ -21,8 +25,6 @@ import 'customer_search_context.dart';
 import 'customer_tools.dart';
 import '../widgets/chat_attachment.dart';
 import '../widgets/payment_redirect.dart';
-import 'admin/admin_dashboard_shell.dart';
-import 'admin/widgets/hourly_billing.dart';
 import 'portal_sign_out.dart';
 // --- Admin ---
 
@@ -696,7 +698,7 @@ class AdminRoomSummaryDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppScaffold(
+    return AdminOpaqueScaffold(
       appBar: AppBar(title: Text(title)),
       body: rooms.isEmpty
           ? Center(
@@ -714,7 +716,9 @@ class AdminRoomSummaryDetailScreen extends StatelessWidget {
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (context, i) {
                 final room = rooms[i];
-                final roomId = (room['id'] ?? room['_id'] ?? '').toString();
+                final roomId = AdminDashboardModels.roomIdOf(
+                  room as Map<String, dynamic>,
+                );
                 final roomNo = (room['room_number'] ?? '-').toString();
                 final guest =
                     (room['current_guest_name'] ?? '').toString().trim();
@@ -737,12 +741,7 @@ class AdminRoomSummaryDetailScreen extends StatelessWidget {
                     onTap: roomId.isEmpty
                         ? null
                         : () {
-                            Navigator.of(context).push<void>(
-                              MaterialPageRoute<void>(
-                                builder: (_) =>
-                                    AdminRoomDetailScreen(roomId: roomId),
-                              ),
-                            );
+                            AdminRoomNavigation.openDetailById(context, roomId);
                           },
                   ),
                 );
