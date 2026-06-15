@@ -23,29 +23,50 @@ Future<T?> showAppOverlayDialog<T>({
   );
 }
 
-void showAppSnackBar(SnackBar snackBar) {
+void showAppSnackBar(SnackBar snackBar, {BuildContext? context}) {
+  if (context != null && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(snackBar);
+    return;
+  }
   final overlayContext = appNavigatorKey.currentContext;
   if (overlayContext == null) return;
   ScaffoldMessenger.of(overlayContext).showSnackBar(snackBar);
 }
 
-/// Pushes a full-screen route on the app root navigator (reliable on nested dashboards).
+/// Pushes a full-screen route on the admin nested navigator (matches dashboard taps).
+Future<T?> pushAdminFullScreen<T>(
+  BuildContext context, {
+  required WidgetBuilder builder,
+}) {
+  if (!context.mounted) {
+    return Future<T?>.value(null);
+  }
+
+  final route = MaterialPageRoute<T>(
+    fullscreenDialog: true,
+    builder: builder,
+  );
+
+  final adminNav = adminDashboardNavigatorKey.currentState;
+  if (adminNav != null) {
+    return adminNav.push<T>(route);
+  }
+
+  return Navigator.of(context).push<T>(route);
+}
+
+/// Pushes a full-screen route on the app root navigator (fallback).
 Future<T?> showAppOverlayPage<T>({
   BuildContext? context,
   required WidgetBuilder builder,
 }) {
+  if (context != null && context.mounted) {
+    return pushAdminFullScreen<T>(context, builder: builder);
+  }
+
   final nav = appNavigatorKey.currentState;
   if (nav != null) {
     return nav.push<T>(
-      MaterialPageRoute<T>(
-        fullscreenDialog: true,
-        builder: builder,
-      ),
-    );
-  }
-
-  if (context != null && context.mounted) {
-    return Navigator.of(context, rootNavigator: true).push<T>(
       MaterialPageRoute<T>(
         fullscreenDialog: true,
         builder: builder,

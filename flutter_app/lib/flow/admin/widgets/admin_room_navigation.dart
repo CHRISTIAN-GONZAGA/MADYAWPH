@@ -5,7 +5,6 @@ import 'package:flutter/scheduler.dart';
 
 import '../admin_dashboard_models.dart';
 import '../admin_room_detail_screen.dart';
-import 'admin_dashboard_routes.dart';
 import 'manual_booking_dialog.dart';
 
 /// How a room tile should open from the admin dashboard.
@@ -117,12 +116,6 @@ abstract final class AdminRoomNavigation {
     final id = AdminDashboardModels.normalizeRoomIdString(roomId);
     if (id.isEmpty) {
       _missingRoomId(context);
-      return;
-    }
-
-    final routes = AdminDashboardRoutes.maybeOf(context);
-    if (routes != null) {
-      routes.openDetail(id);
       return;
     }
 

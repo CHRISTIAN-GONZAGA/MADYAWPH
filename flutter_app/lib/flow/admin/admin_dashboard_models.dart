@@ -68,6 +68,20 @@ class AdminDashboardModels {
     return false;
   }
 
+  /// Parses dashboard room payloads (JSON maps are not always [Map<String, dynamic>]).
+  static List<Map<String, dynamic>> parseRoomMaps(List<dynamic>? raw) {
+    if (raw == null || raw.isEmpty) return const [];
+    final out = <Map<String, dynamic>>[];
+    for (final item in raw) {
+      if (item is Map<String, dynamic>) {
+        out.add(item);
+      } else if (item is Map) {
+        out.add(Map<String, dynamic>.from(item));
+      }
+    }
+    return out;
+  }
+
   /// Normalizes Mongo/API room identifiers for booking requests.
   static String roomIdOf(Map<String, dynamic> room) {
     final raw = room['id'] ?? room['_id'];

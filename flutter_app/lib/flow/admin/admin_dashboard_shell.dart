@@ -208,9 +208,9 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
   }
 
   List<Map<String, dynamic>> get _rooms {
-    return (widget.data['rooms'] as List<dynamic>? ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .toList();
+    return AdminDashboardModels.parseRoomMaps(
+      widget.data['rooms'] as List<dynamic>?,
+    );
   }
 
   bool get _isFullScreenOpen => _detailRoomId != null;

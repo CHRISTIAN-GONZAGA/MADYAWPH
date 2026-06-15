@@ -3,7 +3,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../dio_client.dart';
 import '../../locale_controller.dart';
-import '../../widgets/app_overlay.dart';
+import '../admin/widgets/admin_opaque_scaffold.dart';
 import '../admin/widgets/hourly_billing.dart';
 import '../customer_search_context.dart' as customer;
 import '../../widgets/app_button.dart';
@@ -144,26 +144,25 @@ Future<CompleteGuestBookingPayload?> showCompleteGuestBookingDialog({
   required Map<String, dynamic> room,
   required CompleteGuestBookingConfig config,
 }) {
-  final theme = Theme.of(context);
-  final child = Theme(
-    data: theme,
-    child: _CompleteGuestBookingDialog(
-      room: room,
-      config: config,
-    ),
+  final dialog = _CompleteGuestBookingDialog(
+    room: room,
+    config: config,
   );
 
   if (config.fullScreen) {
-    return showAppOverlayPage<CompleteGuestBookingPayload>(
-      context: context,
-      builder: (_) => child,
+    if (!context.mounted) return Future.value(null);
+    // Same nested navigator as Settings / Chat — not fullscreenDialog (avoids blank overlay).
+    return Navigator.of(context).push<CompleteGuestBookingPayload>(
+      MaterialPageRoute<CompleteGuestBookingPayload>(
+        builder: (_) => dialog,
+      ),
     );
   }
 
-  return showAppOverlayDialog<CompleteGuestBookingPayload>(
+  return showDialog<CompleteGuestBookingPayload>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => child,
+    builder: (_) => dialog,
   );
 }
 
@@ -420,7 +419,7 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
         config.reserveMode ? 'Submit request' : 'Submit booking';
 
     if (config.fullScreen) {
-      return Scaffold(
+      return AdminOpaqueScaffold(
         appBar: AppBar(
           title: Text(config.title),
           leading: IconButton(
@@ -561,7 +560,7 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
       ),
       const SizedBox(height: 8),
       DropdownButtonFormField<String>(
-        initialValue: _discountType,
+        value: _discountType,
         decoration: const InputDecoration(
           labelText: 'Discount (optional)',
           border: OutlineInputBorder(),
@@ -615,7 +614,7 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
       if (config.showOnlinePayment || config.showAdminPaymentMethods) ...[
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
-          initialValue: _paymentMethod,
+          value: _paymentMethod,
           decoration: const InputDecoration(
             labelText: 'Payment method',
             border: OutlineInputBorder(),

@@ -1,14 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gloretto_mobile/flow/admin/sections/manual_booking_section.dart';
 import 'package:gloretto_mobile/flow/admin/sections/room_board_section.dart';
 import 'package:gloretto_mobile/flow/admin/widgets/admin_room_navigation.dart';
-
 import 'package:gloretto_mobile/navigation_keys.dart';
+import 'package:gloretto_mobile/widgets/dashboard_exit_guard.dart';
 
 /// Every path that opens walk-in booking must render the complete booking dialog.
 void main() {
   group('dashboard nested navigator (walk-in tab)', () {
     testWidgets('room board gray tile opens complete booking dialog',
+        (tester) async {
+      await tester.pumpWidget(_productionDashboardApp(
+        child: ManualBookingSection(
+          rooms: _sampleRooms,
+          hotelName: 'Test Hotel',
+          onChanged: () async {},
+        ),
+      ));
+
+      await tester.tap(find.text('101'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Complete your booking'), findsOneWidget);
+      expect(find.text('Submit booking'), findsOneWidget);
+      expect(find.byType(TextField), findsWidgets);
+    });
+
+    testWidgets('room board gray tile opens complete booking dialog (legacy harness)',
         (tester) async {
       await tester.pumpWidget(_dashboardApp(
         child: RoomBoardSection(
@@ -115,6 +134,26 @@ Widget _dashboardApp({required Widget child}) {
           builder: (_) => Scaffold(body: child),
         );
       },
+    ),
+  );
+}
+
+/// Mirrors [AdminDashboardScreen] nested navigator + exit guard.
+Widget _productionDashboardApp({required Widget child}) {
+  return MaterialApp(
+    navigatorKey: appNavigatorKey,
+    home: DashboardExitGuard(
+      navigatorKey: adminDashboardNavigatorKey,
+      child: Scaffold(
+        body: Navigator(
+          key: adminDashboardNavigatorKey,
+          onGenerateRoute: (settings) {
+            return MaterialPageRoute<void>(
+              builder: (_) => Scaffold(body: child),
+            );
+          },
+        ),
+      ),
     ),
   );
 }
