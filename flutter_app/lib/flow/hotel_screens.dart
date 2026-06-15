@@ -20,6 +20,7 @@ import '../widgets/app_input.dart';
 import '../widgets/chat_attachment.dart';
 import '../widgets/philippine_address_picker.dart';
 import 'flow_state.dart';
+import 'dashboards.dart';
 import 'hotel_property_login_screen.dart';
 import 'system_access_screen.dart';
 // --- Choose hotel (by city/region) → system access ---
@@ -34,7 +35,7 @@ class PropertyStaffEntryScreen extends StatelessWidget {
       onRegisterHotel: () {
         Navigator.of(context).push<void>(
           MaterialPageRoute<void>(
-            builder: (_) => const HotelRegisterScreen(),
+            builder: (_) => const HotelRegisterScreen(fromStaffEntry: true),
           ),
         );
       },
@@ -2049,11 +2050,19 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
     if (!mounted) return;
     final session = HotelSession(hotelId: hid, hotelName: name);
     hotelSessionNotifier.value = session;
-    Navigator.of(context).pop();
-    if (!mounted) return;
-    await Navigator.of(context).pushReplacement(
+    await Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute<void>(
-        builder: (_) => SystemAccessScreen(session: session),
+        builder: (_) => const AdminDashboardScreen(isSuperAdmin: false),
+      ),
+      (_) => false,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Hotel ready. Add rooms under Settings → Categories & rooms, then use Walk-in to book guests.',
+        ),
+        duration: Duration(seconds: 7),
       ),
     );
   }
@@ -2075,47 +2084,80 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
     if (!mounted) return;
 
     final otpCtrl = TextEditingController();
+    var resendBusy = false;
     final verified = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Verify your email'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Enter the 6-digit code sent to $masked.'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: otpCtrl,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              decoration: const InputDecoration(
-                labelText: 'Verification code',
-                border: OutlineInputBorder(),
-                counterText: '',
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (otpCtrl.text.trim().length != 6) {
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) {
+          Future<void> resendCode() async {
+            if (resendBusy) return;
+            setLocal(() => resendBusy = true);
+            try {
+              await publicDio().post<Map<String, dynamic>>(
+                '/hotel/register/resend-code',
+                data: {'registration_token': token},
+              );
+              if (ctx.mounted) {
                 ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(content: Text('Enter the 6-digit code.')),
+                  const SnackBar(content: Text('A new verification code was sent.')),
                 );
-                return;
               }
-              Navigator.of(ctx).pop(true);
-            },
-            child: const Text('Verify & create hotel'),
-          ),
-        ],
+            } on DioException catch (e) {
+              if (ctx.mounted) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  SnackBar(content: Text(dioErrorMessage(e))),
+                );
+              }
+            } finally {
+              if (ctx.mounted) setLocal(() => resendBusy = false);
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Verify your email'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Enter the 6-digit code sent to $masked.'),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: otpCtrl,
+                  keyboardType: TextInputType.number,
+                  maxLength: 6,
+                  decoration: const InputDecoration(
+                    labelText: 'Verification code',
+                    border: OutlineInputBorder(),
+                    counterText: '',
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: resendBusy ? null : resendCode,
+                child: const Text('Resend code'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  if (otpCtrl.text.trim().length != 6) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      const SnackBar(content: Text('Enter the 6-digit code.')),
+                    );
+                    return;
+                  }
+                  Navigator.of(ctx).pop(true);
+                },
+                child: const Text('Verify & create hotel'),
+              ),
+            ],
+          );
+        },
       ),
     );
     final code = otpCtrl.text.trim();

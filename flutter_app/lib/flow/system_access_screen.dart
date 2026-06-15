@@ -12,6 +12,7 @@ import '../widgets/language_picker_button.dart';
 import 'dashboards.dart';
 import 'flow_state.dart';
 import 'hotel_property_login_screen.dart';
+import 'hotel_screens.dart';
 import 'owner_dashboard_screen.dart';
 
 /// Role-based portal sign-in after property gate (System Access UI).
@@ -58,7 +59,15 @@ class _SystemAccessScreenState extends State<SystemAccessScreen> {
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute<void>(
-        builder: (_) => const HotelPropertyLoginScreen(),
+        builder: (ctx) => HotelPropertyLoginScreen(
+          onRegisterHotel: () {
+            Navigator.of(ctx).push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) => const HotelRegisterScreen(fromStaffEntry: true),
+              ),
+            );
+          },
+        ),
       ),
       (_) => false,
     );

@@ -128,13 +128,7 @@ const _sampleRooms = [
 Widget _dashboardApp({required Widget child}) {
   return MaterialApp(
     navigatorKey: appNavigatorKey,
-    home: Navigator(
-      onGenerateRoute: (settings) {
-        return MaterialPageRoute<void>(
-          builder: (_) => Scaffold(body: child),
-        );
-      },
-    ),
+    home: Scaffold(body: child),
   );
 }
 

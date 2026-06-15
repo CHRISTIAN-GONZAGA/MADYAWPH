@@ -4,10 +4,9 @@ import 'package:flutter/services.dart';
 import '../../../widgets/hotel_credits_policy.dart';
 import '../../../widgets/room_status_label.dart';
 import '../admin_dashboard_models.dart';
-import '../widgets/admin_room_navigation.dart';
 import '../widgets/manual_booking_dialog.dart';
 
-/// Visual room board grouped by category — tap a room to book or manage.
+/// Visual room board grouped by category — walk-in tab only.
 class RoomBoardSection extends StatelessWidget {
   const RoomBoardSection({
     super.key,
@@ -49,32 +48,40 @@ class RoomBoardSection extends StatelessWidget {
       AdminCreditsGate.showActionsBlockedMessage(context);
       return;
     }
-    if (AdminDashboardModels.isWalkInBookable(room)) {
-      final roomId = AdminDashboardModels.roomIdOf(room);
-      if (roomId.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Room ID missing. Pull to refresh the dashboard and try again.',
-            ),
+
+    if (!AdminDashboardModels.isWalkInBookable(room)) {
+      final status = AdminDashboardModels.displayStatusForRoom(room);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            status == 'checked_in' || status == 'booked' || status == 'reserved'
+                ? 'Room ${room['room_number']} is occupied. Open it from Summary → room list.'
+                : 'Room ${room['room_number']} is not available for walk-in booking.',
           ),
-        );
-        return;
-      }
-      final booked = await showAdminWalkInBookingDialog(
-        context: context,
-        room: room,
+        ),
       );
-      if (booked) {
-        await onChanged();
-      }
       return;
     }
-    await AdminRoomNavigation.handleRoomTap(
-      context,
+
+    final roomId = AdminDashboardModels.roomIdOf(room);
+    if (roomId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Room ID missing. Pull to refresh the dashboard and try again.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final booked = await showAdminWalkInBookingDialog(
+      context: context,
       room: room,
-      onSuccess: onChanged,
     );
+    if (booked) {
+      await onChanged();
+    }
   }
 
   @override
@@ -143,7 +150,7 @@ class RoomBoardSection extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         Text(
-          'Tap an available room to book. Occupied rooms open details.',
+          'Tap a gray available room to book a local walk-in guest.',
           softWrap: true,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: scheme.onSurfaceVariant,

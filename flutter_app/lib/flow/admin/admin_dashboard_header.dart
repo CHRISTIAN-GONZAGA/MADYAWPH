@@ -58,7 +58,7 @@ AdminChatBadgeInfo adminChatBadgeFromData({
     if (raw is! Map<String, dynamic>) continue;
     if (raw['is_read'] == true) continue;
     final role = (raw['sender_role'] ?? '').toString().toLowerCase();
-    if (role == 'admin') continue;
+    if (role == 'admin' || role == 'super_admin') continue;
     messageFallbackUnread++;
     if (preview.isEmpty) {
       preview = (raw['message'] ?? raw['body'] ?? '').toString();

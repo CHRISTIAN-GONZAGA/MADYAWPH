@@ -7,7 +7,8 @@ import '../admin_dashboard_models.dart';
 import '../../widgets/complete_guest_booking_dialog.dart';
 import 'hourly_billing.dart';
 
-/// Opens the same "Complete your booking" dialog used for public customers.
+/// Opens the customer-style booking popup and saves via [POST /admin/bookings]
+/// so the stay appears under **Local** bookings (not Online).
 Future<bool> showAdminWalkInBookingDialog({
   required BuildContext context,
   required Map<String, dynamic> room,
@@ -25,9 +26,10 @@ Future<bool> showAdminWalkInBookingDialog({
       showAppSnackBar(
         SnackBar(
           content: Text(
-            'Room ${room['room_number']} booked successfully.',
+            'Room ${room['room_number']} booked as a local walk-in.',
           ),
         ),
+        context: context,
       );
     }
     return true;
@@ -35,6 +37,7 @@ Future<bool> showAdminWalkInBookingDialog({
     if (context.mounted) {
       showAppSnackBar(
         SnackBar(content: Text(dioErrorMessage(e))),
+        context: context,
       );
     }
     return false;
@@ -42,12 +45,14 @@ Future<bool> showAdminWalkInBookingDialog({
     if (context.mounted) {
       showAppSnackBar(
         SnackBar(content: Text('$e')),
+        context: context,
       );
     }
     return false;
   }
 }
 
+/// Admin walk-in gateway — always creates a **local** booking (`source: admin`).
 Future<void> submitAdminWalkInBooking({
   required Map<String, dynamic> room,
   required CompleteGuestBookingPayload payload,

@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gloretto_mobile/flow/admin/admin_room_detail_screen.dart';
 import 'package:gloretto_mobile/flow/admin/widgets/admin_room_navigation.dart';
 import 'package:gloretto_mobile/flow/widgets/complete_guest_booking_dialog.dart';
+import 'package:gloretto_mobile/navigation_keys.dart';
 
 void main() {
   testWidgets('AdminRoomDetailScreen shows loading then app bar', (tester) async {
@@ -18,6 +19,7 @@ void main() {
   testWidgets('navigation opens complete booking dialog', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
+        navigatorKey: appNavigatorKey,
         home: Builder(
           builder: (context) => Scaffold(
             body: Center(

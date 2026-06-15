@@ -44,7 +44,10 @@ class AdminChatController extends Controller
                     'latest_message' => (string) ($latest?->message ?? ''),
                     'latest_sender_role' => (string) ($latest?->sender_role ?? ''),
                     'latest_sent_at' => $sentAt?->toIso8601String(),
-                    'unread_count' => (int) $msgs->where('is_read', false)->where('sender_role', '!=', 'admin')->count(),
+                    'unread_count' => (int) $msgs
+                        ->where('is_read', false)
+                        ->filter(fn (GuestMessage $m) => ! $this->isPortalStaffSender($m->sender_role))
+                        ->count(),
                     'is_staff_thread' => $isStaff,
                 ];
             };
@@ -117,7 +120,7 @@ class AdminChatController extends Controller
                 ->where('hotel_id', $hotelId)
                 ->where('room_id', $roomId)
                 ->where('is_read', false)
-                ->where('sender_role', '!=', 'admin')
+                ->whereNotIn('sender_role', ['admin', 'super_admin'])
                 ->update(['is_read' => true, 'read_at' => now()]);
 
             return response()->json([
@@ -237,5 +240,10 @@ class AdminChatController extends Controller
         }
 
         return trim((string) $roomId);
+    }
+
+    private function isPortalStaffSender(mixed $role): bool
+    {
+        return in_array(strtolower(trim((string) $role)), ['admin', 'super_admin'], true);
     }
 }

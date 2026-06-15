@@ -30,7 +30,7 @@ class RoomStatusNotificationService
 
         $recipients = User::withoutGlobalScopes()
             ->where('hotel_id', (string) $room->hotel_id)
-            ->whereIn('role', ['admin', 'staff'])
+            ->whereIn('role', ['admin', 'super_admin', 'staff'])
             ->whereNotNull('email')
             ->pluck('email')
             ->filter(fn ($e) => filter_var($e, FILTER_VALIDATE_EMAIL))

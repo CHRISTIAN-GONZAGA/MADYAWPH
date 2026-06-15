@@ -46,6 +46,7 @@ class AdminWalkInDefaultStayWindowTest extends TestCase
 
         $response->assertCreated();
         $response->assertJsonPath('ok', true);
+        $response->assertJsonPath('booking.booking_type', 'local');
     }
 
     public function test_admin_walk_in_rejects_checkout_before_checkin_time_same_day(): void

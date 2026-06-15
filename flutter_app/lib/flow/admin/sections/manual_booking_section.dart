@@ -29,7 +29,7 @@ class ManualBookingSection extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          'Tap an available room to book a walk-in guest or manage an occupied room.',
+          'Tap a gray available room to book a local walk-in. Bookings here appear under Local, not Online.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 16),

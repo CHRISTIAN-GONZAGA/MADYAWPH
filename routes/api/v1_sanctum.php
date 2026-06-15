@@ -469,7 +469,9 @@ Route::middleware('role:admin')->group(function (): void {
         $bookingData = [
             ...$validated,
             'hotel_id' => (string) $room->hotel_id,
-            'source' => 'admin',
+            'source' => \App\Enums\BookingSource::ADMIN->value,
+            'booking_type' => \App\Enums\BookingType::LOCAL->value,
+            'booking_source' => 'admin-walk-in',
         ];
         if ($discountPercent > 0) {
             $bookingData['discount_type'] = $discountType;
@@ -1499,7 +1501,7 @@ Route::get('/admin/portal-users', function (Request $request) {
         ]);
 
     return response()->json(['data' => $users]);
-})->middleware('role:admin')->name('api.v1.admin.portal-users');
+})->middleware('role:super_admin')->name('api.v1.admin.portal-users');
 
 Route::delete('/admin/portal-users/{target}', function (Request $request, string $target) {
     $actor = $request->user();
@@ -1522,6 +1524,12 @@ Route::delete('/admin/portal-users/{target}', function (Request $request, string
     }
     if ($victim->roleValue() === 'staff') {
         return response()->json(['message' => 'Remove staff via staff management instead.'], 422);
+    }
+    if ($victim->roleValue() === 'owner') {
+        return response()->json(['message' => 'Cannot delete owner accounts via portal user management.'], 422);
+    }
+    if ($victim->roleValue() !== 'admin') {
+        return response()->json(['message' => 'Only regular administrator accounts can be removed here.'], 422);
     }
     $morph = (new User)->getMorphClass();
     PersonalAccessToken::query()

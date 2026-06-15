@@ -82,6 +82,18 @@ class HotelRegistrationLoginTest extends TestCase
             'hotel_id' => $hotelId,
         ])->assertOk()->assertJsonStructure(['token']);
 
+        $superToken = $this->postJson('/api/v1/auth/portal-login', [
+            'role' => 'super_admin',
+            'username' => 'palmresort',
+            'password' => 'OwnerSecret9',
+            'hotel_id' => $hotelId,
+        ])->assertOk()->json('token');
+
+        $this->withToken($superToken)
+            ->getJson('/api/v1/admin/dashboard')
+            ->assertOk()
+            ->assertJsonPath('auth.user.role', 'super_admin');
+
         $this->postJson('/api/v1/auth/portal-login', [
             'role' => 'super_admin',
             'username' => 'palmresort',

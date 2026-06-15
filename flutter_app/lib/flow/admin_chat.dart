@@ -432,7 +432,7 @@ class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
       itemBuilder: (context, i) {
         final m = _messages[i] as Map<String, dynamic>;
         final role = (m['sender_role'] ?? '').toString();
-        final isAdmin = role == 'admin';
+        final isAdmin = role == 'admin' || role == 'super_admin';
         return ChatMessageBubble.fromMap(m, isMine: isAdmin);
       },
     );

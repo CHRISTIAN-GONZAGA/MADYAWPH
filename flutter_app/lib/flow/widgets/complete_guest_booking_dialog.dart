@@ -3,7 +3,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../dio_client.dart';
 import '../../locale_controller.dart';
-import '../admin/widgets/admin_opaque_scaffold.dart';
+import '../../widgets/app_overlay.dart';
 import '../admin/widgets/hourly_billing.dart';
 import '../customer_search_context.dart' as customer;
 import '../../widgets/app_button.dart';
@@ -50,7 +50,6 @@ class CompleteGuestBookingConfig {
     this.reserveMode = false,
     this.hotelId,
     this.showOnlinePayment = false,
-    this.fullScreen = false,
   });
 
   final String title;
@@ -66,8 +65,8 @@ class CompleteGuestBookingConfig {
   final bool reserveMode;
   final String? hotelId;
   final bool showOnlinePayment;
-  final bool fullScreen;
 
+  /// Admin dashboard walk-in — customer-style popup, submits to `/admin/bookings` (local).
   factory CompleteGuestBookingConfig.adminWalkIn(Map<String, dynamic> room) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -81,7 +80,6 @@ class CompleteGuestBookingConfig {
       initialCheckOut: today.add(const Duration(days: 1)),
       requireGuestId: false,
       showAdminPaymentMethods: true,
-      fullScreen: true,
     );
   }
 
@@ -149,13 +147,13 @@ Future<CompleteGuestBookingPayload?> showCompleteGuestBookingDialog({
     config: config,
   );
 
-  if (config.fullScreen) {
-    if (!context.mounted) return Future.value(null);
-    // Same nested navigator as Settings / Chat — not fullscreenDialog (avoids blank overlay).
-    return Navigator.of(context).push<CompleteGuestBookingPayload>(
-      MaterialPageRoute<CompleteGuestBookingPayload>(
-        builder: (_) => dialog,
-      ),
+  // Admin walk-in: same popup pattern as the public customer browse screen,
+  // shown on the app root navigator so it is never blank inside the dashboard.
+  if (config.showAdminPaymentMethods) {
+    return showAppOverlayDialog<CompleteGuestBookingPayload>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => dialog,
     );
   }
 
@@ -417,51 +415,6 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
 
     final submitLabel =
         config.reserveMode ? 'Submit request' : 'Submit booking';
-
-    if (config.fullScreen) {
-      return AdminOpaqueScaffold(
-        appBar: AppBar(
-          title: Text(config.title),
-          leading: IconButton(
-            icon: const Icon(Icons.close),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-        ),
-        body: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: formBody,
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Cancel'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: AppPrimaryButton(
-                        label: submitLabel,
-                        onPressed: _submit,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
 
     return AlertDialog(
       backgroundColor: scheme.surface,

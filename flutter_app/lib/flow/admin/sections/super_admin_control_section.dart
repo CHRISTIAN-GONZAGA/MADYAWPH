@@ -396,12 +396,14 @@ class _SuperAdminControlSectionState extends State<SuperAdminControlSection> {
                         label: const Text('You'),
                         backgroundColor: scheme.tertiaryContainer,
                       )
-                    : IconButton(
-                        tooltip: 'Remove admin',
-                        onPressed:
-                            _busy ? null : () => _deleteAdmin(id, name),
-                        icon: const Icon(Icons.delete_outline),
-                      ),
+                    : role == 'admin'
+                        ? IconButton(
+                            tooltip: 'Remove admin',
+                            onPressed:
+                                _busy ? null : () => _deleteAdmin(id, name),
+                            icon: const Icon(Icons.delete_outline),
+                          )
+                        : null,
               ),
             );
           }),

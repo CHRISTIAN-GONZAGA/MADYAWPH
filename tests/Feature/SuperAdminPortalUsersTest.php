@@ -61,6 +61,88 @@ class SuperAdminPortalUsersTest extends TestCase
         ])->assertForbidden();
     }
 
+    public function test_regular_admin_cannot_list_portal_users(): void
+    {
+        $hotel = Hotel::create(['name' => 'List Hotel', 'location' => 'City']);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'admin1',
+            'email' => 'admin1@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+
+        $this->actingAs($admin)->getJson('/api/v1/admin/portal-users')->assertForbidden();
+    }
+
+    public function test_super_admin_can_load_admin_dashboard(): void
+    {
+        $hotel = Hotel::create(['name' => 'Dash Hotel', 'location' => 'City']);
+        $super = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'superdash',
+            'email' => 'superdash@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::SUPER_ADMIN,
+        ]);
+
+        $this->actingAs($super)->getJson('/api/v1/admin/dashboard')
+            ->assertOk()
+            ->assertJsonStructure(['auth', 'rooms', 'booking_stats']);
+    }
+
+    public function test_super_admin_cannot_delete_owner_via_portal_users(): void
+    {
+        $hotel = Hotel::create(['name' => 'Owner Hotel', 'location' => 'City']);
+        $super = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'superowner',
+            'email' => 'superowner@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::SUPER_ADMIN,
+        ]);
+        $owner = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'owner1',
+            'email' => 'owner1@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::OWNER,
+        ]);
+
+        $this->actingAs($super)->deleteJson('/api/v1/admin/portal-users/'.(string) $owner->id)
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Cannot delete owner accounts via portal user management.');
+    }
+
+    public function test_regular_admin_cannot_delete_portal_admin(): void
+    {
+        $hotel = Hotel::create(['name' => 'Del Hotel', 'location' => 'City']);
+        $super = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'superdel',
+            'email' => 'superdel@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::SUPER_ADMIN,
+        ]);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'deskadmin',
+            'email' => 'desk@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $regular = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'regular',
+            'email' => 'regular@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+
+        $this->actingAs($regular)->deleteJson('/api/v1/admin/portal-users/'.(string) $admin->id)
+            ->assertForbidden();
+    }
+
     public function test_approve_reservation_activates_when_check_in_is_tomorrow_or_sooner(): void
     {
         $hotel = Hotel::create(['name' => 'Reserve Hotel', 'location' => 'City']);

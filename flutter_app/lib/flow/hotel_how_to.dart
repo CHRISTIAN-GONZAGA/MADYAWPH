@@ -63,30 +63,30 @@ class _HowToSheet extends StatelessWidget {
                 _Section(
                   title: '1. Getting started',
                   body:
-                      'MADYAWPH is your hotel operations hub on mobile. Start by **choosing your hotel** from the list grouped by city or region (e.g. Butuan).\n\n'
-                      'After you select a property, pick a **role**: Administrator, Super admin, Staff, Public customer, or In-house Guest. Each role opens a different workspace scoped to **that hotel only** — data from other hotels is never shown.',
+                      'MADYAWPH is your hotel operations hub on mobile. From the home screen, tap the **property badge** to sign in with your hotel gate username and password.\n\n'
+                      'New hotels tap **Register hotel** on that screen. After registration you land in the **admin dashboard** — add categories and rooms under Settings first.\n\n'
+                      'Returning staff pick a **role** (Administrator, Super admin, Staff, Owner, or Public customer). Each role opens a workspace scoped to **that hotel only**.',
                 ),
                 _Section(
-                  title: '2. Choose your hotel',
+                  title: '2. Property sign-in',
                   body:
-                      '• Browse hotels under your **city or region**.\n'
-                      '• Use **Search** to filter by city, hotel name, or address.\n'
-                      '• Tap a hotel card to open its role menu.\n'
+                      '• Enter the **gate username and password** from registration (same as you chose when creating the hotel).\n'
                       '• Tap **Register hotel** only when creating a brand-new property.\n'
-                      '• Use **Switch hotel** on the role menu to pick a different property.',
+                      '• After the gate, choose your **role** on System Access.\n'
+                      '• Use **Switch hotel** to return to the property sign-in screen.',
                 ),
                 _Section(
                   title: '3. Account types',
                   body:
-                      '**Super admin** — Owner account: delete administrators, full settings.\n'
-                      '• Username: owner username from registration.\n'
-                      '• Default password: contact number from registration.\n\n'
-                      '**Administrator** — Day-to-day operations: rooms, bookings, reports, chat, staff.\n'
+                      '**Super admin** — Full admin dashboard plus **Control** tab to add/remove administrators.\n'
+                      '• Username: your registration username.\n'
+                      '• Password: the password you chose on the registration form.\n\n'
+                      '**Administrator** — Day-to-day operations: rooms, bookings, walk-in, chat, staff.\n'
                       '• Username: `{hotel_username}_admin`.\n'
-                      '• Default password: `{hotel_username}123`.\n\n'
+                      '• Password: same as registration.\n\n'
                       '**Staff** — Tasks, room status, maintenance reports, chat with admin.\n\n'
-                      '**Public customer** — Browse categories, see availability, book or reserve with optional PWD or senior citizen discount (ID photo).\n\n'
-                      '**Guest (in-house)** — Checked-in guests use room number + room password for amenities, chat, billing, and checkout reminders.',
+                      '**Public customer** — Browse and book online (Online bookings).\n\n'
+                      '**Guest (in-house)** — Room number + room password for amenities and chat.',
                 ),
                 _Section(
                   title: '4. Administrator workflow',
@@ -104,7 +104,9 @@ class _HowToSheet extends StatelessWidget {
                 _Section(
                   title: '5. Super admin extras',
                   body:
-                      'From **Account settings** you can change your super-admin password and remove administrator accounts. Use super admin for ownership tasks; use administrator for daily front-desk work.',
+                      'Use the **Control** tab to add or remove administrator accounts and upload the property picker banner. '
+                      'Super admin has every administrator feature (rooms, walk-in, bookings, reports, chat). '
+                      'Sign out and choose **Super admin** on System Access if you logged in as Administrator but need the Control tab.',
                 ),
                 _Section(
                   title: '6. Staff workflow',
@@ -239,7 +241,7 @@ Future<void> showHotelRegistrationCredentialsDialog(
           children: [
             Text(
               'Write these down or copy them now. Passwords are shown once. '
-              'Use the password from your registration form (not your contact number).',
+              'You will enter the admin dashboard next — use Settings → Categories & rooms to set up rooms.',
               style: Theme.of(ctx).textTheme.bodyMedium,
             ),
             if (freeCredits != null && freeCredits > 0) ...[

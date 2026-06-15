@@ -2404,7 +2404,6 @@ class _AdminAccountSettingsScreenState extends State<AdminAccountSettingsScreen>
   final _adminNewPass2 = TextEditingController();
   bool _busy = false;
   bool _isSuperAdmin = false;
-  List<dynamic> _portalUsers = const [];
 
   @override
   void initState() {
@@ -2425,56 +2424,6 @@ class _AdminAccountSettingsScreenState extends State<AdminAccountSettingsScreen>
       if (mounted && n.isNotEmpty) _nameCtrl.text = n;
     } catch (_) {}
     if (mounted) setState(() => _isSuperAdmin = isSuper);
-    if (isSuper) await _loadPortalUsers();
-  }
-
-  Future<void> _loadPortalUsers() async {
-    try {
-      final res =
-          await portalDio().get<Map<String, dynamic>>('/admin/portal-users');
-      if (mounted) {
-        setState(() {
-          _portalUsers = (res.data?['data'] as List<dynamic>?) ?? const [];
-        });
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _deleteAdmin(String userId, String name) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Remove admin?'),
-        content: Text('Delete portal account "$name"? This cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    setState(() => _busy = true);
-    try {
-      await portalDio().delete('/admin/portal-users/$userId');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Admin account removed.')),
-      );
-      await _loadPortalUsers();
-    } on DioException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
   }
 
   @override
@@ -2578,35 +2527,15 @@ class _AdminAccountSettingsScreenState extends State<AdminAccountSettingsScreen>
           ),
           if (_isSuperAdmin) ...[
             const SizedBox(height: 28),
-            Text(
-              'Portal administrators',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Super admin can remove regular admin accounts. Staff accounts are managed under Staff management.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 12),
-            ..._portalUsers.map((raw) {
-              final u = raw as Map<String, dynamic>;
-              final role = (u['role'] ?? '').toString();
-              final id = (u['id'] ?? '').toString();
-              final name = (u['name'] ?? '').toString();
-              final isSuper = role == 'super_admin';
-              return Card(
-                child: ListTile(
-                  title: Text(name),
-                  subtitle: Text(role.replaceAll('_', ' ')),
-                  trailing: isSuper
-                      ? const Text('You')
-                      : IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: _busy ? null : () => _deleteAdmin(id, name),
-                        ),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.admin_panel_settings_outlined),
+                title: const Text('Manage administrators'),
+                subtitle: const Text(
+                  'Add or remove admin accounts from the Control tab on your dashboard.',
                 ),
-              );
-            }),
+              ),
+            ),
           ],
         ],
       ),

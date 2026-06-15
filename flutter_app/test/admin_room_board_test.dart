@@ -2,9 +2,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gloretto_mobile/flow/admin/sections/room_board_section.dart';
 import 'package:gloretto_mobile/flow/widgets/complete_guest_booking_dialog.dart';
+import 'package:gloretto_mobile/navigation_keys.dart';
 
 void main() {
-  testWidgets('walk-in tab room tap opens booking form via navigator push',
+  testWidgets('walk-in tab room tap opens customer-style booking popup',
       (tester) async {
     final rooms = [
       {
@@ -20,18 +21,13 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Navigator(
-          onGenerateRoute: (settings) {
-            return MaterialPageRoute<void>(
-              builder: (ctx) => Scaffold(
-                body: RoomBoardSection(
-                  rooms: rooms,
-                  hotelName: 'Test Hotel',
-                  onChanged: () async {},
-                ),
-              ),
-            );
-          },
+        navigatorKey: appNavigatorKey,
+        home: Scaffold(
+          body: RoomBoardSection(
+            rooms: rooms,
+            hotelName: 'Test Hotel',
+            onChanged: () async {},
+          ),
         ),
       ),
     );
@@ -41,12 +37,14 @@ void main() {
 
     expect(find.text('Complete your booking'), findsOneWidget);
     expect(find.text('Submit booking'), findsOneWidget);
+    expect(find.byType(AlertDialog), findsOneWidget);
   });
 
   testWidgets('complete booking dialog renders customer-style fields',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
+        navigatorKey: appNavigatorKey,
         home: Builder(
           builder: (context) => Scaffold(
             body: Center(
@@ -79,7 +77,7 @@ void main() {
 
     expect(find.text('Complete your booking'), findsOneWidget);
     expect(find.text('Full name'), findsOneWidget);
-    expect(find.text('Upload government ID *'), findsOneWidget);
+    expect(find.textContaining('Upload government ID'), findsOneWidget);
     expect(find.text('Discount (optional)'), findsOneWidget);
   });
 }
