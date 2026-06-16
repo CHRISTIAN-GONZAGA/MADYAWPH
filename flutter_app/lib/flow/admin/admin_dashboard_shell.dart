@@ -19,7 +19,6 @@ import 'sections/room_summary_section.dart';
 import 'sections/resellers_section.dart';
 import 'sections/settings_section.dart';
 import 'sections/super_admin_control_section.dart';
-import 'admin_room_detail_screen.dart';
 import 'widgets/admin_dashboard_routes.dart';
 
 class AdminDashboardShell extends StatefulWidget {
@@ -63,7 +62,6 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
   String _bookingListFilter = 'all';
   Map<String, dynamic>? _inbox;
   Timer? _chatPoll;
-  String? _detailRoomId;
 
   List<AdminNavItem> _navItemsFor(Map<String, dynamic> d) {
     final reservations = d['reservations'] as List<dynamic>? ?? const [];
@@ -213,45 +211,10 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     );
   }
 
-  bool get _isFullScreenOpen => _detailRoomId != null;
-
-  void _openDetail(String roomId) {
-    setState(() => _detailRoomId = roomId);
-  }
-
-  void _closeDetail() {
-    setState(() => _detailRoomId = null);
-    unawaited(widget.onRefresh());
-  }
-
-  bool _handleInnerBack() {
-    if (_detailRoomId != null) {
-      _closeDetail();
-      return true;
-    }
-    return false;
-  }
-
-  Widget _buildFullScreenDetail() {
-    return SizedBox.expand(
-      child: AdminRoomDetailScreen(
-        roomId: _detailRoomId!,
-        onClose: _closeDetail,
-      ),
-    );
-  }
+  bool _handleInnerBack() => false;
 
   @override
   Widget build(BuildContext context) {
-    if (_isFullScreenOpen) {
-      return AdminDashboardRoutes(
-        openDetail: _openDetail,
-        closeFullScreen: _closeDetail,
-        isFullScreenOpen: true,
-        child: _buildFullScreenDetail(),
-      );
-    }
-
     final d = widget.data;
     final auth = d['auth'] as Map<String, dynamic>?;
     final user = auth?['user'] as Map<String, dynamic>?;
@@ -271,8 +234,9 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     final settingsTab = _settingsTabIndex(d);
 
     return AdminDashboardRoutes(
-      openDetail: _openDetail,
-      closeFullScreen: _closeDetail,
+      closeFullScreen: () {
+        _handleInnerBack();
+      },
       isFullScreenOpen: false,
       child: Scaffold(
       backgroundColor: const Color(0xFFF5F2FF),

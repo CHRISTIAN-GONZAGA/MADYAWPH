@@ -18,6 +18,7 @@ import '../widgets/dashboard_clock.dart';
 import '../widgets/dashboard_exit_guard.dart';
 import 'admin/admin_dashboard_models.dart';
 import 'admin/admin_dashboard_shell.dart';
+import 'admin/admin_room_summary_detail_screen.dart';
 import 'admin/widgets/admin_room_navigation.dart';
 import 'admin/widgets/admin_walk_in_customer_booking.dart';
 import 'admin/widgets/hourly_billing.dart';
@@ -715,71 +716,6 @@ class _AdminSummaryCategoryCard extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class AdminRoomSummaryDetailScreen extends StatelessWidget {
-  const AdminRoomSummaryDetailScreen({
-    super.key,
-    required this.title,
-    required this.rooms,
-    required this.showGuest,
-  });
-
-  final String title;
-  final List<Map<String, dynamic>> rooms;
-  final bool showGuest;
-
-  @override
-  Widget build(BuildContext context) {
-    return AdminOpaqueScaffold(
-      appBar: AppBar(title: Text(title)),
-      body: rooms.isEmpty
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'No rooms in this category.',
-                  style: Theme.of(context).textTheme.bodyLarge,
-                ),
-              ),
-            )
-          : ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: rooms.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (context, i) {
-                final room = rooms[i];
-                final roomId = AdminDashboardModels.roomIdOf(room);
-                final roomNo = (room['room_number'] ?? '-').toString();
-                final guest =
-                    (room['current_guest_name'] ?? '').toString().trim();
-                final category =
-                    (room['category_name'] ?? '').toString().trim();
-                final status = (room['status'] ?? '').toString();
-                return Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.meeting_room_outlined),
-                    title: Text('Room $roomNo'),
-                    subtitle: Text(
-                      [
-                        if (category.isNotEmpty) 'Category: $category',
-                        'Status: $status',
-                        if (showGuest && guest.isNotEmpty) 'Guest: $guest',
-                        if (showGuest && guest.isEmpty) 'Guest: —',
-                      ].join('\n'),
-                    ),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: roomId.isEmpty
-                        ? null
-                        : () {
-                            AdminRoomNavigation.openDetailById(roomId);
-                          },
-                  ),
-                );
-              },
-            ),
     );
   }
 }

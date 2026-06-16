@@ -7,7 +7,6 @@ import '../../../navigation_keys.dart';
 import '../admin_dashboard_models.dart';
 import '../admin_room_detail_screen.dart';
 import 'admin_walk_in_customer_booking.dart';
-import 'admin_dashboard_routes.dart';
 
 /// How a room tile should open from the admin dashboard.
 enum AdminRoomOpenMode {
@@ -37,7 +36,7 @@ abstract final class AdminRoomNavigation {
     );
   }
 
-  /// Summary / sheet room tap — same push flow as [AdminRoomSummaryDetailScreen].
+  /// Summary sheet room tap — same [openDetailById] push as list rows.
   static Future<void> openSummaryRoomDetail({
     required Map<String, dynamic> room,
     BuildContext? sheetContext,
@@ -52,7 +51,7 @@ abstract final class AdminRoomNavigation {
     }
 
     Future<void> open() async {
-      await openDetailById(id, snackContext: snackContext);
+      await openDetailById(id);
       if (onClosed != null) await onClosed();
     }
 
@@ -133,10 +132,7 @@ abstract final class AdminRoomNavigation {
       return;
     }
 
-    await openDetailById(
-      AdminDashboardModels.roomIdOf(room),
-      snackContext: context,
-    );
+    await openDetailById(AdminDashboardModels.roomIdOf(room));
     await onSuccess();
   }
 
@@ -155,7 +151,7 @@ abstract final class AdminRoomNavigation {
     return booked;
   }
 
-  /// Pushes or opens in-shell [AdminRoomDetailScreen] (Summary list tiles, Bookings).
+  /// Pushes [AdminRoomDetailScreen] on the dashboard navigator (Manage rooms / Summary lists).
   static Future<void> openDetailById(
     String roomId, {
     BuildContext? snackContext,
@@ -167,35 +163,24 @@ abstract final class AdminRoomNavigation {
       return;
     }
 
-    final ctx = snackContext ?? adminDashboardNavigatorKey.currentContext;
-    final nested = adminDashboardNavigatorKey.currentState;
-    final atDashboardRoot = nested == null || !nested.canPop();
-
-    // Summary tab at dashboard root: open inside shell (reliable on device).
-    if (ctx != null &&
-        ctx.mounted &&
-        atDashboardRoot &&
-        AdminDashboardRoutes.tryOpenDetail(ctx, id)) {
-      return;
-    }
-
     final route = MaterialPageRoute<void>(
       builder: (_) => AdminRoomDetailScreen(roomId: id),
     );
 
-    if (nested != null) {
-      await nested.push(route);
+    final nav = adminDashboardNavigatorKey.currentState;
+    if (nav != null) {
+      await nav.push(route);
       return;
     }
 
+    final ctx = snackContext ?? adminDashboardNavigatorKey.currentContext;
     if (ctx != null && ctx.mounted) {
       await Navigator.of(ctx).push(route);
       return;
     }
 
-    final fallbackCtx = adminDashboardNavigatorKey.currentContext;
-    if (fallbackCtx != null && fallbackCtx.mounted) {
-      ScaffoldMessenger.of(fallbackCtx).showSnackBar(
+    if (ctx != null && ctx.mounted) {
+      ScaffoldMessenger.of(ctx).showSnackBar(
         const SnackBar(content: Text('Unable to open room details.')),
       );
     }

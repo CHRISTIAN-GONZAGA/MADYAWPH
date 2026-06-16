@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../../widgets/room_status_label.dart';
 import '../admin_dashboard_models.dart';
+import '../admin_room_summary_detail_screen.dart';
 import '../widgets/booking_overview_cards.dart';
 import '../widgets/admin_room_navigation.dart';
 class RoomSummarySection extends StatelessWidget {
@@ -64,6 +65,7 @@ class RoomSummarySection extends StatelessWidget {
     required String title,
     required List<Map<String, dynamic>> list,
     String? subtitle,
+    bool showGuest = true,
   }) {
     if (list.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -72,11 +74,14 @@ class RoomSummarySection extends StatelessWidget {
       return;
     }
     HapticFeedback.selectionClick();
-    _showCategoryRooms(
-      context,
-      title,
-      list,
-      subtitle: subtitle ?? '${list.length} room(s)',
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => AdminRoomSummaryDetailScreen(
+          title: title,
+          rooms: list,
+          showGuest: showGuest,
+        ),
+      ),
     );
   }
 
@@ -282,6 +287,7 @@ class RoomSummarySection extends StatelessWidget {
                     .where(AdminDashboardModels.isAwaitingCheckIn)
                     .toList(),
                 subtitle: 'Check-in today or later',
+                showGuest: true,
               ),
             ),
             _TotalStatCard(
@@ -294,6 +300,7 @@ class RoomSummarySection extends StatelessWidget {
                 title: 'Occupied rooms',
                 list: occupiedRooms,
                 subtitle: 'Guests checked in',
+                showGuest: true,
               ),
             ),
             _TotalStatCard(
@@ -306,6 +313,7 @@ class RoomSummarySection extends StatelessWidget {
                 title: 'Vacant rooms',
                 list: vacantRooms,
                 subtitle: 'Available for booking',
+                showGuest: false,
               ),
             ),
             _TotalStatCard(
@@ -373,6 +381,7 @@ class RoomSummarySection extends StatelessWidget {
               title: '$label · $sectionTitle',
               list: filtered,
               subtitle: subtitle,
+              showGuest: sectionTitle != 'Vacant',
             );
           },
         );
