@@ -20,6 +20,7 @@ import 'admin/admin_dashboard_models.dart';
 import 'admin/admin_dashboard_shell.dart';
 import 'admin/admin_room_summary_detail_screen.dart';
 import 'admin/widgets/admin_room_detail_navigation.dart';
+import 'admin/widgets/admin_hotel_totals_room_panel.dart';
 import 'admin/widgets/admin_room_navigation.dart';
 import 'admin/widgets/admin_walk_in_customer_booking.dart';
 import 'admin/widgets/hourly_billing.dart';
@@ -68,6 +69,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   bool _busyAction = false;
   Timer? _dashboardPoll;
   bool Function()? _shellBackHandler;
+  bool Function()? _panelBackHandler;
 
   @override
   void initState() {
@@ -465,11 +467,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 
   @override
   Widget build(BuildContext context) {
-    return DashboardExitGuard(
-      navigatorKey: adminDashboardNavigatorKey,
-      onRequestInnerPop: () => _shellBackHandler?.call() ?? false,
-      child: Scaffold(
-        body: _buildBody(context),
+    return HotelTotalsRoomPanelHost(
+      onBindBackHandler: (handler) => _panelBackHandler = handler,
+      onRefresh: () => _load(silent: true),
+      child: DashboardExitGuard(
+        navigatorKey: adminDashboardNavigatorKey,
+        onRequestInnerPop: () =>
+            (_panelBackHandler?.call() ?? false) ||
+            (_shellBackHandler?.call() ?? false),
+        child: Scaffold(
+          body: _buildBody(context),
+        ),
       ),
     );
   }

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'widgets/admin_opaque_scaffold.dart';
-import 'widgets/admin_room_detail_navigation.dart';
+import 'widgets/admin_hotel_totals_room_panel.dart';
 import 'widgets/admin_summary_room_tile.dart';
 
 /// Full-screen room grid from Hotel totals; tap a tile for room details.
@@ -12,12 +12,16 @@ class AdminRoomSummaryDetailScreen extends StatelessWidget {
     required this.rooms,
     required this.showGuest,
     this.subtitle,
+    this.onClose,
+    this.onRoomTap,
   });
 
   final String title;
   final List<Map<String, dynamic>> rooms;
   final bool showGuest;
   final String? subtitle;
+  final VoidCallback? onClose;
+  final void Function(Map<String, dynamic> room)? onRoomTap;
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +32,13 @@ class AdminRoomSummaryDetailScreen extends StatelessWidget {
       appBar: AppBar(
         title: Text(title),
         leading: BackButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () {
+            if (onClose != null) {
+              onClose!();
+              return;
+            }
+            Navigator.of(context).maybePop();
+          },
         ),
       ),
       body: rooms.isEmpty
@@ -69,10 +79,13 @@ class AdminRoomSummaryDetailScreen extends StatelessWidget {
                       return AdminSummaryRoomGridTile(
                         room: room,
                         showGuest: showGuest,
-                        onTap: () => AdminRoomDetailNavigation.pushDetailForRoom(
-                          context: context,
-                          room: room,
-                        ),
+                        onTap: () {
+                          if (onRoomTap != null) {
+                            onRoomTap!(room);
+                            return;
+                          }
+                          openHotelTotalsRoomDetail(context, room: room);
+                        },
                       );
                     },
                   ),

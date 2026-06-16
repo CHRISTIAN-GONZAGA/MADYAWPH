@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../admin_dashboard_models.dart';
-import '../widgets/admin_room_detail_navigation.dart';
+import '../widgets/admin_hotel_totals_room_panel.dart';
 import '../widgets/booking_overview_cards.dart';
 import '../widgets/admin_room_navigation.dart';
 import '../widgets/admin_summary_room_tile.dart';
@@ -75,8 +75,8 @@ class RoomSummarySection extends StatelessWidget {
       return;
     }
     HapticFeedback.selectionClick();
-    AdminRoomDetailNavigation.pushSummaryList(
-      context: context,
+    openHotelTotalsRoomList(
+      context,
       title: title,
       rooms: list,
       showGuest: showGuest,

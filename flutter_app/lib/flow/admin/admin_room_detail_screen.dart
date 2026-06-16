@@ -14,10 +14,13 @@ class AdminRoomDetailScreen extends StatefulWidget {
     super.key,
     required this.roomId,
     this.onClose,
+    this.embedded = false,
   });
 
   final String roomId;
   final VoidCallback? onClose;
+  /// Inside hotel-totals slide-up panel (no extra Navigator scaffold).
+  final bool embedded;
 
   @override
   State<AdminRoomDetailScreen> createState() => _AdminRoomDetailScreenState();
@@ -757,6 +760,27 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final body = _buildBody();
+
+    if (widget.embedded) {
+      return ColoredBox(
+        color: const Color(0xFFF5F3EF),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppBar(
+              title: const Text('Room details'),
+              leading: BackButton(onPressed: _close),
+              actions: [
+                IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
+              ],
+            ),
+            Expanded(child: body),
+          ],
+        ),
+      );
+    }
+
     return PopScope(
       canPop: widget.onClose == null,
       onPopInvokedWithResult: (didPop, result) {
@@ -852,18 +876,32 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         ),
         if (!_canEditGuestStay) ...[
           const SizedBox(height: 12),
-          MaterialBanner(
-            backgroundColor: Colors.orange.shade50,
-            content: Text(
-              _managementBlockedReason ??
-                  'Check the guest in from the Bookings tab before adding fees or editing payment here.',
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.orange.shade200),
             ),
-            actions: [
-              TextButton(
-                onPressed: _close,
-                child: const Text('Back'),
-              ),
-            ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _managementBlockedReason ??
+                      'Check the guest in from the Bookings tab before adding fees or editing payment here.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: _close,
+                    child: const Text('Back'),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
         const SizedBox(height: 16),

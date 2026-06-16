@@ -4,12 +4,17 @@ import '../../../navigation_keys.dart';
 import '../admin_dashboard_models.dart';
 import '../admin_room_detail_screen.dart';
 import '../admin_room_summary_detail_screen.dart';
+import 'admin_hotel_totals_room_panel.dart';
 
-/// Room list + details as slide-up bottom sheets (reliable on Android).
+/// Room list + details: Hotel totals uses in-dashboard slide-up panel; other
+/// entry points use modal bottom sheets.
 abstract final class AdminRoomDetailNavigation {
   static int _openSheetCount = 0;
+  static bool _panelOpen = false;
 
-  static bool get isRoomOverlayOpen => _openSheetCount > 0;
+  static bool get isRoomOverlayOpen => _openSheetCount > 0 || _panelOpen;
+
+  static void notifyPanelOpen(bool open) => _panelOpen = open;
 
   static BuildContext? get _rootOverlayContext =>
       appNavigatorKey.currentContext;
@@ -28,7 +33,6 @@ abstract final class AdminRoomDetailNavigation {
     return null;
   }
 
-  /// Slide-up panel with full room management UI (fees, transfer, checkout, bills).
   static Future<void> showRoomDetailSheet({
     required String roomId,
     BuildContext? context,
@@ -49,6 +53,12 @@ abstract final class AdminRoomDetailNavigation {
     }
     if (ctx == null) return;
 
+    final panel = HotelTotalsRoomPanelScope.maybeOf(ctx);
+    if (panel != null) {
+      panel.openRoomDetail(id);
+      return;
+    }
+
     await _trackSheet(
       showModalBottomSheet<void>(
         context: ctx,
@@ -59,16 +69,12 @@ abstract final class AdminRoomDetailNavigation {
         barrierColor: Colors.black54,
         builder: (sheetContext) {
           final height = MediaQuery.sizeOf(sheetContext).height;
-          return Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
-            ),
-            child: SizedBox(
-              height: height * 0.94,
-              child: AdminRoomDetailScreen(
-                roomId: id,
-                onClose: () => Navigator.of(sheetContext).pop(),
-              ),
+          return SizedBox(
+            height: height * 0.94,
+            child: AdminRoomDetailScreen(
+              roomId: id,
+              embedded: true,
+              onClose: () => Navigator.of(sheetContext).pop(),
             ),
           );
         },
@@ -76,7 +82,6 @@ abstract final class AdminRoomDetailNavigation {
     );
   }
 
-  /// Slide-up grid of rooms (Hotel totals → Occupied, Vacant, etc.).
   static Future<void> showRoomListSheet({
     required BuildContext context,
     required String title,
@@ -105,6 +110,7 @@ abstract final class AdminRoomDetailNavigation {
               rooms: rooms,
               showGuest: showGuest,
               subtitle: subtitle,
+              onClose: () => Navigator.of(sheetContext).pop(),
             ),
           );
         },
@@ -119,13 +125,14 @@ abstract final class AdminRoomDetailNavigation {
     required bool showGuest,
     String? subtitle,
   }) {
-    return showRoomListSheet(
-      context: context,
+    openHotelTotalsRoomList(
+      context,
       title: title,
       rooms: rooms,
       showGuest: showGuest,
       subtitle: subtitle,
     );
+    return Future<void>.value();
   }
 
   static Future<void> pushDetail({
@@ -139,9 +146,7 @@ abstract final class AdminRoomDetailNavigation {
     required BuildContext context,
     required Map<String, dynamic> room,
   }) {
-    return showRoomDetailSheet(
-      roomId: AdminDashboardModels.roomIdOf(room),
-      context: context,
-    );
+    openHotelTotalsRoomDetail(context, room: room);
+    return Future<void>.value();
   }
 }
