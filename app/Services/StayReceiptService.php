@@ -60,6 +60,7 @@ class StayReceiptService
             'label' => (string) ($c->label ?? ''),
             'amount' => (float) ($c->amount ?? 0),
             'type' => (string) ($c->type ?? ''),
+            'is_credit' => (string) ($c->type ?? '') === 'refund',
         ])->values()->all();
 
         if ($lines === []) {
@@ -67,10 +68,17 @@ class StayReceiptService
                 'label' => 'Room stay',
                 'amount' => (float) ($booking->total_amount ?? 0),
                 'type' => 'room',
+                'is_credit' => false,
             ]];
         }
 
-        $subtotal = (float) collect($lines)->sum('amount');
+        $subtotal = (float) $charges
+            ->reject(fn ($c) => (string) ($c->type ?? '') === 'refund')
+            ->sum(fn ($c) => (float) ($c->amount ?? 0));
+
+        $refundSum = (float) $charges
+            ->filter(fn ($c) => (string) ($c->type ?? '') === 'refund')
+            ->sum(fn ($c) => (float) ($c->amount ?? 0));
 
         return [
             'booking_id' => (string) $booking->id,
@@ -84,6 +92,8 @@ class StayReceiptService
             'payment_status' => (string) ($booking->payment_status ?? ''),
             'lines' => $lines,
             'subtotal' => round($subtotal, 2),
+            'refunds' => round(abs($refundSum), 2),
+            'total_due' => round(max(0, $subtotal + $refundSum), 2),
             'receipt_url' => url("/api/v1/admin/bookings/{$booking->id}/receipt"),
         ];
     }

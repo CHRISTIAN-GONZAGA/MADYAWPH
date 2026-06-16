@@ -3929,11 +3929,13 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
       );
     }
     final allRooms = (_data!['rooms'] as List<dynamic>?) ?? [];
-    final rooms = allRooms.where((raw) {
-      final r = raw as Map<String, dynamic>;
-      final status = '${r['status'] ?? ''}'.toLowerCase();
-      return status == 'available' || status.isEmpty;
-    }).toList();
+    final rooms = widget.searchContext != null
+        ? allRooms
+        : allRooms.where((raw) {
+            final r = raw as Map<String, dynamic>;
+            final status = '${r['status'] ?? ''}'.toLowerCase();
+            return status == 'available' || status.isEmpty;
+          }).toList();
     final category = _data?['category'] as Map<String, dynamic>?;
     final categoryBanner = _noImages
         ? ''

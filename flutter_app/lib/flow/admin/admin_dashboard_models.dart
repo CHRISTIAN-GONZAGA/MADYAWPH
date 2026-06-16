@@ -278,12 +278,9 @@ class AdminDashboardModels {
     var occupied = 0;
     var maintenance = 0;
     for (final r in rooms) {
-      final s = statusOf(r);
-      if (s == 'available') vacant++;
-      if (s == 'checked_in' || s == 'booked' || s == 'reserved') {
-        occupied++;
-      }
-      if (s == 'maintenance') maintenance++;
+      if (isWalkInBookable(r)) vacant++;
+      if (statusOf(r) == 'checked_in') occupied++;
+      if (statusOf(r) == 'maintenance') maintenance++;
     }
     return {
       'total': rooms.length,
@@ -291,6 +288,7 @@ class AdminDashboardModels {
       'occupied': occupied,
       'cleaning': maintenance,
       'maintenance': maintenance,
+      'booked_reserved': bookedRoomCount(rooms),
     };
   }
 
@@ -424,7 +422,7 @@ class AdminDashboardModels {
     var maintenance = 0;
     for (final r in rooms) {
       final s = statusOf(r);
-      if (s == 'available') vacant++;
+      if (walkInTileStatus(r) == 'available') vacant++;
       if (s == 'checked_in') checkedIn++;
       if (s == 'reserved' && hasCheckInTodayOrLater(r)) reserved++;
       if (s == 'booked' && hasCheckInTodayOrLater(r)) booked++;

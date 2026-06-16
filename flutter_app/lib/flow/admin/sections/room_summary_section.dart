@@ -162,8 +162,7 @@ class RoomSummarySection extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final cleaningIssues = _issueRoomsFromTasks('clean');
     final maintIssues = _issueRoomsFromTasks('maintenance');
-    final occupiedRooms =
-        _filterByStatuses({'checked_in', 'booked', 'reserved'});
+    final occupiedRooms = _filterByStatuses({'checked_in'});
     final vacantRooms = rooms.where(AdminDashboardModels.isWalkInBookable).toList();
     final maintenanceRooms = _maintenanceRooms();
 
@@ -186,29 +185,14 @@ class RoomSummarySection extends StatelessWidget {
           style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 12),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 0.92,
+        _CategorySummaryGrid(
+          grouped: grouped,
+          keys: keys,
+          onOpenRooms: (ctx, title, list) => _openRooms(
+            ctx,
+            title: title,
+            list: list,
           ),
-          itemCount: keys.length,
-          itemBuilder: (context, i) {
-            final label = keys[i];
-            final list = grouped[label]!;
-            final stats = AdminDashboardModels.categoryStats(label, list);
-            return _CategoryCard(
-              stats: stats,
-              onTap: () => _openRooms(
-                context,
-                title: label,
-                list: list,
-              ),
-            );
-          },
         ),
         const SizedBox(height: 24),
         Row(
@@ -252,6 +236,20 @@ class RoomSummarySection extends StatelessWidget {
               ),
             ),
             _TotalStatCard(
+              label: 'Booked / reserved',
+              value: '${totals['booked_reserved'] ?? AdminDashboardModels.bookedRoomCount(rooms)}',
+              icon: Icons.event_available_outlined,
+              color: Colors.blue.shade700,
+              onTap: () => _openRooms(
+                context,
+                title: 'Booked / reserved',
+                list: rooms
+                    .where(AdminDashboardModels.isAwaitingCheckIn)
+                    .toList(),
+                subtitle: 'Check-in today or later',
+              ),
+            ),
+            _TotalStatCard(
               label: 'Occupied',
               value: '${totals['occupied']}',
               icon: Icons.person_pin_circle_outlined,
@@ -260,19 +258,7 @@ class RoomSummarySection extends StatelessWidget {
                 context,
                 title: 'Occupied rooms',
                 list: occupiedRooms,
-                subtitle: 'Checked in, booked, or reserved',
-              ),
-            ),
-            _TotalStatCard(
-              label: 'Vacant',
-              value: '${totals['vacant']}',
-              icon: Icons.meeting_room_outlined,
-              color: Colors.teal.shade700,
-              onTap: () => _openRooms(
-                context,
-                title: 'Vacant rooms',
-                list: vacantRooms,
-                subtitle: 'Available for booking',
+                subtitle: 'Guests checked in',
               ),
             ),
             _TotalStatCard(
@@ -285,6 +271,18 @@ class RoomSummarySection extends StatelessWidget {
                 title: 'Rooms in cleaning',
                 items: cleaningIssues,
                 useMaintenanceRooms: true,
+              ),
+            ),
+            _TotalStatCard(
+              label: 'Vacant',
+              value: '${totals['vacant']}',
+              icon: Icons.meeting_room_outlined,
+              color: Colors.teal.shade700,
+              onTap: () => _openRooms(
+                context,
+                title: 'Vacant rooms',
+                list: vacantRooms,
+                subtitle: 'Available for booking',
               ),
             ),
             _TotalStatCard(
@@ -308,20 +306,6 @@ class RoomSummarySection extends StatelessWidget {
                   );
                 }
               },
-            ),
-            _TotalStatCard(
-              label: 'Booked / reserved',
-              value: '${AdminDashboardModels.bookedRoomCount(rooms)}',
-              icon: Icons.event_available_outlined,
-              color: Colors.blue.shade700,
-              onTap: () => _openRooms(
-                context,
-                title: 'Booked / reserved',
-                list: rooms
-                    .where(AdminDashboardModels.isAwaitingCheckIn)
-                    .toList(),
-                subtitle: 'Check-in today or later',
-              ),
             ),
           ],
         ),
@@ -770,10 +754,70 @@ class _SummaryIssueListSheet extends StatelessWidget {
   }
 }
 
+class _CategorySummaryGrid extends StatefulWidget {
+  const _CategorySummaryGrid({
+    required this.grouped,
+    required this.keys,
+    required this.onOpenRooms,
+  });
+
+  final Map<String, List<Map<String, dynamic>>> grouped;
+  final List<String> keys;
+  final void Function(
+    BuildContext context,
+    String title,
+    List<Map<String, dynamic>> list,
+  ) onOpenRooms;
+
+  @override
+  State<_CategorySummaryGrid> createState() => _CategorySummaryGridState();
+}
+
+class _CategorySummaryGridState extends State<_CategorySummaryGrid> {
+  String? _expandedCategory;
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+        childAspectRatio: _expandedCategory == null ? 1.15 : 0.88,
+      ),
+      itemCount: widget.keys.length,
+      itemBuilder: (context, i) {
+        final label = widget.keys[i];
+        final list = widget.grouped[label]!;
+        final stats = AdminDashboardModels.categoryStats(label, list);
+        final expanded = _expandedCategory == label;
+        return _CategoryCard(
+          stats: stats,
+          expanded: expanded,
+          onTap: () {
+            if (expanded) {
+              widget.onOpenRooms(context, label, list);
+            } else {
+              setState(() => _expandedCategory = label);
+            }
+          },
+        );
+      },
+    );
+  }
+}
+
 class _CategoryCard extends StatelessWidget {
-  const _CategoryCard({required this.stats, required this.onTap});
+  const _CategoryCard({
+    required this.stats,
+    required this.onTap,
+    this.expanded = false,
+  });
   final Map<String, dynamic> stats;
   final VoidCallback onTap;
+  final bool expanded;
 
   @override
   Widget build(BuildContext context) {
@@ -810,27 +854,45 @@ class _CategoryCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 10),
-              Text('Total: ${stats['total']}'),
-              Text('Vacant: ${stats['vacant']}'),
-              Text('Occupied: ${stats['checked_in']}'),
-              Text('Booked / reserved: ${stats['awaiting_check_in']}'),
-              Text(
-                'Arriving (today–2 days): ${stats['reserved_soon']}',
-                style: TextStyle(
-                  color: (stats['reserved_soon'] as int) > 0
-                      ? Colors.orange.shade800
-                      : null,
-                  fontWeight: FontWeight.w500,
+              if (!expanded)
+                Text(
+                  'Total: ${stats['total']}',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                )
+              else ...[
+                Text('Total: ${stats['total']}'),
+                Text('Vacant: ${stats['vacant']}'),
+                Text('Occupied: ${stats['checked_in']}'),
+                Text(
+                  'Arriving (today–2 days): ${stats['reserved_soon']}',
+                  style: TextStyle(
+                    color: (stats['reserved_soon'] as int) > 0
+                        ? Colors.orange.shade800
+                        : null,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              ),
+                Text('Booked / reserved: ${stats['awaiting_check_in']}'),
+                const SizedBox(height: 4),
+                Text(
+                  'Tap again to view rooms',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ],
               const Spacer(),
-              Text(
-                '${stats['occupancy']}% occupancy',
-                style: TextStyle(
-                  color: scheme.primary,
-                  fontWeight: FontWeight.w600,
+              if (expanded)
+                Text(
+                  '${stats['occupancy']}% occupancy',
+                  style: TextStyle(
+                    color: scheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
             ],
           ),
         ),

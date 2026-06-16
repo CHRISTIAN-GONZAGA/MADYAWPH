@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../dio_client.dart';
+import '../../../utils/money_format.dart';
 
 /// Shows stay receipt summary; fetches line items when missing; downloads printable PDF.
 Future<void> showStayReceiptDialog(
@@ -92,7 +93,7 @@ Future<void> showStayReceiptDialog(
                   children: [
                     Expanded(child: Text('${line['label']}')),
                     Text(
-                      '₱${(line['amount'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
+                      formatBillLineAmount(line),
                       style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ],
@@ -105,6 +106,24 @@ Future<void> showStayReceiptDialog(
                 child: Text('No line breakdown — download PDF for full receipt.'),
               ),
             const Divider(height: 20),
+            if (((data['refunds'] as num?) ?? 0) > 0) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Refunds',
+                    style: Theme.of(ctx).textTheme.bodySmall,
+                  ),
+                  Text(
+                    '−${formatPeso((data['refunds'] as num?) ?? 0)}',
+                    style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+            ],
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -115,7 +134,11 @@ Future<void> showStayReceiptDialog(
                       ),
                 ),
                 Text(
-                  '₱${(data['subtotal'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
+                  formatPeso(
+                    (data['total_due'] as num?) ??
+                        (data['subtotal'] as num?) ??
+                        0,
+                  ),
                   style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w900,
                         color: Theme.of(ctx).colorScheme.primary,

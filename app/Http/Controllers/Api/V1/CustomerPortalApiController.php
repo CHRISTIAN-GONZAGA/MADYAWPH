@@ -346,19 +346,19 @@ class CustomerPortalApiController extends Controller
                 ], 422);
             }
 
-            if ($this->roomStatusValue($room) !== RoomStatus::AVAILABLE->value) {
+            if ($this->roomStatusValue($room) === RoomStatus::CHECKED_IN->value) {
                 return response()->json([
-                    'message' => 'This room is not available for an immediate booking right now.',
+                    'message' => 'This room is currently occupied.',
                 ], 422);
             }
 
             $checkInDate = Carbon::parse($validated['check_in'])->startOfDay();
             $checkOutDate = Carbon::parse($validated['check_out'])->startOfDay();
-            if ($this->hotelAvailabilityService->roomHasStayConflict(
+            if (! $this->hotelAvailabilityService->isRoomAvailableForStay(
                 (string) $room->id,
                 $hotelId,
-                $checkInDate->toDateString(),
-                $checkOutDate->toDateString(),
+                $checkInDate,
+                $checkOutDate,
                 null,
             )) {
                 return response()->json([
@@ -486,18 +486,14 @@ class CustomerPortalApiController extends Controller
             ], 422);
         }
 
-        if ($this->roomStatusValue($room) !== RoomStatus::AVAILABLE->value) {
-            return response()->json(['message' => 'This room cannot be reserved for those dates right now.'], 422);
-        }
-
-        if ($this->hotelAvailabilityService->roomHasStayConflict(
+        if (! $this->hotelAvailabilityService->isRoomAvailableForStay(
             (string) $room->id,
             $hotelId,
-            $checkIn->toDateString(),
-            $checkOut->toDateString(),
+            $checkIn,
+            $checkOut,
             null,
         )) {
-            return response()->json(['message' => 'Room already has a reservation overlapping these dates.'], 422);
+            return response()->json(['message' => 'This room cannot be reserved for those dates right now.'], 422);
         }
 
         $window = CustomerStayPricing::resolveStayWindow($room, $checkIn, $checkOut);

@@ -5,6 +5,7 @@ import '../../../dio_client.dart';
 import '../../../locale_controller.dart';
 import '../../../widgets/app_state_views.dart';
 import '../../../widgets/hotel_credits_policy.dart';
+import '../../customer_search_context.dart';
 import '../../dashboards.dart';
 
 /// Admin local booking — same browse + book flow as the public customer portal,
@@ -36,6 +37,15 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
     _load();
   }
 
+  CustomerSearchContext get _walkInStayDates {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return CustomerSearchContext(
+      checkIn: today,
+      checkOut: today.add(const Duration(days: 1)),
+    );
+  }
+
   Future<void> _load() async {
     if (widget.hotelId.isEmpty) {
       setState(() {
@@ -51,7 +61,10 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
     try {
       final res = await publicDio().get<Map<String, dynamic>>(
         '/customer/categories',
-        queryParameters: {'hotel_id': widget.hotelId},
+        queryParameters: {
+          'hotel_id': widget.hotelId,
+          ..._walkInStayDates.queryParams,
+        },
       );
       if (!mounted) return;
       setState(() {
@@ -91,6 +104,7 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
           hotelName: widget.hotelName,
           adminLocalBooking: true,
           hideImages: true,
+          searchContext: _walkInStayDates,
           onBooked: _onBooked,
         ),
       ),

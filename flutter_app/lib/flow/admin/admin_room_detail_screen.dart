@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 
 import '../../dio_client.dart';
+import '../../utils/money_format.dart';
 import '../../widgets/app_state_views.dart';
 import '../../widgets/room_status_label.dart';
 import 'admin_dashboard_models.dart';
@@ -431,11 +432,11 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
             title: const Text('Room rate change'),
             content: Text(
               'Transferring from Room ${preview?['from_room_number']} '
-              '(â‚±${(preview?['from_nightly_rate'] as num?)?.toStringAsFixed(0) ?? '0'}/night) '
+              '(${formatPeso((preview?['from_nightly_rate'] as num?) ?? 0)}/night) '
               'to Room ${preview?['to_room_number']} '
-              '(â‚±${(preview?['to_nightly_rate'] as num?)?.toStringAsFixed(0) ?? '0'}/night).\n\n'
-              'Bill ${adjustment > 0 ? 'increases' : 'decreases'} by â‚±${adjustment.abs().toStringAsFixed(0)}.\n'
-              'New total: â‚±${(preview?['new_total'] as num?)?.toStringAsFixed(0) ?? '0'}.\n\n'
+              '(${formatPeso((preview?['to_nightly_rate'] as num?) ?? 0)}/night).\n\n'
+              'Bill ${adjustment > 0 ? 'increases' : 'decreases'} by ${formatPeso(adjustment.abs())}.\n'
+              'New total: ${formatPeso((preview?['new_total'] as num?) ?? 0)}.\n\n'
               'Approve this price adjustment?',
             ),
             actions: [
@@ -534,7 +535,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Total bill: â‚±${totalDue.toStringAsFixed(2)}',
+                    'Total bill: ${formatPeso(totalDue)}',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w800,
                         ),
@@ -547,9 +548,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                         child: Row(
                           children: [
                             Expanded(child: Text('${line['label']}')),
-                            Text(
-                              'â‚±${((line['amount'] as num?) ?? 0).toStringAsFixed(0)}',
-                            ),
+                            Text(formatBillLineAmount(line)),
                           ],
                         ),
                       ),
@@ -575,7 +574,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                     decoration: const InputDecoration(
                       labelText: 'Amount given by guest',
                       border: OutlineInputBorder(),
-                      prefixText: 'â‚± ',
+                      prefixText: '₱ ',
                     ),
                     onChanged: (_) => setLocal(() {}),
                   ),
@@ -583,7 +582,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: Text(
-                        'Change: â‚±${change.toStringAsFixed(2)}',
+                        'Change: ${formatPeso(change)}',
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
                           color: Theme.of(context).colorScheme.primary,
@@ -650,7 +649,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       if (!mounted) return;
       final changeDue = (res.data?['change_due'] as num?)?.toDouble();
       final msg = changeDue != null && changeDue > 0
-          ? 'Payment recorded. Change due: â‚±${changeDue.toStringAsFixed(2)}'
+          ? 'Payment recorded. Change due: ${formatPeso(changeDue)}'
           : 'Payment recorded.';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
       await _load();
@@ -996,7 +995,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         Text('Charges', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 4),
         Text(
-            'Total fee: â‚±${chargesTotal.toStringAsFixed(2)} Â· Refunds: â‚±${refundTotal.toStringAsFixed(2)}'),
+            'Total fee: ${formatPeso(chargesTotal)} · Refunds: ${formatPeso(refundTotal)}'),
         const SizedBox(height: 8),
         if (charges.isEmpty)
           const Text('No charges yet.')
@@ -1009,7 +1008,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                 leading: const Icon(Icons.receipt_long_outlined),
                 title: Text((m['label'] ?? '').toString()),
                 subtitle: Text('Type: ${(m['type'] ?? '').toString()}'),
-                trailing: Text('â‚±${(m['amount'] ?? '').toString()}'),
+                trailing: Text(formatBillLineAmount(m)),
               ),
             );
           }),

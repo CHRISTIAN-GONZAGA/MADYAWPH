@@ -23,6 +23,7 @@ class BookingPaymentService
             'label' => (string) ($c->label ?? ''),
             'type' => (string) ($c->type ?? ''),
             'amount' => (float) ($c->amount ?? 0),
+            'is_credit' => (string) ($c->type ?? '') === 'refund',
         ])->values()->all();
 
         $subtotal = (float) $charges
