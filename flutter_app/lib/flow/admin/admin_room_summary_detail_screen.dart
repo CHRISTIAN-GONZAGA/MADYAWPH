@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import 'widgets/admin_opaque_scaffold.dart';
-import 'widgets/admin_dashboard_routes.dart';
 import 'widgets/admin_room_detail_navigation.dart';
 import 'widgets/admin_summary_room_tile.dart';
 
@@ -29,14 +28,7 @@ class AdminRoomSummaryDetailScreen extends StatelessWidget {
       appBar: AppBar(
         title: Text(title),
         leading: BackButton(
-          onPressed: () {
-            final shell = AdminDashboardRoutes.maybeOf(context);
-            if (shell != null) {
-              shell.closeRoomList();
-              return;
-            }
-            Navigator.of(context).maybePop();
-          },
+          onPressed: () => Navigator.of(context).pop(),
         ),
       ),
       body: rooms.isEmpty

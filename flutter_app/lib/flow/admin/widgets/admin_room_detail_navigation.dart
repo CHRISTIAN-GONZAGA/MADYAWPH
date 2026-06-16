@@ -4,98 +4,40 @@ import '../../../navigation_keys.dart';
 import '../admin_dashboard_models.dart';
 import '../admin_room_detail_screen.dart';
 import '../admin_room_summary_detail_screen.dart';
-import 'admin_dashboard_routes.dart';
 
-/// Opens room list + detail inside the dashboard shell when possible, otherwise
-/// on the app root navigator (Manage rooms, Bookings tab, etc.).
+/// Room list + details as slide-up bottom sheets (reliable on Android).
 abstract final class AdminRoomDetailNavigation {
-  static int _rootOverlayDepth = 0;
-  static bool _shellOverlayOpen = false;
+  static int _openSheetCount = 0;
 
-  static bool get isRoomOverlayOpen =>
-      _rootOverlayDepth > 0 || _shellOverlayOpen;
+  static bool get isRoomOverlayOpen => _openSheetCount > 0;
 
-  static void Function(String roomId)? _boundOpenDetail;
+  static BuildContext? get _rootOverlayContext =>
+      appNavigatorKey.currentContext;
 
-  /// Registered by [AdminDashboardRoomOverlayHost] so detail opens even when
-  /// [BuildContext] cannot see [AdminDashboardRoutes].
-  static void bindShellOpenDetail(void Function(String roomId)? opener) {
-    _boundOpenDetail = opener;
-  }
-
-  static void notifyShellOverlayOpen(bool open) {
-    _shellOverlayOpen = open;
-  }
-
-  static Future<T?> _pushRoot<T>(Route<T> route) {
-    final nav = appNavigatorKey.currentState;
-    if (nav == null) {
-      return Future<T?>.value(null);
-    }
-    _rootOverlayDepth++;
-    return nav.push(route).whenComplete(() {
-      if (_rootOverlayDepth > 0) _rootOverlayDepth--;
+  static Future<T?> _trackSheet<T>(Future<T?> future) {
+    _openSheetCount++;
+    return future.whenComplete(() {
+      if (_openSheetCount > 0) _openSheetCount--;
     });
   }
 
-  static Future<void> _pushRootWithFallback<T>(
-    Route<T> route, {
-    BuildContext? context,
-  }) async {
-    final nav = appNavigatorKey.currentState;
-    if (nav != null) {
-      await _pushRoot(route);
-      return;
-    }
-    if (context != null && context.mounted) {
-      _rootOverlayDepth++;
-      try {
-        await Navigator.of(context, rootNavigator: true).push(route);
-      } finally {
-        if (_rootOverlayDepth > 0) _rootOverlayDepth--;
-      }
-    }
+  static BuildContext? _resolveContext(BuildContext? context) {
+    if (context != null && context.mounted) return context;
+    final root = _rootOverlayContext;
+    if (root != null && root.mounted) return root;
+    return null;
   }
 
-  static Future<void> pushSummaryList({
-    required BuildContext context,
-    required String title,
-    required List<Map<String, dynamic>> rooms,
-    required bool showGuest,
-    String? subtitle,
-  }) async {
-    if (rooms.isEmpty) return;
-
-    final shell = AdminDashboardRoutes.maybeOf(context);
-    if (shell != null) {
-      shell.openRoomList(
-        title: title,
-        rooms: rooms,
-        showGuest: showGuest,
-        subtitle: subtitle,
-      );
-      return;
-    }
-
-    final route = MaterialPageRoute<void>(
-      builder: (_) => AdminRoomSummaryDetailScreen(
-        title: title,
-        rooms: rooms,
-        showGuest: showGuest,
-        subtitle: subtitle,
-      ),
-    );
-    await _pushRootWithFallback(route, context: context);
-  }
-
-  static Future<void> pushDetail({
+  /// Slide-up panel with full room management UI (fees, transfer, checkout, bills).
+  static Future<void> showRoomDetailSheet({
     required String roomId,
     BuildContext? context,
   }) async {
     final id = AdminDashboardModels.normalizeRoomIdString(roomId);
+    final ctx = _resolveContext(context);
     if (id.isEmpty) {
-      if (context != null && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+      if (ctx != null) {
+        ScaffoldMessenger.of(ctx).showSnackBar(
           const SnackBar(
             content: Text(
               'Room ID missing. Pull to refresh the dashboard and try again.',
@@ -105,32 +47,99 @@ abstract final class AdminRoomDetailNavigation {
       }
       return;
     }
+    if (ctx == null) return;
 
-    if (context != null) {
-      final shell = AdminDashboardRoutes.maybeOf(context);
-      if (shell != null) {
-        shell.openRoomDetail(id);
-        return;
-      }
-    }
-
-    final bound = _boundOpenDetail;
-    if (bound != null) {
-      bound(id);
-      return;
-    }
-
-    final route = MaterialPageRoute<void>(
-      builder: (_) => AdminRoomDetailScreen(roomId: id),
+    await _trackSheet(
+      showModalBottomSheet<void>(
+        context: ctx,
+        useRootNavigator: true,
+        isScrollControlled: true,
+        showDragHandle: true,
+        backgroundColor: const Color(0xFFF5F3EF),
+        barrierColor: Colors.black54,
+        builder: (sheetContext) {
+          final height = MediaQuery.sizeOf(sheetContext).height;
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+            ),
+            child: SizedBox(
+              height: height * 0.94,
+              child: AdminRoomDetailScreen(
+                roomId: id,
+                onClose: () => Navigator.of(sheetContext).pop(),
+              ),
+            ),
+          );
+        },
+      ),
     );
-    await _pushRootWithFallback(route, context: context);
+  }
+
+  /// Slide-up grid of rooms (Hotel totals → Occupied, Vacant, etc.).
+  static Future<void> showRoomListSheet({
+    required BuildContext context,
+    required String title,
+    required List<Map<String, dynamic>> rooms,
+    required bool showGuest,
+    String? subtitle,
+  }) async {
+    if (rooms.isEmpty) return;
+    final ctx = _resolveContext(context);
+    if (ctx == null) return;
+
+    await _trackSheet(
+      showModalBottomSheet<void>(
+        context: ctx,
+        useRootNavigator: true,
+        isScrollControlled: true,
+        showDragHandle: true,
+        backgroundColor: Theme.of(ctx).colorScheme.surface,
+        barrierColor: Colors.black54,
+        builder: (sheetContext) {
+          final height = MediaQuery.sizeOf(sheetContext).height;
+          return SizedBox(
+            height: height * 0.88,
+            child: AdminRoomSummaryDetailScreen(
+              title: title,
+              rooms: rooms,
+              showGuest: showGuest,
+              subtitle: subtitle,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  static Future<void> pushSummaryList({
+    required BuildContext context,
+    required String title,
+    required List<Map<String, dynamic>> rooms,
+    required bool showGuest,
+    String? subtitle,
+  }) {
+    return showRoomListSheet(
+      context: context,
+      title: title,
+      rooms: rooms,
+      showGuest: showGuest,
+      subtitle: subtitle,
+    );
+  }
+
+  static Future<void> pushDetail({
+    required String roomId,
+    BuildContext? context,
+  }) {
+    return showRoomDetailSheet(roomId: roomId, context: context);
   }
 
   static Future<void> pushDetailForRoom({
     required BuildContext context,
     required Map<String, dynamic> room,
   }) {
-    return pushDetail(
+    return showRoomDetailSheet(
       roomId: AdminDashboardModels.roomIdOf(room),
       context: context,
     );
