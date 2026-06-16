@@ -16,6 +16,7 @@ class AdminRoomDetailScreen extends StatefulWidget {
     this.onClose,
     this.embedded = false,
     this.panelBodyOnly = false,
+    this.initialRoomSnapshot,
   });
 
   final String roomId;
@@ -24,6 +25,8 @@ class AdminRoomDetailScreen extends StatefulWidget {
   final bool embedded;
   /// Renders only the scrollable body; parent supplies [Scaffold] + app bar.
   final bool panelBodyOnly;
+  /// Dashboard list row shown immediately while room detail API loads.
+  final Map<String, dynamic>? initialRoomSnapshot;
 
   @override
   State<AdminRoomDetailScreen> createState() => _AdminRoomDetailScreenState();
@@ -62,6 +65,10 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   void initState() {
     super.initState();
     _roomId = AdminDashboardModels.normalizeRoomIdString(widget.roomId);
+    final snap = widget.initialRoomSnapshot;
+    if (snap != null && snap.isNotEmpty) {
+      _data = {'room': Map<String, dynamic>.from(snap)};
+    }
     _load();
   }
 
@@ -74,7 +81,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       return;
     }
     setState(() {
-      _loading = true;
+      if (_data == null) _loading = true;
       _error = null;
     });
     try {
@@ -82,12 +89,20 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
           .get<Map<String, dynamic>>('/admin/rooms/$_roomId');
       if (!mounted) return;
       final payload = _normalizePayload(res.data);
+      if (!mounted) return;
       setState(() {
-        _data = payload;
         _loading = false;
-        if (payload == null || payload.isEmpty || _asMap(payload['room']) == null) {
+        final room = payload != null ? _asMap(payload['room']) : null;
+        if (payload != null && room != null) {
+          _data = payload;
+          _error = null;
+        } else if (_data == null) {
           _error = payload == null || payload.isEmpty
               ? 'No room data returned from the server.'
+              : 'Room data is unavailable. Pull to refresh.';
+        } else {
+          _error = payload == null || payload.isEmpty
+              ? 'Could not refresh room details. Showing last loaded info.'
               : 'Room data is unavailable. Pull to refresh.';
         }
       });
@@ -764,9 +779,11 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   @override
   Widget build(BuildContext context) {
     if (widget.panelBodyOnly) {
-      return ColoredBox(
-        color: const Color(0xFFF5F3EF),
-        child: _buildBody(),
+      return SizedBox.expand(
+        child: ColoredBox(
+          color: const Color(0xFFF5F3EF),
+          child: _buildBody(),
+        ),
       );
     }
 
@@ -815,8 +832,8 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   }
 
   Widget _buildBody() {
-    if (_loading) return const AppLoadingView();
-    if (_error != null) {
+    if (_loading && _data == null) return const AppLoadingView();
+    if (_error != null && _data == null) {
       return AppErrorView(message: _error!, onRetry: _load);
     }
     if (_data == null) {
@@ -829,7 +846,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     final room = _asMap(_data!['room']);
     if (room == null) {
       return AppErrorView(
-        message: 'Room data is unavailable. Pull to refresh.',
+        message: _error ?? 'Room data is unavailable. Pull to refresh.',
         onRetry: _load,
       );
     }
@@ -845,13 +862,9 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     const roomCardColor = Color(0xFFF3EDE3);
     final accent = Theme.of(context).colorScheme.primary;
 
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(16),
-      children: [
-        Container(
+    final children = <Widget>[
+      if (_loading) const LinearProgressIndicator(minHeight: 2),
+      Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
@@ -1142,8 +1155,37 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
               ),
             );
           }),
-      ],
-    ),
+    ];
+
+    if (widget.panelBodyOnly) {
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(16),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: constraints.maxHeight > 32
+                    ? constraints.maxHeight - 32
+                    : constraints.maxHeight,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: children,
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        children: children,
+      ),
     );
   }
 }

@@ -121,6 +121,7 @@ void main() {
 
     expect(find.text('Room details'), findsOneWidget);
     expect(find.byType(AdminRoomDetailScreen), findsOneWidget);
-    expect(find.text('Loading…'), findsOneWidget);
+    expect(find.text('Room 101'), findsOneWidget);
+    expect(find.text('Booking info'), findsOneWidget);
   });
 }
