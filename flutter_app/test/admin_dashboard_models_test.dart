@@ -66,6 +66,35 @@ void main() {
     });
   });
 
+  group('isSummaryOccupied', () {
+    test('checked_in room is occupied', () {
+      expect(
+        AdminDashboardModels.isSummaryOccupied({
+          'status': 'checked_in',
+          'current_guest_name': 'Guest 1',
+        }),
+        isTrue,
+      );
+    });
+
+    test('maintenance with guest is occupied', () {
+      expect(
+        AdminDashboardModels.isSummaryOccupied({
+          'status': 'maintenance',
+          'current_guest_name': 'Guest 1',
+        }),
+        isTrue,
+      );
+    });
+
+    test('vacant available room is not occupied', () {
+      expect(
+        AdminDashboardModels.isSummaryOccupied({'status': 'available'}),
+        isFalse,
+      );
+    });
+  });
+
   group('roomsForCategory', () {
     const rooms = [
       {

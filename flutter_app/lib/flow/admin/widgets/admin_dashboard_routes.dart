@@ -20,6 +20,14 @@ class AdminDashboardRoutes extends InheritedWidget {
     return context.getInheritedWidgetOfExactType<AdminDashboardRoutes>();
   }
 
+  /// Opens room details in the dashboard shell when available from [context].
+  static bool tryOpenDetail(BuildContext context, String roomId) {
+    final routes = maybeOf(context);
+    if (routes == null || roomId.isEmpty) return false;
+    routes.openDetail(roomId);
+    return true;
+  }
+
   @override
   bool updateShouldNotify(AdminDashboardRoutes oldWidget) {
     return isFullScreenOpen != oldWidget.isFullScreenOpen;

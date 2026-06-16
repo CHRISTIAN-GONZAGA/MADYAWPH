@@ -236,9 +236,11 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
 
   Widget _buildFullScreen() {
     if (_detailRoomId != null) {
-      return AdminRoomDetailScreen(
-        roomId: _detailRoomId!,
-        onClose: _closeDetail,
+      return SizedBox.expand(
+        child: AdminRoomDetailScreen(
+          roomId: _detailRoomId!,
+          onClose: _closeDetail,
+        ),
       );
     }
     return const SizedBox.shrink();

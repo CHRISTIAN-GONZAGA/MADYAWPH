@@ -124,11 +124,11 @@ abstract final class AdminRoomNavigation {
 
     if (!context.mounted) return;
 
-    // Prefer in-shell full screen on the dashboard root route (Summary tab, etc.).
-    final routes = AdminDashboardRoutes.maybeOf(context);
+    // Prefer in-shell full screen (Summary → occupied/vacant lists, etc.).
     final nested = adminDashboardNavigatorKey.currentState;
-    if (routes != null && nested != null && !nested.canPop()) {
-      routes.openDetail(id);
+    if (AdminDashboardRoutes.tryOpenDetail(context, id) &&
+        nested != null &&
+        !nested.canPop()) {
       return;
     }
 

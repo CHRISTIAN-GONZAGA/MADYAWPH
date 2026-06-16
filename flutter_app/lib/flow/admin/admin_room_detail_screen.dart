@@ -860,7 +860,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(context).pop(),
+                onPressed: _close,
                 child: const Text('Back'),
               ),
             ],
@@ -1036,14 +1036,34 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
           ),
         ] else ...[
           const SizedBox(height: 10),
-          OutlinedButton.icon(
-            onPressed: _changingStatus ? null : _changeStatus,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: accent,
-              side: BorderSide(color: accent),
-            ),
-            icon: const Icon(Icons.build_outlined),
-            label: const Text('Housekeeping status only'),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _changingStatus ? null : _changeStatus,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: accent,
+                    side: BorderSide(color: accent),
+                  ),
+                  icon: const Icon(Icons.toggle_on_outlined),
+                  label: const Text('Change status'),
+                ),
+              ),
+              if (booking != null) ...[
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _transferRoom,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: accent,
+                      side: BorderSide(color: accent),
+                    ),
+                    icon: const Icon(Icons.swap_horiz_outlined),
+                    label: const Text('Transfer room'),
+                  ),
+                ),
+              ],
+            ],
           ),
         ],
         const SizedBox(height: 16),

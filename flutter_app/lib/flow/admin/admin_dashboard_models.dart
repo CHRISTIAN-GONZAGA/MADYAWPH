@@ -458,10 +458,19 @@ class AdminDashboardModels {
     return rooms.where((r) => walkInTileStatus(r) == 'available').toList();
   }
 
+  static bool isSummaryOccupied(Map<String, dynamic> room) {
+    final status = statusOf(room);
+    if (status == 'checked_in') return true;
+    final guest = guestName(room);
+    if (guest == '—' || guest.isEmpty) return false;
+    // Guest still on record during maintenance / turnover.
+    return status == 'maintenance';
+  }
+
   static List<Map<String, dynamic>> categoryOccupiedRooms(
     List<Map<String, dynamic>> rooms,
   ) {
-    return rooms.where((r) => statusOf(r) == 'checked_in').toList();
+    return rooms.where(isSummaryOccupied).toList();
   }
 
   static List<Map<String, dynamic>> categoryReservedSoonRooms(

@@ -162,7 +162,8 @@ class RoomSummarySection extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final cleaningIssues = _issueRoomsFromTasks('clean');
     final maintIssues = _issueRoomsFromTasks('maintenance');
-    final occupiedRooms = _filterByStatuses({'checked_in'});
+    final occupiedRooms =
+        rooms.where(AdminDashboardModels.isSummaryOccupied).toList();
     final vacantRooms = rooms.where(AdminDashboardModels.isWalkInBookable).toList();
     final maintenanceRooms = _maintenanceRooms();
 
