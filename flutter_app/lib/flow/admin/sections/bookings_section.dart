@@ -647,8 +647,8 @@ class _BookingsSectionState extends State<BookingsSection>
         ),
         onTap: () {
           AdminRoomNavigation.openDetailById(
-            context,
             AdminDashboardModels.roomIdOf(room),
+            snackContext: context,
           );
         },
       ),

@@ -258,8 +258,8 @@ class _CheckoutRoomCard extends StatelessWidget {
         trailing: const Icon(Icons.chevron_right),
         onTap: () {
           AdminRoomNavigation.openDetailById(
-            context,
             AdminDashboardModels.roomIdOf(room),
+            snackContext: context,
           );
         },
       ),

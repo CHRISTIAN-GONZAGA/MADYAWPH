@@ -1,64 +1,29 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gloretto_mobile/flow/admin/widgets/admin_dashboard_routes.dart';
-import 'package:gloretto_mobile/flow/admin/widgets/admin_room_navigation.dart';
-import 'package:gloretto_mobile/navigation_keys.dart';
-import 'package:gloretto_mobile/widgets/dashboard_exit_guard.dart';
+import 'package:gloretto_mobile/flow/admin/admin_dashboard_models.dart';
 
 import 'test_helpers.dart';
 
 void main() {
   setUp(initWidgetTestBindings);
 
-  testWidgets('summary-style occupied room tap opens in-shell room details',
-      (tester) async {
-    String? openedRoomId;
-    const occupiedRoom = {
+  test('occupied summary room resolves id for detail navigation', () {
+    const room = {
       'id': 'room-occ-1',
       'room_number': '101',
       'status': 'checked_in',
       'current_guest_name': 'Guest 1',
     };
+    expect(AdminDashboardModels.roomIdOf(room), 'room-occ-1');
+    expect(AdminDashboardModels.isSummaryOccupied(room), isTrue);
+  });
 
-    await tester.pumpWidget(
-      MaterialApp(
-        navigatorKey: appNavigatorKey,
-        home: DashboardExitGuard(
-          navigatorKey: adminDashboardNavigatorKey,
-          child: Scaffold(
-            body: Navigator(
-              key: adminDashboardNavigatorKey,
-              onGenerateRoute: (_) => MaterialPageRoute<void>(
-                builder: (_) => AdminDashboardRoutes(
-                  openDetail: (id) => openedRoomId = id,
-                  closeFullScreen: () {},
-                  isFullScreenOpen: false,
-                  child: Builder(
-                    builder: (hostContext) => Scaffold(
-                      body: Center(
-                        child: FilledButton(
-                          onPressed: () => AdminRoomNavigation.openRoom(
-                            hostContext,
-                            room: occupiedRoom,
-                            onSuccess: () async {},
-                            mode: AdminRoomOpenMode.manageOnly,
-                          ),
-                          child: const Text('Open occupied room'),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
+  test('roomIdOf falls back to room_id field', () {
+    expect(
+      AdminDashboardModels.roomIdOf({
+        'room_id': 'mongo-id-99',
+        'status': 'checked_in',
+      }),
+      'mongo-id-99',
     );
-
-    await tester.tap(find.text('Open occupied room'));
-    await tester.pump();
-
-    expect(openedRoomId, 'room-occ-1');
   });
 }

@@ -773,7 +773,7 @@ class AdminRoomSummaryDetailScreen extends StatelessWidget {
                     onTap: roomId.isEmpty
                         ? null
                         : () {
-                            AdminRoomNavigation.openDetailById(context, roomId);
+                            AdminRoomNavigation.openDetailById(roomId);
                           },
                   ),
                 );

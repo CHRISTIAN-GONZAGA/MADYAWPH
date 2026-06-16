@@ -84,8 +84,11 @@ class AdminDashboardModels {
 
   /// Normalizes Mongo/API room identifiers for booking requests.
   static String roomIdOf(Map<String, dynamic> room) {
-    final raw = room['id'] ?? room['_id'];
-    return normalizeRoomIdString(raw);
+    for (final key in ['id', '_id', 'room_id']) {
+      final normalized = normalizeRoomIdString(room[key]);
+      if (normalized.isNotEmpty) return normalized;
+    }
+    return '';
   }
 
   /// Normalizes a raw id value (string, ObjectId map, etc.).

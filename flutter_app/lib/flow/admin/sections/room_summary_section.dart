@@ -641,12 +641,11 @@ class _SummaryRoomGridTile extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () {
-          AdminRoomNavigation.openRoom(
-            hostContext,
+          AdminRoomNavigation.openSummaryRoomDetail(
             room: room,
-            onSuccess: onRefresh,
             sheetContext: sheetContext,
-            mode: AdminRoomOpenMode.manageOnly,
+            snackContext: hostContext,
+            onClosed: onRefresh,
           );
         },
         child: Padding(

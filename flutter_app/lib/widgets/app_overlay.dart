@@ -42,10 +42,7 @@ Future<T?> pushAdminFullScreen<T>(
     return Future<T?>.value(null);
   }
 
-  final route = MaterialPageRoute<T>(
-    fullscreenDialog: true,
-    builder: builder,
-  );
+  final route = MaterialPageRoute<T>(builder: builder);
 
   final adminNav = adminDashboardNavigatorKey.currentState;
   if (adminNav != null) {
@@ -66,12 +63,7 @@ Future<T?> showAppOverlayPage<T>({
 
   final nav = appNavigatorKey.currentState;
   if (nav != null) {
-    return nav.push<T>(
-      MaterialPageRoute<T>(
-        fullscreenDialog: true,
-        builder: builder,
-      ),
-    );
+    return nav.push<T>(MaterialPageRoute<T>(builder: builder));
   }
 
   return Future<T?>.value(null);
