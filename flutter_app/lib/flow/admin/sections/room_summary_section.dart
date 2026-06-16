@@ -180,26 +180,50 @@ class RoomSummarySection extends StatelessWidget {
           onAlertTap: onOpenBookingsAlert,
         ),
         const SizedBox(height: 20),
-        Text(
-          'Room summary by category',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Tap a category, then tap a section to view those rooms',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: scheme.onSurfaceVariant,
+        Container(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+          decoration: BoxDecoration(
+            color: scheme.primaryContainer.withValues(alpha: 0.35),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: scheme.primary.withValues(alpha: 0.12),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.category_outlined, color: scheme.primary, size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Room summary by category',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    Text(
+                      'Tap a category to open reserved, occupied, and vacant lists',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
+                ),
               ),
+            ],
+          ),
         ),
         const SizedBox(height: 12),
         _CategorySummaryGrid(
           grouped: grouped,
           keys: keys,
-          onOpenRooms: (ctx, title, list, {subtitle}) => _openRooms(
+          onCategoryTap: (ctx, label, list, stats) => _showCategoryBreakdown(
             ctx,
-            title: title,
-            list: list,
-            subtitle: subtitle,
+            label: label,
+            rooms: list,
+            stats: stats,
           ),
         ),
         const SizedBox(height: 24),
@@ -318,6 +342,37 @@ class RoomSummarySection extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+
+  void _showCategoryBreakdown(
+    BuildContext context, {
+    required String label,
+    required List<Map<String, dynamic>> rooms,
+    required Map<String, dynamic> stats,
+  }) {
+    HapticFeedback.selectionClick();
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) {
+        return _CategoryBreakdownSheet(
+          label: label,
+          rooms: rooms,
+          stats: stats,
+          onOpenSection: (sectionTitle, filtered, subtitle) {
+            Navigator.of(ctx).pop();
+            _openRooms(
+              context,
+              title: '$label · $sectionTitle',
+              list: filtered,
+              subtitle: subtitle,
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -766,64 +821,48 @@ class _SummaryIssueListSheet extends StatelessWidget {
   }
 }
 
-class _CategorySummaryGrid extends StatefulWidget {
+class _CategorySummaryGrid extends StatelessWidget {
   const _CategorySummaryGrid({
     required this.grouped,
     required this.keys,
-    required this.onOpenRooms,
+    required this.onCategoryTap,
   });
 
   final Map<String, List<Map<String, dynamic>>> grouped;
   final List<String> keys;
   final void Function(
     BuildContext context,
-    String title,
-    List<Map<String, dynamic>> list, {
-    String? subtitle,
-  }) onOpenRooms;
-
-  @override
-  State<_CategorySummaryGrid> createState() => _CategorySummaryGridState();
-}
-
-class _CategorySummaryGridState extends State<_CategorySummaryGrid> {
-  String? _expandedCategory;
+    String label,
+    List<Map<String, dynamic>> rooms,
+    Map<String, dynamic> stats,
+  ) onCategoryTap;
 
   @override
   Widget build(BuildContext context) {
-    final hasExpanded = _expandedCategory != null;
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        childAspectRatio: hasExpanded ? 0.78 : 1.2,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        childAspectRatio: 1.35,
       ),
-      itemCount: widget.keys.length,
+      itemCount: keys.length,
       itemBuilder: (context, i) {
-        final label = widget.keys[i];
-        final list = widget.grouped[label]!;
+        final label = keys[i];
+        final list = grouped[label]!;
         final stats = AdminDashboardModels.categoryStats(label, list);
-        final expanded = _expandedCategory == label;
+        final reservedSoon =
+            AdminDashboardModels.categoryReservedSoonRooms(list, withinDays: 1);
+        final occupied = AdminDashboardModels.categoryOccupiedRooms(list);
+        final vacant = AdminDashboardModels.categoryVacantRooms(list);
         return _CategoryCard(
           stats: stats,
-          rooms: list,
-          expanded: expanded,
-          onHeaderTap: () {
-            setState(() {
-              _expandedCategory = expanded ? null : label;
-            });
-          },
-          onOpenSection: (sectionTitle, filtered, subtitle) {
-            widget.onOpenRooms(
-              context,
-              '$label · $sectionTitle',
-              filtered,
-              subtitle: subtitle,
-            );
-          },
+          reservedCount: reservedSoon.length,
+          occupiedCount: occupied.length,
+          vacantCount: vacant.length,
+          onTap: () => onCategoryTap(context, label, list, stats),
         );
       },
     );
@@ -833,29 +872,175 @@ class _CategorySummaryGridState extends State<_CategorySummaryGrid> {
 class _CategoryCard extends StatelessWidget {
   const _CategoryCard({
     required this.stats,
-    required this.rooms,
-    required this.onHeaderTap,
-    required this.onOpenSection,
-    this.expanded = false,
+    required this.reservedCount,
+    required this.occupiedCount,
+    required this.vacantCount,
+    required this.onTap,
   });
 
   final Map<String, dynamic> stats;
+  final int reservedCount;
+  final int occupiedCount;
+  final int vacantCount;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final label = '${stats['label']}';
+
+    return Material(
+      color: scheme.surfaceContainerLow,
+      elevation: 0,
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.45)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 15,
+                      backgroundColor: scheme.primaryContainer,
+                      child: Icon(
+                        Icons.king_bed_outlined,
+                        color: scheme.onPrimaryContainer,
+                        size: 16,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        label,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              height: 1.15,
+                            ),
+                      ),
+                    ),
+                    Icon(
+                      Icons.open_in_new_rounded,
+                      size: 16,
+                      color: scheme.primary,
+                    ),
+                  ],
+                ),
+                const Spacer(),
+                Text(
+                  '${stats['total']} rooms',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: scheme.primary,
+                        height: 1,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _CategoryMiniStat(
+                        label: 'Rsv',
+                        count: reservedCount,
+                        color: Colors.orange.shade800,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: _CategoryMiniStat(
+                        label: 'Occ',
+                        count: occupiedCount,
+                        color: Colors.green.shade700,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: _CategoryMiniStat(
+                        label: 'Vac',
+                        count: vacantCount,
+                        color: Colors.teal.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CategoryMiniStat extends StatelessWidget {
+  const _CategoryMiniStat({
+    required this.label,
+    required this.count,
+    required this.color,
+  });
+
+  final String label;
+  final int count;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: [
+          Text(
+            '$count',
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                  height: 1,
+                ),
+          ),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  fontSize: 9,
+                  color: color,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CategoryBreakdownSheet extends StatelessWidget {
+  const _CategoryBreakdownSheet({
+    required this.label,
+    required this.rooms,
+    required this.stats,
+    required this.onOpenSection,
+  });
+
+  final String label;
   final List<Map<String, dynamic>> rooms;
-  final VoidCallback onHeaderTap;
+  final Map<String, dynamic> stats;
   final void Function(
     String sectionTitle,
     List<Map<String, dynamic>> rooms,
     String subtitle,
   ) onOpenSection;
-  final bool expanded;
-
-  void _openSection(
-    String title,
-    List<Map<String, dynamic>> filtered,
-  ) {
-    if (filtered.isEmpty) return;
-    onOpenSection(title, filtered, '${filtered.length} room(s)');
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -865,140 +1050,188 @@ class _CategoryCard extends StatelessWidget {
     final occupied = AdminDashboardModels.categoryOccupiedRooms(rooms);
     final vacant = AdminDashboardModels.categoryVacantRooms(rooms);
 
-    return Card(
-      elevation: 0,
-      color: scheme.surfaceContainerLow,
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: onHeaderTap,
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 16,
-                        backgroundColor: scheme.primaryContainer,
-                        child: Icon(Icons.king_bed_outlined,
-                            color: scheme.onPrimaryContainer, size: 18),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '${stats['label']}',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style:
-                              Theme.of(context).textTheme.labelLarge?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                        ),
-                      ),
-                      Icon(
-                        expanded
-                            ? Icons.expand_less
-                            : Icons.expand_more,
-                        color: scheme.primary,
-                        size: 22,
-                      ),
-                    ],
-                  ),
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        bottom: 16 + MediaQuery.paddingOf(context).bottom,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 22,
+                backgroundColor: scheme.primaryContainer,
+                child: Icon(
+                  Icons.king_bed_rounded,
+                  color: scheme.onPrimaryContainer,
                 ),
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Total: ${stats['total']}',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-            ),
-            if (expanded) ...[
-              const SizedBox(height: 8),
-              _CategorySectionChip(
-                label: 'Reserved (0–1 day)',
-                count: reservedSoon.length,
-                color: Colors.orange.shade800,
-                onTap: () => _openSection('Reserved (0–1 day)', reservedSoon),
-              ),
-              const SizedBox(height: 6),
-              _CategorySectionChip(
-                label: 'Occupied',
-                count: occupied.length,
-                color: Colors.green.shade700,
-                onTap: () => _openSection('Occupied', occupied),
-              ),
-              const SizedBox(height: 6),
-              _CategorySectionChip(
-                label: 'Vacant',
-                count: vacant.length,
-                color: Colors.teal.shade700,
-                onTap: () => _openSection('Vacant', vacant),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    Text(
+                      '${stats['total']} rooms in this category',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
+                ),
               ),
             ],
-          ],
-        ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Tap a section to view rooms',
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+          const SizedBox(height: 10),
+          _CategorySectionTile(
+            icon: Icons.schedule_rounded,
+            label: 'Reserved (0–1 day)',
+            subtitle: 'Check-in today or tomorrow',
+            count: reservedSoon.length,
+            color: Colors.orange.shade800,
+            onTap: reservedSoon.isEmpty
+                ? null
+                : () => onOpenSection(
+                      'Reserved (0–1 day)',
+                      reservedSoon,
+                      '${reservedSoon.length} room(s)',
+                    ),
+          ),
+          const SizedBox(height: 8),
+          _CategorySectionTile(
+            icon: Icons.person_pin_circle_outlined,
+            label: 'Occupied',
+            subtitle: 'Guests currently checked in',
+            count: occupied.length,
+            color: Colors.green.shade700,
+            onTap: occupied.isEmpty
+                ? null
+                : () => onOpenSection(
+                      'Occupied',
+                      occupied,
+                      '${occupied.length} room(s)',
+                    ),
+          ),
+          const SizedBox(height: 8),
+          _CategorySectionTile(
+            icon: Icons.meeting_room_outlined,
+            label: 'Vacant',
+            subtitle: 'Available for walk-in booking',
+            count: vacant.length,
+            color: Colors.teal.shade700,
+            onTap: vacant.isEmpty
+                ? null
+                : () => onOpenSection(
+                      'Vacant',
+                      vacant,
+                      '${vacant.length} room(s)',
+                    ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _CategorySectionChip extends StatelessWidget {
-  const _CategorySectionChip({
+class _CategorySectionTile extends StatelessWidget {
+  const _CategorySectionTile({
+    required this.icon,
     required this.label,
+    required this.subtitle,
     required this.count,
     required this.color,
     required this.onTap,
   });
 
+  final IconData icon;
   final String label;
+  final String subtitle;
   final int count;
   final Color color;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final enabled = count > 0;
+    final enabled = onTap != null && count > 0;
+
     return Material(
       color: enabled
-          ? color.withValues(alpha: 0.1)
-          : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-      borderRadius: BorderRadius.circular(8),
+          ? color.withValues(alpha: 0.08)
+          : scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+      borderRadius: BorderRadius.circular(12),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: enabled ? onTap : null,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
             children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: enabled
+                      ? color.withValues(alpha: 0.15)
+                      : scheme.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  icon,
+                  color: enabled ? color : scheme.outline,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  label,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: enabled ? color : scheme.onSurfaceVariant,
-                      ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: enabled ? null : scheme.onSurfaceVariant,
+                          ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                            fontSize: 11,
+                          ),
+                    ),
+                  ],
                 ),
               ),
               Text(
                 '$count',
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w900,
                       color: enabled ? color : scheme.outline,
                     ),
               ),
-              const SizedBox(width: 2),
+              const SizedBox(width: 4),
               Icon(
-                Icons.chevron_right,
-                size: 18,
+                Icons.chevron_right_rounded,
                 color: enabled ? color : scheme.outline,
               ),
             ],
