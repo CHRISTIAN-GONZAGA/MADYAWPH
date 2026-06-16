@@ -87,8 +87,8 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
   bool _showDetail = false;
   _RoomListPayload? _list;
   String? _detailRoomId;
-  Widget? _detailWidget;
-  String? _detailWidgetRoomId;
+  _RoomDetailPanelBody? _detailBody;
+  String? _detailBodyRoomId;
 
   @override
   void initState() {
@@ -154,13 +154,11 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     setState(() {
       _showDetail = true;
       _detailRoomId = id;
-      if (_detailWidgetRoomId != id) {
-        _detailWidgetRoomId = id;
-        _detailWidget = AdminRoomDetailScreen(
-          key: ValueKey('detail-$id'),
+      if (_detailBodyRoomId != id) {
+        _detailBodyRoomId = id;
+        _detailBody = _RoomDetailPanelBody(
           roomId: id,
-          initialRoomSnapshot: _roomSnapshotForDetail(id),
-          panelBodyOnly: true,
+          initialSnapshot: _roomSnapshotForDetail(id),
           onClose: _backToRoomList,
         );
       }
@@ -176,8 +174,8 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
       _visible = false;
       _showDetail = false;
       _detailRoomId = null;
-      _detailWidget = null;
-      _detailWidgetRoomId = null;
+      _detailBody = null;
+      _detailBodyRoomId = null;
       _list = null;
     });
     _syncOpenFlag();
@@ -195,8 +193,8 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     setState(() {
       _showDetail = false;
       _detailRoomId = null;
-      _detailWidget = null;
-      _detailWidgetRoomId = null;
+      _detailBody = null;
+      _detailBodyRoomId = null;
     });
   }
 
@@ -233,7 +231,9 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     required Color bg,
     required String title,
   }) {
-    final hidden = (1 - _slideOffset.value) * panelHeight;
+    final hidden = _slideCtrl.isAnimating
+        ? (1 - _slideOffset.value) * panelHeight
+        : 0.0;
     return Transform.translate(
       offset: Offset(0, hidden),
       child: Material(
@@ -286,17 +286,15 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
 
   Widget _buildDetailBody(BuildContext context) {
     final roomId = _detailRoomId!;
-    if (_detailWidget == null || _detailWidgetRoomId != roomId) {
-      _detailWidgetRoomId = roomId;
-      _detailWidget = AdminRoomDetailScreen(
-        key: ValueKey('detail-$roomId'),
+    if (_detailBody == null || _detailBodyRoomId != roomId) {
+      _detailBodyRoomId = roomId;
+      _detailBody = _RoomDetailPanelBody(
         roomId: roomId,
-        initialRoomSnapshot: _roomSnapshotForDetail(roomId),
-        panelBodyOnly: true,
+        initialSnapshot: _roomSnapshotForDetail(roomId),
         onClose: _backToRoomList,
       );
     }
-    return _detailWidget!;
+    return _detailBody!;
   }
 
   @override
@@ -345,6 +343,40 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Keeps room detail mounted while the hotel-totals panel is open.
+class _RoomDetailPanelBody extends StatefulWidget {
+  const _RoomDetailPanelBody({
+    required this.roomId,
+    required this.onClose,
+    this.initialSnapshot,
+  });
+
+  final String roomId;
+  final Map<String, dynamic>? initialSnapshot;
+  final VoidCallback onClose;
+
+  @override
+  State<_RoomDetailPanelBody> createState() => _RoomDetailPanelBodyState();
+}
+
+class _RoomDetailPanelBodyState extends State<_RoomDetailPanelBody>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return AdminRoomDetailScreen(
+      key: ValueKey('detail-${widget.roomId}'),
+      roomId: widget.roomId,
+      initialRoomSnapshot: widget.initialSnapshot,
+      panelBodyOnly: true,
+      onClose: widget.onClose,
     );
   }
 }

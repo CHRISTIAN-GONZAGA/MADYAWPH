@@ -36,14 +36,12 @@ import '../widgets/payment_redirect.dart';
 import 'portal_sign_out.dart';
 // --- Admin ---
 
-/// Reserve API only for future check-in; same-day and Book always use /customer/bookings.
+/// Future check-in dates use the reservation request API; same-day uses /customer/bookings.
 bool customerStayUsesReservationApi({
-  required bool reserveIntent,
   required String checkInIso,
 }) {
-  if (!reserveIntent) return false;
   final parsed = DateTime.tryParse(checkInIso.split('T').first);
-  if (parsed == null) return true;
+  if (parsed == null) return false;
   final now = DateTime.now();
   final today = DateTime(now.year, now.month, now.day);
   final checkIn = DateTime(parsed.year, parsed.month, parsed.day);
@@ -3353,17 +3351,14 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
 
           final now = DateTime.now();
           final today = DateTime(now.year, now.month, now.day);
-          final firstCheckIn =
-              forceReserve ? today.add(const Duration(days: 1)) : today;
+          final firstCheckIn = today;
 
           Future<void> pickCheckIn() async {
             if (fromSearch) return;
             final picked = await showDatePicker(
               context: context,
               firstDate: firstCheckIn,
-              lastDate: forceReserve
-                  ? today.add(const Duration(days: 365))
-                  : today,
+              lastDate: today.add(const Duration(days: 365)),
               initialDate: checkInDate ?? firstCheckIn,
             );
             if (picked == null) return;
@@ -3519,9 +3514,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                     controller: checkInCtrl,
                     label: fromSearch
                         ? 'Check-in'
-                        : (forceReserve
-                            ? 'Check-in (from tomorrow)'
-                            : 'Check-in (today for walk-in)'),
+                        : 'Check-in date',
                     hint: fromSearch ? null : 'Tap to open calendar',
                     readOnly: true,
                     onTap: fromSearch ? null : pickCheckIn,
@@ -3606,11 +3599,10 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                               'Estimated: ₱${estTotal.toStringAsFixed(2)}'
                               '${discountPct > 0 ? ' → ₱${estAfterDiscount.toStringAsFixed(2)} after discount' : ''}\n'
                               'Your request will be reviewed by the hotel.'
-                          : forceReserve
-                              ? 'The hotel will approve your dates. You will be notified when the stay is activated on check-in day.'
-                              : 'Duration: $durationLabel\n'
-                                  'Estimated: ₱${estTotal.toStringAsFixed(2)}'
-                                  '${discountPct > 0 ? ' → ₱${estAfterDiscount.toStringAsFixed(2)} after discount' : ''}',
+                          : 'Duration: $durationLabel\n'
+                              'Estimated: ₱${estTotal.toStringAsFixed(2)}'
+                              '${discountPct > 0 ? ' → ₱${estAfterDiscount.toStringAsFixed(2)} after discount' : ''}\n'
+                              'Future stays are sent to the hotel for approval. Same-day bookings are confirmed when submitted.',
                     ),
                   ),
                 ],
@@ -3733,10 +3725,10 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     setState(() => _booking = true);
     try {
       final checkInIso = (payload['check_in'] ?? '').toString();
-      final path = customerStayUsesReservationApi(
-            reserveIntent: reserve,
-            checkInIso: checkInIso,
-          )
+      final useReservationApi = customerStayUsesReservationApi(
+        checkInIso: checkInIso,
+      );
+      final path = useReservationApi
           ? '/customer/reservations'
           : '/customer/bookings';
       final discount = (payload['discount_type'] ?? 'none').toString();
@@ -3797,10 +3789,24 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
               '')
           .toString();
       final guestEmail = (payload['guest_email'] ?? '').toString();
-      final usedReservationApi = customerStayUsesReservationApi(
-        reserveIntent: reserve,
-        checkInIso: checkInIso,
-      );
+
+      if (reservation != null) {
+        final ref = (reservation['external_reference'] ?? '').toString();
+        if (!mounted || ref.isEmpty) return;
+        await Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute<void>(
+            builder: (_) => CustomerBookingStatusScreen(
+              hotelId: widget.hotelId,
+              hotelName: widget.hotelName,
+              reference: ref,
+              guestEmail: guestEmail,
+              initialReservation: Map<String, dynamic>.from(reservation),
+            ),
+          ),
+          (route) => route.isFirst,
+        );
+        return;
+      }
 
       if (fromSearch && ref.isNotEmpty) {
         if (!mounted) return;
@@ -3811,9 +3817,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
               hotelName: widget.hotelName,
               reference: ref,
               guestEmail: guestEmail,
-              initialReservation: reservation != null
-                  ? Map<String, dynamic>.from(reservation)
-                  : null,
+              initialReservation: null,
             ),
           ),
         );
@@ -3823,7 +3827,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            usedReservationApi
+            useReservationApi
                 ? 'Request sent (ref ${ref.isEmpty ? 'pending' : ref}). Awaiting hotel approval.'
                 : 'Booking submitted: ${ref.isEmpty ? 'Reference generated' : ref}',
           ),
@@ -4204,10 +4208,6 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
   void _onGridRoomTap(Map<String, dynamic> room) {
     if (widget.adminLocalBooking) {
       _bookRoom(room, reserve: false);
-      return;
-    }
-    if (widget.searchContext != null) {
-      _bookRoom(room, reserve: _searchUsesReservationApi());
       return;
     }
     _bookRoom(room, reserve: false);

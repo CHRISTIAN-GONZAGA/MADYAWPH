@@ -1211,7 +1211,7 @@ Route::post('/admin/reservations/{id}/approve', function (Request $request, stri
         (string) $request->user()->id,
     );
 
-    $res->update(['status' => 'approved']);
+    $res->update(['status' => 'reserved']);
     $room->update(['status' => RoomStatus::RESERVED->value]);
     app(ActivityLogService::class)->log(
         $hotelId,

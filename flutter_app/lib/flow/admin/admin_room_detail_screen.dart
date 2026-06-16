@@ -841,11 +841,9 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   @override
   Widget build(BuildContext context) {
     if (widget.panelBodyOnly) {
-      return SizedBox.expand(
-        child: ColoredBox(
-          color: const Color(0xFFF5F3EF),
-          child: _buildBody(),
-        ),
+      return ColoredBox(
+        color: const Color(0xFFF5F3EF),
+        child: _buildBody(),
       );
     }
 
@@ -1243,13 +1241,10 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     ];
 
     if (widget.panelBodyOnly) {
-      return SingleChildScrollView(
+      return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: children,
-        ),
+        children: children,
       );
     }
 

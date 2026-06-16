@@ -341,9 +341,10 @@ class CustomerPortalApiController extends Controller
 
             $checkInDay = Carbon::parse($validated['check_in'])->startOfDay();
             if ($checkInDay->isAfter(Carbon::today())) {
-                return response()->json([
-                    'message' => 'For future dates use Reserve — your request will be reviewed by the hotel.',
-                ], 422);
+                $validated = $this->mergeGuestIdIntoValidated($request, $validated);
+                $validated = $this->mergePaymentIntoValidated($validated);
+
+                return $this->createFutureReservation($validated);
             }
 
             if ($this->roomStatusValue($room) === RoomStatus::CHECKED_IN->value) {
