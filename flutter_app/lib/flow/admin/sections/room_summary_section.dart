@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../../widgets/room_status_label.dart';
 import '../admin_dashboard_models.dart';
 import '../admin_room_summary_detail_screen.dart';
 import '../widgets/booking_overview_cards.dart';
 import '../widgets/admin_room_navigation.dart';
+import '../widgets/admin_summary_room_tile.dart';
 class RoomSummarySection extends StatelessWidget {
   const RoomSummarySection({
     super.key,
@@ -80,6 +80,7 @@ class RoomSummarySection extends StatelessWidget {
           title: title,
           rooms: list,
           showGuest: showGuest,
+          subtitle: subtitle,
         ),
       ),
     );
@@ -635,104 +636,19 @@ class _SummaryRoomGridTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final status = AdminDashboardModels.displayStatusForRoom(room);
-    final statusColor = highlight
-        ? Colors.orange.shade800
-        : roomStatusColor(status);
-    final guest = AdminDashboardModels.guestName(room);
-    final range = AdminDashboardModels.formatStayRange(room);
-    final roomNo = (room['room_number'] ?? '—').toString();
-    final name = (room['display_name'] ?? '').toString().trim();
-
-    return Material(
-      color: highlight
-          ? Colors.orange.shade50
-          : scheme.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(12),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () {
-          AdminRoomNavigation.openSummaryRoomDetail(
-            room: room,
-            sheetContext: sheetContext,
-            snackContext: hostContext,
-            onClosed: onRefresh,
-          );
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: BoxDecoration(
-                      color: statusColor,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 5),
-                  Expanded(
-                    child: Text(
-                      roomNo,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
-                    ),
-                  ),
-                  Text(
-                    roomStatusLabel(status),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: statusColor,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 9,
-                        ),
-                  ),
-                ],
-              ),
-              if (name.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                        fontSize: 10,
-                      ),
-                ),
-              ],
-              const Spacer(),
-              Text(
-                guest == '—' ? 'No guest' : guest,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      fontSize: 10,
-                    ),
-              ),
-              if (range != '—')
-                Text(
-                  range,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                        fontSize: 9,
-                      ),
-                ),
-            ],
-          ),
-        ),
-      ),
+    return AdminSummaryRoomGridTile(
+      room: room,
+      highlight: highlight,
+      onTap: () async {
+        if (Navigator.of(sheetContext).canPop()) {
+          Navigator.of(sheetContext).pop();
+        }
+        await adminRoomAfterFrame(() async {
+          if (!hostContext.mounted) return;
+          await AdminSummaryRoomActions.openRoomDetail(hostContext, room);
+          await onRefresh();
+        });
+      },
     );
   }
 }
