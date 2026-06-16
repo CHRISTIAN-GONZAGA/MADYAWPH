@@ -11,6 +11,16 @@ final class StayManagementPolicy
     /** @var list<string> */
     private const ACTIVE_BOOKING_STATUSES = ['booked', 'checked_in', 'confirmed'];
 
+    public static function roomStatusValue(Room $room): string
+    {
+        $fromEnum = $room->status?->value;
+        if (is_string($fromEnum) && trim($fromEnum) !== '') {
+            return strtolower(trim($fromEnum));
+        }
+
+        return strtolower(trim((string) ($room->getAttributes()['status'] ?? '')));
+    }
+
     public static function hasActiveBooking(?Booking $booking): bool
     {
         if ($booking === null) {
@@ -27,18 +37,23 @@ final class StayManagementPolicy
      */
     public static function canManageGuestStay(?Booking $booking, ?Room $room = null): bool
     {
-        if ($booking === null) {
+        if ($room === null && $booking !== null) {
+            $room = Room::withoutGlobalScopes()->find($booking->room_id);
+        }
+        if ($room === null) {
             return false;
         }
 
-        $room ??= Room::withoutGlobalScopes()->find($booking->room_id);
-        if ($room === null || ! self::hasActiveBooking($booking)) {
+        $roomStatus = self::roomStatusValue($room);
+        if ($roomStatus !== 'checked_in') {
             return false;
         }
 
-        $roomStatus = strtolower((string) ($room->status?->value ?? $room->status ?? ''));
+        if ($booking !== null && self::hasActiveBooking($booking)) {
+            return true;
+        }
 
-        return $roomStatus === 'checked_in';
+        return trim((string) ($room->getAttributes()['current_guest_name'] ?? '')) !== '';
     }
 
     public static function pendingReservationForRoom(string $hotelId, string $roomId): ?ExternalReservation
@@ -66,7 +81,7 @@ final class StayManagementPolicy
         if ($pending !== null && ! $canManage) {
             $reason = 'Approve this reservation in the Bookings tab before managing the guest stay here.';
         } elseif (! $canManage) {
-            $roomStatus = strtolower((string) ($room->status?->value ?? $room->status ?? ''));
+            $roomStatus = self::roomStatusValue($room);
             if ($booking !== null && self::hasActiveBooking($booking) && $roomStatus !== 'checked_in') {
                 $reason = 'Check the guest in from the Bookings tab before adding fees or editing payment here.';
             } elseif ($booking === null && in_array($roomStatus, ['reserved', 'booked'], true)) {

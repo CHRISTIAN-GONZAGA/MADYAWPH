@@ -96,13 +96,19 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
       parent: _slideCtrl,
       curve: Curves.easeOutCubic,
     );
+    _slideCtrl.addListener(_onSlideTick);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.onBindBackHandler?.call(_handleBack);
     });
   }
 
+  void _onSlideTick() {
+    if (_visible) setState(() {});
+  }
+
   @override
   void dispose() {
+    _slideCtrl.removeListener(_onSlideTick);
     AdminRoomDetailNavigation.notifyPanelOpen(false);
     widget.onBindBackHandler?.call(() => false);
     _slideCtrl.dispose();
@@ -144,6 +150,7 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
       _showDetail = true;
       _detailRoomId = id;
     });
+    _syncOpenFlag();
   }
 
   Future<void> _closePanel() async {
@@ -195,18 +202,48 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     return null;
   }
 
-  Widget _buildBody(BuildContext context) {
-    if (_showDetail && _detailRoomId != null) {
-      final roomId = _detailRoomId!;
-      return AdminRoomDetailScreen(
-        key: ValueKey('detail-$roomId'),
-        roomId: roomId,
-        initialRoomSnapshot: _roomSnapshotForDetail(roomId),
-        panelBodyOnly: true,
-        onClose: _backToRoomList,
-      );
-    }
+  Widget _buildPanel(
+    BuildContext context, {
+    required double panelHeight,
+    required Color bg,
+    required String title,
+  }) {
+    final hidden = (1 - _slideOffset.value) * panelHeight;
+    return Transform.translate(
+      offset: Offset(0, hidden),
+      child: Material(
+        color: bg,
+        elevation: 12,
+        shadowColor: Colors.black45,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(
+          height: panelHeight,
+          width: double.infinity,
+          child: SafeArea(
+            top: false,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _HotelTotalsPanelHeader(
+                  title: title,
+                  backgroundColor: bg,
+                  onBack: _showDetail ? _backToRoomList : _closePanel,
+                ),
+                Expanded(
+                  child: _showDetail && _detailRoomId != null
+                      ? _buildDetailBody(context)
+                      : _buildListBody(context),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
+  Widget _buildListBody(BuildContext context) {
     final list = _list;
     if (list == null) {
       return const Center(
@@ -222,47 +259,14 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     );
   }
 
-  Widget _buildPanel(
-    BuildContext context, {
-    required double panelHeight,
-    required Color bg,
-    required String title,
-  }) {
-    return AnimatedBuilder(
-      animation: _slideOffset,
-      builder: (context, _) {
-        final hidden = (1 - _slideOffset.value) * panelHeight;
-        return Transform.translate(
-          offset: Offset(0, hidden),
-          child: Material(
-            color: bg,
-            elevation: 12,
-            shadowColor: Colors.black45,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-            clipBehavior: Clip.antiAlias,
-            child: SizedBox(
-              height: panelHeight,
-              width: double.infinity,
-              child: SafeArea(
-                top: false,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _HotelTotalsPanelHeader(
-                      title: title,
-                      backgroundColor: bg,
-                      onBack: _showDetail ? _backToRoomList : _closePanel,
-                    ),
-                    Expanded(
-                      child: _buildBody(context),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
+  Widget _buildDetailBody(BuildContext context) {
+    final roomId = _detailRoomId!;
+    return AdminRoomDetailScreen(
+      key: ValueKey('detail-$roomId'),
+      roomId: roomId,
+      initialRoomSnapshot: _roomSnapshotForDetail(roomId),
+      panelBodyOnly: true,
+      onClose: _backToRoomList,
     );
   }
 

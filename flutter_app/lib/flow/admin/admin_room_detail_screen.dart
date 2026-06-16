@@ -94,7 +94,14 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         _loading = false;
         final room = payload != null ? _asMap(payload['room']) : null;
         if (payload != null && room != null) {
-          _data = payload;
+          final priorRoom = _asMap(_data?['room']);
+          _data = {
+            ...?_data,
+            ...payload,
+            'room': priorRoom != null
+                ? {...priorRoom, ...room}
+                : room,
+          };
           _error = null;
         } else if (_data == null) {
           _error = payload == null || payload.isEmpty
@@ -824,7 +831,15 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     );
   }
 
-  bool get _canEditGuestStay => _data?['can_edit_guest_stay'] == true;
+  bool get _canEditGuestStay {
+    if (_data?['can_edit_guest_stay'] == true) return true;
+    final room = _asMap(_data?['room']);
+    if (room == null) return false;
+    if (AdminDashboardModels.statusOf(room) != 'checked_in') return false;
+    final guest = (room['current_guest_name'] ?? '').toString().trim();
+    if (guest.isNotEmpty) return true;
+    return _asMap(_data?['active_booking']) != null;
+  }
 
   String? get _managementBlockedReason {
     final r = _data?['management_blocked_reason'];
@@ -1158,24 +1173,13 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     ];
 
     if (widget.panelBodyOnly) {
-      return LayoutBuilder(
-        builder: (context, constraints) {
-          return SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(16),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                minHeight: constraints.maxHeight > 32
-                    ? constraints.maxHeight - 32
-                    : constraints.maxHeight,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: children,
-              ),
-            ),
-          );
-        },
+      return SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: children,
+        ),
       );
     }
 

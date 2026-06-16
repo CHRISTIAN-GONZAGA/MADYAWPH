@@ -108,4 +108,37 @@ class StayManagementPolicyTest extends TestCase
             'payment_method' => 'Cash',
         ])->assertOk();
     }
+
+    public function test_checked_in_room_with_guest_on_record_can_manage_without_booking(): void
+    {
+        $hotel = Hotel::withoutGlobalScopes()->create([
+            'name' => 'Walk-in Hotel',
+            'location' => 'Butuan',
+            'city' => 'Butuan',
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '303',
+            'room_type' => 'Deluxe',
+            'price_per_night' => 2000,
+            'status' => RoomStatus::CHECKED_IN->value,
+            'current_guest_name' => 'Walk-in Guest',
+            'current_check_in' => now()->toDateString(),
+            'current_check_out' => now()->addDay()->toDateString(),
+        ]);
+        $admin = User::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'walkin_admin',
+            'email' => 'walkin_admin@test.local',
+            'password' => bcrypt('secret'),
+            'role' => UserRole::ADMIN,
+        ]);
+
+        Sanctum::actingAs($admin);
+
+        $this->getJson('/api/v1/admin/rooms/'.(string) $room->id)
+            ->assertOk()
+            ->assertJsonPath('can_edit_guest_stay', true)
+            ->assertJsonPath('room.status', RoomStatus::CHECKED_IN->value);
+    }
 }

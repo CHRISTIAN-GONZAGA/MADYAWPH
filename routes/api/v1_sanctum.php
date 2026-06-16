@@ -1628,6 +1628,7 @@ Route::get('/admin/rooms/{id}', function (Request $request, string $id) {
     return response()->json([
         'room' => array_merge($room->toArray(), [
             'id' => (string) $room->id,
+            'status' => StayManagementPolicy::roomStatusValue($room),
             'room_access_password' => (string) ($room->current_access_code ?? ''),
         ]),
         'active_booking' => $bookingPayload,
