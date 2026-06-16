@@ -134,51 +134,36 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
     final categories =
         (_categoriesRes?['categories'] as List<dynamic>?) ?? [];
     final scheme = Theme.of(context).colorScheme;
+    final gridColumns = MediaQuery.sizeOf(context).width >= 600 ? 3 : 2;
 
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
         children: [
           Text(
             'Walk-in',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Same booking flow as the public customer portal. Bookings here are saved as Local (front desk), not Online.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                  height: 1.35,
-                ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            widget.hotelName,
-            textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w800,
+                ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            widget.hotelName,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
                   color: scheme.primary,
                 ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 4),
           Text(
-            context.tr('find_your_room'),
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            context.tr('find_room_sub'),
+            'Tap a category, then tap an available room to book locally.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           if (categories.isEmpty)
             Card(
               child: Padding(
@@ -201,89 +186,83 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
                   ],
                 ),
               ),
-            ),
-          ...categories.map((c) {
-            final m = c as Map<String, dynamic>;
-            final id = '${m['id']}';
-            final name = '${m['name']}';
-            final desc = '${m['description'] ?? ''}'.trim();
-            final available = (m['available_rooms'] as num?)?.toInt() ?? 0;
-            final availLabel = available == 1
-                ? context.tr('one_room_available')
-                : context.tr('rooms_available_label', {'n': '$available'});
+            )
+          else
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: gridColumns,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: 1.35,
+              ),
+              itemCount: categories.length,
+              itemBuilder: (context, index) {
+                final m = categories[index] as Map<String, dynamic>;
+                final id = '${m['id']}';
+                final name = '${m['name']}';
+                final available = (m['available_rooms'] as num?)?.toInt() ?? 0;
+                final availLabel = available == 1
+                    ? context.tr('one_room_available')
+                    : context.tr('rooms_available_label', {'n': '$available'});
 
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Material(
-                color: scheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(16),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: available <= 0
-                      ? null
-                      : () => _openCategory(
-                            categoryId: id,
-                            categoryName: name,
-                          ),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 12, 16),
-                    child: Row(
-                      children: [
-                        CircleAvatar(
-                          backgroundColor: scheme.primaryContainer,
-                          child: Icon(Icons.king_bed_outlined,
-                              color: scheme.onPrimaryContainer),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                return Material(
+                  color: scheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(12),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: available <= 0
+                        ? null
+                        : () => _openCategory(
+                              categoryId: id,
+                              categoryName: name,
+                            ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
                             children: [
-                              Text(
-                                name,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w800),
-                              ),
-                              if (desc.isNotEmpty) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  desc,
+                              Icon(Icons.king_bed_outlined,
+                                  size: 18, color: scheme.primary),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  name,
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                   style: Theme.of(context)
                                       .textTheme
-                                      .bodySmall
-                                      ?.copyWith(
-                                        color: scheme.onSurfaceVariant,
-                                      ),
+                                      .labelLarge
+                                      ?.copyWith(fontWeight: FontWeight.w800),
                                 ),
-                              ],
-                              const SizedBox(height: 6),
-                              Text(
-                                availLabel,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelMedium
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w700,
-                                      color: available > 0
-                                          ? scheme.primary
-                                          : scheme.onSurfaceVariant,
-                                    ),
                               ),
                             ],
                           ),
-                        ),
-                        Icon(Icons.chevron_right, color: scheme.primary),
-                      ],
+                          const Spacer(),
+                          Text(
+                            availLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: available > 0
+                                      ? Colors.green.shade800
+                                      : scheme.onSurfaceVariant,
+                                ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ),
-            );
-          }),
+                );
+              },
+            ),
         ],
       ),
     );
