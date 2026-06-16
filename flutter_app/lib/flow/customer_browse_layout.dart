@@ -21,16 +21,22 @@ class CustomerLandscapeGridLayout {
   static CustomerLandscapeGridLayout forSize(Size size) {
     final w = size.width;
     final h = size.height;
+    if (h < 260) {
+      return const CustomerLandscapeGridLayout(crossAxisCount: 4, rowCount: 1);
+    }
+    if (h < 360) {
+      if (w >= 900) {
+        return const CustomerLandscapeGridLayout(crossAxisCount: 5, rowCount: 2);
+      }
+      return const CustomerLandscapeGridLayout(crossAxisCount: 4, rowCount: 2);
+    }
     if (w >= 1000) {
       return const CustomerLandscapeGridLayout(crossAxisCount: 4, rowCount: 2);
     }
     if (w >= 720) {
       return const CustomerLandscapeGridLayout(crossAxisCount: 4, rowCount: 2);
     }
-    if (h < 300) {
-      return const CustomerLandscapeGridLayout(crossAxisCount: 3, rowCount: 2);
-    }
-    return const CustomerLandscapeGridLayout(crossAxisCount: 3, rowCount: 3);
+    return const CustomerLandscapeGridLayout(crossAxisCount: 3, rowCount: 2);
   }
 }
 

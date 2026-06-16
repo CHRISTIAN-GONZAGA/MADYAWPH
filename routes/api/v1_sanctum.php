@@ -49,6 +49,7 @@ use App\Services\SmsService;
 use App\Services\StayReceiptService;
 use App\Support\AdminBookingPresenter;
 use App\Support\ChatAttachmentUrl;
+use App\Support\GuestMessageResource;
 use App\Support\HotelScopeGuard;
 use App\Support\PortalPassword;
 use App\Support\PriceRounding;

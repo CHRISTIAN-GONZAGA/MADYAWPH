@@ -2824,11 +2824,13 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Expanded(
                                   child: Text(
                                     name,
-                                    softWrap: true,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
                                     style: Theme.of(context)
                                         .textTheme
                                         .titleMedium
@@ -2838,29 +2840,35 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                                         ),
                                   ),
                                 ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 5,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: available > 0
-                                        ? scheme.primaryContainer
-                                        : scheme.errorContainer
-                                            .withValues(alpha: 0.5),
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: Text(
-                                    availLabel,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelMedium
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.w700,
-                                          color: available > 0
-                                              ? scheme.onPrimaryContainer
-                                              : scheme.onErrorContainer,
-                                        ),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: available > 0
+                                          ? scheme.primaryContainer
+                                          : scheme.errorContainer
+                                              .withValues(alpha: 0.5),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Text(
+                                      availLabel,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.end,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelSmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                            color: available > 0
+                                                ? scheme.onPrimaryContainer
+                                                : scheme.onErrorContainer,
+                                          ),
+                                    ),
                                   ),
                                 ),
                               ],
@@ -2922,137 +2930,219 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
     required ColorScheme scheme,
     required CustomerSearchContext? search,
   }) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Image.asset(
-                  'assets/branding/madyaw_logo.png',
-                  height: 40,
-                  width: 40,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => Icon(
-                    Icons.sailing_outlined,
-                    size: 32,
-                    color: scheme.primary,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final stackHeader = constraints.maxWidth < 560;
+
+        Widget searchChip() {
+          if (search == null) return const SizedBox.shrink();
+          return Container(
+            width: stackHeader ? double.infinity : null,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: scheme.primaryContainer.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '${search.checkInIso} → ${search.checkOutIso}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: stackHeader ? TextAlign.start : TextAlign.center,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
                   ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      hotelName,
-                      softWrap: true,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            height: 1.2,
+            ),
+          );
+        }
+
+        final header = stackHeader
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Image.asset(
+                          'assets/branding/madyaw_logo.png',
+                          height: 36,
+                          width: 36,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => Icon(
+                            Icons.sailing_outlined,
+                            size: 28,
+                            color: scheme.primary,
                           ),
-                    ),
-                    Text(
-                      context.tr('find_your_room'),
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
-                    ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              hotelName,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleSmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    height: 1.15,
+                                  ),
+                            ),
+                            Text(
+                              context.tr('find_your_room'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (search != null) ...[
+                    const SizedBox(height: 6),
+                    searchChip(),
                   ],
-                ),
-              ),
-              if (search != null)
-                Flexible(
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: scheme.primaryContainer.withValues(alpha: 0.55),
-                      borderRadius: BorderRadius.circular(12),
+                ],
+              )
+            : Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.asset(
+                      'assets/branding/madyaw_logo.png',
+                      height: 40,
+                      width: 40,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => Icon(
+                        Icons.sailing_outlined,
+                        size: 32,
+                        color: scheme.primary,
+                      ),
                     ),
-                    child: Text(
-                      '${search.checkInIso} → ${search.checkOutIso}',
-                      maxLines: 2,
-                      softWrap: true,
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            fontWeight: FontWeight.w700,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          hotelName,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleSmall
+                              ?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                height: 1.15,
+                              ),
+                        ),
+                        Text(
+                          context.tr('find_your_room'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              Theme.of(context).textTheme.labelSmall?.copyWith(
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (search != null) ...[
+                    const SizedBox(width: 8),
+                    Flexible(child: searchChip()),
+                  ],
+                ],
+              );
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              header,
+              const SizedBox(height: 8),
+              if (categories.isEmpty)
+                Expanded(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.event_busy_outlined,
+                              size: 48, color: scheme.outline),
+                          const SizedBox(height: 12),
+                          Text(
+                            search != null
+                                ? context.tr('no_rooms_for_dates')
+                                : context.tr('no_categories_available'),
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.titleSmall,
                           ),
+                        ],
+                      ),
                     ),
+                  ),
+                )
+              else
+                Expanded(
+                  child: CustomerLandscapePagedGrid(
+                    itemCount: categories.length,
+                    itemBuilder: (context, i) {
+                      final m = categories[i] as Map<String, dynamic>;
+                      final id = '${m['id']}';
+                      final name = '${m['name']}';
+                      final imageUrl = ChatAttachment.resolveMediaUrl(
+                          '${m['image_url'] ?? ''}');
+                      final desc = '${m['description'] ?? ''}'.trim();
+                      final available =
+                          (m['available_rooms'] as num?)?.toInt() ?? 0;
+                      final availLabel = available == 1
+                          ? context.tr('one_room_available')
+                          : context.tr('rooms_available_label',
+                              {'n': '$available'});
+                      return CustomerLandscapeCategoryTile(
+                        name: name,
+                        imageUrl: imageUrl,
+                        availLabel: availLabel,
+                        available: available > 0,
+                        description: desc.isEmpty ? null : desc,
+                        onTap: () {
+                          Navigator.of(context).push<void>(
+                            MaterialPageRoute<void>(
+                              builder: (_) => CustomerRoomsScreen(
+                                hotelId: widget.hotelId,
+                                categoryId: id,
+                                categoryName: name,
+                                categoryImageUrl: imageUrl,
+                                searchContext: widget.searchContext,
+                                hotelName: hotelName,
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
                   ),
                 ),
             ],
           ),
-          const SizedBox(height: 10),
-          if (categories.isEmpty)
-            Expanded(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.event_busy_outlined,
-                          size: 48, color: scheme.outline),
-                      const SizedBox(height: 12),
-                      Text(
-                        search != null
-                            ? context.tr('no_rooms_for_dates')
-                            : context.tr('no_categories_available'),
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            )
-          else
-            Expanded(
-              child: CustomerLandscapePagedGrid(
-                itemCount: categories.length,
-                itemBuilder: (context, i) {
-                  final m = categories[i] as Map<String, dynamic>;
-                  final id = '${m['id']}';
-                  final name = '${m['name']}';
-                  final imageUrl =
-                      ChatAttachment.resolveMediaUrl('${m['image_url'] ?? ''}');
-                  final desc = '${m['description'] ?? ''}'.trim();
-                  final available = (m['available_rooms'] as num?)?.toInt() ?? 0;
-                  final availLabel = available == 1
-                      ? context.tr('one_room_available')
-                      : context.tr('rooms_available_label', {'n': '$available'});
-                  return CustomerLandscapeCategoryTile(
-                    name: name,
-                    imageUrl: imageUrl,
-                    availLabel: availLabel,
-                    available: available > 0,
-                    description: desc.isEmpty ? null : desc,
-                    onTap: () {
-                      Navigator.of(context).push<void>(
-                        MaterialPageRoute<void>(
-                          builder: (_) => CustomerRoomsScreen(
-                            hotelId: widget.hotelId,
-                            categoryId: id,
-                            categoryName: name,
-                            categoryImageUrl: imageUrl,
-                            searchContext: widget.searchContext,
-                            hotelName: hotelName,
-                          ),
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -4077,9 +4167,14 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
 
   int _adminGridCrossAxisCount(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
-    if (width >= 900) return 4;
-    if (width >= 600) return 3;
+    if (width >= 900) return 5;
+    if (width >= 600) return 4;
+    if (width >= 400) return 3;
     return 2;
+  }
+
+  double _adminGridAspectRatio(BuildContext context) {
+    return widget.adminLocalBooking ? 1.65 : 1.08;
   }
 
   Widget _buildCompactRoomsGrid(
@@ -4088,17 +4183,20 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     ColorScheme scheme,
   ) {
     final crossAxisCount = _adminGridCrossAxisCount(context);
+    final dense = widget.adminLocalBooking;
     return RefreshIndicator(
       onRefresh: _load,
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            padding: EdgeInsets.fromLTRB(dense ? 8 : 12, dense ? 4 : 8, dense ? 8 : 12, 2),
             sliver: SliverToBoxAdapter(
               child: Text(
-                '${rooms.length} available · tap a room to book',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                dense
+                    ? '${rooms.length} available'
+                    : '${rooms.length} available · tap a room to book',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: scheme.onSurfaceVariant,
                       fontWeight: FontWeight.w600,
                     ),
@@ -4106,13 +4204,13 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
             ),
           ),
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
+            padding: EdgeInsets.fromLTRB(dense ? 8 : 12, 2, dense ? 8 : 12, dense ? 12 : 24),
             sliver: SliverGrid(
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: crossAxisCount,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                childAspectRatio: 1.08,
+                mainAxisSpacing: dense ? 6 : 8,
+                crossAxisSpacing: dense ? 6 : 8,
+                childAspectRatio: _adminGridAspectRatio(context),
               ),
               delegate: SliverChildBuilderDelegate(
                 (context, i) => _buildGridRoomTile(
@@ -4129,17 +4227,20 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     );
   }
 
-  Widget _availableBadge(ColorScheme scheme) {
+  Widget _availableBadge(ColorScheme scheme, {bool compact = false}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 5 : 6,
+        vertical: compact ? 1 : 2,
+      ),
       decoration: BoxDecoration(
         color: Colors.green.shade100,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(compact ? 6 : 8),
       ),
       child: Text(
-        'Available',
+        'Avail',
         style: TextStyle(
-          fontSize: 9,
+          fontSize: compact ? 8 : 9,
           fontWeight: FontWeight.w700,
           color: Colors.green.shade800,
         ),
@@ -4169,31 +4270,37 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     final priceLabel = HourlyBilling.priceLabel(r);
     final hasSubtitle =
         displayName.isNotEmpty && displayName != roomNo;
+    final dense = widget.adminLocalBooking;
 
     return Material(
       color: scheme.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(dense ? 10 : 12),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: _booking ? null : () => _onGridRoomTap(r),
         child: Padding(
-          padding: const EdgeInsets.all(10),
+          padding: EdgeInsets.symmetric(
+            horizontal: dense ? 8 : 10,
+            vertical: dense ? 6 : 10,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Row(
                 children: [
                   Expanded(
                     child: Text(
-                      roomNo.isNotEmpty ? 'Room $roomNo' : 'Room',
+                      roomNo.isNotEmpty ? roomNo : '—',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
+                      style: (dense
+                              ? Theme.of(context).textTheme.labelMedium
+                              : Theme.of(context).textTheme.labelLarge)
+                          ?.copyWith(fontWeight: FontWeight.w800),
                     ),
                   ),
-                  _availableBadge(scheme),
+                  _availableBadge(scheme, compact: dense),
                 ],
               ),
               if (hasSubtitle) ...[
@@ -4202,12 +4309,13 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                   displayName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: scheme.onSurfaceVariant,
+                        fontSize: dense ? 10 : null,
                       ),
                 ),
               ],
-              const Spacer(),
+              SizedBox(height: dense ? 3 : 6),
               Text(
                 priceLabel,
                 maxLines: 1,
@@ -4215,19 +4323,9 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: scheme.primary,
                       fontWeight: FontWeight.w700,
+                      fontSize: dense ? 10 : null,
                     ),
               ),
-              if (widget.adminLocalBooking) ...[
-                const SizedBox(height: 6),
-                Text(
-                  'Tap to book',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                        fontSize: 10,
-                      ),
-                ),
-              ],
             ],
           ),
         ),
@@ -4241,34 +4339,58 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     ColorScheme scheme,
   ) {
     final fromSearch = widget.searchContext != null;
+    final search = widget.searchContext;
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Text(
-                  widget.categoryName,
-                  softWrap: true,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        height: 1.2,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.categoryName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            height: 1.15,
+                          ),
+                    ),
+                    if (search != null)
+                      Text(
+                        '${search.checkInIso} → ${search.checkOutIso}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            ),
                       ),
+                  ],
                 ),
               ),
               if (rooms.isNotEmpty)
-                Text(
-                  '${rooms.length} available',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                      ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 8, top: 2),
+                  child: Text(
+                    '${rooms.length} available',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
                 ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           if (rooms.isEmpty)
             Expanded(
               child: Center(

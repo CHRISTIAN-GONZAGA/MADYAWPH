@@ -132,97 +132,121 @@ class CustomerLandscapeCategoryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(14),
-      clipBehavior: Clip.antiAlias,
-      elevation: 1,
-      shadowColor: scheme.shadow.withValues(alpha: 0.08),
-      child: InkWell(
-        onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              flex: 3,
-              child: imageUrl.isEmpty
-                  ? ColoredBox(
-                      color: scheme.surfaceContainerHighest,
-                      child: Icon(Icons.category_outlined,
-                          color: scheme.outline, size: 28),
-                    )
-                  : NetworkMediaImage(
-                      url: imageUrl,
-                      fit: BoxFit.cover,
-                      error: ColoredBox(
-                        color: scheme.surfaceContainerHighest,
-                        child: Icon(Icons.broken_image_outlined,
-                            color: scheme.outline),
-                      ),
-                    ),
-            ),
-            Expanded(
-              flex: 2,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      softWrap: true,
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            height: 1.15,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final tight = constraints.maxHeight < 130;
+        final imageFlex = tight ? 2 : 3;
+        final textFlex = tight ? 3 : 2;
+
+        return Material(
+          color: scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(14),
+          clipBehavior: Clip.antiAlias,
+          elevation: 1,
+          shadowColor: scheme.shadow.withValues(alpha: 0.08),
+          child: InkWell(
+            onTap: onTap,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  flex: imageFlex,
+                  child: imageUrl.isEmpty
+                      ? ColoredBox(
+                          color: scheme.surfaceContainerHighest,
+                          child: Icon(Icons.category_outlined,
+                              color: scheme.outline, size: tight ? 22 : 28),
+                        )
+                      : NetworkMediaImage(
+                          url: imageUrl,
+                          fit: BoxFit.cover,
+                          error: ColoredBox(
+                            color: scheme.surfaceContainerHighest,
+                            child: Icon(Icons.broken_image_outlined,
+                                color: scheme.outline),
                           ),
-                    ),
-                    if (description != null && description!.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        description!,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        softWrap: true,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
-                      ),
-                    ],
-                    const Spacer(),
-                    Row(
-                      children: [
-                        Icon(
-                          available ? Icons.check_circle_outline : Icons.block,
-                          size: 12,
-                          color: available ? scheme.primary : scheme.error,
                         ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            availLabel,
-                            maxLines: 2,
+                ),
+                Expanded(
+                  flex: textFlex,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      8,
+                      tight ? 4 : 6,
+                      8,
+                      tight ? 5 : 7,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          maxLines: tight ? 1 : 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelLarge
+                              ?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                height: 1.1,
+                                fontSize: tight ? 11 : null,
+                              ),
+                        ),
+                        if (!tight &&
+                            description != null &&
+                            description!.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            description!,
+                            maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            softWrap: true,
                             style:
                                 Theme.of(context).textTheme.labelSmall?.copyWith(
+                                      color: scheme.onSurfaceVariant,
+                                      fontSize: 10,
+                                    ),
+                          ),
+                        ],
+                        const Spacer(),
+                        Row(
+                          children: [
+                            Icon(
+                              available
+                                  ? Icons.check_circle_outline
+                                  : Icons.block,
+                              size: 11,
+                              color:
+                                  available ? scheme.primary : scheme.error,
+                            ),
+                            const SizedBox(width: 3),
+                            Expanded(
+                              child: Text(
+                                availLabel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelSmall
+                                    ?.copyWith(
                                       color: available
                                           ? scheme.primary
                                           : scheme.error,
                                       fontWeight: FontWeight.w700,
+                                      fontSize: tight ? 9 : 10,
                                     ),
-                          ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -250,123 +274,167 @@ class CustomerLandscapeRoomTile extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final showReserve = onReserve != null;
 
-    return Material(
-      color: scheme.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(14),
-      clipBehavior: Clip.antiAlias,
-      elevation: 1,
-      shadowColor: scheme.shadow.withValues(alpha: 0.08),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            flex: 3,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                NetworkMediaImage(
-                  url: imageUrl,
-                  fit: BoxFit.cover,
-                  error: ColoredBox(
-                    color: scheme.surfaceContainerHighest,
-                    child: Icon(Icons.bed_outlined,
-                        color: scheme.outline, size: 28),
-                  ),
-                ),
-                Positioned(
-                  top: 6,
-                  right: 6,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Colors.black87,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 4,
-                      ),
-                      child: Text(
-                        priceLabel,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 10,
-                        ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final tight = constraints.maxHeight < 130;
+        final imageFlex = tight ? 2 : 3;
+        final textFlex = tight ? 3 : 2;
+
+        return Material(
+          color: scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(14),
+          clipBehavior: Clip.antiAlias,
+          elevation: 1,
+          shadowColor: scheme.shadow.withValues(alpha: 0.08),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                flex: imageFlex,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    NetworkMediaImage(
+                      url: imageUrl,
+                      fit: BoxFit.cover,
+                      error: ColoredBox(
+                        color: scheme.surfaceContainerHighest,
+                        child: Icon(Icons.bed_outlined,
+                            color: scheme.outline, size: tight ? 22 : 28),
                       ),
                     ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(8, 5, 8, 7),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    softWrap: true,
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          height: 1.1,
-                        ),
-                  ),
-                  const Spacer(),
-                  if (showReserve)
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: busy ? null : onReserve,
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 5),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              visualDensity: VisualDensity.compact,
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      left: 4,
+                      child: Align(
+                        alignment: Alignment.topRight,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Colors.black87,
+                              borderRadius: BorderRadius.circular(8),
                             ),
-                            child: const Text('Reserve', style: TextStyle(fontSize: 10)),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 3,
+                              ),
+                              child: Text(
+                                priceLabel,
+                                maxLines: 1,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: FilledButton(
-                            onPressed: busy ? null : onBook,
-                            style: FilledButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 5),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              visualDensity: VisualDensity.compact,
-                            ),
-                            child: const Text('Book', style: TextStyle(fontSize: 10)),
-                          ),
-                        ),
-                      ],
-                    )
-                  else
-                    FilledButton(
-                      onPressed: busy ? null : onBook,
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: Text(
-                        busy ? '…' : 'Book',
-                        style: const TextStyle(fontSize: 11),
                       ),
                     ),
-                ],
+                  ],
+                ),
               ),
-            ),
+              Expanded(
+                flex: textFlex,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    8,
+                    tight ? 4 : 5,
+                    8,
+                    tight ? 5 : 6,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: tight ? 1 : 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              height: 1.1,
+                              fontSize: tight ? 11 : null,
+                            ),
+                      ),
+                      const Spacer(),
+                      if (showReserve)
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: busy ? null : onReserve,
+                                style: OutlinedButton.styleFrom(
+                                  padding: EdgeInsets.symmetric(
+                                    vertical: tight ? 3 : 5,
+                                  ),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                child: Text(
+                                  'Reserve',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: tight ? 9 : 10),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: FilledButton(
+                                onPressed: busy ? null : onBook,
+                                style: FilledButton.styleFrom(
+                                  padding: EdgeInsets.symmetric(
+                                    vertical: tight ? 3 : 5,
+                                  ),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                child: Text(
+                                  'Book',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: tight ? 9 : 10),
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
+                      else
+                        FilledButton(
+                          onPressed: busy ? null : onBook,
+                          style: FilledButton.styleFrom(
+                            padding: EdgeInsets.symmetric(
+                              vertical: tight ? 4 : 6,
+                            ),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: Text(
+                            busy ? '…' : 'Book',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: tight ? 10 : 11),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

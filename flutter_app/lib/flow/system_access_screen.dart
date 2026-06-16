@@ -73,11 +73,14 @@ class _SystemAccessScreenState extends State<SystemAccessScreen> {
     );
   }
 
-  Future<void> _openDashboard(Widget screen) async {
+  Future<void> _openDashboard(Widget screen, {bool replace = true}) async {
     if (!mounted) return;
-    await Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(builder: (_) => screen),
-    );
+    final route = MaterialPageRoute<void>(builder: (_) => screen);
+    if (replace) {
+      await Navigator.of(context).pushReplacement(route);
+    } else {
+      await Navigator.of(context).push(route);
+    }
   }
 
   bool _roleMatchesSavedSession(String expectedRole, String savedRole) {
@@ -169,6 +172,7 @@ class _SystemAccessScreenState extends State<SystemAccessScreen> {
         if (!mounted) return;
         await _openDashboard(
           CustomerDashboardScreen(hotelId: widget.session.hotelId),
+          replace: false,
         );
         return;
       }

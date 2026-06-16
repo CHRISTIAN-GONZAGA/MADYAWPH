@@ -134,36 +134,57 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
     final categories =
         (_categoriesRes?['categories'] as List<dynamic>?) ?? [];
     final scheme = Theme.of(context).colorScheme;
-    final gridColumns = MediaQuery.sizeOf(context).width >= 600 ? 3 : 2;
+    final width = MediaQuery.sizeOf(context).width;
+    final gridColumns = width >= 720 ? 4 : (width >= 480 ? 3 : 2);
+    final availableCategories = categories.where((raw) {
+      final m = raw as Map<String, dynamic>;
+      return ((m['available_rooms'] as num?)?.toInt() ?? 0) > 0;
+    }).length;
 
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
+        padding: const EdgeInsets.fromLTRB(8, 4, 8, 88),
         children: [
-          Text(
-            'Walk-in',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Walk-in · ${widget.hotelName}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    Text(
+                      'Tap a category, then an available room.',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
                 ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            widget.hotelName,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: scheme.primary,
+              ),
+              if (categories.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8, top: 2),
+                  child: Text(
+                    '$availableCategories / ${categories.length}',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: scheme.primary,
+                        ),
+                  ),
                 ),
+            ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            'Tap a category, then tap an available room to book locally.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-          ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           if (categories.isEmpty)
             Card(
               child: Padding(
@@ -193,9 +214,9 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: gridColumns,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                childAspectRatio: 1.35,
+                mainAxisSpacing: 6,
+                crossAxisSpacing: 6,
+                childAspectRatio: 1.85,
               ),
               itemCount: categories.length,
               itemBuilder: (context, index) {
@@ -209,7 +230,7 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
 
                 return Material(
                   color: scheme.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(10),
                   clipBehavior: Clip.antiAlias,
                   child: InkWell(
                     onTap: available <= 0
@@ -219,15 +240,19 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
                               categoryName: name,
                             ),
                     child: Padding(
-                      padding: const EdgeInsets.all(10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Row(
                             children: [
                               Icon(Icons.king_bed_outlined,
-                                  size: 18, color: scheme.primary),
-                              const SizedBox(width: 6),
+                                  size: 16, color: scheme.primary),
+                              const SizedBox(width: 4),
                               Expanded(
                                 child: Text(
                                   name,
@@ -235,13 +260,13 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
                                   overflow: TextOverflow.ellipsis,
                                   style: Theme.of(context)
                                       .textTheme
-                                      .labelLarge
+                                      .labelMedium
                                       ?.copyWith(fontWeight: FontWeight.w800),
                                 ),
                               ),
                             ],
                           ),
-                          const Spacer(),
+                          const SizedBox(height: 4),
                           Text(
                             availLabel,
                             maxLines: 1,
