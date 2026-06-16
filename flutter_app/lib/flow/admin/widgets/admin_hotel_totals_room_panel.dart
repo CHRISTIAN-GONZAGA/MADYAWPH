@@ -49,7 +49,7 @@ class HotelTotalsRoomPanelScope extends InheritedWidget {
 
   static HotelTotalsRoomPanelScope? maybeOf(BuildContext context) {
     return context
-        .dependOnInheritedWidgetOfExactType<HotelTotalsRoomPanelScope>();
+        .getInheritedWidgetOfExactType<HotelTotalsRoomPanelScope>();
   }
 
   @override
@@ -184,10 +184,55 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     return true;
   }
 
+  Widget _buildPanelBody(BuildContext context) {
+    if (_showDetail && _detailRoomId != null) {
+      return AdminRoomDetailScreen(
+        key: ValueKey(_detailRoomId),
+        roomId: _detailRoomId!,
+        embedded: true,
+        hideAppBar: true,
+        onClose: _backToRoomList,
+      );
+    }
+
+    final list = _list;
+    if (list == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'No rooms loaded. Close and try again.',
+            style: Theme.of(context).textTheme.bodyLarge,
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+
+    return _HotelTotalsRoomGrid(
+      rooms: list.rooms,
+      showGuest: list.showGuest,
+      subtitle: list.subtitle,
+      onRoomTap: _openRoomDetail,
+    );
+  }
+
+  PreferredSizeWidget _buildPanelAppBar(BuildContext context) {
+    final list = _list;
+    return AppBar(
+      title: Text(_showDetail ? 'Room details' : (list?.title ?? 'Rooms')),
+      leading: BackButton(
+        onPressed: _showDetail ? _backToRoomList : _closePanel,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final height = MediaQuery.sizeOf(context).height;
-    final panelHeight = height * 0.92;
+    final panelHeight = MediaQuery.sizeOf(context).height * 0.92;
+    final bg = _showDetail
+        ? const Color(0xFFF5F3EF)
+        : Theme.of(context).colorScheme.surface;
 
     return HotelTotalsRoomPanelScope(
       isOpen: _visible,
@@ -208,57 +253,43 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
                 ),
               ),
             ),
-            Positioned.fill(
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: panelHeight,
               child: SlideTransition(
                 position: _slideAnim,
-                child: Align(
-                  alignment: Alignment.bottomCenter,
-                  child: Material(
-                    color: _showDetail
-                        ? const Color(0xFFF5F3EF)
-                        : Theme.of(context).colorScheme.surface,
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(18),
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: SizedBox(
-                      height: panelHeight,
-                      width: double.infinity,
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 8),
-                          Container(
-                            width: 40,
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant
-                                  .withValues(alpha: 0.35),
-                              borderRadius: BorderRadius.circular(99),
-                            ),
+                child: Material(
+                  color: bg,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(18),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: SafeArea(
+                    top: false,
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 8),
+                        Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant
+                                .withValues(alpha: 0.35),
+                            borderRadius: BorderRadius.circular(99),
                           ),
-                          Expanded(
-                            child: _showDetail && _detailRoomId != null
-                                ? AdminRoomDetailScreen(
-                                    key: ValueKey(_detailRoomId),
-                                    roomId: _detailRoomId!,
-                                    embedded: true,
-                                    onClose: _backToRoomList,
-                                  )
-                                : _list == null
-                                    ? const SizedBox.shrink()
-                                    : _HotelTotalsRoomGrid(
-                                        title: _list!.title,
-                                        rooms: _list!.rooms,
-                                        showGuest: _list!.showGuest,
-                                        subtitle: _list!.subtitle,
-                                        onClose: _closePanel,
-                                        onRoomTap: _openRoomDetail,
-                                      ),
+                        ),
+                        Expanded(
+                          child: Scaffold(
+                            backgroundColor: bg,
+                            appBar: _buildPanelAppBar(context),
+                            body: _buildPanelBody(context),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -273,19 +304,15 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
 
 class _HotelTotalsRoomGrid extends StatelessWidget {
   const _HotelTotalsRoomGrid({
-    required this.title,
     required this.rooms,
     required this.showGuest,
-    required this.onClose,
     required this.onRoomTap,
     this.subtitle,
   });
 
-  final String title;
   final List<Map<String, dynamic>> rooms;
   final bool showGuest;
   final String? subtitle;
-  final VoidCallback onClose;
   final void Function(String roomId) onRoomTap;
 
   @override
@@ -296,11 +323,6 @@ class _HotelTotalsRoomGrid extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        AppBar(
-          title: Text(title),
-          leading: BackButton(onPressed: onClose),
-          automaticallyImplyLeading: true,
-        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: Text(
@@ -387,6 +409,13 @@ void openHotelTotalsRoomDetail(
   if (panel == null) {
     AdminRoomDetailNavigation.showRoomDetailSheet(roomId: id, context: context);
     return;
+  }
+  if (!panel.isOpen) {
+    panel.openRoomList(
+      title: 'Room details',
+      rooms: [room],
+      showGuest: true,
+    );
   }
   panel.openRoomDetail(id);
 }
