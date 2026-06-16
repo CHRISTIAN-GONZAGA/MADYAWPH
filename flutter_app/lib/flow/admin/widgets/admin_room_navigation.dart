@@ -5,7 +5,7 @@ import 'package:flutter/scheduler.dart';
 
 import '../admin_dashboard_models.dart';
 import '../admin_room_detail_screen.dart';
-import 'manual_booking_dialog.dart';
+import 'admin_walk_in_customer_booking.dart';
 
 /// How a room tile should open from the admin dashboard.
 enum AdminRoomOpenMode {

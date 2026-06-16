@@ -1,9 +1,16 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gloretto_mobile/flow/admin/widgets/manual_booking_dialog.dart';
+import 'package:gloretto_mobile/flow/admin/widgets/admin_walk_in_customer_booking.dart';
 import 'package:gloretto_mobile/navigation_keys.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({
+      'auth_storage_migrated_v2': true,
+    });
+  });
+
   testWidgets('showAdminWalkInBookingDialog opens complete booking popup',
       (tester) async {
     await tester.pumpWidget(
@@ -13,8 +20,8 @@ void main() {
           builder: (context) => Scaffold(
             body: Center(
               child: FilledButton(
-                onPressed: () {
-                  showAdminWalkInBookingDialog(
+                onPressed: () async {
+                  await showAdminWalkInBookingDialog(
                     context: context,
                     room: const {
                       'id': 'room-1',

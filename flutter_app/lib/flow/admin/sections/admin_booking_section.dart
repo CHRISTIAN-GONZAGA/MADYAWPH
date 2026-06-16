@@ -92,6 +92,7 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => AdminWalkInCategoryRoomsScreen(
+          hotelId: widget.hotelId,
           categoryName: categoryName,
           rooms: categoryRooms,
           onBooked: _onBooked,

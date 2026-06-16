@@ -2,55 +2,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
-import '../../../widgets/app_overlay.dart';
 import '../admin_dashboard_models.dart';
 import '../../widgets/complete_guest_booking_dialog.dart';
 import 'hourly_billing.dart';
-
-/// Opens the customer-style booking popup and saves via [POST /admin/bookings]
-/// so the stay appears under **Local** bookings (not Online).
-Future<bool> showAdminWalkInBookingDialog({
-  required BuildContext context,
-  required Map<String, dynamic> room,
-}) async {
-  final payload = await showCompleteGuestBookingDialog(
-    context: context,
-    room: room,
-    config: CompleteGuestBookingConfig.adminWalkIn(room),
-  );
-  if (payload == null) return false;
-
-  try {
-    await submitAdminWalkInBooking(room: room, payload: payload);
-    if (context.mounted) {
-      showAppSnackBar(
-        SnackBar(
-          content: Text(
-            'Room ${room['room_number']} booked as a local walk-in.',
-          ),
-        ),
-        context: context,
-      );
-    }
-    return true;
-  } on DioException catch (e) {
-    if (context.mounted) {
-      showAppSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-        context: context,
-      );
-    }
-    return false;
-  } catch (e) {
-    if (context.mounted) {
-      showAppSnackBar(
-        SnackBar(content: Text('$e')),
-        context: context,
-      );
-    }
-    return false;
-  }
-}
 
 /// Admin walk-in gateway — always creates a **local** booking (`source: admin`).
 Future<void> submitAdminWalkInBooking({
@@ -65,7 +19,8 @@ Future<void> submitAdminWalkInBooking({
   final checkInDate = DateTime.parse(payload.checkIn);
   final checkOutDate = DateTime.parse(payload.checkOut);
   final inAt = HourlyBilling.customerStayCheckIn(checkInDate);
-  final outAt = HourlyBilling.customerStayCheckOut(room, checkInDate, checkOutDate);
+  final outAt =
+      HourlyBilling.customerStayCheckOut(room, checkInDate, checkOutDate);
 
   final body = <String, dynamic>{
     'room_id': roomId,

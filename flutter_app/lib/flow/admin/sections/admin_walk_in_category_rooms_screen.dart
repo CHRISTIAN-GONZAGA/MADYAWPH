@@ -2,17 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../admin_dashboard_models.dart';
-import '../widgets/admin_room_navigation.dart';
+import '../widgets/admin_walk_in_customer_booking.dart';
 
 /// Simple walk-in room picker: name/number only, color-coded by status.
 class AdminWalkInCategoryRoomsScreen extends StatelessWidget {
   const AdminWalkInCategoryRoomsScreen({
     super.key,
+    required this.hotelId,
     required this.categoryName,
     required this.rooms,
     required this.onBooked,
   });
 
+  final String hotelId;
   final String categoryName;
   final List<Map<String, dynamic>> rooms;
   final Future<void> Function() onBooked;
@@ -42,6 +44,7 @@ class AdminWalkInCategoryRoomsScreen extends StatelessWidget {
                 _WalkInStatusLegend(scheme: scheme),
                 const SizedBox(height: 16),
                 ...rooms.map((room) => _WalkInRoomTile(
+                      hotelId: hotelId,
                       room: room,
                       onBooked: onBooked,
                     )),
@@ -110,10 +113,12 @@ class _WalkInStatusLegend extends StatelessWidget {
 
 class _WalkInRoomTile extends StatelessWidget {
   const _WalkInRoomTile({
+    required this.hotelId,
     required this.room,
     required this.onBooked,
   });
 
+  final String hotelId;
   final Map<String, dynamic> room;
   final Future<void> Function() onBooked;
 
@@ -175,11 +180,14 @@ class _WalkInRoomTile extends StatelessWidget {
   ) async {
     HapticFeedback.selectionClick();
     if (bookable) {
-      await AdminRoomNavigation.openWalkInBooking(
-        context,
+      final booked = await showAdminWalkInCustomerStyleBooking(
+        context: context,
+        hotelId: hotelId,
         room: room,
-        onSuccess: onBooked,
       );
+      if (booked) {
+        await onBooked();
+      }
       return;
     }
 

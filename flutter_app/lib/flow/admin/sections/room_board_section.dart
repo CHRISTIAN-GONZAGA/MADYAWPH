@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import '../../../widgets/hotel_credits_policy.dart';
 import '../../../widgets/room_status_label.dart';
 import '../admin_dashboard_models.dart';
-import '../widgets/manual_booking_dialog.dart';
+import '../widgets/admin_walk_in_customer_booking.dart';
 
 /// Visual room board grouped by category — walk-in tab only.
 class RoomBoardSection extends StatelessWidget {

@@ -19,6 +19,7 @@ import '../widgets/dashboard_exit_guard.dart';
 import 'admin/admin_dashboard_models.dart';
 import 'admin/admin_dashboard_shell.dart';
 import 'admin/widgets/admin_room_navigation.dart';
+import 'admin/widgets/admin_walk_in_customer_booking.dart';
 import 'admin/widgets/hourly_billing.dart';
 import 'admin/widgets/manual_booking_dialog.dart';
 import 'widgets/complete_guest_booking_dialog.dart';
@@ -3196,6 +3197,26 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
   }) async {
     final adminLocal = widget.adminLocalBooking;
     final fromSearch = widget.searchContext != null;
+    if (adminLocal && !fromSearch) {
+      if (_booking) return;
+      setState(() => _booking = true);
+      try {
+        final booked = await showAdminWalkInCustomerStyleBooking(
+          context: context,
+          hotelId: widget.hotelId,
+          room: room,
+        );
+        if (!mounted) return;
+        if (booked) {
+          await widget.onBooked?.call();
+          await _load();
+        }
+      } finally {
+        if (mounted) setState(() => _booking = false);
+      }
+      return;
+    }
+
     final forceReserve = !adminLocal && (fromSearch || reserve);
     final savedGuest = await AuthStorage.customerGuestContact();
     if (!mounted) return;
