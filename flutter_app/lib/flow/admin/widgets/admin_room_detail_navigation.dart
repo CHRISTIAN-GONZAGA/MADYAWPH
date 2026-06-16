@@ -71,10 +71,19 @@ abstract final class AdminRoomDetailNavigation {
           final height = MediaQuery.sizeOf(sheetContext).height;
           return SizedBox(
             height: height * 0.94,
-            child: AdminRoomDetailScreen(
-              roomId: id,
-              embedded: true,
-              onClose: () => Navigator.of(sheetContext).pop(),
+            child: Scaffold(
+              backgroundColor: const Color(0xFFF5F3EF),
+              appBar: AppBar(
+                title: const Text('Room details'),
+                leading: BackButton(
+                  onPressed: () => Navigator.of(sheetContext).pop(),
+                ),
+              ),
+              body: AdminRoomDetailScreen(
+                roomId: id,
+                panelBodyOnly: true,
+                onClose: () => Navigator.of(sheetContext).pop(),
+              ),
             ),
           );
         },
