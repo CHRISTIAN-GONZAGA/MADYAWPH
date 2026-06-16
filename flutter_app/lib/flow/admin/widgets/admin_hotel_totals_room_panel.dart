@@ -190,7 +190,6 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
         key: ValueKey(_detailRoomId),
         roomId: _detailRoomId!,
         embedded: true,
-        hideAppBar: true,
         onClose: _backToRoomList,
       );
     }
@@ -214,16 +213,6 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
       showGuest: list.showGuest,
       subtitle: list.subtitle,
       onRoomTap: _openRoomDetail,
-    );
-  }
-
-  PreferredSizeWidget _buildPanelAppBar(BuildContext context) {
-    final list = _list;
-    return AppBar(
-      title: Text(_showDetail ? 'Room details' : (list?.title ?? 'Rooms')),
-      leading: BackButton(
-        onPressed: _showDetail ? _backToRoomList : _closePanel,
-      ),
     );
   }
 
@@ -283,11 +272,20 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
                           ),
                         ),
                         Expanded(
-                          child: Scaffold(
-                            backgroundColor: bg,
-                            appBar: _buildPanelAppBar(context),
-                            body: _buildPanelBody(context),
-                          ),
+                          child: _showDetail && _detailRoomId != null
+                              ? _buildPanelBody(context)
+                              : Scaffold(
+                                  backgroundColor: bg,
+                                  appBar: AppBar(
+                                    title: Text(
+                                      _list?.title ?? 'Rooms',
+                                    ),
+                                    leading: BackButton(
+                                      onPressed: _closePanel,
+                                    ),
+                                  ),
+                                  body: _buildPanelBody(context),
+                                ),
                         ),
                       ],
                     ),

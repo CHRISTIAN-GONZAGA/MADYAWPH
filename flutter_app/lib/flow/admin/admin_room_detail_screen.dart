@@ -15,15 +15,12 @@ class AdminRoomDetailScreen extends StatefulWidget {
     required this.roomId,
     this.onClose,
     this.embedded = false,
-    this.hideAppBar = false,
   });
 
   final String roomId;
   final VoidCallback? onClose;
-  /// Inside hotel-totals slide-up panel (no extra Navigator scaffold).
+  /// Inside hotel-totals slide-up panel (uses [Scaffold] not [Navigator]).
   final bool embedded;
-  /// Panel provides the app bar; body only.
-  final bool hideAppBar;
 
   @override
   State<AdminRoomDetailScreen> createState() => _AdminRoomDetailScreenState();
@@ -763,15 +760,9 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final body = _buildBody();
+    final body = SizedBox.expand(child: _buildBody());
 
     if (widget.embedded) {
-      if (widget.hideAppBar) {
-        return ColoredBox(
-          color: const Color(0xFFF5F3EF),
-          child: body,
-        );
-      }
       return Scaffold(
         backgroundColor: const Color(0xFFF5F3EF),
         appBar: AppBar(
@@ -801,7 +792,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
         ],
       ),
-      body: _buildBody(),
+      body: SizedBox.expand(child: _buildBody()),
     ),
     );
   }
