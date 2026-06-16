@@ -92,7 +92,7 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
           final picked = await showDatePicker(
             context: dialogContext,
             firstDate: today,
-            lastDate: today,
+            lastDate: today.add(const Duration(days: 365)),
             initialDate: checkInDate ?? today,
           );
           if (picked == null) return;
@@ -202,7 +202,7 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                 const SizedBox(height: 8),
                 AppInput(
                   controller: checkInCtrl,
-                  label: 'Check-in (today for walk-in)',
+                  label: 'Check-in date',
                   hint: 'Tap to open calendar',
                   readOnly: true,
                   onTap: pickCheckIn,

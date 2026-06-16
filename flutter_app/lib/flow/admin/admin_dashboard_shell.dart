@@ -223,6 +223,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
 
   void _closeDetail() {
     setState(() => _detailRoomId = null);
+    unawaited(widget.onRefresh());
   }
 
   bool _handleInnerBack() {

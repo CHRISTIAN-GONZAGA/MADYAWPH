@@ -40,6 +40,18 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     return null;
   }
 
+  static Map<String, dynamic>? _normalizePayload(dynamic raw) {
+    if (raw is! Map) return null;
+    final map = raw is Map<String, dynamic> ? raw : Map<String, dynamic>.from(raw);
+    final nested = map['data'];
+    if (nested is Map) {
+      final inner =
+          nested is Map<String, dynamic> ? nested : Map<String, dynamic>.from(nested);
+      if (inner.containsKey('room')) return inner;
+    }
+    return map.containsKey('room') || map.containsKey('active_booking') ? map : map;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -63,11 +75,14 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       final res = await portalDio()
           .get<Map<String, dynamic>>('/admin/rooms/$_roomId');
       if (!mounted) return;
+      final payload = _normalizePayload(res.data);
       setState(() {
-        _data = res.data;
+        _data = payload;
         _loading = false;
-        if (_data == null || _data!.isEmpty) {
-          _error = 'No room data returned from the server.';
+        if (payload == null || payload.isEmpty || _asMap(payload['room']) == null) {
+          _error = payload == null || payload.isEmpty
+              ? 'No room data returned from the server.'
+              : 'Room data is unavailable. Pull to refresh.';
         }
       });
     } on DioException catch (e) {
@@ -84,8 +99,8 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   }
 
   Future<void> _addFee() async {
-    final booking = _data?['active_booking'] as Map<String, dynamic>?;
-    final room = _data?['room'] as Map<String, dynamic>?;
+    final booking = _asMap(_data?['active_booking']);
+    final room = _asMap(_data?['room']);
     final bookingId = booking?['id']?.toString() ?? '';
     final roomId = room?['id']?.toString() ?? _roomId;
     if (bookingId.isEmpty) {
@@ -174,8 +189,8 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   }
 
   Future<void> _checkoutGuest() async {
-    final room = _data?['room'] as Map<String, dynamic>?;
-    final booking = _data?['active_booking'] as Map<String, dynamic>?;
+    final room = _asMap(_data?['room']);
+    final booking = _asMap(_data?['active_booking']);
     final roomId = (room?['id'] ?? _roomId).toString();
     final guest = (room?['current_guest_name'] ?? booking?['guest_name'] ?? 'Guest').toString();
     final paid = (booking?['payment_status'] ?? '').toString() == 'paid';
@@ -196,10 +211,10 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         title: const Text('Check out guest'),
         content: Text(
           'Check out $guest from this room?\n\n'
-          'â€¢ Guest details will be cleared from room management\n'
-          'â€¢ Room will move to maintenance for cleaning\n'
-          'â€¢ Stay will appear in Guest list history\n'
-          'â€¢ Chat history for this room will be cleared',
+          '• Guest details will be cleared from room management\n'
+          '• Room will move to maintenance for cleaning\n'
+          '• Stay will appear in Guest list history\n'
+          '• Chat history for this room will be cleared',
         ),
         actions: [
           TextButton(
@@ -234,8 +249,8 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   }
 
   Future<void> _changeStatus() async {
-    final room = _data?['room'] as Map<String, dynamic>?;
-    final booking = _data?['active_booking'] as Map<String, dynamic>?;
+    final room = _asMap(_data?['room']);
+    final booking = _asMap(_data?['active_booking']);
     final roomId = (room?['id'] ?? _roomId).toString();
     final current = (room?['status'] ?? 'available').toString();
     final paid = (booking?['payment_status'] ?? '').toString() == 'paid';
@@ -344,8 +359,8 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   }
 
   Future<void> _transferRoom() async {
-    final booking = _data?['active_booking'] as Map<String, dynamic>?;
-    final room = _data?['room'] as Map<String, dynamic>?;
+    final booking = _asMap(_data?['active_booking']);
+    final room = _asMap(_data?['room']);
     final bookingId = (booking?['id'] ?? '').toString();
     final fromRoomId = (room?['id'] ?? _roomId).toString();
     if (bookingId.isEmpty) {
@@ -473,7 +488,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   }
 
   Future<void> _updatePaymentStatus() async {
-    final booking = _data?['active_booking'] as Map<String, dynamic>?;
+    final booking = _asMap(_data?['active_booking']);
     final bookingId = (booking?['id'] ?? '').toString();
     if (bookingId.isEmpty) {
       if (!mounted) return;
@@ -663,7 +678,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   }
 
   Future<void> _issueRefund() async {
-    final booking = _data?['active_booking'] as Map<String, dynamic>?;
+    final booking = _asMap(_data?['active_booking']);
     final bookingId = (booking?['id'] ?? '').toString();
     if (bookingId.isEmpty) {
       if (!mounted) return;
@@ -750,11 +765,10 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         }
       },
       child: AdminOpaqueScaffold(
+      backgroundColor: const Color(0xFFF5F3EF),
       appBar: AppBar(
         title: const Text('Room details'),
-        leading: widget.onClose != null
-            ? BackButton(onPressed: _close)
-            : null,
+        leading: BackButton(onPressed: _close),
         actions: [
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
         ],
@@ -794,49 +808,45 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     final charges = (_data!['booking_charges'] as List<dynamic>?) ?? const [];
     final chargesTotal =
         ((_data!['booking_charges_total'] as num?)?.toDouble() ?? 0);
-    final refundTotal = ((_data!['refund_total'] as num?)?.toDouble() ?? 0);
 
     final roomNo = (room['room_number'] ?? '').toString();
-    final status = (room['status'] ?? '').toString();
-    final guest = (room['current_guest_name'] ?? '').toString();
+    final status = AdminDashboardModels.statusOf(room);
+    final guest = (room['current_guest_name'] ?? booking?['guest_name'] ?? '').toString();
     final pwd = (room['room_access_password'] ?? '').toString();
+    const roomCardColor = Color(0xFFF3EDE3);
+    final accent = Theme.of(context).colorScheme.primary;
 
-    return ListView(
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       children: [
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
+        Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            color: roomCardColor,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Room $roomNo',
-                  style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: roomStatusColor(status).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(20),
+              Text(
+                'Room $roomNo',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
                     ),
-                    child: Text(
-                      roomStatusLabel(status),
-                      style: TextStyle(
-                        color: roomStatusColor(status),
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
               ),
-              if (guest.isNotEmpty) Text('Guest: $guest'),
-              if (_canEditGuestStay && pwd.isNotEmpty) Text('Password: $pwd'),
+              const SizedBox(height: 8),
+              Text('Status: ${roomStatusLabel(status)}'),
+              if (guest.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text('Guest: $guest'),
+              ],
+              if (pwd.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text('Password: $pwd'),
+              ],
             ],
           ),
         ),
@@ -857,74 +867,99 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
           ),
         ],
         const SizedBox(height: 16),
-        Text('Booking info', style: Theme.of(context).textTheme.titleMedium),
+        Text(
+          'Booking info',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+        ),
         const SizedBox(height: 8),
         if (booking == null)
           const Text('No active booking found for this room.')
         else
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.person_outline),
-              isThreeLine: true,
-              title: Text((booking['guest_name'] ?? '').toString()),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    [
-                      'Phone: ${(booking['guest_phone'] ?? '').toString()}',
-                      'Email: ${(booking['guest_email'] ?? '').toString()}',
-                      'Ref: ${(booking['booking_reference'] ?? '').toString()}',
-                    ].where((s) => !s.endsWith(': ')).join('\n'),
-                  ),
-                  if ((booking['stay_duration_label'] ?? '')
-                      .toString()
-                      .isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        (booking['stay_duration_label'] ?? '').toString(),
-                        style: Theme.of(context).textTheme.bodySmall,
+          Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: roomCardColor,
+              border: Border.all(color: accent.withValues(alpha: 0.2)),
+            ),
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.person_outline, color: accent, size: 28),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        (booking['guest_name'] ?? 'Guest').toString(),
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
                       ),
-                    ),
-                  if ((booking['check_in_display'] ?? '')
-                      .toString()
-                      .isNotEmpty)
-                    Text(
-                      'Arrival: ${AdminDashboardModels.cleanStayDisplay((booking['check_in_display'] ?? '').toString())}',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  if ((booking['check_out_display'] ?? '')
-                      .toString()
-                      .isNotEmpty)
-                    Text(
-                      'Departure: ${AdminDashboardModels.cleanStayDisplay((booking['check_out_display'] ?? '').toString())}',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  Text(
-                    'Payment method: ${(booking['payment_method'] ?? '-').toString()}',
-                    style: Theme.of(context).textTheme.bodySmall,
+                      if ((booking['guest_phone'] ?? '').toString().isNotEmpty)
+                        Text((booking['guest_phone'] ?? '').toString()),
+                      if ((booking['guest_email'] ?? '').toString().isNotEmpty)
+                        Text((booking['guest_email'] ?? '').toString()),
+                      if ((booking['booking_reference'] ?? '')
+                          .toString()
+                          .isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            'Ref: ${(booking['booking_reference'] ?? '').toString()}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                      if ((booking['stay_duration_label'] ?? '')
+                          .toString()
+                          .isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            (booking['stay_duration_label'] ?? '').toString(),
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                      if ((booking['check_in_display'] ?? '')
+                          .toString()
+                          .isNotEmpty)
+                        Text(
+                          'Arrival: ${AdminDashboardModels.cleanStayDisplay((booking['check_in_display'] ?? '').toString())}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      if ((booking['check_out_display'] ?? '')
+                          .toString()
+                          .isNotEmpty)
+                        Text(
+                          'Departure: ${AdminDashboardModels.cleanStayDisplay((booking['check_out_display'] ?? '').toString())}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                    ],
                   ),
-                  Text(
-                    'Payment status: ${(booking['payment_status'] ?? 'unpaid').toString()}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         if (_canEditGuestStay) ...[
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: _busy ? null : _addFee,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add fee'),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _busy ? null : _addFee,
+              style: FilledButton.styleFrom(
+                backgroundColor: accent,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
-            ],
+              icon: const Icon(Icons.add),
+              label: const Text('+ Add fee'),
+            ),
           ),
           const SizedBox(height: 10),
           Row(
@@ -932,6 +967,10 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: _updatingPayment ? null : _updatePaymentStatus,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: accent,
+                    side: BorderSide(color: accent),
+                  ),
                   icon: const Icon(Icons.payments_outlined),
                   label: const Text('Payment'),
                 ),
@@ -940,6 +979,10 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: _issuingRefund ? null : _issueRefund,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: accent,
+                    side: BorderSide(color: accent),
+                  ),
                   icon: const Icon(Icons.replay_outlined),
                   label: const Text('Refund'),
                 ),
@@ -959,7 +1002,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.logout_outlined),
-                label: Text(_checkingOut ? 'Checking outâ€¦' : 'Check out guest'),
+                label: Text(_checkingOut ? 'Checking out…' : 'Check out guest'),
               ),
             ),
           ],
@@ -969,6 +1012,10 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: _changingStatus ? null : _changeStatus,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: accent,
+                    side: BorderSide(color: accent),
+                  ),
                   icon: const Icon(Icons.toggle_on_outlined),
                   label: const Text('Change status'),
                 ),
@@ -977,6 +1024,10 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: _transferRoom,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: accent,
+                    side: BorderSide(color: accent),
+                  ),
                   icon: const Icon(Icons.swap_horiz_outlined),
                   label: const Text('Transfer room'),
                 ),
@@ -987,15 +1038,23 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
           const SizedBox(height: 10),
           OutlinedButton.icon(
             onPressed: _changingStatus ? null : _changeStatus,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: accent,
+              side: BorderSide(color: accent),
+            ),
             icon: const Icon(Icons.build_outlined),
             label: const Text('Housekeeping status only'),
           ),
         ],
         const SizedBox(height: 16),
-        Text('Charges', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 4),
         Text(
-            'Total fee: ${formatPeso(chargesTotal)} · Refunds: ${formatPeso(refundTotal)}'),
+          'Charges',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+        ),
+        const SizedBox(height: 4),
+        Text('Total fee: ${formatPeso(chargesTotal)}'),
         const SizedBox(height: 8),
         if (charges.isEmpty)
           const Text('No charges yet.')
@@ -1003,16 +1062,25 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
           ...charges.take(20).map((c) {
             if (c is! Map) return const SizedBox.shrink();
             final m = Map<String, dynamic>.from(c);
-            return Card(
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: roomCardColor,
+              ),
               child: ListTile(
-                leading: const Icon(Icons.receipt_long_outlined),
+                leading: Icon(Icons.receipt_long_outlined, color: accent),
                 title: Text((m['label'] ?? '').toString()),
                 subtitle: Text('Type: ${(m['type'] ?? '').toString()}'),
-                trailing: Text(formatBillLineAmount(m)),
+                trailing: Text(
+                  formatBillLineAmount(m),
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
               ),
             );
           }),
       ],
+    ),
     );
   }
 }

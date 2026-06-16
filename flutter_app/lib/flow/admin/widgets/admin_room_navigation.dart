@@ -3,8 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import '../../../navigation_keys.dart';
+import '../../../widgets/app_overlay.dart';
 import '../admin_dashboard_models.dart';
 import '../admin_room_detail_screen.dart';
+import 'admin_dashboard_routes.dart';
 import 'admin_walk_in_customer_booking.dart';
 
 /// How a room tile should open from the admin dashboard.
@@ -119,16 +122,19 @@ abstract final class AdminRoomNavigation {
       return;
     }
 
-    await _pushRoute<void>(
-      context,
-      AdminRoomDetailScreen(roomId: id),
-    );
-  }
+    if (!context.mounted) return;
 
-  static Future<T?> _pushRoute<T>(BuildContext context, Widget page) {
-    if (!context.mounted) return Future.value(null);
-    return Navigator.of(context).push<T>(
-      MaterialPageRoute<T>(builder: (_) => page),
+    // Prefer in-shell full screen on the dashboard root route (Summary tab, etc.).
+    final routes = AdminDashboardRoutes.maybeOf(context);
+    final nested = adminDashboardNavigatorKey.currentState;
+    if (routes != null && nested != null && !nested.canPop()) {
+      routes.openDetail(id);
+      return;
+    }
+
+    await pushAdminFullScreen<void>(
+      context,
+      builder: (_) => AdminRoomDetailScreen(roomId: id),
     );
   }
 

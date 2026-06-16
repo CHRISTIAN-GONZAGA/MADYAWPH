@@ -9,6 +9,7 @@ class AdminOpaqueScaffold extends StatelessWidget {
     this.floatingActionButton,
     this.bottomNavigationBar,
     this.resizeToAvoidBottomInset = true,
+    this.backgroundColor,
   });
 
   final PreferredSizeWidget? appBar;
@@ -16,14 +17,16 @@ class AdminOpaqueScaffold extends StatelessWidget {
   final Widget? floatingActionButton;
   final Widget? bottomNavigationBar;
   final bool resizeToAvoidBottomInset;
+  final Color? backgroundColor;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final bg = backgroundColor ?? scheme.surface;
     return Material(
-      color: scheme.surface,
+      color: bg,
       child: Scaffold(
-        backgroundColor: scheme.surface,
+        backgroundColor: bg,
         resizeToAvoidBottomInset: resizeToAvoidBottomInset,
         appBar: appBar,
         body: body,

@@ -3237,6 +3237,10 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
 
   bool get _noImages => widget.hideImages || widget.adminLocalBooking;
 
+  /// Customer portal search locks dates; admin walk-in keeps the calendar editable.
+  bool get _fromCustomerSearch =>
+      widget.searchContext != null && !widget.adminLocalBooking;
+
   @override
   void initState() {
     super.initState();
@@ -3289,8 +3293,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     required bool reserve,
   }) async {
     final adminLocal = widget.adminLocalBooking;
-    final fromSearch = widget.searchContext != null;
-    if (adminLocal && !fromSearch) {
+    if (adminLocal) {
       if (_booking) return;
       setState(() => _booking = true);
       try {
@@ -3310,7 +3313,8 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
       return;
     }
 
-    final forceReserve = !adminLocal && (fromSearch || reserve);
+    final fromSearch = _fromCustomerSearch;
+    final forceReserve = fromSearch || reserve;
     final savedGuest = await AuthStorage.customerGuestContact();
     if (!mounted) return;
 
@@ -4336,8 +4340,8 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     List<dynamic> rooms,
     ColorScheme scheme,
   ) {
-    final fromSearch = widget.searchContext != null;
-    final search = widget.searchContext;
+    final fromSearch = _fromCustomerSearch;
+    final search = widget.adminLocalBooking ? null : widget.searchContext;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
