@@ -61,13 +61,54 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     return map.containsKey('room') || map.containsKey('active_booking') ? map : map;
   }
 
+  static Map<String, dynamic> _mergeRoomMaps(
+    Map<String, dynamic>? prior,
+    Map<String, dynamic> fresh,
+  ) {
+    final merged = <String, dynamic>{...?prior, ...fresh};
+    if (prior != null) {
+      final priorStatus = AdminDashboardModels.statusOf(prior);
+      final freshStatus = AdminDashboardModels.statusOf(fresh);
+      if (freshStatus.isEmpty && priorStatus.isNotEmpty) {
+        merged['status'] = prior['status'];
+      }
+      final priorGuest =
+          (prior['current_guest_name'] ?? '').toString().trim();
+      final freshGuest =
+          (fresh['current_guest_name'] ?? '').toString().trim();
+      if (freshGuest.isEmpty && priorGuest.isNotEmpty) {
+        merged['current_guest_name'] = prior['current_guest_name'];
+      }
+    }
+    return merged;
+  }
+
+  void _applyRoomSnapshot(Map<String, dynamic> snap) {
+    final priorRoom = _asMap(_data?['room']);
+    final nextRoom = Map<String, dynamic>.from(snap);
+    _data = {
+      ...?_data,
+      'room': _mergeRoomMaps(priorRoom, nextRoom),
+    };
+  }
+
+  @override
+  void didUpdateWidget(AdminRoomDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final snap = widget.initialRoomSnapshot;
+    if (snap == null || snap.isEmpty) return;
+    final oldSnap = oldWidget.initialRoomSnapshot;
+    if (snap == oldSnap) return;
+    setState(() => _applyRoomSnapshot(snap));
+  }
+
   @override
   void initState() {
     super.initState();
     _roomId = AdminDashboardModels.normalizeRoomIdString(widget.roomId);
     final snap = widget.initialRoomSnapshot;
     if (snap != null && snap.isNotEmpty) {
-      _data = {'room': Map<String, dynamic>.from(snap)};
+      _applyRoomSnapshot(snap);
     }
     _load();
   }
@@ -98,10 +139,11 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
           _data = {
             ...?_data,
             ...payload,
-            'room': priorRoom != null
-                ? {...priorRoom, ...room}
-                : room,
+            'room': _mergeRoomMaps(priorRoom, room),
           };
+          if (_canEditGuestStay) {
+            _data!.remove('management_blocked_reason');
+          }
           _error = null;
         } else if (_data == null) {
           _error = payload == null || payload.isEmpty
@@ -835,15 +877,30 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     if (_data?['can_edit_guest_stay'] == true) return true;
     final room = _asMap(_data?['room']);
     if (room == null) return false;
-    if (AdminDashboardModels.statusOf(room) != 'checked_in') return false;
+    final status = AdminDashboardModels.statusOf(room);
+    if (status != 'checked_in') return false;
     final guest = (room['current_guest_name'] ?? '').toString().trim();
     if (guest.isNotEmpty) return true;
-    return _asMap(_data?['active_booking']) != null;
+    final booking = _asMap(_data?['active_booking']);
+    if (booking != null) return true;
+    return AdminDashboardModels.guestName(room) != '—';
   }
 
   String? get _managementBlockedReason {
     final r = _data?['management_blocked_reason'];
     return r == null ? null : r.toString();
+  }
+
+  String? get _stayBlockedMessage {
+    if (_canEditGuestStay) return null;
+    final reason = _managementBlockedReason;
+    if (reason != null && reason.trim().isNotEmpty) return reason;
+    final room = _asMap(_data?['room']);
+    final status = room == null ? '' : AdminDashboardModels.statusOf(room);
+    if (status == 'booked' || status == 'reserved') {
+      return 'Check the guest in from the Bookings tab before adding fees or editing payment here.';
+    }
+    return 'Check the guest in from the Bookings tab before adding fees or editing payment here.';
   }
 
   Widget _buildBody() {
@@ -921,7 +978,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _managementBlockedReason ??
+                  _stayBlockedMessage ??
                       'Check the guest in from the Bookings tab before adding fees or editing payment here.',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),

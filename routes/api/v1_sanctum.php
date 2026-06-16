@@ -424,9 +424,19 @@ Route::middleware('role:admin')->group(function (): void {
             ? app(StayReceiptService::class)->summaryFor($completedBooking)
             : null;
 
+        $roomModel = $result['room'];
+        $roomPayload = is_object($roomModel) && method_exists($roomModel, 'toArray')
+            ? $roomModel->toArray()
+            : (array) $roomModel;
+
         return response()->json([
             'ok' => true,
-            'room' => $result['room'],
+            'room' => array_merge($roomPayload, [
+                'id' => (string) ($roomPayload['id'] ?? $roomModel->id ?? ''),
+                'status' => $roomModel instanceof Room
+                    ? StayManagementPolicy::roomStatusValue($roomModel)
+                    : strtolower(trim((string) ($roomPayload['status'] ?? ''))),
+            ]),
             'message' => $result['message'],
             'booking_id' => $bookingId,
             'booking_reference' => $completedBooking?->booking_reference,

@@ -470,6 +470,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     return HotelTotalsRoomPanelHost(
       onBindBackHandler: (handler) => _panelBackHandler = handler,
       onRefresh: () => _load(silent: true),
+      resolveLiveRooms: () => AdminDashboardModels.parseRoomMaps(
+        _data?['rooms'] as List<dynamic>?,
+      ),
       child: DashboardExitGuard(
         navigatorKey: adminDashboardNavigatorKey,
         onRequestInnerPop: () =>

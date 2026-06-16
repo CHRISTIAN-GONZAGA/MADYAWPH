@@ -64,11 +64,14 @@ class HotelTotalsRoomPanelHost extends StatefulWidget {
     required this.child,
     this.onRefresh,
     this.onBindBackHandler,
+    this.resolveLiveRooms,
   });
 
   final Widget child;
   final Future<void> Function()? onRefresh;
   final ValueChanged<bool Function()>? onBindBackHandler;
+  /// Latest dashboard room rows (used so check-in refreshes detail snapshots).
+  final List<Map<String, dynamic>> Function()? resolveLiveRooms;
 
   @override
   State<HotelTotalsRoomPanelHost> createState() =>
@@ -192,6 +195,12 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
   }
 
   Map<String, dynamic>? _roomSnapshotForDetail(String roomId) {
+    final live = widget.resolveLiveRooms?.call() ?? const [];
+    for (final room in live) {
+      if (AdminDashboardModels.roomIdOf(room) == roomId) {
+        return room;
+      }
+    }
     final rooms = _list?.rooms;
     if (rooms == null) return null;
     for (final room in rooms) {

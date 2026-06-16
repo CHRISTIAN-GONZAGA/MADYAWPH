@@ -128,6 +128,14 @@ class RoomCheckoutService
             }
         }
 
+        $guestName = trim((string) ($room->getAttributes()['current_guest_name'] ?? ''));
+        if ($guestName === '' && $booking !== null) {
+            $guestName = trim((string) ($booking->guest_name ?? ''));
+        }
+        if ($guestName !== '' && trim((string) ($room->getAttributes()['current_guest_name'] ?? '')) === '') {
+            $room->forceFill(['current_guest_name' => $guestName]);
+        }
+
         $room->forceFill(['status' => RoomStatus::CHECKED_IN->value])->save();
 
         $fresh = $room->fresh() ?? $room;
