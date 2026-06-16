@@ -10,6 +10,7 @@ use App\Models\GuestMessage;
 use App\Models\Hotel;
 use App\Models\Room;
 use App\Models\User;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 class RoomCheckoutTest extends TestCase
@@ -58,15 +59,16 @@ class RoomCheckoutTest extends TestCase
             'sender_role' => 'guest',
         ]);
 
-        $this->actingAs($admin)
-            ->postJson('/api/v1/rooms/'.$room->id.'/checkout')
+        Sanctum::actingAs($admin);
+
+        $this->postJson('/api/v1/rooms/'.$room->id.'/checkout')
             ->assertOk()
             ->assertJsonPath('room.status', RoomStatus::MAINTENANCE->value)
             ->assertJsonPath('receipt.booking_reference', 'BK-CO-1')
             ->assertJsonStructure(['receipt' => ['lines', 'subtotal', 'receipt_url']]);
 
-        $room->refresh();
-        $booking->refresh();
+        $room = Room::withoutGlobalScopes()->findOrFail($room->id);
+        $booking = Booking::withoutGlobalScopes()->findOrFail($booking->id);
 
         $this->assertSame(RoomStatus::MAINTENANCE->value, $room->status?->value ?? (string) $room->status);
         $this->assertNull($room->current_guest_name);
@@ -81,8 +83,7 @@ class RoomCheckoutTest extends TestCase
                 ->count()
         );
 
-        $this->actingAs($admin)
-            ->getJson('/api/v1/admin/guest-history')
+        $this->getJson('/api/v1/admin/guest-history')
             ->assertOk()
             ->assertJsonFragment(['booking_reference' => 'BK-CO-1']);
     }
@@ -123,12 +124,17 @@ class RoomCheckoutTest extends TestCase
             'status' => BookingStatus::CONFIRMED,
         ]);
 
-        $this->actingAs($admin)
-            ->putJson('/api/v1/rooms/'.$room->id.'/status', ['status' => 'checked_out'])
+        Sanctum::actingAs($admin);
+
+        $this->patchJson('/api/v1/admin/rooms/'.$room->id.'/status', ['status' => 'checked_in'])
+            ->assertOk()
+            ->assertJsonPath('room.status', RoomStatus::CHECKED_IN->value);
+
+        $this->postJson('/api/v1/rooms/'.$room->id.'/checkout')
             ->assertOk()
             ->assertJsonPath('room.status', RoomStatus::MAINTENANCE->value);
 
-        $room->refresh();
+        $room = Room::withoutGlobalScopes()->findOrFail($room->id);
         $this->assertNull($room->getAttributes()['current_guest_name'] ?? $room->current_guest_name);
         $this->assertNull($room->getAttributes()['current_access_code'] ?? $room->current_access_code);
     }
@@ -152,12 +158,13 @@ class RoomCheckoutTest extends TestCase
             'current_access_code' => 'SHOULD-GO',
         ]);
 
-        $this->actingAs($admin)
-            ->putJson('/api/v1/rooms/'.$room->id.'/status', ['status' => 'available'])
+        Sanctum::actingAs($admin);
+
+        $this->putJson('/api/v1/rooms/'.$room->id.'/status', ['status' => 'available'])
             ->assertOk()
             ->assertJsonPath('room.status', RoomStatus::AVAILABLE->value);
 
-        $room->refresh();
+        $room = Room::withoutGlobalScopes()->findOrFail($room->id);
         $this->assertNull($room->getAttributes()['current_access_code'] ?? $room->current_access_code);
     }
 
@@ -182,6 +189,7 @@ class RoomCheckoutTest extends TestCase
         Booking::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_id' => (string) $room->id,
+            'booking_reference' => 'BK-UNPAID-1',
             'guest_name' => 'Unpaid Guest',
             'check_in_date' => now()->toDateString(),
             'check_out_date' => now()->addDay()->toDateString(),
@@ -191,8 +199,9 @@ class RoomCheckoutTest extends TestCase
             'status' => BookingStatus::CONFIRMED,
         ]);
 
-        $this->actingAs($admin)
-            ->postJson('/api/v1/rooms/'.$room->id.'/checkout')
+        Sanctum::actingAs($admin);
+
+        $this->postJson('/api/v1/rooms/'.$room->id.'/checkout')
             ->assertStatus(422);
     }
 }

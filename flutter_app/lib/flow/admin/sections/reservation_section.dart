@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
 import '../../../widgets/insufficient_hotel_credits.dart';
+import '../admin_dashboard_models.dart';
 import '../../admin_bookings.dart';
 import '../../admin_chat.dart';
 
@@ -187,7 +188,7 @@ class _ReservationSectionState extends State<ReservationSection> {
                 ),
                 Text('Ref: ${r['external_reference'] ?? ''}'),
                 Text(
-                  'Check-in: ${r['check_in_date']} → ${r['check_out_date']}',
+                  'Check-in: ${AdminDashboardModels.formatDateRange(r['check_in_date'], r['check_out_date'])}',
                 ),
                 Text('Phone: ${r['guest_phone'] ?? ''}'),
                 if (discountUrl.isNotEmpty) ...[

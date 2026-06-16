@@ -3,7 +3,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gloretto_mobile/flow/admin/sections/room_board_section.dart';
 import 'package:gloretto_mobile/navigation_keys.dart';
 
+import 'test_helpers.dart';
+
 void main() {
+  setUp(initWidgetTestBindings);
+
   testWidgets('room without id shows snackbar not blank screen', (tester) async {
     await tester.pumpWidget(
       MaterialApp(

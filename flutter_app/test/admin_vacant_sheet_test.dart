@@ -2,7 +2,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gloretto_mobile/flow/admin/widgets/admin_room_navigation.dart';
 
+import 'test_helpers.dart';
+
 void main() {
+  setUp(initWidgetTestBindings);
+
   testWidgets('bottom sheet room tap opens walk-in route after dismiss',
       (tester) async {
     late BuildContext hostContext;

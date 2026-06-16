@@ -149,7 +149,7 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
         (_categoriesRes?['categories'] as List<dynamic>?) ?? [];
     final scheme = Theme.of(context).colorScheme;
     final width = MediaQuery.sizeOf(context).width;
-    final gridColumns = width >= 720 ? 4 : (width >= 480 ? 3 : 2);
+    final gridColumns = width >= 840 ? 4 : (width >= 560 ? 3 : 2);
     final availableCategories = categories.where((raw) {
       final m = raw as Map<String, dynamic>;
       return ((m['available_rooms'] as num?)?.toInt() ?? 0) > 0;
@@ -228,9 +228,9 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: gridColumns,
-                mainAxisSpacing: 6,
-                crossAxisSpacing: 6,
-                childAspectRatio: 1.85,
+                mainAxisSpacing: 5,
+                crossAxisSpacing: 5,
+                childAspectRatio: 2.35,
               ),
               itemCount: categories.length,
               itemBuilder: (context, index) {
@@ -255,8 +255,8 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
                             ),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 6,
+                        horizontal: 7,
+                        vertical: 5,
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -265,22 +265,22 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
                           Row(
                             children: [
                               Icon(Icons.king_bed_outlined,
-                                  size: 16, color: scheme.primary),
+                                  size: 14, color: scheme.primary),
                               const SizedBox(width: 4),
                               Expanded(
                                 child: Text(
                                   name,
-                                  maxLines: 2,
+                                  maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: Theme.of(context)
                                       .textTheme
-                                      .labelMedium
+                                      .labelSmall
                                       ?.copyWith(fontWeight: FontWeight.w800),
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 3),
                           Text(
                             availLabel,
                             maxLines: 1,
@@ -290,6 +290,7 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
                                 .labelSmall
                                 ?.copyWith(
                                   fontWeight: FontWeight.w700,
+                                  fontSize: 10,
                                   color: available > 0
                                       ? Colors.green.shade800
                                       : scheme.onSurfaceVariant,

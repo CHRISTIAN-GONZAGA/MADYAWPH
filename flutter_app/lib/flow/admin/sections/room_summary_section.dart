@@ -184,14 +184,22 @@ class RoomSummarySection extends StatelessWidget {
           'Room summary by category',
           style: Theme.of(context).textTheme.titleMedium,
         ),
+        const SizedBox(height: 4),
+        Text(
+          'Tap a category, then tap a section to view those rooms',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+        ),
         const SizedBox(height: 12),
         _CategorySummaryGrid(
           grouped: grouped,
           keys: keys,
-          onOpenRooms: (ctx, title, list) => _openRooms(
+          onOpenRooms: (ctx, title, list, {subtitle}) => _openRooms(
             ctx,
             title: title,
             list: list,
+            subtitle: subtitle,
           ),
         ),
         const SizedBox(height: 24),
@@ -219,9 +227,9 @@ class RoomSummarySection extends StatelessWidget {
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           crossAxisCount: 2,
-          mainAxisSpacing: 10,
-          crossAxisSpacing: 10,
-          childAspectRatio: 1.35,
+          mainAxisSpacing: 6,
+          crossAxisSpacing: 6,
+          childAspectRatio: 2.35,
           children: [
             _TotalStatCard(
               label: 'Total rooms',
@@ -262,18 +270,6 @@ class RoomSummarySection extends StatelessWidget {
               ),
             ),
             _TotalStatCard(
-              label: 'Cleaning',
-              value: '${totals['cleaning']}',
-              icon: Icons.cleaning_services_outlined,
-              color: Colors.orange.shade800,
-              onTap: () => _showRoomList(
-                context,
-                title: 'Rooms in cleaning',
-                items: cleaningIssues,
-                useMaintenanceRooms: true,
-              ),
-            ),
-            _TotalStatCard(
               label: 'Vacant',
               value: '${totals['vacant']}',
               icon: Icons.meeting_room_outlined,
@@ -283,6 +279,18 @@ class RoomSummarySection extends StatelessWidget {
                 title: 'Vacant rooms',
                 list: vacantRooms,
                 subtitle: 'Available for booking',
+              ),
+            ),
+            _TotalStatCard(
+              label: 'Cleaning',
+              value: '${totals['cleaning']}',
+              icon: Icons.cleaning_services_outlined,
+              color: Colors.orange.shade800,
+              onTap: () => _showRoomList(
+                context,
+                title: 'Rooms in cleaning',
+                items: cleaningIssues,
+                useMaintenanceRooms: true,
               ),
             ),
             _TotalStatCard(
@@ -322,7 +330,8 @@ class _IssueRoom {
 
 int _summaryGridColumns(BuildContext context) {
   final width = MediaQuery.sizeOf(context).width;
-  if (width >= 720) return 3;
+  if (width >= 900) return 4;
+  if (width >= 600) return 3;
   return 2;
 }
 
@@ -525,9 +534,9 @@ class _SummaryRoomGrid extends StatelessWidget {
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: columns,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-        childAspectRatio: 1.05,
+        mainAxisSpacing: 6,
+        crossAxisSpacing: 6,
+        childAspectRatio: 1.45,
       ),
       itemCount: rooms.length,
       itemBuilder: (context, i) => _SummaryRoomGridTile(
@@ -585,42 +594,42 @@ class _SummaryRoomGridTile extends StatelessWidget {
           );
         },
         child: Padding(
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
                 children: [
                   Container(
-                    width: 8,
-                    height: 8,
+                    width: 6,
+                    height: 6,
                     decoration: BoxDecoration(
                       color: statusColor,
                       shape: BoxShape.circle,
                     ),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 5),
                   Expanded(
                     child: Text(
-                      'Room $roomNo',
+                      roomNo,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
                             fontWeight: FontWeight.w800,
                           ),
                     ),
                   ),
+                  Text(
+                    roomStatusLabel(status),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: statusColor,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 9,
+                        ),
+                  ),
                 ],
-              ),
-              const SizedBox(height: 2),
-              Text(
-                roomStatusLabel(status),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: statusColor,
-                      fontWeight: FontWeight.w700,
-                    ),
               ),
               if (name.isNotEmpty) ...[
                 const SizedBox(height: 2),
@@ -628,8 +637,9 @@ class _SummaryRoomGridTile extends StatelessWidget {
                   name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: scheme.onSurfaceVariant,
+                        fontSize: 10,
                       ),
                 ),
               ],
@@ -638,7 +648,9 @@ class _SummaryRoomGridTile extends StatelessWidget {
                 guest == '—' ? 'No guest' : guest,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelSmall,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      fontSize: 10,
+                    ),
               ),
               if (range != '—')
                 Text(
@@ -647,7 +659,7 @@ class _SummaryRoomGridTile extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: scheme.onSurfaceVariant,
-                        fontSize: 10,
+                        fontSize: 9,
                       ),
                 ),
             ],
@@ -766,8 +778,9 @@ class _CategorySummaryGrid extends StatefulWidget {
   final void Function(
     BuildContext context,
     String title,
-    List<Map<String, dynamic>> list,
-  ) onOpenRooms;
+    List<Map<String, dynamic>> list, {
+    String? subtitle,
+  }) onOpenRooms;
 
   @override
   State<_CategorySummaryGrid> createState() => _CategorySummaryGridState();
@@ -778,6 +791,7 @@ class _CategorySummaryGridState extends State<_CategorySummaryGrid> {
 
   @override
   Widget build(BuildContext context) {
+    final hasExpanded = _expandedCategory != null;
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -785,7 +799,7 @@ class _CategorySummaryGridState extends State<_CategorySummaryGrid> {
         crossAxisCount: 2,
         mainAxisSpacing: 12,
         crossAxisSpacing: 12,
-        childAspectRatio: _expandedCategory == null ? 1.15 : 0.88,
+        childAspectRatio: hasExpanded ? 0.78 : 1.2,
       ),
       itemCount: widget.keys.length,
       itemBuilder: (context, i) {
@@ -795,13 +809,20 @@ class _CategorySummaryGridState extends State<_CategorySummaryGrid> {
         final expanded = _expandedCategory == label;
         return _CategoryCard(
           stats: stats,
+          rooms: list,
           expanded: expanded,
-          onTap: () {
-            if (expanded) {
-              widget.onOpenRooms(context, label, list);
-            } else {
-              setState(() => _expandedCategory = label);
-            }
+          onHeaderTap: () {
+            setState(() {
+              _expandedCategory = expanded ? null : label;
+            });
+          },
+          onOpenSection: (sectionTitle, filtered, subtitle) {
+            widget.onOpenRooms(
+              context,
+              '$label · $sectionTitle',
+              filtered,
+              subtitle: subtitle,
+            );
           },
         );
       },
@@ -812,87 +833,174 @@ class _CategorySummaryGridState extends State<_CategorySummaryGrid> {
 class _CategoryCard extends StatelessWidget {
   const _CategoryCard({
     required this.stats,
-    required this.onTap,
+    required this.rooms,
+    required this.onHeaderTap,
+    required this.onOpenSection,
     this.expanded = false,
   });
+
   final Map<String, dynamic> stats;
-  final VoidCallback onTap;
+  final List<Map<String, dynamic>> rooms;
+  final VoidCallback onHeaderTap;
+  final void Function(
+    String sectionTitle,
+    List<Map<String, dynamic>> rooms,
+    String subtitle,
+  ) onOpenSection;
   final bool expanded;
+
+  void _openSection(
+    String title,
+    List<Map<String, dynamic>> filtered,
+  ) {
+    if (filtered.isEmpty) return;
+    onOpenSection(title, filtered, '${filtered.length} room(s)');
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final reservedSoon =
+        AdminDashboardModels.categoryReservedSoonRooms(rooms, withinDays: 1);
+    final occupied = AdminDashboardModels.categoryOccupiedRooms(rooms);
+    final vacant = AdminDashboardModels.categoryVacantRooms(rooms);
+
     return Card(
       elevation: 0,
       color: scheme.surfaceContainerLow,
       clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundColor: scheme.primaryContainer,
-                    child: Icon(Icons.king_bed_outlined,
-                        color: scheme.onPrimaryContainer, size: 20),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '${stats['label']}',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
-                    ),
-                  ),
-                  Icon(Icons.chevron_right, color: scheme.primary),
-                ],
-              ),
-              const SizedBox(height: 10),
-              if (!expanded)
-                Text(
-                  'Total: ${stats['total']}',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: onHeaderTap,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 16,
+                        backgroundColor: scheme.primaryContainer,
+                        child: Icon(Icons.king_bed_outlined,
+                            color: scheme.onPrimaryContainer, size: 18),
                       ),
-                )
-              else ...[
-                Text('Total: ${stats['total']}'),
-                Text('Vacant: ${stats['vacant']}'),
-                Text('Occupied: ${stats['checked_in']}'),
-                Text(
-                  'Arriving (today–2 days): ${stats['reserved_soon']}',
-                  style: TextStyle(
-                    color: (stats['reserved_soon'] as int) > 0
-                        ? Colors.orange.shade800
-                        : null,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                Text('Booked / reserved: ${stats['awaiting_check_in']}'),
-                const SizedBox(height: 4),
-                Text(
-                  'Tap again to view rooms',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${stats['label']}',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              Theme.of(context).textTheme.labelLarge?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                        ),
+                      ),
+                      Icon(
+                        expanded
+                            ? Icons.expand_less
+                            : Icons.expand_more,
                         color: scheme.primary,
-                        fontWeight: FontWeight.w600,
+                        size: 22,
                       ),
-                ),
-              ],
-              const Spacer(),
-              if (expanded)
-                Text(
-                  '${stats['occupancy']}% occupancy',
-                  style: TextStyle(
-                    color: scheme.primary,
-                    fontWeight: FontWeight.w600,
+                    ],
                   ),
                 ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Total: ${stats['total']}',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            if (expanded) ...[
+              const SizedBox(height: 8),
+              _CategorySectionChip(
+                label: 'Reserved (0–1 day)',
+                count: reservedSoon.length,
+                color: Colors.orange.shade800,
+                onTap: () => _openSection('Reserved (0–1 day)', reservedSoon),
+              ),
+              const SizedBox(height: 6),
+              _CategorySectionChip(
+                label: 'Occupied',
+                count: occupied.length,
+                color: Colors.green.shade700,
+                onTap: () => _openSection('Occupied', occupied),
+              ),
+              const SizedBox(height: 6),
+              _CategorySectionChip(
+                label: 'Vacant',
+                count: vacant.length,
+                color: Colors.teal.shade700,
+                onTap: () => _openSection('Vacant', vacant),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CategorySectionChip extends StatelessWidget {
+  const _CategorySectionChip({
+    required this.label,
+    required this.count,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String label;
+  final int count;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final enabled = count > 0;
+    return Material(
+      color: enabled
+          ? color.withValues(alpha: 0.1)
+          : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+      borderRadius: BorderRadius.circular(8),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: enabled ? color : scheme.onSurfaceVariant,
+                      ),
+                ),
+              ),
+              Text(
+                '$count',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: enabled ? color : scheme.outline,
+                    ),
+              ),
+              const SizedBox(width: 2),
+              Icon(
+                Icons.chevron_right,
+                size: 18,
+                color: enabled ? color : scheme.outline,
+              ),
             ],
           ),
         ),
@@ -922,53 +1030,55 @@ class _TotalStatCard extends StatelessWidget {
     return Material(
       color: scheme.surface,
       elevation: 0,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(12),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         child: Ink(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: color.withValues(alpha: 0.25)),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withValues(alpha: 0.22)),
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                color.withValues(alpha: 0.08),
+                color.withValues(alpha: 0.07),
                 scheme.surface,
               ],
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    Icon(icon, color: color, size: 22),
-                    const Spacer(),
-                    Icon(Icons.touch_app_outlined,
-                        size: 16, color: scheme.outline),
-                  ],
-                ),
-                const Spacer(),
-                Text(
-                  value,
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        color: color,
-                        fontWeight: FontWeight.w900,
-                        height: 1,
+                Icon(icon, color: color, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        value,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              color: color,
+                              fontWeight: FontWeight.w900,
+                              height: 1,
+                            ),
                       ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  label.toUpperCase(),
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.4,
-                        color: scheme.onSurfaceVariant,
+                      const SizedBox(height: 2),
+                      Text(
+                        label,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: scheme.onSurfaceVariant,
+                              fontSize: 10,
+                            ),
                       ),
+                    ],
+                  ),
                 ),
               ],
             ),

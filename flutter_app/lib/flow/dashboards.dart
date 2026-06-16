@@ -750,9 +750,7 @@ class AdminRoomSummaryDetailScreen extends StatelessWidget {
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (context, i) {
                 final room = rooms[i];
-                final roomId = AdminDashboardModels.roomIdOf(
-                  room as Map<String, dynamic>,
-                );
+                final roomId = AdminDashboardModels.roomIdOf(room);
                 final roomNo = (room['room_number'] ?? '-').toString();
                 final guest =
                     (room['current_guest_name'] ?? '').toString().trim();
@@ -4169,14 +4167,14 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
 
   int _adminGridCrossAxisCount(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
-    if (width >= 900) return 5;
-    if (width >= 600) return 4;
-    if (width >= 400) return 3;
-    return 2;
+    if (width >= 900) return 6;
+    if (width >= 600) return 5;
+    if (width >= 400) return 4;
+    return 3;
   }
 
   double _adminGridAspectRatio(BuildContext context) {
-    return widget.adminLocalBooking ? 1.65 : 1.08;
+    return widget.adminLocalBooking ? 2.15 : 1.08;
   }
 
   Widget _buildCompactRoomsGrid(
@@ -4206,12 +4204,12 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
             ),
           ),
           SliverPadding(
-            padding: EdgeInsets.fromLTRB(dense ? 8 : 12, 2, dense ? 8 : 12, dense ? 12 : 24),
+            padding: EdgeInsets.fromLTRB(dense ? 8 : 12, 2, dense ? 8 : 12, dense ? 8 : 24),
             sliver: SliverGrid(
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: crossAxisCount,
-                mainAxisSpacing: dense ? 6 : 8,
-                crossAxisSpacing: dense ? 6 : 8,
+                mainAxisSpacing: dense ? 5 : 8,
+                crossAxisSpacing: dense ? 5 : 8,
                 childAspectRatio: _adminGridAspectRatio(context),
               ),
               delegate: SliverChildBuilderDelegate(
@@ -4282,8 +4280,8 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
         onTap: _booking ? null : () => _onGridRoomTap(r),
         child: Padding(
           padding: EdgeInsets.symmetric(
-            horizontal: dense ? 8 : 10,
-            vertical: dense ? 6 : 10,
+            horizontal: dense ? 6 : 10,
+            vertical: dense ? 4 : 10,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -4296,28 +4294,26 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                       roomNo.isNotEmpty ? roomNo : '—',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: (dense
-                              ? Theme.of(context).textTheme.labelMedium
-                              : Theme.of(context).textTheme.labelLarge)
-                          ?.copyWith(fontWeight: FontWeight.w800),
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            fontSize: dense ? 11 : null,
+                          ),
                     ),
                   ),
                   _availableBadge(scheme, compact: dense),
                 ],
               ),
               if (hasSubtitle) ...[
-                const SizedBox(height: 2),
                 Text(
                   displayName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: scheme.onSurfaceVariant,
-                        fontSize: dense ? 10 : null,
+                        fontSize: dense ? 9 : 10,
                       ),
                 ),
               ],
-              SizedBox(height: dense ? 3 : 6),
               Text(
                 priceLabel,
                 maxLines: 1,
@@ -4325,7 +4321,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: scheme.primary,
                       fontWeight: FontWeight.w700,
-                      fontSize: dense ? 10 : null,
+                      fontSize: dense ? 9 : 10,
                     ),
               ),
             ],

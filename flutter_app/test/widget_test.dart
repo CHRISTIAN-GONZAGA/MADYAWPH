@@ -18,7 +18,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.textContaining('Where would you like to go'), findsOneWidget);
-    expect(find.textContaining('In-house guest'), findsOneWidget);
+    expect(find.textContaining('Book a stay'), findsOneWidget);
     expect(find.byIcon(Icons.badge_outlined), findsWidgets);
   });
 }

@@ -185,7 +185,7 @@ class SuperAdminPortalUsersTest extends TestCase
         $response->assertOk();
         $response->assertJsonPath('activated', true);
 
-        $room->refresh();
+        $room = Room::withoutGlobalScopes()->findOrFail($room->id);
         $this->assertSame('booked', $room->status?->value ?? (string) $room->status);
     }
 }

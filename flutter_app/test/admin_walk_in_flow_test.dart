@@ -6,8 +6,12 @@ import 'package:gloretto_mobile/flow/admin/widgets/admin_room_navigation.dart';
 import 'package:gloretto_mobile/navigation_keys.dart';
 import 'package:gloretto_mobile/widgets/dashboard_exit_guard.dart';
 
+import 'test_helpers.dart';
+
 /// Every path that opens walk-in booking must render the complete booking dialog.
 void main() {
+  setUp(initWidgetTestBindings);
+
   group('dashboard nested navigator (walk-in tab)', () {
     testWidgets('room board gray tile opens complete booking dialog',
         (tester) async {

@@ -205,7 +205,10 @@ class _BookingsSectionState extends State<BookingsSection>
           'type': 'reservation',
           'title': '${res['guest_name']} · ${res['status']}',
           'subtitle':
-              '${res['check_in_date']} → ${res['check_out_date']}',
+              AdminDashboardModels.formatDateRange(
+                res['check_in_date'],
+                res['check_out_date'],
+              ),
           'reservation': res,
         });
       }
@@ -232,9 +235,14 @@ class _BookingsSectionState extends State<BookingsSection>
             _detailRow('Email', '${b['guest_email'] ?? '—'}'),
             _detailRow('Room', '${b['room_number']} · ${b['room_display_name'] ?? ''}'),
             _detailRow('Category', '${b['category_name'] ?? '—'}'),
-            _detailRow('Check-in', '${b['check_in_date']}'),
-            _detailRow('Check-out', '${b['check_out_date']}'),
-            _detailRow('Nights', '${b['nights'] ?? '—'}'),
+            _detailRow('Check-in', AdminDashboardModels.formatDisplayDate(b['check_in_date'])),
+            _detailRow('Check-out', AdminDashboardModels.formatDisplayDate(b['check_out_date'])),
+            _detailRow(
+              'Nights',
+              ((b['nights'] as num?)?.toInt() ?? 0) > 0
+                  ? '${b['nights']}'
+                  : '—',
+            ),
             _detailRow('Type', '${b['booking_type'] ?? 'local'}'),
             _detailRow('Status', '${b['status']} / ${b['payment_status'] ?? ''}'),
             _detailRow('Total', '₱${(b['total_amount'] as num?) ?? 0}'),
@@ -513,8 +521,14 @@ class _BookingsSectionState extends State<BookingsSection>
                 _detailRow('Booking ID', ref),
                 _detailRow('Type', type == 'online' ? 'Online' : 'Local'),
                 _detailRow('Contact', '${b['guest_phone'] ?? ''} · ${b['guest_email'] ?? ''}'),
-                _detailRow('Check-in', '${b['check_in_date'] ?? '—'}'),
-                _detailRow('Check-out', '${b['check_out_date'] ?? '—'}'),
+                _detailRow(
+                  'Check-in',
+                  AdminDashboardModels.formatDisplayDate(b['check_in_date']),
+                ),
+                _detailRow(
+                  'Check-out',
+                  AdminDashboardModels.formatDisplayDate(b['check_out_date']),
+                ),
                 _detailRow('Rooms', '${b['rooms_booked'] ?? 1}'),
                 _detailRow('Room', roomLabel.isEmpty ? '—' : roomLabel),
                 _detailRow('Status', '${b['status'] ?? ''} / ${b['payment_status'] ?? ''}'),
@@ -653,7 +667,12 @@ class _BookingsSectionState extends State<BookingsSection>
           children: [
             Text((r['guest_name'] ?? 'Guest').toString(),
                 style: Theme.of(context).textTheme.titleSmall),
-            Text('${r['check_in_date']} → ${r['check_out_date']}'),
+            Text(
+              AdminDashboardModels.formatDateRange(
+                r['check_in_date'],
+                r['check_out_date'],
+              ),
+            ),
             Text('Status: $status · ${r['guest_phone'] ?? ''}'),
             const SizedBox(height: 8),
             Wrap(

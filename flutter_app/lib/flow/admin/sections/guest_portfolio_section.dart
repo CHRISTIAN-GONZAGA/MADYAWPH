@@ -62,10 +62,12 @@ class _GuestPortfolioSectionState extends State<GuestPortfolioSection>
             'guest_email': (b?['guest_email'] ?? '').toString(),
             'room_number': (r['room_number'] ?? '').toString(),
             'category': AdminDashboardModels.categoryLabel(r),
-            'check_in': (r['current_check_in'] ?? b?['check_in_date'] ?? '')
-                .toString(),
-            'check_out':
-                (r['current_check_out'] ?? b?['check_out_date'] ?? '').toString(),
+            'check_in': AdminDashboardModels.formatDisplayDate(
+              r['current_check_in'] ?? b?['check_in_date'],
+            ),
+            'check_out': AdminDashboardModels.formatDisplayDate(
+              r['current_check_out'] ?? b?['check_out_date'],
+            ),
             'payment_status': (b?['payment_status'] ?? 'unpaid').toString(),
             'booking_reference': (b?['booking_reference'] ?? '').toString(),
           };
@@ -137,8 +139,12 @@ class _GuestPortfolioSectionState extends State<GuestPortfolioSection>
                             'guest_email': (h['guest_email'] ?? '').toString(),
                             'guest_phone': (h['guest_phone'] ?? '').toString(),
                             'room_number': (h['room_number'] ?? '').toString(),
-                            'check_in': (h['check_in_date'] ?? '').toString(),
-                            'check_out': (h['check_out_date'] ?? '').toString(),
+                            'check_in': AdminDashboardModels.formatDisplayDate(
+                              h['check_in_date'],
+                            ),
+                            'check_out': AdminDashboardModels.formatDisplayDate(
+                              h['check_out_date'],
+                            ),
                             'payment_status':
                                 (h['payment_status'] ?? '').toString(),
                             'booking_reference':
@@ -197,9 +203,11 @@ class _GuestCard extends StatelessWidget {
                   _row('Phone', data['guest_phone'].toString()),
                 if ((data['guest_email'] ?? '').toString().isNotEmpty)
                   _row('Email', data['guest_email'].toString()),
-                if ((data['check_in'] ?? '').toString().isNotEmpty)
+                if ((data['check_in'] ?? '').toString().isNotEmpty &&
+                    data['check_in'] != '—')
                   _row('Check-in', data['check_in'].toString()),
-                if ((data['check_out'] ?? '').toString().isNotEmpty)
+                if ((data['check_out'] ?? '').toString().isNotEmpty &&
+                    data['check_out'] != '—')
                   _row('Check-out', data['check_out'].toString()),
                 if ((data['payment_status'] ?? '').toString().isNotEmpty)
                   _row('Payment', data['payment_status'].toString()),

@@ -4,7 +4,11 @@ import 'package:gloretto_mobile/flow/admin/sections/room_board_section.dart';
 import 'package:gloretto_mobile/flow/admin/widgets/admin_dashboard_routes.dart';
 import 'package:gloretto_mobile/navigation_keys.dart';
 
+import 'test_helpers.dart';
+
 void main() {
+  setUp(initWidgetTestBindings);
+
   testWidgets('walk-in tab opens complete booking dialog on root navigator',
       (tester) async {
     await tester.pumpWidget(

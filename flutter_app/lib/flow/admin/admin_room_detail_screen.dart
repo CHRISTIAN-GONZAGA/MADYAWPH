@@ -891,14 +891,14 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                       .toString()
                       .isNotEmpty)
                     Text(
-                      'Arrival: ${(booking['check_in_display'] ?? '').toString()}',
+                      'Arrival: ${AdminDashboardModels.cleanStayDisplay((booking['check_in_display'] ?? '').toString())}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   if ((booking['check_out_display'] ?? '')
                       .toString()
                       .isNotEmpty)
                     Text(
-                      'Departure: ${(booking['check_out_display'] ?? '').toString()}',
+                      'Departure: ${AdminDashboardModels.cleanStayDisplay((booking['check_out_display'] ?? '').toString())}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   Text(

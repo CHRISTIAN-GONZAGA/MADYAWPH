@@ -22,6 +22,7 @@ use App\Models\Task;
 use App\Models\UserSetting;
 use App\Enums\BookingStatus;
 use App\Enums\RoomStatus;
+use Carbon\Carbon;
 use App\Services\AutoCheckoutService;
 use App\Support\AdminBookingPresenter;
 use App\Support\BookingTypeResolver;
@@ -137,6 +138,12 @@ class AdminDashboardApiController extends Controller
                         ? $room->status->value
                         : (filled($room->status) ? (string) $room->status : RoomStatus::AVAILABLE->value),
                     'floor' => (int) preg_replace('/\D/', '', substr((string) $room->room_number, 0, 1)) ?: 1,
+                    'current_check_in' => filled($room->current_check_in)
+                        ? Carbon::parse($room->current_check_in)->toDateString()
+                        : null,
+                    'current_check_out' => filled($room->current_check_out)
+                        ? Carbon::parse($room->current_check_out)->toDateString()
+                        : null,
                     'latest_booking' => $booking ? [
                         'id' => (string) $booking->id,
                         'booking_reference' => $booking->booking_reference,

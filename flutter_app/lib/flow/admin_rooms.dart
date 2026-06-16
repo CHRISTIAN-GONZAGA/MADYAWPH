@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import '../dio_client.dart';
 import '../widgets/app_state_views.dart';
 import '../widgets/room_status_label.dart';
-import 'admin/admin_dashboard_models.dart';
 import 'admin/widgets/admin_opaque_scaffold.dart';
 import 'admin/widgets/admin_room_navigation.dart';
 import 'admin_categories.dart';

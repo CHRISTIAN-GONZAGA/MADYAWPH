@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../dio_client.dart';
 import '../../../utils/money_format.dart';
+import '../admin_dashboard_models.dart';
 
 /// Shows stay receipt summary; fetches line items when missing; downloads printable PDF.
 Future<void> showStayReceiptDialog(
@@ -71,7 +72,7 @@ Future<void> showStayReceiptDialog(
                   Text('Guest: ${data['guest_name'] ?? ''}'),
                   Text('Room: ${data['room_number'] ?? ''}'),
                   Text(
-                    'Stay: ${data['check_in_date']} → ${data['check_out_date']}',
+                    'Stay: ${AdminDashboardModels.formatDateRange(data['check_in_date'], data['check_out_date'])}',
                   ),
                   if ((data['payment_status'] ?? '').toString().isNotEmpty)
                     Text('Payment: ${data['payment_status']}'),

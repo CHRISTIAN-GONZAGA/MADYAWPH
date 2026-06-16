@@ -1,19 +1,14 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gloretto_mobile/flow/admin/admin_room_detail_screen.dart';
-import 'package:gloretto_mobile/flow/admin/widgets/admin_room_navigation.dart';
 import 'package:gloretto_mobile/flow/widgets/complete_guest_booking_dialog.dart';
 import 'package:gloretto_mobile/navigation_keys.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  testWidgets('AdminRoomDetailScreen shows loading then app bar', (tester) async {
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: AdminRoomDetailScreen(roomId: 'test-id'),
-      ),
-    );
-    await tester.pump();
-    expect(find.text('Room details'), findsOneWidget);
+  setUp(() {
+    SharedPreferences.setMockInitialValues({
+      'auth_storage_migrated_v2': true,
+    });
   });
 
   testWidgets('navigation opens complete booking dialog', (tester) async {

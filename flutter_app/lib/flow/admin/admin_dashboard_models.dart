@@ -259,7 +259,9 @@ class AdminDashboardModels {
     final outD = parseDate(booking['check_out_date']);
     if (inD == null || outD == null) return '—';
     final nights = stayNights(booking);
-    return '${inD.month}/${inD.day} → ${outD.month}/${outD.day} · $nights night${nights == 1 ? '' : 's'}';
+    final range = formatDateRange(inD, outD);
+    if (nights <= 0) return range;
+    return '$range · $nights night${nights == 1 ? '' : 's'}';
   }
 
   static Map<String, List<Map<String, dynamic>>> groupByCategory(
@@ -336,9 +338,45 @@ class AdminDashboardModels {
   }
 
   static DateTime? parseDate(dynamic raw) {
-    final s = raw?.toString() ?? '';
-    if (s.isEmpty) return null;
-    return DateTime.tryParse(s.split('T').first);
+    final s = raw?.toString().trim() ?? '';
+    if (s.isEmpty || s == 'null') return null;
+    final datePart = s.split(RegExp(r'[T\s]')).first;
+    return DateTime.tryParse(datePart);
+  }
+
+  /// Human-readable date without time noise (no T00:00:00 / midnight zeros).
+  static String formatDisplayDate(dynamic raw) {
+    final d = parseDate(raw);
+    if (d == null) return '—';
+    return '${d.month}/${d.day}/${d.year}';
+  }
+
+  /// Check-in → check-out for lists and cards.
+  static String formatDateRange(dynamic checkIn, dynamic checkOut) {
+    final inRaw = checkIn?.toString().trim() ?? '';
+    final outRaw = checkOut?.toString().trim() ?? '';
+    if (inRaw.isEmpty && outRaw.isEmpty) return '—';
+    if (inRaw.isNotEmpty && outRaw.isNotEmpty) {
+      return '${formatDisplayDate(inRaw)} → ${formatDisplayDate(outRaw)}';
+    }
+    if (inRaw.isNotEmpty) return formatDisplayDate(inRaw);
+    return formatDisplayDate(outRaw);
+  }
+
+  /// Strips midnight-only times like " · 12:00 AM" from API display strings.
+  static String cleanStayDisplay(String? raw) {
+    final s = raw?.trim() ?? '';
+    if (s.isEmpty) return '';
+    var cleaned = s
+        .replaceAll(RegExp(r'T\d{2}:\d{2}:\d{2}(\.\d+)?Z?'), '')
+        .replaceAll(RegExp(r'\s+0{2}:0{2}:\d{2}'), '')
+        .replaceAll(RegExp(r' · 12:00 AM'), '')
+        .replaceAll(RegExp(r' · 0:00 AM'), '')
+        .trim();
+    if (cleaned.endsWith('·')) {
+      cleaned = cleaned.substring(0, cleaned.length - 1).trim();
+    }
+    return cleaned;
   }
 
   static DateTime? stayEndDate(Map<String, dynamic> room) {
@@ -402,13 +440,37 @@ class AdminDashboardModels {
     final inD = stayStartDate(room);
     final outD = stayEndDate(room);
     if (inD == null && outD == null) return '—';
-    String fmt(DateTime? d) =>
-        d == null ? '—' : '${d.month}/${d.day}/${d.year}';
-    return '${fmt(inD)} → ${fmt(outD)}';
+    return formatDateRange(inD, outD);
   }
 
-  static int reservedArrivingSoonCount(List<Map<String, dynamic>> rooms) {
-    return rooms.where(isStayArrivingSoon).length;
+  static int reservedArrivingSoonCount(
+    List<Map<String, dynamic>> rooms, {
+    int withinDays = 2,
+  }) {
+    return rooms
+        .where((r) => isStayArrivingSoon(r, withinDays: withinDays))
+        .length;
+  }
+
+  static List<Map<String, dynamic>> categoryVacantRooms(
+    List<Map<String, dynamic>> rooms,
+  ) {
+    return rooms.where((r) => walkInTileStatus(r) == 'available').toList();
+  }
+
+  static List<Map<String, dynamic>> categoryOccupiedRooms(
+    List<Map<String, dynamic>> rooms,
+  ) {
+    return rooms.where((r) => statusOf(r) == 'checked_in').toList();
+  }
+
+  static List<Map<String, dynamic>> categoryReservedSoonRooms(
+    List<Map<String, dynamic>> rooms, {
+    int withinDays = 1,
+  }) {
+    return rooms
+        .where((r) => isStayArrivingSoon(r, withinDays: withinDays))
+        .toList();
   }
 
   static Map<String, dynamic> categoryStats(
@@ -428,7 +490,7 @@ class AdminDashboardModels {
       if (s == 'booked' && hasCheckInTodayOrLater(r)) booked++;
       if (s == 'maintenance') maintenance++;
     }
-    final reservedSoon = reservedArrivingSoonCount(rooms);
+    final reservedSoon = reservedArrivingSoonCount(rooms, withinDays: 1);
     final awaitingCheckIn = booked + reserved;
     final total = rooms.length;
     final occ = total > 0 ? ((total - vacant) / total * 100).round() : 0;

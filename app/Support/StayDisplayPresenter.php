@@ -117,6 +117,20 @@ final class StayDisplayPresenter
         ];
     }
 
+    private static function isMidnightPlaceholder(?string $time): bool
+    {
+        if ($time === null) {
+            return true;
+        }
+
+        $trimmed = trim($time);
+        if ($trimmed === '') {
+            return true;
+        }
+
+        return in_array($trimmed, ['00:00', '00:00:00', '0:00', '0:00:00'], true);
+    }
+
     private static function applyTime(
         CarbonInterface $date,
         ?string $time,
@@ -124,7 +138,7 @@ final class StayDisplayPresenter
         int $defaultMinute,
     ): Carbon {
         $dt = Carbon::parse($date)->startOfDay();
-        if ($time !== null && $time !== '') {
+        if ($time !== null && $time !== '' && ! self::isMidnightPlaceholder($time)) {
             $parts = explode(':', $time);
             if (count($parts) >= 2) {
                 return $dt->setTime((int) $parts[0], (int) $parts[1]);
