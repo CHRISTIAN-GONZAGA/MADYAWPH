@@ -1592,7 +1592,7 @@ Route::get('/admin/rooms', function (Request $request) {
     return response()->json(['data' => $rooms]);
 })->middleware('role:admin');
 
-Route::get('/admin/rooms/{id}', function (Request $request, string $id) {
+Route::get('/admin/rooms/{id}', function (Request $request, string $id, RoomCheckoutService $roomCheckoutService) {
     $hotelId = (string) $request->user()->hotel_id;
     $room = Room::withoutGlobalScopes()
         ->where('hotel_id', $hotelId)
@@ -1601,15 +1601,7 @@ Route::get('/admin/rooms/{id}', function (Request $request, string $id) {
         return response()->json(['message' => 'Room is outside your hotel scope.'], 403);
     }
 
-    $booking = Booking::withoutGlobalScopes()
-        ->where('hotel_id', $hotelId)
-        ->where('room_id', (string) $room->id)
-        ->whereNotIn('status', [
-            BookingStatus::COMPLETED->value,
-            BookingStatus::CANCELLED->value,
-        ])
-        ->latest('created_at')
-        ->first();
+    $booking = $roomCheckoutService->resolveActiveBookingForRoom($hotelId, $room);
 
     $charges = $booking
         ? BillingCharge::withoutGlobalScopes()->where('hotel_id', $hotelId)->where('booking_id', (string) $booking->id)->latest()->limit(50)->get()

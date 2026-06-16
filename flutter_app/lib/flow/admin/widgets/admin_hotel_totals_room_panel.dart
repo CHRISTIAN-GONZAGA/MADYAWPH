@@ -87,6 +87,8 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
   bool _showDetail = false;
   _RoomListPayload? _list;
   String? _detailRoomId;
+  Widget? _detailWidget;
+  String? _detailWidgetRoomId;
 
   @override
   void initState() {
@@ -106,7 +108,7 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
   }
 
   void _onSlideTick() {
-    if (_visible) setState(() {});
+    if (_visible && _slideCtrl.isAnimating) setState(() {});
   }
 
   @override
@@ -152,6 +154,16 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     setState(() {
       _showDetail = true;
       _detailRoomId = id;
+      if (_detailWidgetRoomId != id) {
+        _detailWidgetRoomId = id;
+        _detailWidget = AdminRoomDetailScreen(
+          key: ValueKey('detail-$id'),
+          roomId: id,
+          initialRoomSnapshot: _roomSnapshotForDetail(id),
+          panelBodyOnly: true,
+          onClose: _backToRoomList,
+        );
+      }
     });
     _syncOpenFlag();
   }
@@ -164,6 +176,8 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
       _visible = false;
       _showDetail = false;
       _detailRoomId = null;
+      _detailWidget = null;
+      _detailWidgetRoomId = null;
       _list = null;
     });
     _syncOpenFlag();
@@ -181,6 +195,8 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     setState(() {
       _showDetail = false;
       _detailRoomId = null;
+      _detailWidget = null;
+      _detailWidgetRoomId = null;
     });
   }
 
@@ -270,13 +286,17 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
 
   Widget _buildDetailBody(BuildContext context) {
     final roomId = _detailRoomId!;
-    return AdminRoomDetailScreen(
-      key: ValueKey('detail-$roomId'),
-      roomId: roomId,
-      initialRoomSnapshot: _roomSnapshotForDetail(roomId),
-      panelBodyOnly: true,
-      onClose: _backToRoomList,
-    );
+    if (_detailWidget == null || _detailWidgetRoomId != roomId) {
+      _detailWidgetRoomId = roomId;
+      _detailWidget = AdminRoomDetailScreen(
+        key: ValueKey('detail-$roomId'),
+        roomId: roomId,
+        initialRoomSnapshot: _roomSnapshotForDetail(roomId),
+        panelBodyOnly: true,
+        onClose: _backToRoomList,
+      );
+    }
+    return _detailWidget!;
   }
 
   @override

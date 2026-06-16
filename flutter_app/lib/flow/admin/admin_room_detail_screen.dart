@@ -90,16 +90,28 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       ...?_data,
       'room': _mergeRoomMaps(priorRoom, nextRoom),
     };
+    _applyActiveBookingFallback();
   }
 
-  @override
-  void didUpdateWidget(AdminRoomDetailScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
+  void _applyActiveBookingFallback() {
+    if (_asMap(_data?['active_booking']) != null) return;
     final snap = widget.initialRoomSnapshot;
-    if (snap == null || snap.isEmpty) return;
-    final oldSnap = oldWidget.initialRoomSnapshot;
-    if (snap == oldSnap) return;
-    setState(() => _applyRoomSnapshot(snap));
+    final fromSnap = _asMap(snap?['latest_booking']);
+    if (fromSnap != null) {
+      _data = {...?_data, 'active_booking': fromSnap};
+      return;
+    }
+    final room = _asMap(_data?['room']);
+    final fromRoom = _asMap(room?['latest_booking']);
+    if (fromRoom != null) {
+      _data = {...?_data, 'active_booking': fromRoom};
+    }
+  }
+
+  List<dynamic> _chargesList() {
+    final raw = _data?['booking_charges'];
+    if (raw is List) return raw;
+    return const [];
   }
 
   @override
@@ -144,6 +156,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
           if (_canEditGuestStay) {
             _data!.remove('management_blocked_reason');
           }
+          _applyActiveBookingFallback();
           _error = null;
         } else if (_data == null) {
           _error = payload == null || payload.isEmpty
@@ -923,7 +936,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       );
     }
     final booking = _asMap(_data!['active_booking']);
-    final charges = (_data!['booking_charges'] as List<dynamic>?) ?? const [];
+    final charges = _chargesList();
     final chargesTotal =
         ((_data!['booking_charges_total'] as num?)?.toDouble() ?? 0);
 

@@ -282,6 +282,50 @@ class RoomCheckoutService
             ->first();
     }
 
+    /**
+     * Room detail + fees: tolerate legacy Mongo room_id formats on bookings.
+     */
+    public function resolveActiveBookingForRoom(string $hotelId, Room $room): ?Booking
+    {
+        $roomId = (string) $room->id;
+        $direct = $this->findActiveBooking($hotelId, $roomId);
+        if ($direct !== null) {
+            return $direct;
+        }
+
+        $candidates = Booking::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->whereNotIn('status', [
+                BookingStatus::COMPLETED->value,
+                BookingStatus::CANCELLED->value,
+            ])
+            ->latest('created_at')
+            ->limit(80)
+            ->get();
+
+        foreach ($candidates as $booking) {
+            if ($this->bookingMatchesRoomId($booking, $roomId)) {
+                return $booking;
+            }
+        }
+
+        return null;
+    }
+
+    private function bookingMatchesRoomId(Booking $booking, string $roomId): bool
+    {
+        $stored = trim((string) ($booking->getAttributes()['room_id'] ?? $booking->room_id ?? ''));
+        if ($stored === '' || $roomId === '') {
+            return false;
+        }
+        if ($stored === $roomId) {
+            return true;
+        }
+
+        return str_replace(['$', '{', '}', ' '], '', $stored)
+            === str_replace(['$', '{', '}', ' '], '', $roomId);
+    }
+
     public function normalizedStatus(Room $room): string
     {
         $raw = SafeModelAttributes::rawString($room, 'status');
