@@ -3121,6 +3121,7 @@ class CustomerRoomsScreen extends StatefulWidget {
     this.searchContext,
     this.hotelName = 'Hotel',
     this.adminLocalBooking = false,
+    this.hideImages = false,
     this.onBooked,
   });
 
@@ -3132,6 +3133,8 @@ class CustomerRoomsScreen extends StatefulWidget {
   final String hotelName;
   /// When true, booking form matches customer UI but saves via `/admin/bookings` (local).
   final bool adminLocalBooking;
+  /// Text-only room cards (no photos). Defaults on for [adminLocalBooking].
+  final bool hideImages;
   final Future<void> Function()? onBooked;
 
   @override
@@ -3143,6 +3146,8 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
   String? _error;
   bool _loading = true;
   bool _booking = false;
+
+  bool get _noImages => widget.hideImages || widget.adminLocalBooking;
 
   @override
   void initState() {
@@ -3795,16 +3800,21 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final body = _buildBody(context);
+    final appBar = AppBar(
+      title: Text(widget.categoryName),
+      actions: [
+        IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
+      ],
+    );
+
     return LocaleScope(
-      builder: (context, _) => AppScaffold(
-        appBar: AppBar(
-          title: Text(widget.categoryName),
-          actions: [
-            IconButton(onPressed: _load, icon: const Icon(Icons.refresh))
-          ],
-        ),
-        body: _buildBody(context),
-      ),
+      builder: (context, _) {
+        if (widget.adminLocalBooking) {
+          return AdminOpaqueScaffold(appBar: appBar, body: body);
+        }
+        return AppScaffold(appBar: appBar, body: body);
+      },
     );
   }
 
@@ -3835,9 +3845,11 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
       return status == 'available' || status.isEmpty;
     }).toList();
     final category = _data?['category'] as Map<String, dynamic>?;
-    final categoryBanner = ChatAttachment.resolveMediaUrl(
-      '${category?['image_url'] ?? widget.categoryImageUrl}',
-    );
+    final categoryBanner = _noImages
+        ? ''
+        : ChatAttachment.resolveMediaUrl(
+            '${category?['image_url'] ?? widget.categoryImageUrl}',
+          );
     final scheme = Theme.of(context).colorScheme;
     if (customerUseWideBrowseLayout(context)) {
       return CustomerBrowseRefresh(
@@ -3908,6 +3920,12 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
           }
           final roomIndex = categoryBanner.isEmpty ? i : i - 1;
           final r = rooms[roomIndex] as Map<String, dynamic>;
+          if (_noImages) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _buildCompactRoomCard(context, r, scheme),
+            );
+          }
           final roomNo = '${r['room_number'] ?? ''}';
           final title = '${r['display_name'] ?? r['room_number']}';
           final priceLabel = HourlyBilling.priceLabel(r);
@@ -4060,6 +4078,101 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     );
   }
 
+  Widget _buildCompactRoomCard(
+    BuildContext context,
+    Map<String, dynamic> r,
+    ColorScheme scheme,
+  ) {
+    final roomNo = '${r['room_number'] ?? ''}';
+    final title = '${r['display_name'] ?? r['room_number']}';
+    final priceLabel = HourlyBilling.priceLabel(r);
+    final fromSearch = widget.searchContext != null;
+
+    return Material(
+      color: scheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Room $roomNo · $priceLabel',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+                Chip(
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  label: const Text(
+                    'Available',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  backgroundColor: scheme.primaryContainer,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (widget.adminLocalBooking)
+              FilledButton(
+                onPressed: _booking ? null : () => _bookRoom(r, reserve: false),
+                child: const Text('Book this room'),
+              )
+            else if (fromSearch)
+              FilledButton(
+                onPressed: _booking
+                    ? null
+                    : () => _bookRoom(
+                          r,
+                          reserve: _searchUsesReservationApi(),
+                        ),
+                child: const Text('Book this room'),
+              )
+            else
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed:
+                          _booking ? null : () => _bookRoom(r, reserve: true),
+                      child: const Text('Reserve'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed:
+                          _booking ? null : () => _bookRoom(r, reserve: false),
+                      child: const Text('Book'),
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildLandscapeRooms(
     BuildContext context,
     List<dynamic> rooms,
@@ -4115,31 +4228,40 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
             )
           else
             Expanded(
-              child: CustomerLandscapePagedGrid(
-                itemCount: rooms.length,
-                itemBuilder: (context, i) {
-                  final r = rooms[i] as Map<String, dynamic>;
-                  final title = '${r['display_name'] ?? r['room_number']}';
-                  final priceLabel = HourlyBilling.priceLabel(r);
-                  return CustomerLandscapeRoomTile(
-                    title: title,
-                    priceLabel: priceLabel,
-                    imageUrl: (r['image_url'] ?? '').toString(),
-                    busy: _booking,
-                    onBook: () => _bookRoom(
-                          r,
-                          reserve: widget.adminLocalBooking
-                              ? false
-                              : (fromSearch
-                                  ? _searchUsesReservationApi()
-                                  : false),
-                        ),
-                    onReserve: widget.adminLocalBooking || fromSearch
-                        ? null
-                        : () => _bookRoom(r, reserve: true),
-                  );
-                },
-              ),
+              child: _noImages
+                  ? ListView.separated(
+                      itemCount: rooms.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, i) {
+                        final r = rooms[i] as Map<String, dynamic>;
+                        return _buildCompactRoomCard(context, r, scheme);
+                      },
+                    )
+                  : CustomerLandscapePagedGrid(
+                      itemCount: rooms.length,
+                      itemBuilder: (context, i) {
+                        final r = rooms[i] as Map<String, dynamic>;
+                        final title = '${r['display_name'] ?? r['room_number']}';
+                        final priceLabel = HourlyBilling.priceLabel(r);
+                        return CustomerLandscapeRoomTile(
+                          title: title,
+                          priceLabel: priceLabel,
+                          imageUrl: (r['image_url'] ?? '').toString(),
+                          busy: _booking,
+                          onBook: () => _bookRoom(
+                                r,
+                                reserve: widget.adminLocalBooking
+                                    ? false
+                                    : (fromSearch
+                                        ? _searchUsesReservationApi()
+                                        : false),
+                              ),
+                          onReserve: widget.adminLocalBooking || fromSearch
+                              ? null
+                              : () => _bookRoom(r, reserve: true),
+                        );
+                      },
+                    ),
             ),
         ],
       ),

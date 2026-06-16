@@ -453,7 +453,6 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           key: refreshKey,
           hotelId: hotelId,
           hotelName: hotelName,
-          rooms: _rooms,
           onChanged: widget.onRefresh,
         ),
         4,
