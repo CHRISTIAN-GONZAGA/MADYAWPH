@@ -644,7 +644,6 @@ class _SummaryRoomGridTile extends StatelessWidget {
         await adminRoomAfterFrame(() async {
           if (!hostContext.mounted) return;
           await AdminSummaryRoomActions.openRoomDetail(hostContext, room);
-          await onRefresh();
         });
       },
     );

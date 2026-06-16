@@ -15,6 +15,14 @@ abstract final class AdminRoomDetailNavigation {
   static bool get isRoomOverlayOpen =>
       _rootOverlayDepth > 0 || _shellOverlayOpen;
 
+  static void Function(String roomId)? _boundOpenDetail;
+
+  /// Registered by [AdminDashboardRoomOverlayHost] so detail opens even when
+  /// [BuildContext] cannot see [AdminDashboardRoutes].
+  static void bindShellOpenDetail(void Function(String roomId)? opener) {
+    _boundOpenDetail = opener;
+  }
+
   static void notifyShellOverlayOpen(bool open) {
     _shellOverlayOpen = open;
   }
@@ -104,6 +112,12 @@ abstract final class AdminRoomDetailNavigation {
         shell.openRoomDetail(id);
         return;
       }
+    }
+
+    final bound = _boundOpenDetail;
+    if (bound != null) {
+      bound(id);
+      return;
     }
 
     final route = MaterialPageRoute<void>(

@@ -6,7 +6,8 @@ class AdminDashboardRoutes extends InheritedWidget {
     super.key,
     required this.openRoomList,
     required this.openRoomDetail,
-    required this.closeOverlay,
+    required this.closeRoomList,
+    required this.closeTopOverlay,
     required this.isOverlayOpen,
     required super.child,
   });
@@ -20,7 +21,11 @@ class AdminDashboardRoutes extends InheritedWidget {
 
   final void Function(String roomId) openRoomDetail;
 
-  final VoidCallback closeOverlay;
+  /// Closes the room grid list (and any open detail).
+  final VoidCallback closeRoomList;
+
+  /// Closes the topmost overlay layer (detail first, then list).
+  final VoidCallback closeTopOverlay;
 
   final bool isOverlayOpen;
 

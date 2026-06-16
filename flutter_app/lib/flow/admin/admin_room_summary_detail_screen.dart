@@ -32,7 +32,7 @@ class AdminRoomSummaryDetailScreen extends StatelessWidget {
           onPressed: () {
             final shell = AdminDashboardRoutes.maybeOf(context);
             if (shell != null) {
-              shell.closeOverlay();
+              shell.closeRoomList();
               return;
             }
             Navigator.of(context).maybePop();

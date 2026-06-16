@@ -19,24 +19,6 @@ import 'sections/room_summary_section.dart';
 import 'sections/resellers_section.dart';
 import 'sections/settings_section.dart';
 import 'sections/super_admin_control_section.dart';
-import 'admin_room_detail_screen.dart';
-import 'admin_room_summary_detail_screen.dart';
-import 'widgets/admin_dashboard_routes.dart';
-import 'widgets/admin_room_detail_navigation.dart';
-
-class _ShellRoomListOverlay {
-  const _ShellRoomListOverlay({
-    required this.title,
-    required this.rooms,
-    required this.showGuest,
-    this.subtitle,
-  });
-
-  final String title;
-  final List<Map<String, dynamic>> rooms;
-  final bool showGuest;
-  final String? subtitle;
-}
 
 class AdminDashboardShell extends StatefulWidget {
   const AdminDashboardShell({
@@ -79,8 +61,6 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
   String _bookingListFilter = 'all';
   Map<String, dynamic>? _inbox;
   Timer? _chatPoll;
-  _ShellRoomListOverlay? _roomListOverlay;
-  String? _detailRoomId;
 
   List<AdminNavItem> _navItemsFor(Map<String, dynamic> d) {
     final reservations = d['reservations'] as List<dynamic>? ?? const [];
@@ -203,7 +183,6 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
 
   @override
   void dispose() {
-    AdminRoomDetailNavigation.notifyShellOverlayOpen(false);
     widget.onBindBackHandler?.call(() => false);
     _chatPoll?.cancel();
     super.dispose();
@@ -231,74 +210,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     );
   }
 
-  bool get _isRoomOverlayOpen =>
-      _roomListOverlay != null || _detailRoomId != null;
-
-  void _syncShellOverlayFlag() {
-    AdminRoomDetailNavigation.notifyShellOverlayOpen(_isRoomOverlayOpen);
-    widget.onBindBackHandler?.call(_handleInnerBack);
-  }
-
-  void _openRoomList({
-    required String title,
-    required List<Map<String, dynamic>> rooms,
-    required bool showGuest,
-    String? subtitle,
-  }) {
-    setState(() {
-      _roomListOverlay = _ShellRoomListOverlay(
-        title: title,
-        rooms: rooms,
-        showGuest: showGuest,
-        subtitle: subtitle,
-      );
-      _detailRoomId = null;
-    });
-    _syncShellOverlayFlag();
-  }
-
-  void _openRoomDetail(String roomId) {
-    final id = AdminDashboardModels.normalizeRoomIdString(roomId);
-    if (id.isEmpty) return;
-    setState(() => _detailRoomId = id);
-    _syncShellOverlayFlag();
-  }
-
-  void _closeRoomDetail() {
-    if (_detailRoomId == null) return;
-    setState(() => _detailRoomId = null);
-    _syncShellOverlayFlag();
-  }
-
-  void _closeRoomList() {
-    if (_roomListOverlay == null) return;
-    setState(() {
-      _roomListOverlay = null;
-      _detailRoomId = null;
-    });
-    _syncShellOverlayFlag();
-  }
-
-  void _closeAllRoomOverlays() {
-    if (!_isRoomOverlayOpen) return;
-    setState(() {
-      _roomListOverlay = null;
-      _detailRoomId = null;
-    });
-    _syncShellOverlayFlag();
-  }
-
-  bool _handleInnerBack() {
-    if (_detailRoomId != null) {
-      _closeRoomDetail();
-      return true;
-    }
-    if (_roomListOverlay != null) {
-      _closeRoomList();
-      return true;
-    }
-    return false;
-  }
+  bool _handleInnerBack() => false;
 
   @override
   Widget build(BuildContext context) {
@@ -320,12 +232,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     final creditsLocked = HotelCreditsPolicy.areActionsLocked(creditAmount);
     final settingsTab = _settingsTabIndex(d);
 
-    return AdminDashboardRoutes(
-      openRoomList: _openRoomList,
-      openRoomDetail: _openRoomDetail,
-      closeOverlay: _closeAllRoomOverlays,
-      isOverlayOpen: _isRoomOverlayOpen,
-      child: Scaffold(
+    return Scaffold(
       backgroundColor: const Color(0xFFF5F2FF),
       body: Stack(
         fit: StackFit.expand,
@@ -401,35 +308,8 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
             ),
           ),
           if (!creditsLocked) const ThemeFab(),
-          if (_roomListOverlay != null)
-            Positioned.fill(
-              child: Material(
-                color: Theme.of(context).colorScheme.surface,
-                child: SafeArea(
-                  child: AdminRoomSummaryDetailScreen(
-                    title: _roomListOverlay!.title,
-                    rooms: _roomListOverlay!.rooms,
-                    showGuest: _roomListOverlay!.showGuest,
-                    subtitle: _roomListOverlay!.subtitle,
-                  ),
-                ),
-              ),
-            ),
-          if (_detailRoomId != null)
-            Positioned.fill(
-              child: Material(
-                color: const Color(0xFFF5F3EF),
-                child: SafeArea(
-                  child: AdminRoomDetailScreen(
-                    roomId: _detailRoomId!,
-                    onClose: _closeRoomDetail,
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
-    ),
     );
   }
 
