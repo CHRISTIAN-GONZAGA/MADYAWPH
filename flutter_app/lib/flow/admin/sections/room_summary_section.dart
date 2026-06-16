@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../admin_dashboard_models.dart';
-import '../admin_room_summary_detail_screen.dart';
+import '../widgets/admin_room_detail_navigation.dart';
 import '../widgets/booking_overview_cards.dart';
 import '../widgets/admin_room_navigation.dart';
 import '../widgets/admin_summary_room_tile.dart';
+
 class RoomSummarySection extends StatelessWidget {
   const RoomSummarySection({
     super.key,
@@ -74,15 +75,12 @@ class RoomSummarySection extends StatelessWidget {
       return;
     }
     HapticFeedback.selectionClick();
-    Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => AdminRoomSummaryDetailScreen(
-          title: title,
-          rooms: list,
-          showGuest: showGuest,
-          subtitle: subtitle,
-        ),
-      ),
+    AdminRoomDetailNavigation.pushSummaryList(
+      context: context,
+      title: title,
+      rooms: list,
+      showGuest: showGuest,
+      subtitle: subtitle,
     );
   }
 

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'widgets/admin_opaque_scaffold.dart';
+import 'widgets/admin_dashboard_routes.dart';
+import 'widgets/admin_room_detail_navigation.dart';
 import 'widgets/admin_summary_room_tile.dart';
 
 /// Full-screen room grid from Hotel totals; tap a tile for room details.
@@ -24,7 +26,19 @@ class AdminRoomSummaryDetailScreen extends StatelessWidget {
     final columns = adminSummaryRoomGridColumns(context);
 
     return AdminOpaqueScaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: AppBar(
+        title: Text(title),
+        leading: BackButton(
+          onPressed: () {
+            final shell = AdminDashboardRoutes.maybeOf(context);
+            if (shell != null) {
+              shell.closeOverlay();
+              return;
+            }
+            Navigator.of(context).maybePop();
+          },
+        ),
+      ),
       body: rooms.isEmpty
           ? Center(
               child: Padding(
@@ -41,7 +55,8 @@ class AdminRoomSummaryDetailScreen extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                   child: Text(
-                    subtitle ?? '${rooms.length} room(s) · tap a tile for details',
+                    subtitle ??
+                        '${rooms.length} room(s) · tap a tile for details',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: scheme.onSurfaceVariant,
                         ),
@@ -62,8 +77,10 @@ class AdminRoomSummaryDetailScreen extends StatelessWidget {
                       return AdminSummaryRoomGridTile(
                         room: room,
                         showGuest: showGuest,
-                        onTap: () =>
-                            AdminSummaryRoomActions.openRoomDetail(context, room),
+                        onTap: () => AdminRoomDetailNavigation.pushDetailForRoom(
+                          context: context,
+                          room: room,
+                        ),
                       );
                     },
                   ),

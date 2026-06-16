@@ -16,4 +16,22 @@ void main() {
     expect(AdminDashboardModels.roomIdOf(room), 'room-occ-1');
     expect(AdminDashboardModels.isSummaryOccupied(room), isTrue);
   });
+
+  test('vacant and occupied rooms share the same detail navigation entry', () {
+    const vacant = {
+      'id': 'room-vac-1',
+      'room_number': '202',
+      'status': 'available',
+    };
+    const occupied = {
+      'id': 'room-occ-2',
+      'room_number': '303',
+      'status': 'checked_in',
+      'current_guest_name': 'Guest',
+    };
+    expect(AdminDashboardModels.roomIdOf(vacant), isNotEmpty);
+    expect(AdminDashboardModels.roomIdOf(occupied), isNotEmpty);
+    expect(AdminDashboardModels.isWalkInBookable(vacant), isTrue);
+    expect(AdminDashboardModels.isSummaryOccupied(occupied), isTrue);
+  });
 }

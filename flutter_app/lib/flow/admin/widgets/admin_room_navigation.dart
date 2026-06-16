@@ -5,9 +5,9 @@ import 'package:flutter/scheduler.dart';
 
 import '../../../navigation_keys.dart';
 import '../admin_dashboard_models.dart';
-import '../admin_room_detail_screen.dart';
-import 'admin_walk_in_customer_booking.dart';
+import 'admin_room_detail_navigation.dart';
 import 'admin_summary_room_tile.dart';
+import 'admin_walk_in_customer_booking.dart';
 
 /// How a room tile should open from the admin dashboard.
 enum AdminRoomOpenMode {
@@ -37,31 +37,31 @@ abstract final class AdminRoomNavigation {
     );
   }
 
-  /// Summary sheet room tap — same push as hotel-totals grid tiles.
+  /// Summary sheet room tap — root navigator push (same as hotel totals grid).
   static Future<void> openSummaryRoomDetail({
     required Map<String, dynamic> room,
     BuildContext? sheetContext,
     BuildContext? snackContext,
     Future<void> Function()? onClosed,
   }) async {
-    Future<void> open(BuildContext navContext) async {
-      await AdminSummaryRoomActions.openRoomDetail(navContext, room);
-      if (onClosed != null) await onClosed();
-    }
-
     final host = snackContext ?? adminDashboardNavigatorKey.currentContext;
     if (host == null || !host.mounted) return;
+
+    Future<void> open() async {
+      await AdminSummaryRoomActions.openRoomDetail(host, room);
+      if (onClosed != null) await onClosed();
+    }
 
     if (sheetContext != null) {
       final sheetNavigator = Navigator.of(sheetContext);
       if (sheetNavigator.canPop()) {
         sheetNavigator.pop();
       }
-      await adminRoomAfterFrame(() => open(host));
+      await adminRoomAfterFrame(open);
       return;
     }
 
-    await open(host);
+    await open();
   }
 
   /// After an optional bottom sheet closes, open walk-in booking or room details.
@@ -129,10 +129,7 @@ abstract final class AdminRoomNavigation {
       return;
     }
 
-    await AdminSummaryRoomActions.openRoomDetail(
-      context,
-      room,
-    );
+    await AdminSummaryRoomActions.openRoomDetail(context, room);
     await onSuccess();
   }
 
@@ -151,39 +148,15 @@ abstract final class AdminRoomNavigation {
     return booked;
   }
 
-  /// Pushes [AdminRoomDetailScreen] (Bookings, Manage rooms, legacy call sites).
+  /// Opens room details on the root navigator (Bookings, Checkout, Manage rooms).
   static Future<void> openDetailById(
     String roomId, {
     BuildContext? snackContext,
-  }) async {
-    final id = AdminDashboardModels.normalizeRoomIdString(roomId);
-    if (id.isEmpty) {
-      final ctx = snackContext ?? adminDashboardNavigatorKey.currentContext;
-      if (ctx != null && ctx.mounted) _missingRoomId(ctx);
-      return;
-    }
-
-    final route = MaterialPageRoute<void>(
-      builder: (_) => AdminRoomDetailScreen(roomId: id),
+  }) {
+    return AdminRoomDetailNavigation.pushDetail(
+      roomId: roomId,
+      context: snackContext,
     );
-
-    if (snackContext != null && snackContext.mounted) {
-      await Navigator.of(snackContext).push(route);
-      return;
-    }
-
-    final nav = adminDashboardNavigatorKey.currentState;
-    if (nav != null) {
-      await nav.push(route);
-      return;
-    }
-
-    final ctx = adminDashboardNavigatorKey.currentContext;
-    if (ctx != null && ctx.mounted) {
-      ScaffoldMessenger.of(ctx).showSnackBar(
-        const SnackBar(content: Text('Unable to open room details.')),
-      );
-    }
   }
 
   static void _missingRoomId(BuildContext context) {

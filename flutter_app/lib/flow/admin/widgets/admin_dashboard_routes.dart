@@ -1,17 +1,28 @@
 import 'package:flutter/material.dart';
 
-/// Optional hooks for nested dashboard back handling.
+/// Hooks for in-dashboard room list/detail overlays (avoids broken Navigator.push).
 class AdminDashboardRoutes extends InheritedWidget {
   const AdminDashboardRoutes({
     super.key,
-    required this.closeFullScreen,
-    required this.isFullScreenOpen,
+    required this.openRoomList,
+    required this.openRoomDetail,
+    required this.closeOverlay,
+    required this.isOverlayOpen,
     required super.child,
   });
 
-  final VoidCallback closeFullScreen;
+  final void Function({
+    required String title,
+    required List<Map<String, dynamic>> rooms,
+    required bool showGuest,
+    String? subtitle,
+  }) openRoomList;
 
-  final bool isFullScreenOpen;
+  final void Function(String roomId) openRoomDetail;
+
+  final VoidCallback closeOverlay;
+
+  final bool isOverlayOpen;
 
   static AdminDashboardRoutes? maybeOf(BuildContext context) {
     return context.getInheritedWidgetOfExactType<AdminDashboardRoutes>();
@@ -19,6 +30,6 @@ class AdminDashboardRoutes extends InheritedWidget {
 
   @override
   bool updateShouldNotify(AdminDashboardRoutes oldWidget) {
-    return isFullScreenOpen != oldWidget.isFullScreenOpen;
+    return isOverlayOpen != oldWidget.isOverlayOpen;
   }
 }

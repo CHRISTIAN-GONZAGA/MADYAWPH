@@ -19,6 +19,7 @@ import '../widgets/dashboard_exit_guard.dart';
 import 'admin/admin_dashboard_models.dart';
 import 'admin/admin_dashboard_shell.dart';
 import 'admin/admin_room_summary_detail_screen.dart';
+import 'admin/widgets/admin_room_detail_navigation.dart';
 import 'admin/widgets/admin_room_navigation.dart';
 import 'admin/widgets/admin_walk_in_customer_booking.dart';
 import 'admin/widgets/hourly_billing.dart';
@@ -74,13 +75,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     WidgetsBinding.instance.addObserver(this);
     _load();
     _dashboardPoll = Timer.periodic(const Duration(seconds: 20), (_) {
-      if (mounted) _load(silent: true);
+      if (!mounted || AdminRoomDetailNavigation.isRoomOverlayOpen) return;
+      _load(silent: true);
     });
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && mounted) {
+    if (state == AppLifecycleState.resumed &&
+        mounted &&
+        !AdminRoomDetailNavigation.isRoomOverlayOpen) {
       _load(silent: true);
     }
   }
@@ -569,14 +573,11 @@ class AdminRoomSummaryScreen extends StatelessWidget {
     required List<Map<String, dynamic>> list,
     required bool showGuest,
   }) {
-    Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => AdminRoomSummaryDetailScreen(
-          title: title,
-          rooms: list,
-          showGuest: showGuest,
-        ),
-      ),
+    AdminRoomDetailNavigation.pushSummaryList(
+      context: context,
+      title: title,
+      rooms: list,
+      showGuest: showGuest,
     );
   }
 

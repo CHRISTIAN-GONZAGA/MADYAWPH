@@ -2,32 +2,17 @@ import 'package:flutter/material.dart';
 
 import '../../../widgets/room_status_label.dart';
 import '../admin_dashboard_models.dart';
-import '../admin_room_detail_screen.dart';
+import 'admin_room_detail_navigation.dart';
 
-/// Opens room details with the same [Navigator.push] path used by Manage rooms.
+/// Opens room details on the root navigator (stable while dashboard refreshes).
 abstract final class AdminSummaryRoomActions {
   static Future<void> openRoomDetail(
     BuildContext context,
     Map<String, dynamic> room,
-  ) async {
-    final id = AdminDashboardModels.roomIdOf(room);
-    if (id.isEmpty) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Room ID missing. Pull to refresh the dashboard and try again.',
-          ),
-        ),
-      );
-      return;
-    }
-
-    if (!context.mounted) return;
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => AdminRoomDetailScreen(roomId: id),
-      ),
+  ) {
+    return AdminRoomDetailNavigation.pushDetailForRoom(
+      context: context,
+      room: room,
     );
   }
 }
