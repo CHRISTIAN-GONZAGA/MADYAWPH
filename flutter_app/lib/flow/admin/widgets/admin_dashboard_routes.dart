@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 
-/// Optional hooks for nested dashboard back handling (room details use [Navigator.push]).
+/// In-dashboard full-screen room details from the Summary tab.
 class AdminDashboardRoutes extends InheritedWidget {
   const AdminDashboardRoutes({
     super.key,
+    required this.openDetail,
     required this.closeFullScreen,
     required this.isFullScreenOpen,
     required super.child,
   });
+
+  final void Function(String roomId) openDetail;
 
   final VoidCallback closeFullScreen;
 
@@ -15,6 +18,14 @@ class AdminDashboardRoutes extends InheritedWidget {
 
   static AdminDashboardRoutes? maybeOf(BuildContext context) {
     return context.getInheritedWidgetOfExactType<AdminDashboardRoutes>();
+  }
+
+  /// Opens room details inside the dashboard shell (Summary occupied/vacant lists).
+  static bool tryOpenDetail(BuildContext context, String roomId) {
+    final routes = maybeOf(context);
+    if (routes == null || roomId.isEmpty) return false;
+    routes.openDetail(roomId);
+    return true;
   }
 
   @override

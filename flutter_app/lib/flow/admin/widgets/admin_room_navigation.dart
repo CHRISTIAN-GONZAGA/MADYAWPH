@@ -7,6 +7,7 @@ import '../../../navigation_keys.dart';
 import '../admin_dashboard_models.dart';
 import '../admin_room_detail_screen.dart';
 import 'admin_walk_in_customer_booking.dart';
+import 'admin_dashboard_routes.dart';
 
 /// How a room tile should open from the admin dashboard.
 enum AdminRoomOpenMode {
@@ -154,7 +155,7 @@ abstract final class AdminRoomNavigation {
     return booked;
   }
 
-  /// Pushes [AdminRoomDetailScreen] on the dashboard navigator (same as Summary list tiles).
+  /// Pushes or opens in-shell [AdminRoomDetailScreen] (Summary list tiles, Bookings).
   static Future<void> openDetailById(
     String roomId, {
     BuildContext? snackContext,
@@ -166,27 +167,38 @@ abstract final class AdminRoomNavigation {
       return;
     }
 
+    final ctx = snackContext ?? adminDashboardNavigatorKey.currentContext;
+    final nested = adminDashboardNavigatorKey.currentState;
+    final atDashboardRoot = nested == null || !nested.canPop();
+
+    // Summary tab at dashboard root: open inside shell (reliable on device).
+    if (ctx != null &&
+        ctx.mounted &&
+        atDashboardRoot &&
+        AdminDashboardRoutes.tryOpenDetail(ctx, id)) {
+      return;
+    }
+
     final route = MaterialPageRoute<void>(
       builder: (_) => AdminRoomDetailScreen(roomId: id),
     );
 
-    if (snackContext != null && snackContext.mounted) {
-      await Navigator.of(snackContext).push(route);
+    if (nested != null) {
+      await nested.push(route);
       return;
     }
 
-    final nav = adminDashboardNavigatorKey.currentState;
-    if (nav == null) {
-      final ctx = adminDashboardNavigatorKey.currentContext;
-      if (ctx != null && ctx.mounted) {
-        ScaffoldMessenger.of(ctx).showSnackBar(
-          const SnackBar(content: Text('Unable to open room details.')),
-        );
-      }
+    if (ctx != null && ctx.mounted) {
+      await Navigator.of(ctx).push(route);
       return;
     }
 
-    await nav.push(route);
+    final fallbackCtx = adminDashboardNavigatorKey.currentContext;
+    if (fallbackCtx != null && fallbackCtx.mounted) {
+      ScaffoldMessenger.of(fallbackCtx).showSnackBar(
+        const SnackBar(content: Text('Unable to open room details.')),
+      );
+    }
   }
 
   static void _missingRoomId(BuildContext context) {

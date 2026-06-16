@@ -91,6 +91,7 @@ class RoomSummarySection extends StatelessWidget {
       showDragHandle: true,
       isScrollControlled: true,
       useSafeArea: true,
+      useRootNavigator: true,
       builder: (ctx) {
         return DraggableScrollableSheet(
           expand: false,
@@ -136,6 +137,7 @@ class RoomSummarySection extends StatelessWidget {
       showDragHandle: true,
       isScrollControlled: true,
       useSafeArea: true,
+      useRootNavigator: true,
       builder: (ctx) {
         return DraggableScrollableSheet(
           expand: false,
@@ -358,6 +360,7 @@ class RoomSummarySection extends StatelessWidget {
       showDragHandle: true,
       isScrollControlled: true,
       useSafeArea: true,
+      useRootNavigator: true,
       builder: (ctx) {
         return _CategoryBreakdownSheet(
           label: label,

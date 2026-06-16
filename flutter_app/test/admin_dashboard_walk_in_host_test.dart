@@ -18,6 +18,7 @@ void main() {
           onGenerateRoute: (settings) {
             return MaterialPageRoute<void>(
               builder: (_) => AdminDashboardRoutes(
+                openDetail: (_) {},
                 closeFullScreen: () {},
                 isFullScreenOpen: false,
                 child: Scaffold(

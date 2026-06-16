@@ -499,6 +499,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         Expanded(
           child: Navigator(
             key: adminDashboardNavigatorKey,
+            initialRoute: '/',
             onGenerateRoute: (settings) {
               return MaterialPageRoute<void>(
                 builder: (_) => AdminDashboardShell(
