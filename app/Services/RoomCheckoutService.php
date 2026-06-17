@@ -427,6 +427,9 @@ class RoomCheckoutService
             $updates['stay_hours'] = $charge['stay_hours'];
             $updates['block_hours'] = $charge['block_hours'];
             $updates['price_per_block'] = $charge['price_per_block'];
+            if ((int) ($booking->booked_stay_hours ?? 0) < 1) {
+                $updates['booked_stay_hours'] = $charge['stay_hours'];
+            }
         }
         $booking->forceFill($updates)->save();
 

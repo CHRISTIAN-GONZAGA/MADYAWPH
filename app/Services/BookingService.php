@@ -128,6 +128,7 @@ class BookingService
             ]);
             if ($charge['billing_mode'] === RoomBillingSupport::MODE_HOURLY) {
                 $bookingPayload['stay_hours'] = $charge['stay_hours'];
+                $bookingPayload['booked_stay_hours'] = $charge['stay_hours'];
                 $bookingPayload['block_hours'] = $charge['block_hours'];
                 $bookingPayload['price_per_block'] = $charge['price_per_block'];
             }

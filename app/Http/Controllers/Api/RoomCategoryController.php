@@ -28,6 +28,7 @@ class RoomCategoryController extends Controller
                 'billing_mode' => (string) ($category->billing_mode ?? 'nightly'),
                 'price_per_block' => (float) ($category->price_per_block ?? 0),
                 'block_hours' => (int) ($category->block_hours ?? 3),
+                'price_per_extra_hour' => (float) ($category->price_per_extra_hour ?? 0),
                 'image_url' => (string) (ChatAttachmentUrl::fromStoredUrl($category->image_url) ?? ''),
             ]);
 
@@ -45,6 +46,7 @@ class RoomCategoryController extends Controller
             'billing_mode' => ['nullable', 'in:nightly,hourly'],
             'price_per_block' => ['nullable', 'numeric', 'min:0'],
             'block_hours' => ['nullable', 'integer', 'min:1', 'max:48'],
+            'price_per_extra_hour' => ['nullable', 'numeric', 'min:0'],
             'image_file' => RoomImageUploadRules::fileRules(),
         ]);
 
@@ -55,6 +57,9 @@ class RoomCategoryController extends Controller
         }
         if (isset($payload['price_per_block'])) {
             $payload['price_per_block'] = PriceRounding::nearest50((float) $payload['price_per_block']);
+        }
+        if (isset($payload['price_per_extra_hour'])) {
+            $payload['price_per_extra_hour'] = PriceRounding::nearest50((float) $payload['price_per_extra_hour']);
         }
         $payload['billing_mode'] = strtolower((string) ($payload['billing_mode'] ?? 'nightly')) === 'hourly'
             ? 'hourly'
@@ -80,6 +85,7 @@ class RoomCategoryController extends Controller
             'billing_mode' => (string) ($category->billing_mode ?? 'nightly'),
             'price_per_block' => (float) ($category->price_per_block ?? 0),
             'block_hours' => (int) ($category->block_hours ?? 3),
+            'price_per_extra_hour' => (float) ($category->price_per_extra_hour ?? 0),
             'image_url' => (string) (ChatAttachmentUrl::fromStoredUrl($category->image_url) ?? ''),
         ], 201);
     }
@@ -95,6 +101,7 @@ class RoomCategoryController extends Controller
             'billing_mode' => ['nullable', 'in:nightly,hourly'],
             'price_per_block' => ['nullable', 'numeric', 'min:0'],
             'block_hours' => ['nullable', 'integer', 'min:1', 'max:48'],
+            'price_per_extra_hour' => ['nullable', 'numeric', 'min:0'],
             'image_file' => RoomImageUploadRules::fileRules(),
             'remove_image' => ['sometimes', 'boolean'],
         ]);
@@ -106,6 +113,9 @@ class RoomCategoryController extends Controller
         }
         if (array_key_exists('price_per_block', $payload)) {
             $payload['price_per_block'] = PriceRounding::nearest50((float) $payload['price_per_block']);
+        }
+        if (array_key_exists('price_per_extra_hour', $payload)) {
+            $payload['price_per_extra_hour'] = PriceRounding::nearest50((float) $payload['price_per_extra_hour']);
         }
         if (array_key_exists('billing_mode', $payload)) {
             $payload['billing_mode'] = strtolower((string) $payload['billing_mode']) === 'hourly'
@@ -134,6 +144,7 @@ class RoomCategoryController extends Controller
             'billing_mode' => (string) ($roomCategory->billing_mode ?? 'nightly'),
             'price_per_block' => (float) ($roomCategory->price_per_block ?? 0),
             'block_hours' => (int) ($roomCategory->block_hours ?? 3),
+            'price_per_extra_hour' => (float) ($roomCategory->price_per_extra_hour ?? 0),
             'image_url' => (string) (ChatAttachmentUrl::fromStoredUrl($roomCategory->image_url) ?? ''),
         ]);
     }

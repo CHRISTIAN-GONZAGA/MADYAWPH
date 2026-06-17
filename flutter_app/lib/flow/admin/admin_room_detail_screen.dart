@@ -5,8 +5,10 @@ import '../../dio_client.dart';
 import '../../utils/money_format.dart';
 import '../../widgets/app_state_views.dart';
 import '../../widgets/room_status_label.dart';
+import '../widgets/extend_stay_dialog.dart';
 import 'admin_dashboard_models.dart';
 import 'widgets/admin_opaque_scaffold.dart';
+import 'widgets/hourly_billing.dart';
 import 'widgets/stay_receipt_dialog.dart';
 
 class AdminRoomDetailScreen extends StatefulWidget {
@@ -41,6 +43,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   bool _checkingOut = false;
   bool _updatingPayment = false;
   bool _issuingRefund = false;
+  bool _extendingStay = false;
   late final String _roomId;
 
   static Map<String, dynamic>? _asMap(dynamic value) {
@@ -165,6 +168,8 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                 _data?['management_blocked_reason'],
             'pending_reservation': payload['pending_reservation'] ??
                 _data?['pending_reservation'],
+            'extension_options': payload['extension_options'] ??
+                _data?['extension_options'],
           };
           if (_canEditGuestStay) {
             _data!.remove('management_blocked_reason');
@@ -281,6 +286,62 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       );
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _extendStay() async {
+    final room = _asMap(_data?['room']);
+    final booking = _asMap(_data?['active_booking']);
+    final bookingId = (booking?['id'] ?? booking?['_id'] ?? '').toString();
+    if (bookingId.isEmpty || room == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No active booking to extend.')),
+      );
+      return;
+    }
+
+    if (!HourlyBilling.isHourly(room)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Extend by nights is not available here yet.')),
+      );
+      return;
+    }
+
+    final extensionOptions =
+        _asMap(_data?['extension_options']);
+    final payload = await showExtendStayDialog(
+      context,
+      extensionOptions: extensionOptions,
+    );
+    if (payload == null || !mounted) return;
+
+    if (_extendingStay) return;
+    setState(() => _extendingStay = true);
+    try {
+      final res = await portalDio().post<Map<String, dynamic>>(
+        '/admin/bookings/$bookingId/extend-stay',
+        data: payload,
+      );
+      if (!mounted) return;
+      final fee = res.data?['extension_fee'];
+      final checkout = res.data?['new_checkout_date'];
+      final checkoutTime = res.data?['new_checkout_time'];
+      final when = checkoutTime != null ? '$checkout $checkoutTime' : checkout;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Stay extended. New checkout: $when. Fee: ${formatPeso(fee)}',
+          ),
+        ),
+      );
+      await _load();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dioErrorMessage(e))),
+      );
+    } finally {
+      if (mounted) setState(() => _extendingStay = false);
     }
   }
 
@@ -1152,6 +1213,29 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
               ),
             ],
           ),
+          if ((status == 'checked_in' || status == 'booked') &&
+              booking != null &&
+              HourlyBilling.isHourly(room)) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: (_extendingStay || _busy) ? null : _extendStay,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: accent,
+                  side: BorderSide(color: accent),
+                ),
+                icon: _extendingStay
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.more_time_outlined),
+                label: Text(_extendingStay ? 'Extending…' : 'Extend stay'),
+              ),
+            ),
+          ],
           if (status == 'checked_in' || status == 'booked') ...[
             const SizedBox(height: 10),
             SizedBox(

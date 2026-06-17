@@ -24,6 +24,7 @@ class Room extends Model
         'billing_mode',
         'price_per_block',
         'block_hours',
+        'price_per_extra_hour',
         'status',
         'amenities',
         'image_url',

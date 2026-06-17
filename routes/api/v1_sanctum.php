@@ -48,12 +48,14 @@ use App\Services\RoomCheckoutService;
 use App\Services\RoomStatusNotificationService;
 use App\Services\SmsService;
 use App\Services\StayReceiptService;
+use App\Services\StayExtensionService;
 use App\Support\AdminBookingPresenter;
 use App\Support\ChatAttachmentUrl;
 use App\Support\GuestMessageResource;
 use App\Support\HotelScopeGuard;
 use App\Support\PortalPassword;
 use App\Support\PriceRounding;
+use App\Support\RoomBillingSupport;
 use App\Support\RoomImageUploadRules;
 use App\Support\RoomMediaStorage;
 use App\Support\StayDisplayPresenter;
@@ -1629,6 +1631,11 @@ Route::get('/admin/rooms/{id}', function (Request $request, string $id, RoomChec
 
     $stayFlags = StayManagementPolicy::roomDetailFlags($booking, $room, $hotelId);
 
+    $extensionOptions = null;
+    if ($booking && RoomBillingSupport::isHourly($room)) {
+        $extensionOptions = app(StayExtensionService::class)->preview($room, $booking);
+    }
+
     return response()->json([
         'room' => array_merge($room->toArray(), [
             'id' => (string) $room->id,
@@ -1644,7 +1651,45 @@ Route::get('/admin/rooms/{id}', function (Request $request, string $id, RoomChec
         'can_edit_guest_stay' => $stayFlags['can_edit_guest_stay'],
         'management_blocked_reason' => $stayFlags['management_blocked_reason'],
         'pending_reservation' => $stayFlags['pending_reservation'],
+        'extension_options' => $extensionOptions,
     ]);
+})->middleware('role:admin');
+
+Route::post('/admin/bookings/{booking}/extend-stay', function (Request $request, Booking $booking, StayExtensionService $stayExtensionService) {
+    $hotelId = (string) $request->user()->hotel_id;
+    if ((string) $booking->hotel_id !== $hotelId) {
+        return response()->json(['message' => 'Booking is outside your hotel scope.'], 403);
+    }
+
+    $validated = $request->validate([
+        'extension_mode' => ['required', 'in:same_duration,custom_hours,block'],
+        'hours' => ['nullable', 'integer', 'min:1', 'max:720'],
+    ]);
+
+    $room = Room::withoutGlobalScopes()->findOrFail((string) $booking->room_id);
+    if ((string) $room->hotel_id !== $hotelId) {
+        return response()->json(['message' => 'Room is outside your hotel scope.'], 403);
+    }
+
+    $mode = (string) $validated['extension_mode'];
+    $hours = isset($validated['hours']) ? (int) $validated['hours'] : null;
+    if ($mode === 'block' && ($hours === null || $hours < 1)) {
+        return response()->json(['message' => 'Hours are required for block extension.'], 422);
+    }
+    if ($mode === 'custom_hours' && ($hours === null || $hours < 1)) {
+        return response()->json(['message' => 'Hours are required for custom hour extension.'], 422);
+    }
+
+    $result = $stayExtensionService->apply(
+        $room,
+        $booking,
+        $mode,
+        $hours,
+        (string) $request->user()->id,
+        'Admin extended stay',
+    );
+
+    return response()->json($result);
 })->middleware('role:admin');
 
 Route::get('/admin/pricing/surge', function (Request $request) {

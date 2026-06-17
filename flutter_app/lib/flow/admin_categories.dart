@@ -185,6 +185,8 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     var catPricePerNight = 0.0;
     var catPricePerBlock = 1000.0;
     var catBlockHours = 3;
+    var catPricePerExtraHour = 0.0;
+    final extraHourPriceCtrl = TextEditingController(text: '0');
     XFile? pickedImage;
     final payload = await showDialog<Map<String, dynamic>>(
       context: context,
@@ -239,19 +241,23 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                       pricePerNight: catPricePerNight,
                       pricePerBlock: catPricePerBlock,
                       blockHours: catBlockHours,
+                      pricePerExtraHour: catPricePerExtraHour,
                       nightlyController: nightlyCtrl,
                       blockPriceController: blockPriceCtrl,
+                      extraHourPriceController: extraHourPriceCtrl,
                       onChanged: ({
                         required String billingMode,
                         required double pricePerNight,
                         required double pricePerBlock,
                         required int blockHours,
+                        required double pricePerExtraHour,
                       }) {
                         setLocal(() {
                           catBillingMode = billingMode;
                           catPricePerNight = pricePerNight;
                           catPricePerBlock = pricePerBlock;
                           catBlockHours = blockHours;
+                          catPricePerExtraHour = pricePerExtraHour;
                         });
                       },
                     ),
@@ -274,6 +280,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                                 : catPricePerBlock,
                             'price_per_block': catPricePerBlock,
                             'block_hours': catBlockHours,
+                            'price_per_extra_hour': catPricePerExtraHour,
                             '__image': pickedImage,
                           }),
                           child: const Text('Create'),
@@ -336,6 +343,10 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     var roomPricePerBlock =
         (category['price_per_block'] as num?)?.toDouble() ?? roomPricePerNight;
     var roomBlockHours = (category['block_hours'] as num?)?.toInt() ?? 3;
+    var roomPricePerExtraHour =
+        (category['price_per_extra_hour'] as num?)?.toDouble() ?? 0.0;
+    final extraHourPriceCtrl =
+        TextEditingController(text: '$roomPricePerExtraHour');
     String roomType = 'Single';
     String status = 'available';
     XFile? pickedImage;
@@ -401,19 +412,23 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                       pricePerNight: roomPricePerNight,
                       pricePerBlock: roomPricePerBlock,
                       blockHours: roomBlockHours,
+                      pricePerExtraHour: roomPricePerExtraHour,
                       nightlyController: nightlyCtrl,
                       blockPriceController: blockPriceCtrl,
+                      extraHourPriceController: extraHourPriceCtrl,
                       onChanged: ({
                         required String billingMode,
                         required double pricePerNight,
                         required double pricePerBlock,
                         required int blockHours,
+                        required double pricePerExtraHour,
                       }) {
                         setLocal(() {
                           roomBillingMode = billingMode;
                           roomPricePerNight = pricePerNight;
                           roomPricePerBlock = pricePerBlock;
                           roomBlockHours = blockHours;
+                          roomPricePerExtraHour = pricePerExtraHour;
                         });
                       },
                     ),
@@ -505,6 +520,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                               'price_per_night': roomPricePerNight,
                               'price_per_block': roomPricePerBlock,
                               'block_hours': roomBlockHours,
+                              'price_per_extra_hour': roomPricePerExtraHour,
                               'status': status,
                               '__image': pickedImage,
                             });
@@ -569,6 +585,10 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     var catPricePerNight = (category['default_price'] as num?)?.toDouble() ?? 0.0;
     var catPricePerBlock = (category['price_per_block'] as num?)?.toDouble() ?? 0.0;
     var catBlockHours = (category['block_hours'] as num?)?.toInt() ?? 3;
+    var catPricePerExtraHour =
+        (category['price_per_extra_hour'] as num?)?.toDouble() ?? 0.0;
+    final extraHourPriceCtrl =
+        TextEditingController(text: '$catPricePerExtraHour');
     XFile? pickedImage;
 
     final payload = await showDialog<Map<String, dynamic>>(
@@ -596,19 +616,23 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                   pricePerNight: catPricePerNight,
                   pricePerBlock: catPricePerBlock,
                   blockHours: catBlockHours,
+                  pricePerExtraHour: catPricePerExtraHour,
                   nightlyController: nightlyCtrl,
                   blockPriceController: blockPriceCtrl,
+                  extraHourPriceController: extraHourPriceCtrl,
                   onChanged: ({
                     required String billingMode,
                     required double pricePerNight,
                     required double pricePerBlock,
                     required int blockHours,
+                    required double pricePerExtraHour,
                   }) {
                     setLocal(() {
                       catBillingMode = billingMode;
                       catPricePerNight = pricePerNight;
                       catPricePerBlock = pricePerBlock;
                       catBlockHours = blockHours;
+                      catPricePerExtraHour = pricePerExtraHour;
                     });
                   },
                 ),
@@ -634,6 +658,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                 'billing_mode': catBillingMode,
                 'price_per_block': catPricePerBlock,
                 'block_hours': catBlockHours,
+                'price_per_extra_hour': catPricePerExtraHour,
                 '__image': pickedImage,
               }),
               child: const Text('Save'),
@@ -723,8 +748,14 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
       var roomPricePerNight = (room['price_per_night'] as num?)?.toDouble() ?? 0.0;
       var roomPricePerBlock = (room['price_per_block'] as num?)?.toDouble() ?? 0.0;
       var roomBlockHours = (room['block_hours'] as num?)?.toInt() ?? 3;
+      var roomPricePerExtraHour =
+          (room['price_per_extra_hour'] as num?)?.toDouble() ??
+          (category['price_per_extra_hour'] as num?)?.toDouble() ??
+          0.0;
       final nightlyCtrl = TextEditingController(text: '$roomPricePerNight');
       final blockPriceCtrl = TextEditingController(text: '$roomPricePerBlock');
+      final extraHourPriceCtrl =
+          TextEditingController(text: '$roomPricePerExtraHour');
       XFile? pickedImage;
 
       final payload = await showDialog<Map<String, dynamic>>(
@@ -756,19 +787,23 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                     pricePerNight: roomPricePerNight,
                     pricePerBlock: roomPricePerBlock,
                     blockHours: roomBlockHours,
+                    pricePerExtraHour: roomPricePerExtraHour,
                     nightlyController: nightlyCtrl,
                     blockPriceController: blockPriceCtrl,
+                    extraHourPriceController: extraHourPriceCtrl,
                     onChanged: ({
                       required String billingMode,
                       required double pricePerNight,
                       required double pricePerBlock,
                       required int blockHours,
+                      required double pricePerExtraHour,
                     }) {
                       setLocal(() {
                         roomBillingMode = billingMode;
                         roomPricePerNight = pricePerNight;
                         roomPricePerBlock = pricePerBlock;
                         roomBlockHours = blockHours;
+                        roomPricePerExtraHour = pricePerExtraHour;
                       });
                     },
                   ),
@@ -795,6 +830,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                   'price_per_night': roomPricePerNight,
                   'price_per_block': roomPricePerBlock,
                   'block_hours': roomBlockHours,
+                  'price_per_extra_hour': roomPricePerExtraHour,
                   '__image': pickedImage,
                 }),
                 child: const Text('Save'),

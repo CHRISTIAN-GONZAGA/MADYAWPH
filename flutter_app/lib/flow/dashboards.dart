@@ -12,6 +12,7 @@ import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_input.dart';
 import '../widgets/app_scaffold.dart';
+import 'widgets/extend_stay_dialog.dart';
 import 'admin/widgets/admin_opaque_scaffold.dart';
 import '../widgets/app_state_views.dart';
 import '../widgets/dashboard_clock.dart';
@@ -1893,111 +1894,19 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
     final billingMode =
         (roomInfo?['billingMode'] ?? 'nightly').toString().toLowerCase();
     final isHourly = billingMode == 'hourly';
-    final hourOptions = (roomInfo?['extendHourOptions'] as List<dynamic>? ?? [])
-        .map((e) => (e as num).toInt())
-        .where((h) => h > 0)
-        .toList();
-    final blockHours = (roomInfo?['blockHours'] as num?)?.toInt() ?? 3;
-    final pricePerBlock =
-        (roomInfo?['pricePerBlock'] as num?)?.toDouble() ?? 0;
 
-    if (isHourly && hourOptions.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Hourly extension options are not available.'),
-        ),
-      );
-      return;
-    }
-
-    int? nights;
-    int? hours;
-    if (isHourly) {
-      var selectedHours = hourOptions.first;
-      final picked = await showDialog<int>(
-        context: context,
-        builder: (context) => StatefulBuilder(
-          builder: (context, setLocal) => AlertDialog(
-            title: const Text('Extend Stay'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Extend by multiples of $blockHours hour(s)',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<int>(
-                  key: ValueKey<int>(selectedHours),
-                  initialValue: selectedHours,
-                  items: hourOptions
-                      .map(
-                        (h) => DropdownMenuItem(
-                          value: h,
-                          child: Text(
-                            '$h hours — ₱${((h / blockHours) * pricePerBlock).toStringAsFixed(0)}',
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (v) =>
-                      setLocal(() => selectedHours = v ?? selectedHours),
-                  decoration: const InputDecoration(
-                    labelText: 'Additional hours',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop(selectedHours),
-                child: const Text('Submit'),
-              ),
-            ],
-          ),
-        ),
-      );
-      hours = picked;
-      if (hours == null || hours < 1) return;
-    } else {
-      final ctrl = TextEditingController(text: '1');
-      nights = await showDialog<int>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Extend Stay'),
-          content: TextField(
-            controller: ctrl,
-            decoration: const InputDecoration(
-              labelText: 'Additional nights',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel')),
-            FilledButton(
-              onPressed: () =>
-                  Navigator.of(context).pop(int.tryParse(ctrl.text.trim()) ?? 1),
-              child: const Text('Submit'),
-            ),
-          ],
-        ),
-      );
-      ctrl.dispose();
-      if (nights == null || nights < 1) return;
-    }
+    final payload = await showExtendStayDialog(
+      context,
+      roomInfo: roomInfo,
+    );
+    if (payload == null) return;
 
     await _runGuestAction('Extend stay', () async {
       final res = await guestDio().post<Map<String, dynamic>>(
         '/guest/extend-stay',
-        data: isHourly ? {'hours': hours} : {'nights': nights},
+        data: isHourly
+            ? payload
+            : {'nights': payload['nights']},
       );
       final checkout = res.data?['new_checkout_date'] ?? '-';
       final checkoutTime = res.data?['new_checkout_time'];

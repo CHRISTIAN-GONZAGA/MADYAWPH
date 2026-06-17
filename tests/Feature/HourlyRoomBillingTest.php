@@ -135,6 +135,244 @@ class HourlyRoomBillingTest extends TestCase
         $ok->assertJsonPath('extension_fee', 1000);
     }
 
+    public function test_same_duration_extension_uses_block_rate_not_per_hour(): void
+    {
+        $hotel = Hotel::create(['name' => 'Same Duration Hotel', 'location' => 'Loc']);
+        $admin = User::create([
+            'name' => 'Admin',
+            'email' => 'admin-same-duration@test.local',
+            'password' => bcrypt('secret'),
+            'role' => UserRole::ADMIN->value,
+            'hotel_id' => (string) $hotel->id,
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '501',
+            'room_type' => 'Single',
+            'billing_mode' => 'hourly',
+            'price_per_block' => 1000,
+            'block_hours' => 24,
+            'price_per_extra_hour' => 200,
+            'status' => RoomStatus::CHECKED_IN->value,
+            'current_guest_name' => 'Guest',
+            'current_access_code' => '5678',
+        ]);
+        $booking = Booking::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'booking_reference' => 'BKTEST502',
+            'guest_name' => 'Guest',
+            'guest_email' => 'g2@test.local',
+            'guest_phone' => '09170000002',
+            'check_in_date' => now()->toDateString(),
+            'check_out_date' => now()->addDay()->toDateString(),
+            'check_out_time' => '14:00',
+            'nights' => 1,
+            'billing_mode' => 'hourly',
+            'stay_hours' => 24,
+            'block_hours' => 24,
+            'price_per_block' => 1000,
+            'total_amount' => 1000,
+            'payment_method' => 'Cash',
+            'payment_status' => 'unpaid',
+            'status' => 'booked',
+            'source' => 'admin',
+        ]);
+
+        $response = $this->actingAs($admin)->postJson(
+            '/api/v1/admin/bookings/'.(string) $booking->id.'/extend-stay',
+            ['extension_mode' => 'same_duration'],
+        );
+
+        $response->assertOk();
+        $response->assertJsonPath('extension_fee', 1000);
+
+        $booking->refresh();
+        $this->assertSame(48, (int) $booking->stay_hours);
+        $this->assertSame(2000.0, (float) $booking->total_amount);
+    }
+
+    public function test_custom_hours_extension_uses_per_hour_rate(): void
+    {
+        $hotel = Hotel::create(['name' => 'Custom Hours Hotel', 'location' => 'Loc']);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '502',
+            'room_type' => 'Single',
+            'billing_mode' => 'hourly',
+            'price_per_block' => 1000,
+            'block_hours' => 24,
+            'price_per_extra_hour' => 200,
+            'status' => RoomStatus::CHECKED_IN->value,
+            'current_guest_name' => 'Guest',
+            'current_access_code' => '9012',
+        ]);
+        $booking = Booking::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'booking_reference' => 'BKTEST503',
+            'guest_name' => 'Guest',
+            'guest_email' => 'g3@test.local',
+            'guest_phone' => '09170000003',
+            'check_in_date' => now()->toDateString(),
+            'check_out_date' => now()->addDay()->toDateString(),
+            'check_out_time' => '14:00',
+            'nights' => 1,
+            'billing_mode' => 'hourly',
+            'stay_hours' => 24,
+            'block_hours' => 24,
+            'price_per_block' => 1000,
+            'total_amount' => 1000,
+            'payment_method' => 'Cash',
+            'payment_status' => 'unpaid',
+            'status' => 'booked',
+            'source' => 'admin',
+        ]);
+
+        $login = $this->postJson('/api/v1/guest/login', [
+            'hotel_id' => (string) $hotel->id,
+            'room' => '502',
+            'password' => '9012',
+        ]);
+        $login->assertOk();
+        $token = (string) $login->json('guest_token');
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/guest/extend-stay', [
+                'extension_mode' => 'custom_hours',
+                'hours' => 5,
+            ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('extension_fee', 1000);
+
+        $booking->refresh();
+        $this->assertSame(29, (int) $booking->stay_hours);
+    }
+
+    public function test_repeated_same_duration_extension_keeps_original_block_fee(): void
+    {
+        $hotel = Hotel::create(['name' => 'Repeat Extend Hotel', 'location' => 'Loc']);
+        $admin = User::create([
+            'name' => 'Admin',
+            'email' => 'admin-repeat@test.local',
+            'password' => bcrypt('secret'),
+            'role' => UserRole::ADMIN->value,
+            'hotel_id' => (string) $hotel->id,
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '503',
+            'room_type' => 'Single',
+            'billing_mode' => 'hourly',
+            'price_per_block' => 1000,
+            'block_hours' => 24,
+            'price_per_extra_hour' => 200,
+            'status' => RoomStatus::CHECKED_IN->value,
+        ]);
+        $booking = Booking::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'booking_reference' => 'BKTEST504',
+            'guest_name' => 'Guest',
+            'guest_email' => 'g4@test.local',
+            'guest_phone' => '09170000004',
+            'check_in_date' => now()->toDateString(),
+            'check_out_date' => now()->addDay()->toDateString(),
+            'check_out_time' => '14:00',
+            'nights' => 1,
+            'billing_mode' => 'hourly',
+            'stay_hours' => 24,
+            'booked_stay_hours' => 24,
+            'block_hours' => 24,
+            'price_per_block' => 1000,
+            'total_amount' => 1000,
+            'payment_method' => 'Cash',
+            'payment_status' => 'unpaid',
+            'status' => 'booked',
+            'source' => 'admin',
+        ]);
+
+        $first = $this->actingAs($admin)->postJson(
+            '/api/v1/admin/bookings/'.(string) $booking->id.'/extend-stay',
+            ['extension_mode' => 'same_duration'],
+        );
+        $first->assertOk();
+        $first->assertJsonPath('extension_fee', 1000);
+
+        $booking->refresh();
+        $this->assertSame(48, (int) $booking->stay_hours);
+        $this->assertSame(24, (int) $booking->booked_stay_hours);
+
+        $second = $this->actingAs($admin)->postJson(
+            '/api/v1/admin/bookings/'.(string) $booking->id.'/extend-stay',
+            ['extension_mode' => 'same_duration'],
+        );
+        $second->assertOk();
+        $second->assertJsonPath('extension_fee', 1000);
+
+        $booking->refresh();
+        $this->assertSame(72, (int) $booking->stay_hours);
+        $this->assertSame(3000.0, (float) $booking->total_amount);
+    }
+
+    public function test_booked_stay_hours_derived_from_room_charge_for_legacy_bookings(): void
+    {
+        $hotel = Hotel::create(['name' => 'Legacy Hotel', 'location' => 'Loc']);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '504',
+            'room_type' => 'Single',
+            'billing_mode' => 'hourly',
+            'price_per_block' => 1000,
+            'block_hours' => 24,
+        ]);
+        $booking = Booking::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'booking_reference' => 'BKTEST505',
+            'guest_name' => 'Guest',
+            'guest_email' => 'g5@test.local',
+            'guest_phone' => '09170000005',
+            'check_in_date' => now()->toDateString(),
+            'check_out_date' => now()->addDay()->toDateString(),
+            'nights' => 1,
+            'billing_mode' => 'hourly',
+            'stay_hours' => 48,
+            'block_hours' => 24,
+            'price_per_block' => 1000,
+            'total_amount' => 2000,
+            'payment_method' => 'Cash',
+            'payment_status' => 'unpaid',
+            'status' => 'booked',
+            'source' => 'admin',
+        ]);
+        BillingCharge::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'booking_id' => (string) $booking->id,
+            'room_id' => (string) $room->id,
+            'type' => 'room',
+            'label' => 'Room charge',
+            'amount' => 1000,
+            'quantity' => 1,
+            'is_manual' => false,
+            'metadata' => ['stay_hours' => 24, 'block_hours' => 24, 'blocks' => 1],
+        ]);
+        BillingCharge::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'booking_id' => (string) $booking->id,
+            'room_id' => (string) $room->id,
+            'type' => 'extend-stay',
+            'label' => 'Extend',
+            'amount' => 1000,
+            'quantity' => 1,
+            'is_manual' => false,
+            'metadata' => ['hours' => 24, 'extension_mode' => 'same_duration'],
+        ]);
+
+        $this->assertSame(24, RoomBillingSupport::bookedStayHours($booking));
+    }
+
     public function test_room_billing_support_extension_options(): void
     {
         $room = Room::withoutGlobalScopes()->make([

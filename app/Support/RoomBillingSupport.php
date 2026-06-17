@@ -2,7 +2,10 @@
 
 namespace App\Support;
 
+use App\Models\BillingCharge;
+use App\Models\Booking;
 use App\Models\Room;
+use App\Models\RoomCategory;
 use App\Services\FinancialComputationService;
 use App\Services\RoomPricingService;
 use Carbon\CarbonInterface;
@@ -164,6 +167,178 @@ final class RoomBillingSupport
                 'price_per_block' => $adjustedBlock,
             ],
         ];
+    }
+
+    /**
+     * Original booked duration (not grown by extensions).
+     */
+    public static function bookedStayHours(Booking $booking): int
+    {
+        $stored = (int) ($booking->getAttributes()['booked_stay_hours'] ?? 0);
+        if ($stored > 0) {
+            return $stored;
+        }
+
+        $fromCharge = BillingCharge::withoutGlobalScopes()
+            ->where('booking_id', (string) $booking->id)
+            ->where('type', 'room')
+            ->orderBy('created_at')
+            ->first();
+        if ($fromCharge !== null) {
+            $meta = is_array($fromCharge->metadata) ? $fromCharge->metadata : [];
+            $hours = (int) ($meta['stay_hours'] ?? 0);
+            if ($hours > 0) {
+                return $hours;
+            }
+        }
+
+        $extendedHours = (int) BillingCharge::withoutGlobalScopes()
+            ->where('booking_id', (string) $booking->id)
+            ->where('type', 'extend-stay')
+            ->get()
+            ->sum(function ($charge): int {
+                $meta = is_array($charge->metadata) ? $charge->metadata : [];
+
+                return (int) ($meta['hours'] ?? 0);
+            });
+
+        $total = max(0, (int) ($booking->stay_hours ?? 0));
+        $base = $total - $extendedHours;
+        if ($base > 0) {
+            return $base;
+        }
+
+        return max(1, $total);
+    }
+
+    /**
+     * Per-hour rate for manual extensions (not the standard block rate).
+     */
+    public static function extraHourRate(Room $room): float
+    {
+        $rate = self::toFloat($room->getAttributes()['price_per_extra_hour'] ?? 0);
+        if ($rate > 0) {
+            return PriceRounding::nearest50($rate);
+        }
+
+        $categoryId = (string) ($room->getAttributes()['category_id'] ?? '');
+        if ($categoryId !== '') {
+            $category = RoomCategory::withoutGlobalScopes()->find($categoryId);
+            if ($category !== null) {
+                $rate = self::toFloat($category->price_per_extra_hour ?? 0);
+                if ($rate > 0) {
+                    return PriceRounding::nearest50($rate);
+                }
+            }
+        }
+
+        return 0.0;
+    }
+
+    /**
+     * @return array{
+     *   amount: float,
+     *   hours: int,
+     *   extension_mode: string,
+     *   blocks: int|null,
+     *   block_hours: int|null,
+     *   price_per_block: float|null,
+     *   price_per_extra_hour: float|null,
+     *   label: string
+     * }
+     */
+    public static function computeStayExtension(
+        Room $room,
+        Booking $booking,
+        FinancialComputationService $financial,
+        RoomPricingService $pricing,
+        string $mode,
+        ?int $customHours = null,
+    ): array {
+        if (! self::isHourly($room)) {
+            throw ValidationException::withMessages([
+                'extension_mode' => ['This room uses nightly billing.'],
+            ]);
+        }
+
+        $config = self::hourlyConfig($room);
+        $blockHours = $config['block_hours'];
+
+        if ($mode === 'same_duration') {
+            $hours = self::bookedStayHours($booking);
+            $blockHours = max(1, (int) ($booking->block_hours ?? $config['block_hours']));
+            if ($hours % $blockHours !== 0) {
+                throw ValidationException::withMessages([
+                    'extension_mode' => [
+                        "Same-duration extension requires the original stay ({$hours} hr) to align with {$blockHours}-hour blocks. Use custom hours instead.",
+                    ],
+                ]);
+            }
+            $blocks = (int) ($hours / $blockHours);
+            $storedBlockPrice = self::toFloat($booking->price_per_block ?? 0);
+            $pricePerBlock = $storedBlockPrice > 0
+                ? PriceRounding::nearest50($storedBlockPrice)
+                : $pricing->applySurge((string) $room->hotel_id, $config['price_per_block']);
+            $amount = $financial->computeHourlyRoomCharge($pricePerBlock, $blocks);
+
+            return [
+                'amount' => $amount,
+                'hours' => $hours,
+                'extension_mode' => 'same_duration',
+                'blocks' => $blocks,
+                'block_hours' => $blockHours,
+                'price_per_block' => $pricePerBlock,
+                'price_per_extra_hour' => null,
+                'label' => "Extend stay (same {$hours} hr".($hours !== 1 ? 's' : '').", {$blocks}×{$blockHours}h @ block rate)",
+            ];
+        }
+
+        if ($mode === 'custom_hours') {
+            if ($customHours === null || $customHours < 1) {
+                throw ValidationException::withMessages([
+                    'hours' => ['Hours are required for custom hour extension.'],
+                ]);
+            }
+            $hours = min(720, (int) $customHours);
+            $extraRate = self::extraHourRate($room);
+            if ($extraRate <= 0) {
+                throw ValidationException::withMessages([
+                    'hours' => ['Extra hour rate is not set for this room. Configure it on the room category.'],
+                ]);
+            }
+            $amount = PriceRounding::nearest50($hours * $extraRate);
+
+            return [
+                'amount' => $amount,
+                'hours' => $hours,
+                'extension_mode' => 'custom_hours',
+                'blocks' => null,
+                'block_hours' => null,
+                'price_per_block' => null,
+                'price_per_extra_hour' => $extraRate,
+                'label' => "Extend stay ({$hours} hr".($hours !== 1 ? 's' : '').' @ ₱'.number_format($extraRate, 0).'/hr)',
+            ];
+        }
+
+        if ($mode === 'block') {
+            $hours = max(1, (int) ($customHours ?? 0));
+            $legacy = self::computeExtensionCharge($room, $hours, $financial, $pricing);
+
+            return [
+                'amount' => $legacy['amount'],
+                'hours' => $hours,
+                'extension_mode' => 'block',
+                'blocks' => $legacy['blocks'],
+                'block_hours' => $legacy['block_hours'],
+                'price_per_block' => $legacy['price_per_block'],
+                'price_per_extra_hour' => null,
+                'label' => "Extend stay ({$hours} hr".($hours !== 1 ? 's' : '').", {$legacy['blocks']}×{$legacy['block_hours']}h)",
+            ];
+        }
+
+        throw ValidationException::withMessages([
+            'extension_mode' => ['Invalid extension mode. Use same_duration, custom_hours, or block.'],
+        ]);
     }
 
     /**

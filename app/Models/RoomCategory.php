@@ -18,6 +18,7 @@ class RoomCategory extends Model
         'billing_mode',
         'price_per_block',
         'block_hours',
+        'price_per_extra_hour',
         'image_url',
     ];
 
@@ -26,6 +27,7 @@ class RoomCategory extends Model
         return [
             'default_price' => 'decimal:2',
             'price_per_block' => 'decimal:2',
+            'price_per_extra_hour' => 'decimal:2',
             'block_hours' => 'integer',
         ];
     }

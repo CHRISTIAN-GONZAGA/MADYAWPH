@@ -58,6 +58,7 @@ class RoomController extends Controller
             'billing_mode' => ['nullable', 'in:nightly,hourly'],
             'price_per_block' => ['nullable', 'numeric', 'min:0'],
             'block_hours' => ['nullable', 'integer', 'min:1', 'max:48'],
+            'price_per_extra_hour' => ['nullable', 'numeric', 'min:0'],
             'status' => ['nullable', 'in:available,booked,checked_in,checked_out,maintenance,reserved'],
             'amenities' => ['nullable', 'array'],
             'image_file' => RoomImageUploadRules::fileRules(),
@@ -97,6 +98,7 @@ class RoomController extends Controller
             'billing_mode' => ['sometimes', 'in:nightly,hourly'],
             'price_per_block' => ['sometimes', 'numeric', 'min:0'],
             'block_hours' => ['sometimes', 'integer', 'min:1', 'max:48'],
+            'price_per_extra_hour' => ['sometimes', 'numeric', 'min:0'],
             'status' => ['sometimes', 'in:available,booked,checked_in,checked_out,maintenance,reserved'],
             'amenities' => ['nullable', 'array'],
             'image_file' => RoomImageUploadRules::fileRules(),
@@ -110,6 +112,9 @@ class RoomController extends Controller
         }
         if (array_key_exists('price_per_block', $payload)) {
             $payload['price_per_block'] = PriceRounding::nearest50((float) $payload['price_per_block']);
+        }
+        if (array_key_exists('price_per_extra_hour', $payload)) {
+            $payload['price_per_extra_hour'] = PriceRounding::nearest50((float) $payload['price_per_extra_hour']);
         }
         if (array_key_exists('billing_mode', $payload)) {
             $payload['billing_mode'] = strtolower((string) $payload['billing_mode']) === 'hourly'
@@ -289,6 +294,9 @@ class RoomController extends Controller
             $payload['block_hours'] = max(1, (int) ($payload['block_hours'] ?? $category->block_hours ?? 3));
             $payload['price_per_block'] = PriceRounding::nearest50(
                 (float) ($payload['price_per_block'] ?? $category->price_per_block ?? $category->default_price ?? 0)
+            );
+            $payload['price_per_extra_hour'] = PriceRounding::nearest50(
+                (float) ($payload['price_per_extra_hour'] ?? $category->price_per_extra_hour ?? 0)
             );
             $payload['price_per_night'] = PriceRounding::nearest50((float) ($payload['price_per_night'] ?? 0));
         } else {

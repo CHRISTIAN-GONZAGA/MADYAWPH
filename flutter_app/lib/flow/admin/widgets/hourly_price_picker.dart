@@ -120,22 +120,27 @@ class RoomPricingFields extends StatefulWidget {
     required this.pricePerBlock,
     required this.blockHours,
     required this.onChanged,
+    this.pricePerExtraHour = 0,
     this.nightlyController,
     this.blockPriceController,
+    this.extraHourPriceController,
   });
 
   final String billingMode;
   final double pricePerNight;
   final double pricePerBlock;
   final int blockHours;
+  final double pricePerExtraHour;
   final void Function({
     required String billingMode,
     required double pricePerNight,
     required double pricePerBlock,
     required int blockHours,
+    required double pricePerExtraHour,
   }) onChanged;
   final TextEditingController? nightlyController;
   final TextEditingController? blockPriceController;
+  final TextEditingController? extraHourPriceController;
 
   @override
   State<RoomPricingFields> createState() => _RoomPricingFieldsState();
@@ -146,6 +151,7 @@ class _RoomPricingFieldsState extends State<RoomPricingFields> {
   late double _nightly;
   late double _blockPrice;
   late int _blockHours;
+  late double _extraHourPrice;
 
   @override
   void initState() {
@@ -154,6 +160,7 @@ class _RoomPricingFieldsState extends State<RoomPricingFields> {
     _nightly = widget.pricePerNight;
     _blockPrice = widget.pricePerBlock;
     _blockHours = widget.blockHours;
+    _extraHourPrice = widget.pricePerExtraHour;
   }
 
   void _emit() {
@@ -162,6 +169,7 @@ class _RoomPricingFieldsState extends State<RoomPricingFields> {
       pricePerNight: _nightly,
       pricePerBlock: _blockPrice,
       blockHours: _blockHours,
+      pricePerExtraHour: _extraHourPrice,
     );
   }
 
@@ -182,7 +190,7 @@ class _RoomPricingFieldsState extends State<RoomPricingFields> {
           },
         ),
         const SizedBox(height: 14),
-        if (_mode == 'hourly')
+        if (_mode == 'hourly') ...[
           HourlyPricePicker(
             blockHours: _blockHours,
             pricePerBlock: _blockPrice,
@@ -195,7 +203,23 @@ class _RoomPricingFieldsState extends State<RoomPricingFields> {
               setState(() => _blockPrice = p);
               _emit();
             },
-          )
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: widget.extraHourPriceController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Price per extra hour (PHP)',
+              helperText:
+                  'Used when extending by custom hours (not same-duration block rate).',
+              prefixIcon: Icon(Icons.schedule_outlined),
+            ),
+            onChanged: (v) {
+              setState(() => _extraHourPrice = double.tryParse(v.trim()) ?? 0);
+              _emit();
+            },
+          ),
+        ]
         else
           TextField(
             controller: widget.nightlyController,

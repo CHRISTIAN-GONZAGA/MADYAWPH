@@ -19,6 +19,7 @@ use App\Services\GuestPortalQrService;
 use App\Services\GuestRoomAccessCodeService;
 use App\Services\MessageTranslationService;
 use App\Services\RoomPricingService;
+use App\Services\StayExtensionService;
 use App\Support\ChatAttachmentUrl;
 use App\Support\GuestMessageResource;
 use App\Support\GuestPortalStore;
@@ -125,6 +126,11 @@ class GuestPortalApiController extends Controller
             ? RoomBillingSupport::hourlyConfig($room)
             : null;
 
+        $extensionPreview = null;
+        if ($room && $activeBooking && RoomBillingSupport::isHourly($room)) {
+            $extensionPreview = app(StayExtensionService::class)->preview($room, $activeBooking);
+        }
+
         return response()->json([
             'auth' => ['user' => [
                 'name' => 'In-House Guest',
@@ -141,9 +147,15 @@ class GuestPortalApiController extends Controller
                 'billingMode' => $billingMode,
                 'blockHours' => $hourlyConfig['block_hours'] ?? null,
                 'pricePerBlock' => $hourlyConfig['price_per_block'] ?? null,
+                'pricePerExtraHour' => $room ? RoomBillingSupport::extraHourRate($room) : null,
+                'stayHours' => $activeBooking ? (int) ($activeBooking->stay_hours ?? 0) : null,
+                'bookedStayHours' => $activeBooking
+                    ? RoomBillingSupport::bookedStayHours($activeBooking)
+                    : null,
                 'extendHourOptions' => $room
                     ? RoomBillingSupport::extensionHourOptions($room)
                     : [],
+                'extensionOptions' => $extensionPreview,
             ],
             'services' => [],
             'amenityClaims' => AmenityClaim::query()
@@ -302,11 +314,13 @@ class GuestPortalApiController extends Controller
         Request $request,
         FinancialComputationService $financialComputationService,
         RoomPricingService $roomPricingService,
+        StayExtensionService $stayExtensionService,
     ): JsonResponse {
         $portal = $request->attributes->get('guest_portal');
         $validated = $request->validate([
-            'nights' => ['required_without:hours', 'integer', 'min:1', 'max:30'],
-            'hours' => ['required_without:nights', 'integer', 'min:1', 'max:720'],
+            'nights' => ['required_without_all:hours,extension_mode', 'integer', 'min:1', 'max:30'],
+            'hours' => ['nullable', 'integer', 'min:1', 'max:720'],
+            'extension_mode' => ['nullable', 'in:same_duration,custom_hours,block'],
         ]);
 
         $hotelId = (string) $portal['hotel_id'];
@@ -317,67 +331,36 @@ class GuestPortalApiController extends Controller
         $booking = Booking::query()
             ->where('hotel_id', $hotelId)
             ->where('room_id', $roomId)
+            ->whereNotIn('status', [
+                BookingStatus::COMPLETED->value,
+                BookingStatus::CANCELLED->value,
+            ])
             ->latest('created_at')
             ->firstOrFail();
 
         if (RoomBillingSupport::isHourly($room)) {
-            $hours = (int) ($validated['hours'] ?? 0);
-            $extension = RoomBillingSupport::computeExtensionCharge(
+            $mode = (string) ($validated['extension_mode'] ?? '');
+            if ($mode === '') {
+                $mode = 'block';
+            }
+            $hours = isset($validated['hours']) ? (int) $validated['hours'] : null;
+            if ($mode === 'block' && ($hours === null || $hours < 1)) {
+                return response()->json(['message' => 'Hours are required for block extension.'], 422);
+            }
+            if ($mode === 'custom_hours' && ($hours === null || $hours < 1)) {
+                return response()->json(['message' => 'Hours are required for custom hour extension.'], 422);
+            }
+
+            $result = $stayExtensionService->apply(
                 $room,
+                $booking,
+                $mode,
                 $hours,
-                $financialComputationService,
-                $roomPricingService,
-            );
-            $extensionFee = $extension['amount'];
-            $checkoutDate = $booking->check_out_date instanceof CarbonInterface
-                ? $booking->check_out_date->toDateString()
-                : (string) $booking->check_out_date;
-            $checkoutBase = Carbon::parse(
-                $checkoutDate.' '.($booking->check_out_time ?? '11:00')
-            );
-            $newCheckout = $checkoutBase->copy()->addHours($hours);
-            $newTotal = $financialComputationService->computeTotal(
-                RoomBillingSupport::toFloat($booking->total_amount),
-                $extensionFee
-            );
-
-            $booking->update([
-                'check_out_date' => $newCheckout->toDateString(),
-                'check_out_time' => $newCheckout->format('H:i'),
-                'stay_hours' => (int) ($booking->stay_hours ?? 0) + $hours,
-                'total_amount' => $newTotal,
-            ]);
-            $room->update(['current_check_out' => $newCheckout->toDateString()]);
-
-            BillingCharge::query()->create([
-                'hotel_id' => (string) $portal['hotel_id'],
-                'booking_id' => (string) $booking->id,
-                'room_id' => $portal['room_id'],
-                'type' => 'extend-stay',
-                'label' => "Extend stay ({$hours} hr".($hours !== 1 ? 's' : '').')',
-                'amount' => $extensionFee,
-                'quantity' => 1,
-                'is_manual' => false,
-                'metadata' => [
-                    'hours' => $hours,
-                    'blocks' => $extension['blocks'],
-                    'block_hours' => $extension['block_hours'],
-                ],
-            ]);
-            app(ActivityLogService::class)->log(
-                $portal['hotel_id'],
                 null,
                 "Guest requested stay extension for room {$portal['room_number']}",
-                ['booking_id' => (string) $booking->id, 'hours' => $hours]
             );
 
-            return response()->json([
-                'ok' => true,
-                'new_checkout_date' => $newCheckout->toDateString(),
-                'new_checkout_time' => $newCheckout->format('H:i'),
-                'extension_fee' => $extensionFee,
-                'new_total_amount' => $newTotal,
-            ]);
+            return response()->json($result);
         }
 
         $nights = (int) ($validated['nights'] ?? 1);

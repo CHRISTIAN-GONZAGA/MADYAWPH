@@ -131,6 +131,7 @@ final class CustomerStayPricing
 
         if ($charge['billing_mode'] === RoomBillingSupport::MODE_HOURLY) {
             $fields['stay_hours'] = $charge['stay_hours'];
+            $fields['booked_stay_hours'] = $charge['stay_hours'];
             $fields['block_hours'] = $charge['block_hours'];
             $fields['price_per_block'] = $charge['price_per_block'];
         }
