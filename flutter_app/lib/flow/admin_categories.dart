@@ -8,6 +8,7 @@ import '../dio_client.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/app_state_views.dart';
 import '../widgets/chat_attachment.dart';
+import 'admin/widgets/admin_room_editor.dart';
 import 'admin/widgets/hourly_price_picker.dart';
 
 class AdminCategoriesScreen extends StatefulWidget {
@@ -690,7 +691,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
       final rooms = (res.data?['data'] as List<dynamic>? ?? [])
           .whereType<Map<String, dynamic>>()
           .where((r) => (r['category_id'] ?? '').toString() ==
-              (category['id'] ?? '').toString())
+              (category['id'] ?? category['_id'] ?? '').toString())
           .toList();
       if (rooms.isEmpty) {
         if (!mounted) return;
@@ -733,107 +734,17 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
       );
       if (room == null || !mounted) return;
 
-      final roomId = (room['id'] ?? '').toString();
-      final nameCtrl = TextEditingController(text: (room['display_name'] ?? room['name'] ?? '').toString());
-      final roomNoCtrl = TextEditingController(text: (room['room_number'] ?? '').toString());
-      var roomType = (room['room_type'] ?? 'Single').toString();
-      var roomBillingMode = (room['billing_mode'] ?? category['billing_mode'] ?? 'nightly').toString();
-      var roomPricePerNight = (room['price_per_night'] as num?)?.toDouble() ?? 0.0;
-      var roomPricePerBlock = (room['price_per_block'] as num?)?.toDouble() ?? 0.0;
-      var roomBlockHours = (room['block_hours'] as num?)?.toInt() ?? 3;
-      final nightlyCtrl = TextEditingController(text: '$roomPricePerNight');
-      final blockPriceCtrl = TextEditingController(text: '$roomPricePerBlock');
-      XFile? pickedImage;
-
-      final payload = await showDialog<Map<String, dynamic>>(
-        context: context,
-        builder: (context) => StatefulBuilder(
-          builder: (context, setLocal) => AlertDialog(
-            title: const Text('Edit room'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Display name')),
-                  const SizedBox(height: 10),
-                  TextField(controller: roomNoCtrl, decoration: const InputDecoration(labelText: 'Room number')),
-                  const SizedBox(height: 10),
-                  DropdownButtonFormField<String>(
-                    initialValue: roomType,
-                    items: const [
-                      DropdownMenuItem(value: 'Single', child: Text('Single')),
-                      DropdownMenuItem(value: 'Double', child: Text('Double')),
-                      DropdownMenuItem(value: 'Suite', child: Text('Suite')),
-                      DropdownMenuItem(value: 'Deluxe', child: Text('Deluxe')),
-                    ],
-                    onChanged: (v) => setLocal(() => roomType = v ?? roomType),
-                  ),
-                  const SizedBox(height: 10),
-                  RoomPricingFields(
-                    billingMode: roomBillingMode,
-                    pricePerNight: roomPricePerNight,
-                    pricePerBlock: roomPricePerBlock,
-                    blockHours: roomBlockHours,
-                    showExtraHourRate: false,
-                    nightlyController: nightlyCtrl,
-                    blockPriceController: blockPriceCtrl,
-                    onChanged: ({
-                      required String billingMode,
-                      required double pricePerNight,
-                      required double pricePerBlock,
-                      required int blockHours,
-                      required double pricePerExtraHour,
-                    }) {
-                      setLocal(() {
-                        roomBillingMode = billingMode;
-                        roomPricePerNight = pricePerNight;
-                        roomPricePerBlock = pricePerBlock;
-                        roomBlockHours = blockHours;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  _galleryPickerTile(
-                    image: pickedImage,
-                    onPick: () async {
-                      final file = await ChatAttachment.pickRoomImageFromGallery(context);
-                      if (file != null) setLocal(() => pickedImage = file);
-                    },
-                    onClear: () => setLocal(() => pickedImage = null),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-              FilledButton(
-                onPressed: () => Navigator.pop(context, {
-                  'display_name': nameCtrl.text.trim(),
-                  'room_number': roomNoCtrl.text.trim(),
-                  'room_type': roomType,
-                  'billing_mode': roomBillingMode,
-                  'price_per_night': roomPricePerNight,
-                  'price_per_block': roomPricePerBlock,
-                  'block_hours': roomBlockHours,
-                  '__image': pickedImage,
-                }),
-                child: const Text('Save'),
-              ),
-            ],
-          ),
-        ),
+      final saved = await showAdminEditRoomDialog(
+        context,
+        room: room,
+        categoryDefaults: category,
       );
-      nameCtrl.dispose();
-      roomNoCtrl.dispose();
-      nightlyCtrl.dispose();
-      blockPriceCtrl.dispose();
-      if (payload == null) return;
-      final image = payload.remove('__image') as XFile?;
-      await _putMultipart('/rooms/$roomId', payload, image);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Room updated.')),
-      );
+      if (saved) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Room updated.')),
+        );
+      }
     } on DioException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

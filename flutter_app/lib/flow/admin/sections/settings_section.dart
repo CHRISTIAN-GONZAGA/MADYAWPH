@@ -112,7 +112,7 @@ class SettingsSection extends StatelessWidget {
             _SettingsTile(
               icon: Icons.hotel_outlined,
               title: 'Rooms & status',
-              subtitle: 'Add, edit, passwords, fees, checkout',
+              subtitle: 'Edit room photo, rates, status, and setup',
               enabled: !creditsLocked,
               onTap: () async {
                 await Navigator.of(context).push<void>(

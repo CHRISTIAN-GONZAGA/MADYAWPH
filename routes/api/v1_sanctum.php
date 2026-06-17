@@ -1590,10 +1590,18 @@ Route::get('/admin/rooms', function (Request $request) {
         ->where('hotel_id', $hotelId)
         ->orderBy('room_number')
         ->get()
-        ->map(fn ($room) => array_merge($room->toArray(), [
-            'id' => (string) $room->id,
-            'room_access_password' => (string) ($room->current_access_code ?? ''),
-        ]));
+        ->map(function ($room) {
+            $payload = array_merge($room->toArray(), [
+                'id' => (string) $room->id,
+                'room_access_password' => (string) ($room->current_access_code ?? ''),
+            ]);
+            if (! empty($payload['image_url'])) {
+                $payload['image_url'] = ChatAttachmentUrl::fromStoredUrl((string) $payload['image_url'])
+                    ?? (string) $payload['image_url'];
+            }
+
+            return $payload;
+        });
 
     return response()->json(['data' => $rooms]);
 })->middleware('role:admin');
