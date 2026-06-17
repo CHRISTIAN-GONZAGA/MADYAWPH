@@ -6,8 +6,7 @@ import '../admin_room_detail_screen.dart';
 import '../admin_room_summary_detail_screen.dart';
 import 'admin_hotel_totals_room_panel.dart';
 
-/// Room list + details: Hotel totals uses in-dashboard slide-up panel; other
-/// entry points use modal bottom sheets.
+/// Room list + details for admin dashboard.
 abstract final class AdminRoomDetailNavigation {
   static int _openSheetCount = 0;
   static bool _panelOpen = false;
@@ -33,9 +32,38 @@ abstract final class AdminRoomDetailNavigation {
     return null;
   }
 
+  /// Room detail as a full-screen route (avoids blank Android bottom sheets).
+  static Future<void> showHotelTotalsRoomDetailSheet({
+    required BuildContext context,
+    required String roomId,
+    Map<String, dynamic>? initialRoomSnapshot,
+  }) async {
+    final id = AdminDashboardModels.normalizeRoomIdString(roomId);
+    if (id.isEmpty) return;
+
+    final navContext = _resolveContext(context);
+    if (navContext == null) return;
+
+    await _trackSheet(
+      Navigator.of(navContext, rootNavigator: true).push<void>(
+        MaterialPageRoute<void>(
+          fullscreenDialog: true,
+          builder: (ctx) => AdminRoomDetailScreen(
+            key: ValueKey('hotel-totals-detail-$id'),
+            roomId: id,
+            embedded: true,
+            initialRoomSnapshot: initialRoomSnapshot,
+            onClose: () => Navigator.of(ctx).pop(),
+          ),
+        ),
+      ),
+    );
+  }
+
   static Future<void> showRoomDetailSheet({
     required String roomId,
     BuildContext? context,
+    Map<String, dynamic>? initialRoomSnapshot,
   }) async {
     final id = AdminDashboardModels.normalizeRoomIdString(roomId);
     final ctx = _resolveContext(context);
@@ -53,41 +81,10 @@ abstract final class AdminRoomDetailNavigation {
     }
     if (ctx == null) return;
 
-    final panel = HotelTotalsRoomPanelScope.maybeOf(ctx);
-    if (panel != null) {
-      panel.openRoomDetail(id);
-      return;
-    }
-
-    await _trackSheet(
-      showModalBottomSheet<void>(
-        context: ctx,
-        useRootNavigator: true,
-        isScrollControlled: true,
-        showDragHandle: true,
-        backgroundColor: const Color(0xFFF5F3EF),
-        barrierColor: Colors.black54,
-        builder: (sheetContext) {
-          final height = MediaQuery.sizeOf(sheetContext).height;
-          return SizedBox(
-            height: height * 0.94,
-            child: Scaffold(
-              backgroundColor: const Color(0xFFF5F3EF),
-              appBar: AppBar(
-                title: const Text('Room details'),
-                leading: BackButton(
-                  onPressed: () => Navigator.of(sheetContext).pop(),
-                ),
-              ),
-              body: AdminRoomDetailScreen(
-                roomId: id,
-                panelBodyOnly: true,
-                onClose: () => Navigator.of(sheetContext).pop(),
-              ),
-            ),
-          );
-        },
-      ),
+    await showHotelTotalsRoomDetailSheet(
+      context: ctx,
+      roomId: id,
+      initialRoomSnapshot: initialRoomSnapshot,
     );
   }
 
@@ -105,7 +102,7 @@ abstract final class AdminRoomDetailNavigation {
     await _trackSheet(
       showModalBottomSheet<void>(
         context: ctx,
-        useRootNavigator: true,
+        useRootNavigator: false,
         isScrollControlled: true,
         showDragHandle: true,
         backgroundColor: Theme.of(ctx).colorScheme.surface,

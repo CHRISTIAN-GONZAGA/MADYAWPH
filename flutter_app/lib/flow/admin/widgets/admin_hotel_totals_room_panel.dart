@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../admin_dashboard_models.dart';
-import '../admin_room_detail_screen.dart';
 import 'admin_room_detail_navigation.dart';
 import 'admin_summary_room_tile.dart';
 
@@ -20,14 +19,13 @@ class _RoomListPayload {
   final String? subtitle;
 }
 
-/// Slide-up room list + details for Summary → Hotel totals (no Navigator/modals).
+/// Slide-up room list for Summary → Hotel totals; room detail opens in a sheet.
 class HotelTotalsRoomPanelScope extends InheritedWidget {
   const HotelTotalsRoomPanelScope({
     super.key,
     required this.openRoomList,
     required this.openRoomDetail,
     required this.closePanel,
-    required this.backToRoomList,
     required this.isOpen,
     required super.child,
   });
@@ -42,8 +40,6 @@ class HotelTotalsRoomPanelScope extends InheritedWidget {
   final void Function(String roomId) openRoomDetail;
 
   final VoidCallback closePanel;
-
-  final VoidCallback backToRoomList;
 
   final bool isOpen;
 
@@ -70,7 +66,6 @@ class HotelTotalsRoomPanelHost extends StatefulWidget {
   final Widget child;
   final Future<void> Function()? onRefresh;
   final ValueChanged<bool Function()>? onBindBackHandler;
-  /// Latest dashboard room rows (used so check-in refreshes detail snapshots).
   final List<Map<String, dynamic>> Function()? resolveLiveRooms;
 
   @override
@@ -84,11 +79,7 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
   late final Animation<double> _slideOffset;
 
   bool _visible = false;
-  bool _showDetail = false;
   _RoomListPayload? _list;
-  String? _detailRoomId;
-  _RoomDetailPanelBody? _detailBody;
-  String? _detailBodyRoomId;
 
   @override
   void initState() {
@@ -134,8 +125,6 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     HapticFeedback.selectionClick();
     setState(() {
       _visible = true;
-      _showDetail = false;
-      _detailRoomId = null;
       _list = _RoomListPayload(
         title: title,
         rooms: rooms,
@@ -147,23 +136,15 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     _slideCtrl.forward(from: 0);
   }
 
-  void _openRoomDetail(String roomId) {
+  Future<void> _openRoomDetail(String roomId) async {
     final id = AdminDashboardModels.normalizeRoomIdString(roomId);
-    if (id.isEmpty) return;
+    if (id.isEmpty || !mounted) return;
     HapticFeedback.selectionClick();
-    setState(() {
-      _showDetail = true;
-      _detailRoomId = id;
-      if (_detailBodyRoomId != id) {
-        _detailBodyRoomId = id;
-        _detailBody = _RoomDetailPanelBody(
-          roomId: id,
-          initialSnapshot: _roomSnapshotForDetail(id),
-          onClose: _backToRoomList,
-        );
-      }
-    });
-    _syncOpenFlag();
+    await AdminRoomDetailNavigation.showHotelTotalsRoomDetailSheet(
+      context: context,
+      roomId: id,
+      initialRoomSnapshot: _roomSnapshotForDetail(id),
+    );
   }
 
   Future<void> _closePanel() async {
@@ -172,10 +153,6 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     if (!mounted) return;
     setState(() {
       _visible = false;
-      _showDetail = false;
-      _detailRoomId = null;
-      _detailBody = null;
-      _detailBodyRoomId = null;
       _list = null;
     });
     _syncOpenFlag();
@@ -185,25 +162,8 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     }
   }
 
-  void _backToRoomList() {
-    if (!_showDetail) {
-      _closePanel();
-      return;
-    }
-    setState(() {
-      _showDetail = false;
-      _detailRoomId = null;
-      _detailBody = null;
-      _detailBodyRoomId = null;
-    });
-  }
-
   bool _handleBack() {
     if (!_visible) return false;
-    if (_showDetail) {
-      _backToRoomList();
-      return true;
-    }
     _closePanel();
     return true;
   }
@@ -241,7 +201,6 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
         elevation: 12,
         shadowColor: Colors.black45,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-        clipBehavior: Clip.antiAlias,
         child: SizedBox(
           height: panelHeight,
           width: double.infinity,
@@ -253,13 +212,9 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
                 _HotelTotalsPanelHeader(
                   title: title,
                   backgroundColor: bg,
-                  onBack: _showDetail ? _backToRoomList : _closePanel,
+                  onBack: _closePanel,
                 ),
-                Expanded(
-                  child: _showDetail && _detailRoomId != null
-                      ? _buildDetailBody(context)
-                      : _buildListBody(context),
-                ),
+                Expanded(child: _buildListBody(context)),
               ],
             ),
           ),
@@ -284,36 +239,18 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     );
   }
 
-  Widget _buildDetailBody(BuildContext context) {
-    final roomId = _detailRoomId!;
-    if (_detailBody == null || _detailBodyRoomId != roomId) {
-      _detailBodyRoomId = roomId;
-      _detailBody = _RoomDetailPanelBody(
-        roomId: roomId,
-        initialSnapshot: _roomSnapshotForDetail(roomId),
-        onClose: _backToRoomList,
-      );
-    }
-    return _detailBody!;
-  }
-
   @override
   Widget build(BuildContext context) {
     final panelHeight = MediaQuery.sizeOf(context).height * 0.92;
-    final bg = _showDetail
-        ? const Color(0xFFF5F3EF)
-        : Theme.of(context).colorScheme.surface;
+    final bg = Theme.of(context).colorScheme.surface;
     final list = _list;
-    final title = _showDetail
-        ? 'Room details'
-        : (list?.title ?? 'Rooms');
+    final title = list?.title ?? 'Rooms';
 
     return HotelTotalsRoomPanelScope(
       isOpen: _visible,
       openRoomList: _openRoomList,
       openRoomDetail: _openRoomDetail,
       closePanel: _closePanel,
-      backToRoomList: _backToRoomList,
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -343,40 +280,6 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
           ],
         ],
       ),
-    );
-  }
-}
-
-/// Keeps room detail mounted while the hotel-totals panel is open.
-class _RoomDetailPanelBody extends StatefulWidget {
-  const _RoomDetailPanelBody({
-    required this.roomId,
-    required this.onClose,
-    this.initialSnapshot,
-  });
-
-  final String roomId;
-  final Map<String, dynamic>? initialSnapshot;
-  final VoidCallback onClose;
-
-  @override
-  State<_RoomDetailPanelBody> createState() => _RoomDetailPanelBodyState();
-}
-
-class _RoomDetailPanelBodyState extends State<_RoomDetailPanelBody>
-    with AutomaticKeepAliveClientMixin {
-  @override
-  bool get wantKeepAlive => true;
-
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
-    return AdminRoomDetailScreen(
-      key: ValueKey('detail-${widget.roomId}'),
-      roomId: widget.roomId,
-      initialRoomSnapshot: widget.initialSnapshot,
-      panelBodyOnly: true,
-      onClose: widget.onClose,
     );
   }
 }
@@ -493,7 +396,6 @@ class _HotelTotalsRoomGrid extends StatelessWidget {
   }
 }
 
-/// Opens room list/detail inside [HotelTotalsRoomPanelHost].
 void openHotelTotalsRoomList(
   BuildContext context, {
   required String title,
@@ -544,7 +446,11 @@ void openHotelTotalsRoomDetail(
 
   final panel = HotelTotalsRoomPanelScope.maybeOf(context);
   if (panel == null) {
-    AdminRoomDetailNavigation.showRoomDetailSheet(roomId: id, context: context);
+    AdminRoomDetailNavigation.showRoomDetailSheet(
+      roomId: id,
+      context: context,
+      initialRoomSnapshot: room,
+    );
     return;
   }
 

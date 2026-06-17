@@ -150,8 +150,14 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
           final priorRoom = _asMap(_data?['room']);
           _data = {
             ...?_data,
-            ...payload,
             'room': _mergeRoomMaps(priorRoom, room),
+            'active_booking': payload['active_booking'],
+            'booking_charges': payload['booking_charges'],
+            'booking_charges_total': payload['booking_charges_total'],
+            'refund_total': payload['refund_total'],
+            'can_edit_guest_stay': payload['can_edit_guest_stay'],
+            'management_blocked_reason': payload['management_blocked_reason'],
+            'pending_reservation': payload['pending_reservation'],
           };
           if (_canEditGuestStay) {
             _data!.remove('management_blocked_reason');
