@@ -6,6 +6,7 @@ use App\Enums\RoomStatus;
 use App\Enums\UserRole;
 use App\Models\BillingCharge;
 use App\Models\Booking;
+use App\Models\ExternalReservation;
 use App\Models\Hotel;
 use App\Models\Room;
 use App\Models\User;
@@ -13,10 +14,13 @@ use App\Services\BookingService;
 use App\Services\FinancialComputationService;
 use App\Support\RoomBillingSupport;
 use Carbon\Carbon;
+use Tests\Concerns\ApprovesGuestReservations;
 use Tests\TestCase;
 
 class HourlyRoomBillingTest extends TestCase
 {
+    use ApprovesGuestReservations;
+
     public function test_hourly_charge_uses_block_rounding(): void
     {
         $financial = app(FinancialComputationService::class);
@@ -590,7 +594,7 @@ class HourlyRoomBillingTest extends TestCase
         $checkIn = now()->toDateString();
         $checkOut = now()->addDay()->toDateString();
 
-        $response = $this->postJson('/api/v1/customer/bookings', [
+        $response = $this->postJson('/api/v1/customer/reservations', [
             'hotel_id' => (string) $hotel->id,
             'room_id' => (string) $room->id,
             'guest_name' => 'Hourly Guest',
@@ -598,9 +602,13 @@ class HourlyRoomBillingTest extends TestCase
             'guest_phone' => '09171234567',
             'check_in' => $checkIn,
             'check_out' => $checkOut,
+            'discount_type' => 'none',
         ]);
 
         $response->assertOk();
+        $reservation = ExternalReservation::withoutGlobalScopes()->latest('created_at')->first();
+        $this->assertNotNull($reservation);
+        $this->approveGuestReservation($reservation, $hotel);
 
         $booking = Booking::withoutGlobalScopes()->latest('created_at')->first();
         $this->assertNotNull($booking);

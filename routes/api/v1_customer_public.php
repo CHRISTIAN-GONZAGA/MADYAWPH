@@ -8,4 +8,4 @@ Route::get('/customer/categories/{categoryId}/rooms', [CustomerPortalApiControll
 Route::get('/customer/payment-qr', [CustomerPortalApiController::class, 'paymentQr'])->middleware('throttle:60,1');
 Route::get('/customer/reservations/{reference}', [CustomerPortalApiController::class, 'showReservation'])->middleware('throttle:60,1');
 Route::post('/customer/reservations', [CustomerPortalApiController::class, 'storeReservation'])->middleware(['throttle:30,1']);
-Route::post('/customer/bookings', [CustomerPortalApiController::class, 'storeBooking'])->middleware(['throttle:30,1', 'prevent.double.booking']);
+Route::post('/customer/bookings', [CustomerPortalApiController::class, 'storeBooking'])->middleware(['throttle:30,1']);

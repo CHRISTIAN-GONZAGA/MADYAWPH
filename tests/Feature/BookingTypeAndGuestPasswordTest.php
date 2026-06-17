@@ -4,15 +4,19 @@ namespace Tests\Feature;
 
 use App\Enums\RoomStatus;
 use App\Models\Booking;
+use App\Models\ExternalReservation;
 use App\Models\Hotel;
 use App\Models\Room;
 use App\Models\RoomCategory;
 use App\Models\User;
 use Carbon\Carbon;
+use Tests\Concerns\ApprovesGuestReservations;
 use Tests\TestCase;
 
 class BookingTypeAndGuestPasswordTest extends TestCase
 {
+    use ApprovesGuestReservations;
+
     public function test_customer_booking_is_online_and_password_is_four_chars(): void
     {
         $hotel = Hotel::create(['name' => 'Booking Hotel', 'location' => 'Loc']);
@@ -32,7 +36,7 @@ class BookingTypeAndGuestPasswordTest extends TestCase
             'status' => RoomStatus::AVAILABLE->value,
         ]);
 
-        $this->postJson('/api/v1/customer/bookings', [
+        $this->postJson('/api/v1/customer/reservations', [
             'hotel_id' => (string) $hotel->id,
             'room_id' => (string) $room->id,
             'guest_name' => 'Jane Guest',
@@ -40,7 +44,12 @@ class BookingTypeAndGuestPasswordTest extends TestCase
             'guest_phone' => '09171234567',
             'check_in' => Carbon::today()->toDateString(),
             'check_out' => Carbon::today()->addDay()->toDateString(),
-        ])->assertOk()->assertJsonPath('ok', true);
+            'discount_type' => 'none',
+        ])->assertOk()->assertJsonPath('reservation.status', 'pending_approval');
+
+        $reservation = ExternalReservation::withoutGlobalScopes()->first();
+        $this->assertNotNull($reservation);
+        $this->approveGuestReservation($reservation, $hotel);
 
         $room->refresh();
         $this->assertMatchesRegularExpression('/^[A-Z0-9]{4}$/', (string) $room->current_access_code);

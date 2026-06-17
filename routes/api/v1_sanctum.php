@@ -1218,7 +1218,21 @@ Route::post('/admin/reservations/{id}/approve', function (Request $request, stri
     );
 
     $res->update(['status' => 'reserved']);
-    $room->update(['status' => RoomStatus::RESERVED->value]);
+
+    $physicalStatus = strtolower($room->status?->value ?? (string) $room->status);
+    $hasInHouseGuest = in_array($physicalStatus, [
+        RoomStatus::CHECKED_IN->value,
+        RoomStatus::BOOKED->value,
+    ], true) && trim((string) ($room->current_guest_name ?? '')) !== '';
+
+    if (! $hasInHouseGuest) {
+        $room->update([
+            'status' => RoomStatus::RESERVED->value,
+            'current_guest_name' => $res->guest_name,
+            'current_check_in' => Carbon::parse($res->check_in_date)->toDateString(),
+            'current_check_out' => Carbon::parse($res->check_out_date)->toDateString(),
+        ]);
+    }
     app(ActivityLogService::class)->log(
         $hotelId,
         $request->user(),
@@ -1228,7 +1242,7 @@ Route::post('/admin/reservations/{id}/approve', function (Request $request, stri
 
     $booking = null;
     $checkInDay = Carbon::parse($res->check_in_date)->startOfDay();
-    if ($checkInDay->lte(now()->startOfDay()->addDay())) {
+    if ($checkInDay->lte(now()->startOfDay())) {
         $booking = app(ReservationActivationService::class)->activate($res->fresh());
     }
 
@@ -1250,6 +1264,37 @@ Route::post('/admin/reservations/{id}/reject', function (Request $request, strin
         return response()->json(['message' => 'Only pending reservation requests can be rejected.'], 422);
     }
     $res->update(['status' => 'rejected']);
+
+    $room = Room::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->where(function ($query) use ($res) {
+            $assigned = (string) ($res->assigned_room_id ?? '');
+            $query->where('id', $assigned)->orWhere('_id', $assigned);
+        })
+        ->first();
+    if ($room) {
+        $roomStatus = $room->status?->value ?? (string) $room->status;
+        if ($roomStatus === RoomStatus::RESERVED->value) {
+            $otherHolds = ExternalReservation::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
+                ->where(function ($query) use ($room) {
+                    $rid = (string) $room->id;
+                    $query->where('assigned_room_id', $rid)->orWhere('assigned_room_id', (string) ($room->_id ?? $rid));
+                })
+                ->whereIn('status', ['pending_approval', 'approved', 'reserved', 'booked'])
+                ->where('id', '!=', (string) $res->id)
+                ->exists();
+            if (! $otherHolds) {
+                $room->update([
+                    'status' => RoomStatus::AVAILABLE->value,
+                    'current_guest_name' => null,
+                    'current_check_in' => null,
+                    'current_check_out' => null,
+                ]);
+            }
+        }
+    }
+
     app(ActivityLogService::class)->log(
         $hotelId,
         $request->user(),

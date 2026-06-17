@@ -65,6 +65,10 @@ class HotelAvailabilityService
             return false;
         }
 
+        if ($this->activeRoomOccupancyOverlaps($room, $checkIn, $checkOut)) {
+            return false;
+        }
+
         $in = Carbon::parse($checkIn)->startOfDay()->toDateString();
         $out = Carbon::parse($checkOut)->startOfDay()->toDateString();
 
@@ -102,14 +106,84 @@ class HotelAvailabilityService
                 BookingStatus::CANCELLED->value,
                 BookingStatus::COMPLETED->value,
             ])
-            ->where('check_in_date', '<', $out)
-            ->where('check_out_date', '>', $in)
+            ->where('check_in_date', '<=', $out)
+            ->where('check_out_date', '>=', $in)
             ->get();
 
         foreach ($bookings as $booking) {
-            if ($this->bookingMatchesRoomId($booking, $roomId)) {
-                return true;
+            if (! $this->bookingMatchesRoomId($booking, $roomId)) {
+                continue;
             }
+            if ($this->bookingAlreadyEnded($booking, $in)) {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Occupied rooms (checked in / same-day booked) block overlapping guest date searches.
+     */
+    private function activeRoomOccupancyOverlaps(
+        Room $room,
+        CarbonInterface $checkIn,
+        CarbonInterface $checkOut,
+    ): bool {
+        $status = strtolower($room->status?->value ?? (string) ($room->status ?? ''));
+        if (! in_array($status, [RoomStatus::CHECKED_IN->value, RoomStatus::BOOKED->value], true)) {
+            return false;
+        }
+
+        if (trim((string) ($room->current_guest_name ?? '')) === '') {
+            return false;
+        }
+
+        $stayInRaw = $room->current_check_in ?? null;
+        $stayOutRaw = $room->current_check_out ?? null;
+        if (! filled($stayInRaw) || ! filled($stayOutRaw)) {
+            return $status === RoomStatus::CHECKED_IN->value;
+        }
+
+        $in = Carbon::parse($checkIn)->startOfDay();
+        $out = Carbon::parse($checkOut)->startOfDay();
+        $stayIn = Carbon::parse($stayInRaw)->startOfDay();
+        $stayOut = Carbon::parse($stayOutRaw)->startOfDay();
+
+        return self::stayDatesOverlap($stayIn, $stayOut, $in, $out);
+    }
+
+    /**
+     * Inclusive date-range overlap (supports same-day hourly stays).
+     */
+    public static function stayDatesOverlap(
+        CarbonInterface $stayStart,
+        CarbonInterface $stayEnd,
+        CarbonInterface $requestStart,
+        CarbonInterface $requestEnd,
+    ): bool {
+        $aIn = Carbon::parse($stayStart)->startOfDay();
+        $aOut = Carbon::parse($stayEnd)->startOfDay();
+        $bIn = Carbon::parse($requestStart)->startOfDay();
+        $bOut = Carbon::parse($requestEnd)->startOfDay();
+
+        return $aIn->lte($bOut) && $aOut->gte($bIn);
+    }
+
+    /**
+     * Past stays that were never marked completed must not block new bookings.
+     */
+    private function bookingAlreadyEnded(Booking $booking, CarbonInterface $requestedCheckIn): bool
+    {
+        if (filled($booking->checked_out_at)) {
+            return true;
+        }
+
+        $stayEnd = Carbon::parse($booking->check_out_date)->startOfDay();
+        if ($stayEnd->lt($requestedCheckIn)) {
+            return true;
         }
 
         return false;
@@ -152,8 +226,8 @@ class HotelAvailabilityService
         $reservations = ExternalReservation::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
             ->whereIn('status', ['pending_approval', 'approved', 'reserved', 'booked'])
-            ->where('check_in_date', '<', $checkOut)
-            ->where('check_out_date', '>', $checkIn)
+            ->where('check_in_date', '<=', $checkOut)
+            ->where('check_out_date', '>=', $checkIn)
             ->get();
 
         foreach ($reservations as $reservation) {

@@ -38,16 +38,11 @@ import '../utils/money_format.dart';
 import 'portal_sign_out.dart';
 // --- Admin ---
 
-/// Future check-in dates use the reservation request API; same-day uses /customer/bookings.
+/// Public customer bookings always use the reservation request API (admin approval required).
 bool customerStayUsesReservationApi({
   required String checkInIso,
 }) {
-  final parsed = DateTime.tryParse(checkInIso.split('T').first);
-  if (parsed == null) return false;
-  final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
-  final checkIn = DateTime(parsed.year, parsed.month, parsed.day);
-  return checkIn.isAfter(today);
+  return true;
 }
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -3234,15 +3229,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     }
   }
 
-  bool _searchUsesReservationApi() {
-    final ctx = widget.searchContext;
-    if (ctx == null) return false;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final checkIn =
-        DateTime(ctx.checkIn.year, ctx.checkIn.month, ctx.checkIn.day);
-    return checkIn.isAfter(today);
-  }
+  bool _searchUsesReservationApi() => true;
 
   Future<void> _bookRoom(
     Map<String, dynamic> room, {
@@ -3607,11 +3594,13 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                           ? 'Duration: $durationLabel\n'
                               'Estimated: ₱${estTotal.toStringAsFixed(2)}'
                               '${discountPct > 0 ? ' → ₱${estAfterDiscount.toStringAsFixed(2)} after discount' : ''}\n'
-                              'Your request will be reviewed by the hotel.'
+                              'Your request will be sent to the hotel for approval. '
+                              'Once approved, the room is reserved for your dates and '
+                              'you can check in.'
                           : 'Duration: $durationLabel\n'
                               'Estimated: ₱${estTotal.toStringAsFixed(2)}'
                               '${discountPct > 0 ? ' → ₱${estAfterDiscount.toStringAsFixed(2)} after discount' : ''}\n'
-                              'Future stays are sent to the hotel for approval. Same-day bookings are confirmed when submitted.',
+                              'All guest bookings require hotel approval before confirmation.',
                     ),
                   ),
                 ],
@@ -3733,13 +3722,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
 
     setState(() => _booking = true);
     try {
-      final checkInIso = (payload['check_in'] ?? '').toString();
-      final useReservationApi = customerStayUsesReservationApi(
-        checkInIso: checkInIso,
-      );
-      final path = useReservationApi
-          ? '/customer/reservations'
-          : '/customer/bookings';
+      const path = '/customer/reservations';
       final discount = (payload['discount_type'] ?? 'none').toString();
       final Map<String, dynamic> body = {
         'hotel_id': widget.hotelId,
@@ -3817,26 +3800,10 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
         return;
       }
 
-      if (fromSearch && ref.isNotEmpty) {
-        if (!mounted) return;
-        await Navigator.of(context).pushReplacement(
-          MaterialPageRoute<void>(
-            builder: (_) => CustomerBookingStatusScreen(
-              hotelId: widget.hotelId,
-              hotelName: widget.hotelName,
-              reference: ref,
-              guestEmail: guestEmail,
-              initialReservation: null,
-            ),
-          ),
-        );
-        return;
-      }
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            useReservationApi
+            reservation != null
                 ? 'Request sent (ref ${ref.isEmpty ? 'pending' : ref}). Awaiting hotel approval.'
                 : 'Booking submitted: ${ref.isEmpty ? 'Reference generated' : ref}',
           ),
@@ -4056,9 +4023,11 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                               Chip(
                                 visualDensity: VisualDensity.compact,
                                 padding: EdgeInsets.zero,
-                                label: const Text(
-                                  'Available',
-                                  style: TextStyle(fontSize: 12),
+                                label: Text(
+                                  widget.searchContext != null
+                                      ? 'Available for your dates'
+                                      : 'Available',
+                                  style: const TextStyle(fontSize: 12),
                                 ),
                                 backgroundColor: scheme.primaryContainer,
                               ),

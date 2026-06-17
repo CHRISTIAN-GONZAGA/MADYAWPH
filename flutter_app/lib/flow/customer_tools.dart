@@ -63,7 +63,7 @@ class _TrackBookingScreenState extends State<TrackBookingScreen> {
   }
 
   Future<void> _lookup() async {
-    final ref = _ref.text.trim();
+    final ref = _ref.text.trim().toUpperCase();
     if (ref.isEmpty) return;
     setState(() {
       _busy = true;
@@ -71,17 +71,30 @@ class _TrackBookingScreenState extends State<TrackBookingScreen> {
       _booking = null;
     });
     try {
-      final res = await publicDio().get<Map<String, dynamic>>(
-        '/bookings/$ref',
-        queryParameters: {
-          'hotel_id': widget.hotelId,
-          if (_email.text.trim().isNotEmpty) 'guest_email': _email.text.trim(),
-          if (_phone.text.trim().isNotEmpty) 'guest_phone': _phone.text.trim(),
-        },
-      );
+      Map<String, dynamic>? found;
+      final email = _email.text.trim();
+
+      if (ref.startsWith('RES') && email.isNotEmpty) {
+        found = await _lookupReservation(ref, email);
+      }
+
+      if (found == null) {
+        try {
+          found = await _lookupBooking(ref);
+        } on DioException catch (_) {
+          if (email.isNotEmpty) {
+            found = await _lookupReservation(ref, email);
+          }
+        }
+      }
+
+      if (!mounted) return;
       setState(() {
-        _booking = res.data;
+        _booking = found;
         _busy = false;
+        if (found == null) {
+          _error = 'No booking or reservation found for that reference.';
+        }
       });
     } on DioException catch (e) {
       setState(() {
@@ -94,6 +107,42 @@ class _TrackBookingScreenState extends State<TrackBookingScreen> {
         _busy = false;
       });
     }
+  }
+
+  Future<Map<String, dynamic>?> _lookupReservation(String ref, String email) async {
+    final res = await publicDio().get<Map<String, dynamic>>(
+      '/customer/reservations/$ref',
+      queryParameters: {
+        'hotel_id': widget.hotelId,
+        'guest_email': email,
+      },
+    );
+    final reservation = res.data?['reservation'] as Map<String, dynamic>?;
+    if (reservation == null) return null;
+    return {
+      'booking_reference': reservation['external_reference'],
+      'guest_name': reservation['guest_name'],
+      'guest_email': reservation['guest_email'],
+      'guest_phone': reservation['guest_phone'],
+      'check_in_date': reservation['check_in_date'],
+      'check_out_date': reservation['check_out_date'],
+      'status': reservation['status'],
+      'room_number': reservation['room_number'],
+      'total_amount': reservation['estimated_total'],
+      'payment_reference': reservation['payment_reference'],
+    };
+  }
+
+  Future<Map<String, dynamic>?> _lookupBooking(String ref) async {
+    final res = await publicDio().get<Map<String, dynamic>>(
+      '/bookings/$ref',
+      queryParameters: {
+        'hotel_id': widget.hotelId,
+        if (_email.text.trim().isNotEmpty) 'guest_email': _email.text.trim(),
+        if (_phone.text.trim().isNotEmpty) 'guest_phone': _phone.text.trim(),
+      },
+    );
+    return res.data;
   }
 
   Future<void> _downloadPdf() async {

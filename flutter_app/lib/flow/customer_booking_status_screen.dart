@@ -8,6 +8,27 @@ import '../locale_controller.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/chat_attachment.dart';
 
+/// Maps instant `/customer/bookings` response + room row for the status ticket UI.
+Map<String, dynamic> instantBookingStatusPayload({
+  required Map<String, dynamic> booking,
+  required Map<String, dynamic> room,
+}) {
+  return {
+    'status': 'confirmed',
+    'guest_name': booking['guest_name'],
+    'guest_email': booking['guest_email'],
+    'guest_phone': booking['guest_phone'],
+    'check_in_date': booking['check_in_date'],
+    'check_out_date': booking['check_out_date'],
+    'room_number': room['room_number'] ?? booking['room_number'],
+    'room_display_name': room['display_name'] ?? room['room_display_name'],
+    'booking_reference': booking['booking_reference'],
+    'external_reference': booking['booking_reference'],
+    'payment_method': booking['payment_method'] ?? 'Cash',
+    'estimated_total': booking['total_amount'],
+  };
+}
+
 /// Polls reservation status until approved/rejected; shows room ticket when confirmed.
 class CustomerBookingStatusScreen extends StatefulWidget {
   const CustomerBookingStatusScreen({
@@ -17,14 +38,17 @@ class CustomerBookingStatusScreen extends StatefulWidget {
     required this.reference,
     required this.guestEmail,
     this.initialReservation,
+    this.instantBooking = false,
   });
 
   final String hotelId;
   final String hotelName;
   final String reference;
   final String guestEmail;
-  /// Snapshot from POST /customer/reservations — used when poll API is unavailable.
+  /// Snapshot from POST /customer/reservations or instant /customer/bookings.
   final Map<String, dynamic>? initialReservation;
+  /// Same-day instant booking — confirmed immediately, no reservation poll.
+  final bool instantBooking;
 
   @override
   State<CustomerBookingStatusScreen> createState() =>
@@ -45,8 +69,10 @@ class _CustomerBookingStatusScreenState
     if (initial != null && initial.isNotEmpty) {
       _reservation = Map<String, dynamic>.from(initial);
     }
-    _load();
-    _poll = Timer.periodic(const Duration(seconds: 8), (_) => _load(silent: true));
+    if (!widget.instantBooking) {
+      _load();
+      _poll = Timer.periodic(const Duration(seconds: 8), (_) => _load(silent: true));
+    }
   }
 
   @override
@@ -56,6 +82,7 @@ class _CustomerBookingStatusScreenState
   }
 
   Future<void> _load({bool silent = false}) async {
+    if (widget.instantBooking) return;
     try {
       final res = await publicDio().get<Map<String, dynamic>>(
         '/customer/reservations/${widget.reference}',
@@ -88,8 +115,27 @@ class _CustomerBookingStatusScreenState
   }
 
   bool get _isApproved {
-    final s = (_reservation?['status'] ?? '').toString();
-    return s == 'approved' || s == 'reserved' || s == 'booked';
+    if (widget.instantBooking && _reservation != null) return true;
+    final s = (_reservation?['status'] ?? '').toString().toLowerCase();
+    return s == 'approved' ||
+        s == 'reserved' ||
+        s == 'booked' ||
+        s == 'confirmed';
+  }
+
+  bool get _showFullTicket {
+    if (widget.instantBooking) return true;
+    final s = (_reservation?['status'] ?? '').toString().toLowerCase();
+    if (s == 'booked' || s == 'confirmed') return true;
+    final bookingRef =
+        (_reservation?['booking_reference'] ?? '').toString().trim();
+    return bookingRef.isNotEmpty;
+  }
+
+  bool get _isApprovedHold {
+    if (widget.instantBooking) return false;
+    final s = (_reservation?['status'] ?? '').toString().toLowerCase();
+    return (s == 'approved' || s == 'reserved') && !_showFullTicket;
   }
 
   bool get _isRejected => (_reservation?['status'] ?? '') == 'rejected';
@@ -217,17 +263,36 @@ class _CustomerBookingStatusScreenState
                       size: 72, color: Colors.green.shade600),
                   const SizedBox(height: 12),
                   Text(
-                    context.tr('booking_confirmed'),
+                    _isApprovedHold
+                        ? 'Reservation approved'
+                        : context.tr('booking_confirmed'),
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                           fontWeight: FontWeight.w800,
                           color: Colors.green.shade700,
                         ),
                   ),
+                    if (_isApprovedHold) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Your room is reserved for ${_reservation?['check_in_date']}. '
+                      'Check-in details will be available once your stay is activated.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
                   const SizedBox(height: 20),
-                  _TicketCard(
-                    reservation: _reservation!,
-                    hotelName: widget.hotelName,
-                  ),
+                  if (_showFullTicket)
+                    _TicketCard(
+                      reservation: _reservation!,
+                      hotelName: widget.hotelName,
+                    )
+                  else
+                    _ReservationSummaryCard(
+                      reservation: _reservation!,
+                      hotelName: widget.hotelName,
+                    ),
                 ],
                 if (_pollUnavailable && !_isApproved && !_isRejected) ...[
                   Card(
@@ -273,6 +338,7 @@ class _CustomerBookingStatusScreenState
       'approved' => context.tr('status_approved'),
       'reserved' => context.tr('status_reserved'),
       'booked' => context.tr('status_confirmed'),
+      'confirmed' => context.tr('status_confirmed'),
       'rejected' => context.tr('status_rejected'),
       _ => status,
     };
@@ -372,6 +438,77 @@ class _OnlinePaymentPendingCardState extends State<_OnlinePaymentPendingCard> {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ReservationSummaryCard extends StatelessWidget {
+  const _ReservationSummaryCard({
+    required this.reservation,
+    required this.hotelName,
+  });
+
+  final Map<String, dynamic> reservation;
+  final String hotelName;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final resRef = (reservation['external_reference'] ?? '').toString();
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Reservation summary',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    letterSpacing: 1.2,
+                    color: scheme.primary,
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            const Divider(height: 24),
+            _row(context.tr('lbl_hotel'), hotelName),
+            _row(context.tr('lbl_guest'), '${reservation['guest_name']}'),
+            _row(context.tr('lbl_room'), 'Room ${reservation['room_number']}'),
+            _row(context.tr('lbl_checkin'), '${reservation['check_in_date']}'),
+            _row(context.tr('lbl_checkout'), '${reservation['check_out_date']}'),
+            _row(context.tr('lbl_reservation'), resRef),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _row(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: Colors.grey.shade700,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
       ),
     );
   }

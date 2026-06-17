@@ -10,11 +10,14 @@ use App\Models\Hotel;
 use App\Models\Room;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
+use Tests\Concerns\ApprovesGuestReservations;
 use Tests\TestCase;
 
 class CustomerPortalBookingTest extends TestCase
 {
-    public function test_customer_instant_booking_succeeds(): void
+    use ApprovesGuestReservations;
+
+    public function test_customer_today_booking_creates_pending_reservation(): void
     {
         $hotel = Hotel::create(['name' => 'Customer Hotel', 'location' => 'Loc']);
         $room = Room::withoutGlobalScopes()->create([
@@ -41,10 +44,14 @@ class CustomerPortalBookingTest extends TestCase
 
         $response->assertOk();
         $response->assertJsonPath('ok', true);
-        $response->assertJsonStructure(['booking' => ['booking_reference']]);
+        $response->assertJsonPath('reservation.status', 'pending_approval');
 
         $room->refresh();
-        $this->assertSame(RoomStatus::BOOKED->value, $room->status?->value ?? (string) $room->status);
+        $this->assertSame(
+            RoomStatus::AVAILABLE->value,
+            $room->status?->value ?? (string) $room->status
+        );
+        $this->assertSame(0, Booking::withoutGlobalScopes()->count());
     }
 
     public function test_customer_booking_with_discount_succeeds(): void
@@ -84,7 +91,7 @@ class CustomerPortalBookingTest extends TestCase
             'status' => RoomStatus::AVAILABLE->value,
         ]);
 
-        $response = $this->post('/api/v1/customer/bookings', [
+        $response = $this->post('/api/v1/customer/reservations', [
             'hotel_id' => (string) $hotel->id,
             'room_id' => (string) $room->id,
             'guest_name' => 'PWD Guest',
@@ -97,13 +104,16 @@ class CustomerPortalBookingTest extends TestCase
         ], ['Accept' => 'application/json']);
 
         $response->assertOk();
-        $bookingId = (string) $response->json('booking.id');
-        $booking = Booking::withoutGlobalScopes()->find($bookingId);
+        $reservation = ExternalReservation::withoutGlobalScopes()->latest('created_at')->first();
+        $this->assertNotNull($reservation);
+        $this->approveGuestReservation($reservation, $hotel);
+
+        $booking = Booking::withoutGlobalScopes()->latest('created_at')->first();
         $this->assertNotNull($booking);
         $this->assertEqualsWithDelta(800.0, (float) $booking->total_amount, 0.01);
 
         $charges = BillingCharge::withoutGlobalScopes()
-            ->where('booking_id', $bookingId)
+            ->where('booking_id', (string) $booking->id)
             ->get();
         $this->assertCount(1, $charges);
         $this->assertSame('room', (string) $charges->first()->type);
@@ -210,7 +220,7 @@ class CustomerPortalBookingTest extends TestCase
         $show->assertJsonPath('reservation.hotel_id', (string) $hotel->id);
     }
 
-    public function test_same_day_reservation_submits_instant_booking(): void
+    public function test_same_day_reservation_submits_pending_request(): void
     {
         $hotel = Hotel::create(['name' => 'Same Day Hotel', 'location' => 'Loc']);
         $room = Room::withoutGlobalScopes()->create([
@@ -237,11 +247,12 @@ class CustomerPortalBookingTest extends TestCase
 
         $response->assertOk();
         $response->assertJsonPath('ok', true);
-        $response->assertJsonStructure(['booking' => ['booking_reference']]);
-        $this->assertSame(0, ExternalReservation::withoutGlobalScopes()->count());
+        $response->assertJsonPath('reservation.status', 'pending_approval');
+        $this->assertSame(1, ExternalReservation::withoutGlobalScopes()->count());
+        $this->assertSame(0, Booking::withoutGlobalScopes()->count());
     }
 
-    public function test_instant_booking_rejects_overlapping_pending_reservation(): void
+    public function test_same_day_booking_rejects_overlapping_pending_reservation(): void
     {
         $hotel = Hotel::create(['name' => 'Conflict Hotel', 'location' => 'Loc']);
         $room = Room::withoutGlobalScopes()->create([
@@ -268,7 +279,7 @@ class CustomerPortalBookingTest extends TestCase
             'external_reference' => 'RES-CONFLICT-1',
         ]);
 
-        $response = $this->postJson('/api/v1/customer/bookings', [
+        $response = $this->postJson('/api/v1/customer/reservations', [
             'hotel_id' => (string) $hotel->id,
             'room_id' => (string) $room->id,
             'guest_name' => 'Walk-in Guest',
@@ -276,9 +287,45 @@ class CustomerPortalBookingTest extends TestCase
             'guest_phone' => '09171234567',
             'check_in' => $checkIn,
             'check_out' => $checkOut,
+            'discount_type' => 'none',
         ]);
 
         $response->assertStatus(422);
         $this->assertSame(0, Booking::withoutGlobalScopes()->count());
+    }
+
+    public function test_admin_approval_activates_same_day_reservation(): void
+    {
+        $hotel = Hotel::create(['name' => 'Approve Today Hotel', 'location' => 'Loc']);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '211',
+            'room_type' => 'Single',
+            'price_per_night' => 1500,
+            'status' => RoomStatus::AVAILABLE->value,
+        ]);
+
+        $response = $this->postJson('/api/v1/customer/reservations', [
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'guest_name' => 'Today Guest',
+            'guest_email' => 'today@example.com',
+            'guest_phone' => '09171234567',
+            'check_in' => Carbon::today()->toDateString(),
+            'check_out' => Carbon::today()->addDay()->toDateString(),
+            'discount_type' => 'none',
+        ]);
+        $response->assertOk();
+
+        $reservation = ExternalReservation::withoutGlobalScopes()->latest('created_at')->first();
+        $this->assertNotNull($reservation);
+        $this->approveGuestReservation($reservation, $hotel);
+
+        $room->refresh();
+        $this->assertSame(
+            RoomStatus::BOOKED->value,
+            $room->status?->value ?? (string) $room->status
+        );
+        $this->assertSame(1, Booking::withoutGlobalScopes()->count());
     }
 }

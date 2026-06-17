@@ -143,7 +143,7 @@ class SuperAdminPortalUsersTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_approve_reservation_activates_when_check_in_is_tomorrow_or_sooner(): void
+    public function test_approve_reservation_activates_when_check_in_is_today(): void
     {
         $hotel = Hotel::create(['name' => 'Reserve Hotel', 'location' => 'City']);
         $admin = User::create([

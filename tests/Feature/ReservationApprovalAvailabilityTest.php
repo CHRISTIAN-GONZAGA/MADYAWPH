@@ -55,6 +55,13 @@ class ReservationApprovalAvailabilityTest extends TestCase
             ->postJson("/api/v1/admin/reservations/{$res->id}/approve")
             ->assertOk()
             ->assertJsonPath('ok', true);
+
+        $room->refresh();
+        $this->assertSame(
+            RoomStatus::CHECKED_IN->value,
+            $room->status?->value ?? (string) $room->status
+        );
+        $this->assertSame('Current Guest', (string) $room->current_guest_name);
     }
 
     /**
