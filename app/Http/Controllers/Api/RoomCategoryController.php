@@ -136,6 +136,15 @@ class RoomCategoryController extends Controller
 
         $roomCategory->update($payload);
 
+        if (array_key_exists('price_per_extra_hour', $payload)) {
+            $syncedRate = PriceRounding::nearest50((float) ($roomCategory->price_per_extra_hour ?? 0));
+            Room::withoutGlobalScopes()
+                ->where('hotel_id', (string) $roomCategory->hotel_id)
+                ->where('category_id', (string) $roomCategory->id)
+                ->where('billing_mode', 'hourly')
+                ->update(['price_per_extra_hour' => $syncedRate]);
+        }
+
         return response()->json([
             'id' => (string) $roomCategory->id,
             'name' => (string) $roomCategory->name,

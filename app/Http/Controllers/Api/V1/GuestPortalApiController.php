@@ -14,6 +14,7 @@ use App\Models\Hotel;
 use App\Models\Room;
 use App\Models\StayReview;
 use App\Services\ActivityLogService;
+use App\Services\BookingPaymentService;
 use App\Services\FinancialComputationService;
 use App\Services\GuestPortalQrService;
 use App\Services\GuestRoomAccessCodeService;
@@ -23,6 +24,7 @@ use App\Services\StayExtensionService;
 use App\Support\ChatAttachmentUrl;
 use App\Support\GuestMessageResource;
 use App\Support\GuestPortalStore;
+use App\Support\PriceRounding;
 use App\Support\RoomBillingSupport;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -131,6 +133,18 @@ class GuestPortalApiController extends Controller
             $extensionPreview = app(StayExtensionService::class)->preview($room, $activeBooking);
         }
 
+        $charges = $activeBooking
+            ? BillingCharge::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
+                ->where('booking_id', (string) $activeBooking->id)
+                ->orderBy('created_at')
+                ->limit(50)
+                ->get()
+            : collect();
+        $billSummary = $activeBooking
+            ? app(BookingPaymentService::class)->billSummary($activeBooking)
+            : null;
+
         return response()->json([
             'auth' => ['user' => [
                 'name' => 'In-House Guest',
@@ -141,6 +155,7 @@ class GuestPortalApiController extends Controller
                 'roomId' => $portal['room_id'],
                 'roomNumber' => $portal['room_number'],
                 'checkOutAt' => optional($room?->current_check_out)->toDateString(),
+                'checkOutTime' => $activeBooking?->check_out_time,
                 'activeBookingId' => $activeBooking ? (string) $activeBooking->id : null,
                 'guestName' => $activeBooking?->guest_name ?? 'In-House Guest',
                 'showReviewPrompt' => (bool) ($activeBooking && ($activeBooking->status?->value ?? (string) $activeBooking->status) === 'completed' && ! $hasReview),
@@ -152,11 +167,23 @@ class GuestPortalApiController extends Controller
                 'bookedStayHours' => $activeBooking
                     ? RoomBillingSupport::bookedStayHours($activeBooking)
                     : null,
-                'extendHourOptions' => $room
-                    ? RoomBillingSupport::extensionHourOptions($room)
-                    : [],
                 'extensionOptions' => $extensionPreview,
             ],
+            'currentBill' => $activeBooking && $billSummary ? [
+                'bookingId' => (string) $activeBooking->id,
+                'paymentStatus' => (string) ($activeBooking->payment_status ?? 'unpaid'),
+                'totalDue' => (float) ($billSummary['total_due'] ?? 0),
+                'subtotal' => (float) ($billSummary['subtotal'] ?? 0),
+                'refunds' => (float) ($billSummary['refunds'] ?? 0),
+                'bookingTotal' => (float) ($activeBooking->total_amount ?? 0),
+                'charges' => $charges->map(fn ($charge) => [
+                    'id' => (string) $charge->id,
+                    'type' => (string) ($charge->type ?? ''),
+                    'label' => (string) ($charge->label ?? ''),
+                    'amount' => (float) ($charge->amount ?? 0),
+                    'createdAt' => optional($charge->created_at)->toIso8601String(),
+                ])->values(),
+            ] : null,
             'services' => [],
             'amenityClaims' => AmenityClaim::query()
                 ->where('hotel_id', $hotelId)
@@ -213,17 +240,22 @@ class GuestPortalApiController extends Controller
         $booking = Booking::query()
             ->where('hotel_id', (string) $portal['hotel_id'])
             ->where('room_id', $portal['room_id'])
+            ->whereNotIn('status', [
+                BookingStatus::COMPLETED->value,
+                BookingStatus::CANCELLED->value,
+            ])
             ->latest('created_at')
             ->first();
         if ($booking) {
             $qty = (int) $validated['quantity'];
+            $chargeAmount = PriceRounding::nearest50(((float) $item->price) * $qty);
             BillingCharge::withoutGlobalScopes()->create([
                 'hotel_id' => (string) $portal['hotel_id'],
                 'booking_id' => (string) $booking->id,
                 'room_id' => $portal['room_id'],
                 'type' => 'amenity',
                 'label' => "Amenity: {$item->name}",
-                'amount' => ((float) $item->price) * $qty,
+                'amount' => $chargeAmount,
                 'quantity' => $qty,
                 'is_manual' => false,
                 'metadata' => [
@@ -231,6 +263,7 @@ class GuestPortalApiController extends Controller
                     'unit_price' => (float) $item->price,
                 ],
             ]);
+            app(BookingPaymentService::class)->syncBookingTotalFromCharges($booking->fresh());
         }
         app(ActivityLogService::class)->log(
             $portal['hotel_id'],
@@ -318,9 +351,8 @@ class GuestPortalApiController extends Controller
     ): JsonResponse {
         $portal = $request->attributes->get('guest_portal');
         $validated = $request->validate([
-            'nights' => ['required_without_all:hours,extension_mode', 'integer', 'min:1', 'max:30'],
-            'hours' => ['nullable', 'integer', 'min:1', 'max:720'],
-            'extension_mode' => ['nullable', 'in:same_duration,custom_hours,block'],
+            'nights' => ['required_without:hours', 'integer', 'min:1', 'max:30'],
+            'hours' => ['nullable', 'integer', 'min:1', 'max:'.RoomBillingSupport::CUSTOM_EXTENSION_MAX_HOURS],
         ]);
 
         $hotelId = (string) $portal['hotel_id'];
@@ -339,22 +371,14 @@ class GuestPortalApiController extends Controller
             ->firstOrFail();
 
         if (RoomBillingSupport::isHourly($room)) {
-            $mode = (string) ($validated['extension_mode'] ?? '');
-            if ($mode === '') {
-                $mode = 'block';
-            }
-            $hours = isset($validated['hours']) ? (int) $validated['hours'] : null;
-            if ($mode === 'block' && ($hours === null || $hours < 1)) {
-                return response()->json(['message' => 'Hours are required for block extension.'], 422);
-            }
-            if ($mode === 'custom_hours' && ($hours === null || $hours < 1)) {
-                return response()->json(['message' => 'Hours are required for custom hour extension.'], 422);
+            $hours = (int) ($validated['hours'] ?? 0);
+            if ($hours < 1) {
+                return response()->json(['message' => 'Hours are required for stay extension.'], 422);
             }
 
             $result = $stayExtensionService->apply(
                 $room,
                 $booking,
-                $mode,
                 $hours,
                 null,
                 "Guest requested stay extension for room {$portal['room_number']}",
@@ -367,12 +391,10 @@ class GuestPortalApiController extends Controller
         $currentCheckout = now()->parse($booking->check_out_date);
         $newCheckout = $currentCheckout->copy()->addDays($nights);
         $extensionFee = $financialComputationService->computeRoomCharge((float) $room->price_per_night, $nights);
-        $newTotal = $financialComputationService->computeTotal((float) $booking->total_amount, $extensionFee);
 
         $booking->update([
             'check_out_date' => $newCheckout->toDateString(),
             'nights' => (int) $booking->nights + $nights,
-            'total_amount' => $newTotal,
         ]);
         $room->update(['current_check_out' => $newCheckout->toDateString()]);
 
@@ -387,6 +409,7 @@ class GuestPortalApiController extends Controller
             'is_manual' => false,
             'metadata' => ['nights' => $nights],
         ]);
+        $newTotal = app(BookingPaymentService::class)->syncBookingTotalFromCharges($booking->fresh());
         app(ActivityLogService::class)->log(
             $portal['hotel_id'],
             null,

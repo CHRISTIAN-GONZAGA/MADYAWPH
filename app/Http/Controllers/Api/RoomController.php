@@ -113,9 +113,7 @@ class RoomController extends Controller
         if (array_key_exists('price_per_block', $payload)) {
             $payload['price_per_block'] = PriceRounding::nearest50((float) $payload['price_per_block']);
         }
-        if (array_key_exists('price_per_extra_hour', $payload)) {
-            $payload['price_per_extra_hour'] = PriceRounding::nearest50((float) $payload['price_per_extra_hour']);
-        }
+        unset($payload['price_per_extra_hour']);
         if (array_key_exists('billing_mode', $payload)) {
             $payload['billing_mode'] = strtolower((string) $payload['billing_mode']) === 'hourly'
                 ? 'hourly'
@@ -130,6 +128,17 @@ class RoomController extends Controller
             $payload['image_url'] = RoomMediaStorage::store(
                 $request->file('image_file'),
                 'rooms'
+            );
+        }
+
+        $category = $this->findCategoryForHotel(
+            (string) $room->hotel_id,
+            (string) ($room->category_id ?? ''),
+        );
+        $billing = strtolower((string) ($payload['billing_mode'] ?? $room->billing_mode ?? 'nightly'));
+        if ($category && $billing === 'hourly') {
+            $payload['price_per_extra_hour'] = PriceRounding::nearest50(
+                (float) ($category->price_per_extra_hour ?? 0)
             );
         }
 
@@ -296,7 +305,7 @@ class RoomController extends Controller
                 (float) ($payload['price_per_block'] ?? $category->price_per_block ?? $category->default_price ?? 0)
             );
             $payload['price_per_extra_hour'] = PriceRounding::nearest50(
-                (float) ($payload['price_per_extra_hour'] ?? $category->price_per_extra_hour ?? 0)
+                (float) ($category->price_per_extra_hour ?? 0)
             );
             $payload['price_per_night'] = PriceRounding::nearest50((float) ($payload['price_per_night'] ?? 0));
         } else {

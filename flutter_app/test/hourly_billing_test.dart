@@ -30,16 +30,9 @@ void main() {
     expect(outAt.difference(inAt).inHours, 3);
   });
 
-  test('same-duration extension uses block rate not per-hour rate', () {
-    final room = {
-      'billing_mode': 'hourly',
-      'block_hours': 24,
-      'price_per_block': 1000,
-      'price_per_extra_hour': 200,
-    };
-
-    expect(HourlyBilling.sameDurationExtensionFee(room, 24), 1000);
+  test('per-hour extension fee is hours times category rate', () {
     expect(HourlyBilling.customHoursExtensionFee(200, 24), 4800);
     expect(HourlyBilling.customHoursExtensionFee(200, 5), 1000);
+    expect(HourlyBilling.customHoursExtensionFee(200, 1), 200);
   });
 }

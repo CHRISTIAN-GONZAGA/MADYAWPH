@@ -343,10 +343,6 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     var roomPricePerBlock =
         (category['price_per_block'] as num?)?.toDouble() ?? roomPricePerNight;
     var roomBlockHours = (category['block_hours'] as num?)?.toInt() ?? 3;
-    var roomPricePerExtraHour =
-        (category['price_per_extra_hour'] as num?)?.toDouble() ?? 0.0;
-    final extraHourPriceCtrl =
-        TextEditingController(text: '$roomPricePerExtraHour');
     String roomType = 'Single';
     String status = 'available';
     XFile? pickedImage;
@@ -412,10 +408,9 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                       pricePerNight: roomPricePerNight,
                       pricePerBlock: roomPricePerBlock,
                       blockHours: roomBlockHours,
-                      pricePerExtraHour: roomPricePerExtraHour,
+                      showExtraHourRate: false,
                       nightlyController: nightlyCtrl,
                       blockPriceController: blockPriceCtrl,
-                      extraHourPriceController: extraHourPriceCtrl,
                       onChanged: ({
                         required String billingMode,
                         required double pricePerNight,
@@ -428,7 +423,6 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                           roomPricePerNight = pricePerNight;
                           roomPricePerBlock = pricePerBlock;
                           roomBlockHours = blockHours;
-                          roomPricePerExtraHour = pricePerExtraHour;
                         });
                       },
                     ),
@@ -520,7 +514,6 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                               'price_per_night': roomPricePerNight,
                               'price_per_block': roomPricePerBlock,
                               'block_hours': roomBlockHours,
-                              'price_per_extra_hour': roomPricePerExtraHour,
                               'status': status,
                               '__image': pickedImage,
                             });
@@ -748,14 +741,8 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
       var roomPricePerNight = (room['price_per_night'] as num?)?.toDouble() ?? 0.0;
       var roomPricePerBlock = (room['price_per_block'] as num?)?.toDouble() ?? 0.0;
       var roomBlockHours = (room['block_hours'] as num?)?.toInt() ?? 3;
-      var roomPricePerExtraHour =
-          (room['price_per_extra_hour'] as num?)?.toDouble() ??
-          (category['price_per_extra_hour'] as num?)?.toDouble() ??
-          0.0;
       final nightlyCtrl = TextEditingController(text: '$roomPricePerNight');
       final blockPriceCtrl = TextEditingController(text: '$roomPricePerBlock');
-      final extraHourPriceCtrl =
-          TextEditingController(text: '$roomPricePerExtraHour');
       XFile? pickedImage;
 
       final payload = await showDialog<Map<String, dynamic>>(
@@ -787,10 +774,9 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                     pricePerNight: roomPricePerNight,
                     pricePerBlock: roomPricePerBlock,
                     blockHours: roomBlockHours,
-                    pricePerExtraHour: roomPricePerExtraHour,
+                    showExtraHourRate: false,
                     nightlyController: nightlyCtrl,
                     blockPriceController: blockPriceCtrl,
-                    extraHourPriceController: extraHourPriceCtrl,
                     onChanged: ({
                       required String billingMode,
                       required double pricePerNight,
@@ -803,7 +789,6 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                         roomPricePerNight = pricePerNight;
                         roomPricePerBlock = pricePerBlock;
                         roomBlockHours = blockHours;
-                        roomPricePerExtraHour = pricePerExtraHour;
                       });
                     },
                   ),
@@ -830,7 +815,6 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                   'price_per_night': roomPricePerNight,
                   'price_per_block': roomPricePerBlock,
                   'block_hours': roomBlockHours,
-                  'price_per_extra_hour': roomPricePerExtraHour,
                   '__image': pickedImage,
                 }),
                 child: const Text('Save'),

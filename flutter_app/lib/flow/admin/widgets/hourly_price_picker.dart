@@ -121,6 +121,7 @@ class RoomPricingFields extends StatefulWidget {
     required this.blockHours,
     required this.onChanged,
     this.pricePerExtraHour = 0,
+    this.showExtraHourRate = true,
     this.nightlyController,
     this.blockPriceController,
     this.extraHourPriceController,
@@ -131,6 +132,8 @@ class RoomPricingFields extends StatefulWidget {
   final double pricePerBlock;
   final int blockHours;
   final double pricePerExtraHour;
+  /// Category forms only — rooms inherit the category rate.
+  final bool showExtraHourRate;
   final void Function({
     required String billingMode,
     required double pricePerNight,
@@ -204,21 +207,23 @@ class _RoomPricingFieldsState extends State<RoomPricingFields> {
               _emit();
             },
           ),
-          const SizedBox(height: 14),
-          TextField(
-            controller: widget.extraHourPriceController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Price per extra hour (PHP)',
-              helperText:
-                  'Used when extending by custom hours (not same-duration block rate).',
-              prefixIcon: Icon(Icons.schedule_outlined),
+          if (widget.showExtraHourRate) ...[
+            const SizedBox(height: 14),
+            TextField(
+              controller: widget.extraHourPriceController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Price per extra hour (PHP)',
+                helperText:
+                    'Used when extending stay by hour (applies to all rooms in this category).',
+                prefixIcon: Icon(Icons.schedule_outlined),
+              ),
+              onChanged: (v) {
+                setState(() => _extraHourPrice = double.tryParse(v.trim()) ?? 0);
+                _emit();
+              },
             ),
-            onChanged: (v) {
-              setState(() => _extraHourPrice = double.tryParse(v.trim()) ?? 0);
-              _emit();
-            },
-          ),
+          ],
         ]
         else
           TextField(

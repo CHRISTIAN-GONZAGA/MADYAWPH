@@ -816,6 +816,8 @@ Route::post('/billing/charges', function (Request $request, FinancialComputation
     ]);
     $activityLogService->log((string) $request->user()->hotel_id, $request->user(), "Added charge {$charge->label}", ['charge_id' => (string) $charge->id, 'amount' => $lineTotal]);
 
+    app(\App\Services\BookingPaymentService::class)->syncBookingTotalFromCharges($booking->fresh());
+
     return response()->json($charge, 201);
 })->middleware('role:admin,staff');
 
@@ -1662,8 +1664,7 @@ Route::post('/admin/bookings/{booking}/extend-stay', function (Request $request,
     }
 
     $validated = $request->validate([
-        'extension_mode' => ['required', 'in:same_duration,custom_hours,block'],
-        'hours' => ['nullable', 'integer', 'min:1', 'max:720'],
+        'hours' => ['required', 'integer', 'min:1', 'max:'.RoomBillingSupport::CUSTOM_EXTENSION_MAX_HOURS],
     ]);
 
     $room = Room::withoutGlobalScopes()->findOrFail((string) $booking->room_id);
@@ -1671,19 +1672,11 @@ Route::post('/admin/bookings/{booking}/extend-stay', function (Request $request,
         return response()->json(['message' => 'Room is outside your hotel scope.'], 403);
     }
 
-    $mode = (string) $validated['extension_mode'];
-    $hours = isset($validated['hours']) ? (int) $validated['hours'] : null;
-    if ($mode === 'block' && ($hours === null || $hours < 1)) {
-        return response()->json(['message' => 'Hours are required for block extension.'], 422);
-    }
-    if ($mode === 'custom_hours' && ($hours === null || $hours < 1)) {
-        return response()->json(['message' => 'Hours are required for custom hour extension.'], 422);
-    }
+    $hours = (int) $validated['hours'];
 
     $result = $stayExtensionService->apply(
         $room,
         $booking,
-        $mode,
         $hours,
         (string) $request->user()->id,
         'Admin extended stay',

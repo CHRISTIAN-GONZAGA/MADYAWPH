@@ -34,6 +34,7 @@ import 'customer_search_context.dart';
 import 'customer_tools.dart';
 import '../widgets/chat_attachment.dart';
 import '../widgets/payment_redirect.dart';
+import '../utils/money_format.dart';
 import 'portal_sign_out.dart';
 // --- Admin ---
 
@@ -1898,8 +1899,21 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
     final payload = await showExtendStayDialog(
       context,
       roomInfo: roomInfo,
+      maxPickerHours: 10,
     );
-    if (payload == null) return;
+    if (payload == null) {
+      if (!mounted) return;
+      if (isHourly) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Extension is not available. Ask the front desk to set the category extra-hour rate.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
 
     await _runGuestAction('Extend stay', () async {
       final res = await guestDio().post<Map<String, dynamic>>(
@@ -1911,9 +1925,10 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
       final checkout = res.data?['new_checkout_date'] ?? '-';
       final checkoutTime = res.data?['new_checkout_time'];
       final when = checkoutTime != null ? '$checkout $checkoutTime' : checkout;
+      final fee = parseJsonDouble(res.data?['extension_fee']);
       return {
         'message':
-            'Extended stay. New checkout: $when, additional fee: ${res.data?['extension_fee'] ?? '-'}',
+            'Extended stay. New checkout: $when, additional fee: ${formatPeso(fee)}',
       };
     });
   }
@@ -2022,9 +2037,15 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
     final auth = _data!['auth'] as Map<String, dynamic>?;
     final u = auth?['user'] as Map<String, dynamic>?;
     final claims = (_data!['amenityClaims'] as List<dynamic>?) ?? [];
+    final bill = _data!['currentBill'] as Map<String, dynamic>?;
+    final billCharges = (bill?['charges'] as List<dynamic>?) ?? [];
     final hotel = u?['hotelName'] ?? 'Hotel';
     final roomNo = room?['roomNumber'] ?? '—';
-    final checkout = room?['checkOutAt']?.toString() ?? '—';
+    final checkoutDate = room?['checkOutAt']?.toString() ?? '—';
+    final checkoutTime = room?['checkOutTime']?.toString();
+    final checkout = checkoutTime != null && checkoutTime.isNotEmpty
+        ? '$checkoutDate $checkoutTime'
+        : checkoutDate;
 
     final scheme = Theme.of(context).colorScheme;
 
@@ -2062,6 +2083,80 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
                   ],
                 ),
                 const SizedBox(height: 16),
+                Text('Current bill',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                if (bill == null)
+                  const Text('No active booking bill.')
+                else ...[
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Payment: ${(bill['paymentStatus'] ?? 'unpaid').toString()}',
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                              Text(
+                                formatPeso(
+                                  parseJsonDouble(
+                                    bill['totalDue'] ??
+                                        bill['chargesTotal'] ??
+                                        bill['bookingTotal'],
+                                  ),
+                                ),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w800),
+                              ),
+                            ],
+                          ),
+                          if (billCharges.isEmpty)
+                            const Padding(
+                              padding: EdgeInsets.only(top: 8),
+                              child: Text('No charges yet.'),
+                            )
+                          else
+                            ...billCharges.take(15).map((raw) {
+                              final line = Map<String, dynamic>.from(
+                                raw as Map,
+                              );
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        (line['label'] ?? 'Charge').toString(),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall,
+                                      ),
+                                    ),
+                                    Text(
+                                      formatBillLineAmount(line),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(fontWeight: FontWeight.w600),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
                 AppActionTile(
                   title: 'Request amenity',
                   subtitle: 'Submit a housekeeping/amenity claim',
@@ -2070,7 +2165,12 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
                 ),
                 AppActionTile(
                   title: 'Extend stay',
-                  subtitle: 'Extend by hotel minimum hours or nights',
+                  subtitle: (room?['billingMode'] ?? 'nightly')
+                              .toString()
+                              .toLowerCase() ==
+                          'hourly'
+                      ? 'Add 1–10 hours at the category hourly rate'
+                      : 'Add more nights to your stay',
                   icon: Icons.calendar_month_outlined,
                   onTap: _extendStay,
                 ),

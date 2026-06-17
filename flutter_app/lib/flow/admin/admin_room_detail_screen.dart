@@ -312,8 +312,20 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     final payload = await showExtendStayDialog(
       context,
       extensionOptions: extensionOptions,
+      maxPickerHours: 10,
     );
-    if (payload == null || !mounted) return;
+    if (payload == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No extension options available. Set “Price per extra hour” on the room category for hourly extensions.',
+          ),
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
 
     if (_extendingStay) return;
     setState(() => _extendingStay = true);

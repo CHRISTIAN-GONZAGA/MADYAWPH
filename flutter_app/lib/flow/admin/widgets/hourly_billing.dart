@@ -123,23 +123,9 @@ class HourlyBilling {
     return '₱${nightly.toStringAsFixed(0)} / night';
   }
 
-  static List<int> extensionHourOptions(Map<String, dynamic> room, {int maxBlocks = 8}) {
-    if (!isHourly(room)) return const [];
-    final bh = blockHours(room);
-    return List.generate(maxBlocks, (i) => (i + 1) * bh);
-  }
-
   static double extraHourRate(Map<String, dynamic> room) {
     final rate = (room['price_per_extra_hour'] as num?)?.toDouble() ?? 0;
     return rate > 0 ? _round50(rate) : 0;
-  }
-
-  /// Same-duration extension uses block rate (not per-extra-hour rate).
-  static double sameDurationExtensionFee(Map<String, dynamic> room, int stayHours) {
-    final bh = blockHours(room);
-    if (stayHours < 1 || bh < 1 || stayHours % bh != 0) return 0;
-    final blocks = stayHours ~/ bh;
-    return _round50(pricePerBlock(room) * blocks);
   }
 
   static double customHoursExtensionFee(double pricePerExtraHour, int hours) {

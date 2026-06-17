@@ -106,6 +106,17 @@ class BookingPaymentService
         ];
     }
 
+    /**
+     * Recompute booking total from all billing charges (source of truth while unpaid).
+     */
+    public function syncBookingTotalFromCharges(Booking $booking): float
+    {
+        $totalDue = (float) $this->billSummary($booking)['total_due'];
+        $booking->update(['total_amount' => $totalDue]);
+
+        return $totalDue;
+    }
+
     private function chargesForBooking(Booking $booking): Collection
     {
         return BillingCharge::withoutGlobalScopes()
