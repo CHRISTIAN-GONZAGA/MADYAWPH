@@ -119,4 +119,31 @@ void main() {
       expect(filtered.first['room_number'], '101');
     });
   });
+
+  group('breakfastPrepSummary', () {
+    test('counts pending and fulfilled breakfast quantities', () {
+      final summary = AdminDashboardModels.breakfastPrepSummary([
+        {
+          'amenityName': 'Continental Breakfast',
+          'quantity': 2,
+          'status': 'pending',
+        },
+        {
+          'amenity_type': 'Breakfast',
+          'amenityName': 'Filipino Breakfast',
+          'quantity': 1,
+          'status': 'fulfilled',
+        },
+        {
+          'amenityName': 'Extra Towels',
+          'quantity': 3,
+          'status': 'pending',
+        },
+      ]);
+      expect(summary['to_prepare'], 2);
+      expect(summary['done'], 1);
+      expect(summary['pending_orders'], 1);
+      expect(summary['fulfilled_orders'], 1);
+    });
+  });
 }

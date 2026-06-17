@@ -813,6 +813,8 @@ class _CategoryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final label = '${stats['label']}';
+    final total = stats['total'];
+    final title = '$label $total';
 
     return Material(
       color: scheme.surfaceContainerLow,
@@ -845,7 +847,7 @@ class _CategoryCard extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        label,
+                        title,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.labelLarge?.copyWith(
@@ -862,15 +864,6 @@ class _CategoryCard extends StatelessWidget {
                   ],
                 ),
                 const Spacer(),
-                Text(
-                  '${stats['total']} rooms',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: scheme.primary,
-                        height: 1,
-                      ),
-                ),
-                const SizedBox(height: 8),
                 Row(
                   children: [
                     Expanded(

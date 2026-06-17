@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
+import '../admin_dashboard_models.dart';
 import '../widgets/admin_sales_panel.dart';
 
 class AmenitiesSection extends StatefulWidget {
@@ -298,6 +299,68 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
     );
   }
 
+  Widget _breakfastPrepSummary() {
+    final summary = AdminDashboardModels.breakfastPrepSummary(widget.claims);
+    final toPrepare = summary['to_prepare'] ?? 0;
+    final done = summary['done'] ?? 0;
+    final pendingOrders = summary['pending_orders'] ?? 0;
+    final fulfilledOrders = summary['fulfilled_orders'] ?? 0;
+    final scheme = Theme.of(context).colorScheme;
+
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      color: scheme.primaryContainer.withValues(alpha: 0.35),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.free_breakfast_outlined, color: scheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Breakfast prep',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _BreakfastPrepStat(
+                    label: 'To prepare',
+                    count: toPrepare,
+                    subtitle: pendingOrders == 1
+                        ? '1 request'
+                        : '$pendingOrders requests',
+                    color: Colors.orange.shade800,
+                    icon: Icons.pending_actions_outlined,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _BreakfastPrepStat(
+                    label: 'Done',
+                    count: done,
+                    subtitle: fulfilledOrders == 1
+                        ? '1 fulfilled'
+                        : '$fulfilledOrders fulfilled',
+                    color: Colors.green.shade700,
+                    icon: Icons.check_circle_outline,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _claimsList() {
     final claims = widget.claims.whereType<Map<String, dynamic>>().toList();
     if (claims.isEmpty) {
@@ -368,6 +431,7 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               header,
+              _breakfastPrepSummary(),
               const Expanded(
                 flex: 2,
                 child: SingleChildScrollView(
@@ -414,6 +478,7 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
           child: Column(
             children: [
               header,
+              _breakfastPrepSummary(),
               const TabBar(
                 tabs: [
                   Tab(text: 'Sales'),
@@ -446,6 +511,67 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
           ),
         );
       },
+    );
+  }
+}
+
+class _BreakfastPrepStat extends StatelessWidget {
+  const _BreakfastPrepStat({
+    required this.label,
+    required this.count,
+    required this.subtitle,
+    required this.color,
+    required this.icon,
+  });
+
+  final String label;
+  final int count;
+  final String subtitle;
+  final Color color;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: color,
+                    ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '$count',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: color,
+                  height: 1,
+                ),
+          ),
+          Text(
+            subtitle,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: color.withValues(alpha: 0.85),
+                ),
+          ),
+        ],
+      ),
     );
   }
 }

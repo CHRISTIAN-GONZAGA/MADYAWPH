@@ -26,6 +26,41 @@ class AdminDashboardModels {
     return n;
   }
 
+  static bool isBreakfastClaim(Map<String, dynamic> claim) {
+    final type =
+        (claim['amenityType'] ?? claim['amenity_type'] ?? '').toString().toLowerCase();
+    final name =
+        (claim['amenityName'] ?? claim['amenity_name'] ?? '').toString().toLowerCase();
+    return type.contains('breakfast') || name.contains('breakfast');
+  }
+
+  /// Breakfast prep totals from guest amenity claims (quantity-based).
+  static Map<String, int> breakfastPrepSummary(List<dynamic> claims) {
+    var toPrepare = 0;
+    var done = 0;
+    var pendingOrders = 0;
+    var fulfilledOrders = 0;
+    for (final raw in claims) {
+      if (raw is! Map<String, dynamic>) continue;
+      if (!isBreakfastClaim(raw)) continue;
+      final qty = (raw['quantity'] as num?)?.toInt() ?? 1;
+      final status = (raw['status'] ?? 'pending').toString();
+      if (status == 'fulfilled') {
+        done += qty;
+        fulfilledOrders++;
+      } else {
+        toPrepare += qty;
+        pendingOrders++;
+      }
+    }
+    return {
+      'to_prepare': toPrepare,
+      'done': done,
+      'pending_orders': pendingOrders,
+      'fulfilled_orders': fulfilledOrders,
+    };
+  }
+
   static String categoryLabel(Map<String, dynamic> room) {
     final cn = (room['category_name'] ?? '').toString().trim();
     if (cn.isNotEmpty) return cn;
