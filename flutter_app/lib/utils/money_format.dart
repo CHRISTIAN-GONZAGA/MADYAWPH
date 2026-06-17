@@ -1,3 +1,15 @@
+/// Parses JSON numbers that may arrive as [num] or [String] (common from Mongo/PHP).
+double parseJsonDouble(dynamic value, [double fallback = 0]) {
+  if (value == null) return fallback;
+  if (value is num) return value.toDouble();
+  if (value is String) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return fallback;
+    return double.tryParse(trimmed) ?? fallback;
+  }
+  return fallback;
+}
+
 /// Philippine peso formatting for bills, receipts, and admin fees.
 String formatPeso(num amount, {bool signed = false}) {
   final value = amount.toDouble();
@@ -14,7 +26,7 @@ String formatPeso(num amount, {bool signed = false}) {
 
 /// Formats a bill/receipt line (charges positive, refunds as −₱).
 String formatBillLineAmount(Map<dynamic, dynamic> line) {
-  final amount = (line['amount'] as num?)?.toDouble() ?? 0;
+  final amount = parseJsonDouble(line['amount']);
   final type = (line['type'] ?? '').toString();
   final isCredit =
       line['is_credit'] == true || type == 'refund' || amount < 0;

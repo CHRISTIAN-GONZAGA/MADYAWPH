@@ -249,7 +249,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final label = (payload['label'] ?? '').toString();
-    final amount = (payload['amount'] as num?)?.toDouble() ?? 0;
+    final amount = parseJsonDouble(payload['amount']);
     if (label.isEmpty || amount <= 0) {
       messenger.showSnackBar(
         const SnackBar(content: Text('Enter a reason and amount > 0.')),
@@ -530,7 +530,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         return;
       }
       var approveAdjustment = false;
-      final adjustment = (preview?['price_adjustment'] as num?)?.toDouble() ?? 0;
+      final adjustment = parseJsonDouble(preview?['price_adjustment']);
       if (preview?['requires_approval'] == true && adjustment.abs() > 0) {
         if (!mounted) return;
         final approved = await showDialog<bool>(
@@ -543,11 +543,11 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
             title: const Text('Room rate change'),
             content: Text(
               'Transferring from Room ${preview?['from_room_number']} '
-              '(${formatPeso((preview?['from_nightly_rate'] as num?) ?? 0)}/night) '
+              '(${formatPeso(parseJsonDouble(preview?['from_nightly_rate']))}/night) '
               'to Room ${preview?['to_room_number']} '
-              '(${formatPeso((preview?['to_nightly_rate'] as num?) ?? 0)}/night).\n\n'
+              '(${formatPeso(parseJsonDouble(preview?['to_nightly_rate']))}/night).\n\n'
               'Bill ${adjustment > 0 ? 'increases' : 'decreases'} by ${formatPeso(adjustment.abs())}.\n'
-              'New total: ${formatPeso((preview?['new_total'] as num?) ?? 0)}.\n\n'
+              'New total: ${formatPeso(parseJsonDouble(preview?['new_total']))}.\n\n'
               'Approve this price adjustment?',
             ),
             actions: [
@@ -619,10 +619,10 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       return 'Cash';
     })();
     String next = current;
-    final totalDue =
-        (billSummary?['total_due'] as num?)?.toDouble() ??
-        (booking?['total_amount'] as num?)?.toDouble() ??
-        0;
+    final billTotalRaw = billSummary?['total_due'];
+    final totalDue = billTotalRaw != null
+        ? parseJsonDouble(billTotalRaw)
+        : parseJsonDouble(booking?['total_amount']);
     final lines = (billSummary?['lines'] as List?) ?? const [];
     final refCtrl =
         TextEditingController(text: (booking?['payment_reference'] ?? '').toString());
@@ -758,8 +758,8 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         data: payload,
       );
       if (!mounted) return;
-      final changeDue = (res.data?['change_due'] as num?)?.toDouble();
-      final msg = changeDue != null && changeDue > 0
+      final changeDue = parseJsonDouble(res.data?['change_due']);
+      final msg = changeDue > 0
           ? 'Payment recorded. Change due: ${formatPeso(changeDue)}'
           : 'Payment recorded.';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
@@ -960,8 +960,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     }
     final booking = _asMap(_data!['active_booking']);
     final charges = _chargesList();
-    final chargesTotal =
-        ((_data!['booking_charges_total'] as num?)?.toDouble() ?? 0);
+    final chargesTotal = parseJsonDouble(_data!['booking_charges_total']);
 
     final roomNo = (room['room_number'] ?? '').toString();
     final status = AdminDashboardModels.statusOf(room);
