@@ -96,16 +96,50 @@ class HotelAvailabilityService
             return true;
         }
 
-        return Booking::withoutGlobalScopes()
+        $bookings = Booking::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
-            ->where('room_id', $roomId)
             ->whereNotIn('status', [
                 BookingStatus::CANCELLED->value,
                 BookingStatus::COMPLETED->value,
             ])
             ->where('check_in_date', '<', $out)
             ->where('check_out_date', '>', $in)
-            ->exists();
+            ->get();
+
+        foreach ($bookings as $booking) {
+            if ($this->bookingMatchesRoomId($booking, $roomId)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static function idsMatch(mixed $left, mixed $right): bool
+    {
+        $a = self::normalizeId($left);
+        $b = self::normalizeId($right);
+
+        return $a !== '' && $a === $b;
+    }
+
+    public static function normalizeId(mixed $value): string
+    {
+        return str_replace(['$', '{', '}', ' '], '', trim((string) $value));
+    }
+
+    private function bookingMatchesRoomId(Booking $booking, string $roomId): bool
+    {
+        $stored = trim((string) ($booking->getAttributes()['room_id'] ?? $booking->room_id ?? ''));
+
+        return self::idsMatch($stored, $roomId);
+    }
+
+    private function reservationMatchesRoomId(ExternalReservation $reservation, string $roomId): bool
+    {
+        $stored = trim((string) ($reservation->getAttributes()['assigned_room_id'] ?? $reservation->assigned_room_id ?? ''));
+
+        return self::idsMatch($stored, $roomId);
     }
 
     private function reservationOverlaps(
@@ -115,17 +149,25 @@ class HotelAvailabilityService
         CarbonInterface $checkOut,
         ?string $excludeReservationId,
     ): bool {
-        $q = ExternalReservation::withoutGlobalScopes()
+        $reservations = ExternalReservation::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
-            ->where('assigned_room_id', $roomId)
             ->whereIn('status', ['pending_approval', 'approved', 'reserved', 'booked'])
             ->where('check_in_date', '<', $checkOut)
-            ->where('check_out_date', '>', $checkIn);
-        if ($excludeReservationId !== null && $excludeReservationId !== '') {
-            $q->where('id', '!=', $excludeReservationId);
+            ->where('check_out_date', '>', $checkIn)
+            ->get();
+
+        foreach ($reservations as $reservation) {
+            if ($excludeReservationId !== null
+                && $excludeReservationId !== ''
+                && self::idsMatch($reservation->id, $excludeReservationId)) {
+                continue;
+            }
+            if ($this->reservationMatchesRoomId($reservation, $roomId)) {
+                return true;
+            }
         }
 
-        return $q->exists();
+        return false;
     }
 
     /**

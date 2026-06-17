@@ -38,6 +38,7 @@ use App\Services\ActivityLogService;
 use App\Services\BookingPaymentService;
 use App\Services\BookingService;
 use App\Services\FinancialComputationService;
+use App\Services\HotelAvailabilityService;
 use App\Services\GuestPortalQrService;
 use App\Services\GuestRoomAccessCodeService;
 use App\Services\HotelCreditBookingFeeService;
@@ -1183,26 +1184,27 @@ Route::post('/admin/reservations/{id}/approve', function (Request $request, stri
     }
     $room = Room::withoutGlobalScopes()
         ->where('hotel_id', $hotelId)
-        ->find($res->assigned_room_id);
+        ->where(function ($query) use ($res) {
+            $assigned = (string) ($res->assigned_room_id ?? '');
+            $query->where('id', $assigned)->orWhere('_id', $assigned);
+        })
+        ->first();
     if (! $room) {
         return response()->json(['message' => 'Room is no longer available for this reservation.'], 422);
     }
-    $roomStatus = $room->status?->value ?? (string) $room->status;
-    if (! in_array($roomStatus, [RoomStatus::AVAILABLE->value, RoomStatus::RESERVED->value], true)) {
-        return response()->json(['message' => 'Room must be available to approve this reservation.'], 422);
-    }
     $in = Carbon::parse($res->check_in_date)->startOfDay();
     $out = Carbon::parse($res->check_out_date)->startOfDay();
-    $overlap = ExternalReservation::withoutGlobalScopes()
-        ->where('hotel_id', $hotelId)
-        ->where('assigned_room_id', (string) $room->id)
-        ->where('id', '!=', (string) $res->id)
-        ->whereIn('status', ['pending_approval', 'approved', 'reserved', 'booked'])
-        ->where('check_in_date', '<', $out)
-        ->where('check_out_date', '>', $in)
-        ->exists();
-    if ($overlap) {
-        return response()->json(['message' => 'Another reservation overlaps these dates for this room.'], 422);
+    $availability = app(HotelAvailabilityService::class);
+    if (! $availability->isRoomAvailableForStay(
+        (string) $room->id,
+        $hotelId,
+        $in,
+        $out,
+        (string) $res->id,
+    )) {
+        return response()->json([
+            'message' => 'This room is not available for the reservation dates. Another stay or hold may overlap those dates.',
+        ], 422);
     }
 
     $walletFee = app(HotelCreditBookingFeeService::class)->deductForReservationConfirmation(
