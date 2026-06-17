@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../admin_dashboard_models.dart';
+import '../admin_room_detail_screen.dart';
 import 'admin_room_detail_navigation.dart';
 import 'admin_summary_room_tile.dart';
 
@@ -19,7 +20,7 @@ class _RoomListPayload {
   final String? subtitle;
 }
 
-/// Slide-up room list for Summary → Hotel totals; room detail opens in a sheet.
+/// Slide-up room list for Summary → Hotel totals; detail stays in-panel until back.
 class HotelTotalsRoomPanelScope extends InheritedWidget {
   const HotelTotalsRoomPanelScope({
     super.key,
@@ -80,6 +81,8 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
 
   bool _visible = false;
   _RoomListPayload? _list;
+  String? _detailRoomId;
+  Map<String, dynamic>? _detailSnapshot;
 
   @override
   void initState() {
@@ -99,7 +102,9 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
   }
 
   void _onSlideTick() {
-    if (_visible && _slideCtrl.isAnimating) setState(() {});
+    if (_visible && _slideCtrl.isAnimating && _detailRoomId == null) {
+      setState(() {});
+    }
   }
 
   @override
@@ -125,6 +130,8 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     HapticFeedback.selectionClick();
     setState(() {
       _visible = true;
+      _detailRoomId = null;
+      _detailSnapshot = null;
       _list = _RoomListPayload(
         title: title,
         rooms: rooms,
@@ -136,19 +143,30 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     _slideCtrl.forward(from: 0);
   }
 
-  Future<void> _openRoomDetail(String roomId) async {
+  void _openRoomDetail(String roomId) {
     final id = AdminDashboardModels.normalizeRoomIdString(roomId);
     if (id.isEmpty || !mounted) return;
     HapticFeedback.selectionClick();
-    await AdminRoomDetailNavigation.showHotelTotalsRoomDetailSheet(
-      context: context,
-      roomId: id,
-      initialRoomSnapshot: _roomSnapshotForDetail(id),
-    );
+    setState(() {
+      _detailRoomId = id;
+      _detailSnapshot = _roomSnapshotForDetail(id);
+    });
+  }
+
+  void _backFromDetail() {
+    if (_detailRoomId == null) return;
+    setState(() {
+      _detailRoomId = null;
+      _detailSnapshot = null;
+    });
   }
 
   Future<void> _closePanel() async {
     if (!_visible) return;
+    setState(() {
+      _detailRoomId = null;
+      _detailSnapshot = null;
+    });
     await _slideCtrl.reverse();
     if (!mounted) return;
     setState(() {
@@ -164,6 +182,10 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
 
   bool _handleBack() {
     if (!_visible) return false;
+    if (_detailRoomId != null) {
+      _backFromDetail();
+      return true;
+    }
     _closePanel();
     return true;
   }
@@ -185,11 +207,43 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     return null;
   }
 
+  Widget _buildPanelBody(BuildContext context) {
+    final detailId = _detailRoomId;
+    if (detailId != null) {
+      return AdminRoomDetailScreen(
+        key: ValueKey('panel-detail-$detailId'),
+        roomId: detailId,
+        embedded: true,
+        initialRoomSnapshot: _detailSnapshot,
+        onClose: _backFromDetail,
+      );
+    }
+
+    final list = _list;
+    final bg = Theme.of(context).colorScheme.surface;
+    if (list == null) {
+      return ColoredBox(
+        color: bg,
+        child: const Center(
+          child: Text('No rooms loaded. Close and try again.'),
+        ),
+      );
+    }
+
+    return _HotelTotalsListPage(
+      title: list.title,
+      rooms: list.rooms,
+      showGuest: list.showGuest,
+      subtitle: list.subtitle,
+      onClosePanel: _closePanel,
+      onRoomTap: _openRoomDetail,
+    );
+  }
+
   Widget _buildPanel(
     BuildContext context, {
     required double panelHeight,
     required Color bg,
-    required String title,
   }) {
     final hidden = _slideCtrl.isAnimating
         ? (1 - _slideOffset.value) * panelHeight
@@ -206,36 +260,10 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
           width: double.infinity,
           child: SafeArea(
             top: false,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _HotelTotalsPanelHeader(
-                  title: title,
-                  backgroundColor: bg,
-                  onBack: _closePanel,
-                ),
-                Expanded(child: _buildListBody(context)),
-              ],
-            ),
+            child: _buildPanelBody(context),
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildListBody(BuildContext context) {
-    final list = _list;
-    if (list == null) {
-      return const Center(
-        child: Text('No rooms loaded. Close and try again.'),
-      );
-    }
-
-    return _HotelTotalsRoomGrid(
-      rooms: list.rooms,
-      showGuest: list.showGuest,
-      subtitle: list.subtitle,
-      onRoomTap: _openRoomDetail,
     );
   }
 
@@ -243,8 +271,6 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
   Widget build(BuildContext context) {
     final panelHeight = MediaQuery.sizeOf(context).height * 0.92;
     final bg = Theme.of(context).colorScheme.surface;
-    final list = _list;
-    final title = list?.title ?? 'Rooms';
 
     return HotelTotalsRoomPanelScope(
       isOpen: _visible,
@@ -274,10 +300,54 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
                 context,
                 panelHeight: panelHeight,
                 bg: bg,
-                title: title,
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _HotelTotalsListPage extends StatelessWidget {
+  const _HotelTotalsListPage({
+    required this.title,
+    required this.rooms,
+    required this.showGuest,
+    required this.onClosePanel,
+    required this.onRoomTap,
+    this.subtitle,
+  });
+
+  final String title;
+  final List<Map<String, dynamic>> rooms;
+  final bool showGuest;
+  final String? subtitle;
+  final VoidCallback onClosePanel;
+  final void Function(String roomId) onRoomTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = Theme.of(context).colorScheme.surface;
+
+    return ColoredBox(
+      color: bg,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _HotelTotalsPanelHeader(
+            title: title,
+            backgroundColor: bg,
+            onBack: onClosePanel,
+          ),
+          Expanded(
+            child: _HotelTotalsRoomGrid(
+              rooms: rooms,
+              showGuest: showGuest,
+              subtitle: subtitle,
+              onRoomTap: onRoomTap,
+            ),
+          ),
         ],
       ),
     );

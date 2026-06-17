@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../navigation_keys.dart';
+import '../../../widgets/app_overlay.dart';
 import '../admin_dashboard_models.dart';
 import '../admin_room_detail_screen.dart';
 import '../admin_room_summary_detail_screen.dart';
@@ -32,7 +33,7 @@ abstract final class AdminRoomDetailNavigation {
     return null;
   }
 
-  /// Room detail as a full-screen route (avoids blank Android bottom sheets).
+  /// Room detail route (fallback when hotel-totals panel is unavailable).
   static Future<void> showHotelTotalsRoomDetailSheet({
     required BuildContext context,
     required String roomId,
@@ -45,16 +46,14 @@ abstract final class AdminRoomDetailNavigation {
     if (navContext == null) return;
 
     await _trackSheet(
-      Navigator.of(navContext, rootNavigator: true).push<void>(
-        MaterialPageRoute<void>(
-          fullscreenDialog: true,
-          builder: (ctx) => AdminRoomDetailScreen(
-            key: ValueKey('hotel-totals-detail-$id'),
-            roomId: id,
-            embedded: true,
-            initialRoomSnapshot: initialRoomSnapshot,
-            onClose: () => Navigator.of(ctx).pop(),
-          ),
+      pushAdminFullScreen<void>(
+        navContext,
+        builder: (ctx) => AdminRoomDetailScreen(
+          key: ValueKey('hotel-totals-detail-$id'),
+          roomId: id,
+          embedded: true,
+          initialRoomSnapshot: initialRoomSnapshot,
+          onClose: () => Navigator.of(ctx).pop(),
         ),
       ),
     );

@@ -148,16 +148,23 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         final room = payload != null ? _asMap(payload['room']) : null;
         if (payload != null && room != null) {
           final priorRoom = _asMap(_data?['room']);
+          final priorBooking = _data?['active_booking'];
           _data = {
             ...?_data,
             'room': _mergeRoomMaps(priorRoom, room),
-            'active_booking': payload['active_booking'],
-            'booking_charges': payload['booking_charges'],
-            'booking_charges_total': payload['booking_charges_total'],
-            'refund_total': payload['refund_total'],
-            'can_edit_guest_stay': payload['can_edit_guest_stay'],
-            'management_blocked_reason': payload['management_blocked_reason'],
-            'pending_reservation': payload['pending_reservation'],
+            'active_booking':
+                payload['active_booking'] ?? priorBooking,
+            'booking_charges':
+                payload['booking_charges'] ?? _data?['booking_charges'],
+            'booking_charges_total': payload['booking_charges_total'] ??
+                _data?['booking_charges_total'],
+            'refund_total': payload['refund_total'] ?? _data?['refund_total'],
+            'can_edit_guest_stay': payload['can_edit_guest_stay'] ??
+                _data?['can_edit_guest_stay'],
+            'management_blocked_reason': payload['management_blocked_reason'] ??
+                _data?['management_blocked_reason'],
+            'pending_reservation': payload['pending_reservation'] ??
+                _data?['pending_reservation'],
           };
           if (_canEditGuestStay) {
             _data!.remove('management_blocked_reason');
@@ -849,11 +856,11 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     if (widget.panelBodyOnly) {
       return ColoredBox(
         color: const Color(0xFFF5F3EF),
-        child: _buildBody(),
+        child: _buildSafeBody(),
       );
     }
 
-    final body = SizedBox.expand(child: _buildBody());
+    final body = SizedBox.expand(child: _buildSafeBody());
 
     if (widget.embedded) {
       return Scaffold(
@@ -885,9 +892,21 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
         ],
       ),
-      body: SizedBox.expand(child: _buildBody()),
+      body: SizedBox.expand(child: _buildSafeBody()),
     ),
     );
+  }
+
+  Widget _buildSafeBody() {
+    try {
+      return _buildBody();
+    } catch (e, st) {
+      debugPrint('AdminRoomDetailScreen build error: $e\n$st');
+      return AppErrorView(
+        message: 'Could not display room details ($e).',
+        onRetry: _load,
+      );
+    }
   }
 
   bool get _canEditGuestStay {

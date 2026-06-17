@@ -124,4 +124,51 @@ void main() {
     expect(find.text('Room 101'), findsOneWidget);
     expect(find.text('Booking info'), findsOneWidget);
   });
+
+  testWidgets('room detail stays visible after panel host rebuild', (tester) async {
+    const occupiedRoom = {
+      'id': 'room-occ-1',
+      'room_number': '101',
+      'status': 'checked_in',
+      'current_guest_name': 'Guest One',
+    };
+
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    late BuildContext hostContext;
+    late VoidCallback rebuildHost;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setHostState) {
+            rebuildHost = () => setHostState(() {});
+            return HotelTotalsRoomPanelHost(
+              child: Builder(
+                builder: (context) {
+                  hostContext = context;
+                  return const Scaffold(body: SizedBox());
+                },
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    openHotelTotalsRoomDetail(hostContext, room: occupiedRoom);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(find.text('Room details'), findsOneWidget);
+    expect(find.text('Room 101'), findsOneWidget);
+
+    rebuildHost();
+    await tester.pump();
+
+    expect(find.text('Room details'), findsOneWidget);
+    expect(find.text('Room 101'), findsOneWidget);
+    expect(find.text('Booking info'), findsOneWidget);
+  });
 }
