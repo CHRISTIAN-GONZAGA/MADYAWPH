@@ -106,9 +106,47 @@ class _BookingsSectionState extends State<BookingsSection>
   List<Map<String, dynamic>> get _resList =>
       widget.reservations.whereType<Map<String, dynamic>>().toList();
 
-  List<Map<String, dynamic>> get _bookedRooms => widget.rooms
-      .where((r) => AdminDashboardModels.statusOf(r) == 'booked')
-      .toList();
+  List<Map<String, dynamic>> get _bookedRooms {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final out = widget.rooms
+        .where((r) => AdminDashboardModels.statusOf(r) == 'booked')
+        .toList();
+    final seen = out.map(AdminDashboardModels.roomIdOf).where((id) => id.isNotEmpty).toSet();
+
+    for (final booking in widget.bookings) {
+      final status = (booking['status'] ?? '').toString().toLowerCase();
+      if (status == 'completed' || status == 'cancelled') {
+        continue;
+      }
+      final checkIn = AdminDashboardModels.parseDate(
+        (booking['check_in_date'] ?? '').toString(),
+      );
+      if (checkIn == null || checkIn.isAfter(today)) {
+        continue;
+      }
+      final roomId = (booking['room_id'] ?? '').toString();
+      if (roomId.isEmpty || seen.contains(roomId)) {
+        continue;
+      }
+      Map<String, dynamic>? room;
+      for (final r in widget.rooms) {
+        if (AdminDashboardModels.roomIdOf(r) == roomId) {
+          room = r;
+          break;
+        }
+      }
+      if (room == null) {
+        continue;
+      }
+      if (AdminDashboardModels.statusOf(room) == 'checked_in') {
+        continue;
+      }
+      out.add(room);
+      seen.add(roomId);
+    }
+
+    return out;
+  }
 
   List<Map<String, dynamic>> get _pendingReservations => _resList
       .where((r) => (r['status'] ?? '').toString() == 'pending_approval')

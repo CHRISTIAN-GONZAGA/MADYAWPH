@@ -3863,7 +3863,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
       );
     }
     final allRooms = (_data!['rooms'] as List<dynamic>?) ?? [];
-    final rooms = widget.searchContext != null
+    final rooms = widget.searchContext != null || widget.adminLocalBooking
         ? allRooms
         : allRooms.where((raw) {
             final r = raw as Map<String, dynamic>;
@@ -4165,22 +4165,33 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
     );
   }
 
-  Widget _availableBadge(ColorScheme scheme, {bool compact = false}) {
+  Widget _walkInStatusBadge(
+    Map<String, dynamic> room,
+    ColorScheme scheme, {
+    bool compact = false,
+  }) {
+    final tileStatus = AdminDashboardModels.walkInTileStatus(room);
+    final color = AdminDashboardModels.walkInTileColor(tileStatus);
+    final label = switch (tileStatus) {
+      'available' => 'Avail',
+      'reserved' => 'Rsvd',
+      _ => 'Occ',
+    };
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: compact ? 5 : 6,
         vertical: compact ? 1 : 2,
       ),
       decoration: BoxDecoration(
-        color: Colors.green.shade100,
+        color: color.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(compact ? 6 : 8),
       ),
       child: Text(
-        'Avail',
+        label,
         style: TextStyle(
           fontSize: compact ? 8 : 9,
           fontWeight: FontWeight.w700,
-          color: Colors.green.shade800,
+          color: color,
         ),
       ),
     );
@@ -4234,7 +4245,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                           ),
                     ),
                   ),
-                  _availableBadge(scheme, compact: dense),
+                  _walkInStatusBadge(r, scheme, compact: dense),
                 ],
               ),
               if (hasSubtitle) ...[

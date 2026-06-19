@@ -196,9 +196,13 @@ class CustomerPortalApiController extends Controller
             ))
             ->take(30)
             ->values()
-            ->map(function (Room $room) use ($hotelId, $categoryImage, $availableValue) {
+            ->map(function (Room $room) use ($hotelId, $categoryImage, $availableValue, $adminWalkIn) {
                 try {
-                    return $this->serializeCustomerRoom($room, $hotelId, $categoryImage, $availableValue);
+                    $payload = $this->serializeCustomerRoom($room, $hotelId, $categoryImage, $availableValue);
+
+                    return $adminWalkIn
+                        ? $this->enrichAdminWalkInRoom($room, $payload)
+                        : $payload;
                 } catch (Throwable $e) {
                     Log::warning('Skipping customer room row', [
                         'room_id' => (string) $room->id,
@@ -663,6 +667,51 @@ class CustomerPortalApiController extends Controller
         ];
     }
 
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function enrichAdminWalkInRoom(Room $room, array $payload): array
+    {
+        $status = strtolower(SafeModelAttributes::rawString($room, 'status'));
+        $payload['status'] = $status !== ''
+            ? $status
+            : RoomStatus::AVAILABLE->value;
+
+        if (filled($room->current_check_in)) {
+            $payload['current_check_in'] = Carbon::parse((string) $room->current_check_in)->toDateString();
+        }
+        if (filled($room->current_check_out)) {
+            $payload['current_check_out'] = Carbon::parse((string) $room->current_check_out)->toDateString();
+        }
+        if (filled($room->current_guest_name)) {
+            $payload['current_guest_name'] = (string) $room->current_guest_name;
+        }
+
+        $booking = Booking::withoutGlobalScopes()
+            ->where('hotel_id', (string) $room->hotel_id)
+            ->where('room_id', (string) $room->id)
+            ->whereNotIn('status', [
+                BookingStatus::COMPLETED->value,
+                BookingStatus::CANCELLED->value,
+            ])
+            ->orderByDesc('check_in_date')
+            ->first();
+
+        if ($booking !== null) {
+            $payload['latest_booking'] = [
+                'id' => (string) $booking->id,
+                'guest_name' => (string) ($booking->guest_name ?? ''),
+                'check_in_date' => optional($booking->check_in_date)->toDateString(),
+                'check_out_date' => optional($booking->check_out_date)->toDateString(),
+                'check_in_time' => (string) ($booking->check_in_time ?? ''),
+                'check_out_time' => (string) ($booking->check_out_time ?? ''),
+            ];
+        }
+
+        return $payload;
+    }
+
     private function roomTypeKey(Room $room): string
     {
         return strtolower(SafeModelAttributes::rawString($room, 'room_type'));
@@ -676,24 +725,70 @@ class CustomerPortalApiController extends Controller
         }
         if (in_array($status, [
             RoomStatus::AVAILABLE->value,
-            RoomStatus::RESERVED->value,
             RoomStatus::CHECKED_OUT->value,
         ], true)) {
             return true;
         }
-        if ($status === RoomStatus::BOOKED->value) {
-            $checkInRaw = $room->current_check_in ?? null;
-            if (! filled($checkInRaw)) {
-                return true;
-            }
 
-            return Carbon::parse((string) $checkInRaw)->startOfDay()->gt(now()->startOfDay());
+        if ($this->roomOnlyHasFutureStayHold($room)) {
+            return true;
         }
+
+        if ($status === RoomStatus::RESERVED->value) {
+            return $this->roomStayStartDay($room)?->gt(now()->startOfDay()) ?? true;
+        }
+
         if ($status === '') {
             return trim((string) ($room->current_guest_name ?? '')) === '';
         }
 
         return false;
+    }
+
+    /**
+     * Room is held for a stay that has not started yet (check-in after today).
+     */
+    private function roomOnlyHasFutureStayHold(Room $room): bool
+    {
+        $today = now()->startOfDay();
+        $stayStart = $this->roomStayStartDay($room);
+        if ($stayStart !== null && $stayStart->gt($today)) {
+            return true;
+        }
+
+        return Booking::withoutGlobalScopes()
+            ->where('hotel_id', (string) $room->hotel_id)
+            ->where('room_id', (string) $room->id)
+            ->whereNotIn('status', [
+                BookingStatus::COMPLETED->value,
+                BookingStatus::CANCELLED->value,
+            ])
+            ->where('check_in_date', '>', $today->toDateString())
+            ->exists();
+    }
+
+    private function roomStayStartDay(Room $room): ?Carbon
+    {
+        $checkInRaw = $room->current_check_in ?? null;
+        if (filled($checkInRaw)) {
+            return Carbon::parse((string) $checkInRaw)->startOfDay();
+        }
+
+        $booking = Booking::withoutGlobalScopes()
+            ->where('hotel_id', (string) $room->hotel_id)
+            ->where('room_id', (string) $room->id)
+            ->whereNotIn('status', [
+                BookingStatus::COMPLETED->value,
+                BookingStatus::CANCELLED->value,
+            ])
+            ->orderByDesc('check_in_date')
+            ->first();
+
+        if ($booking === null || $booking->check_in_date === null) {
+            return null;
+        }
+
+        return Carbon::parse($booking->check_in_date)->startOfDay();
     }
 
     private function countAvailableRoomsInCategory(

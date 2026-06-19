@@ -45,6 +45,19 @@ void main() {
       );
     });
 
+    test('available room with future latest_booking is reserved status', () {
+      final future = DateTime.now().add(const Duration(days: 3));
+      expect(
+        AdminDashboardModels.walkInTileStatus({
+          'status': 'available',
+          'latest_booking': {
+            'check_in_date': future.toIso8601String().split('T').first,
+          },
+        }),
+        'reserved',
+      );
+    });
+
     test('future booked room is reserved status', () {
       final future = DateTime.now().add(const Duration(days: 3));
       expect(

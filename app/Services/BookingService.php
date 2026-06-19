@@ -147,14 +147,20 @@ class BookingService
                 'metadata' => $charge['metadata'],
             ]);
             $generatedPassword = $this->guestRoomAccessCodeService->generateUnique();
+            $checkInDay = $stay['check_in']->copy()->startOfDay();
+            $today = now()->startOfDay();
 
-            $room->update([
-                'status' => RoomStatus::BOOKED->value,
-                'current_guest_name' => $booking->guest_name,
-                'current_check_in' => $booking->check_in_date,
-                'current_check_out' => $booking->check_out_date,
-                'current_access_code' => $generatedPassword,
-            ]);
+            // Same-day / overdue arrivals occupy the room tile; future stays keep the bed
+            // bookable on the walk-in board until check-in day (booking record holds dates).
+            if ($checkInDay->lte($today)) {
+                $room->update([
+                    'status' => RoomStatus::BOOKED->value,
+                    'current_guest_name' => $booking->guest_name,
+                    'current_check_in' => $booking->check_in_date,
+                    'current_check_out' => $booking->check_out_date,
+                    'current_access_code' => $generatedPassword,
+                ]);
+            }
 
             $this->activityLogService->log(
                 $room->hotel_id,

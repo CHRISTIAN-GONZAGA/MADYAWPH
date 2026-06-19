@@ -205,6 +205,7 @@ class HotelAvailabilityService
 
     /**
      * Orphan booking rows must not block new stays when the room is physically vacant.
+     * Future holds on vacant tiles are intentional and must still participate in conflicts.
      */
     private function bookingIsStaleForVacantRoom(Booking $booking, Room $room): bool
     {
@@ -212,7 +213,14 @@ class HotelAvailabilityService
             return true;
         }
 
-        return $this->roomIsVacantForWalkIn($room);
+        if (! $this->roomIsVacantForWalkIn($room)) {
+            return false;
+        }
+
+        $today = now()->startOfDay();
+        $checkInDay = Carbon::parse($booking->check_in_date)->startOfDay();
+
+        return $checkInDay->lte($today);
     }
 
     private function bookingOverlapsRequestWindow(
