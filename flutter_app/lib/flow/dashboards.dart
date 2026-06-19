@@ -3208,6 +3208,9 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
       if (widget.searchContext != null) {
         params.addAll(widget.searchContext!.queryParams);
       }
+      if (widget.adminLocalBooking) {
+        params['admin_walk_in'] = '1';
+      }
       final res = await publicDio().get<Map<String, dynamic>>(
         '/customer/categories/${widget.categoryId}/rooms',
         queryParameters: params,

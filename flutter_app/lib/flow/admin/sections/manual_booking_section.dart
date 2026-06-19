@@ -22,14 +22,14 @@ class ManualBookingSection extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
       children: [
         Text(
-          'Manual booking',
+          'Walk-in booking',
           style: Theme.of(context).textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.w800,
               ),
         ),
         const SizedBox(height: 6),
         Text(
-          'Tap a gray available room to book a local walk-in. Bookings here appear under Local, not Online.',
+          'All rooms by category — tap a gray available room to book a local walk-in guest.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 16),

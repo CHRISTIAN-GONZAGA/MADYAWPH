@@ -63,6 +63,7 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
         '/customer/categories',
         queryParameters: {
           'hotel_id': widget.hotelId,
+          'admin_walk_in': '1',
           ..._walkInStayDates.queryParams,
         },
       );
@@ -247,12 +248,10 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
                   borderRadius: BorderRadius.circular(10),
                   clipBehavior: Clip.antiAlias,
                   child: InkWell(
-                    onTap: available <= 0
-                        ? null
-                        : () => _openCategory(
-                              categoryId: id,
-                              categoryName: name,
-                            ),
+                    onTap: () => _openCategory(
+                      categoryId: id,
+                      categoryName: name,
+                    ),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 7,

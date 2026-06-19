@@ -21,6 +21,7 @@ use App\Services\GuestRoomAccessCodeService;
 use App\Services\HotelAvailabilityService;
 use App\Services\RoomPricingService;
 use App\Services\SmsService;
+use App\Support\AdminWalkInSupport;
 use App\Support\ChatAttachmentUrl;
 use App\Support\CustomerStayPricing;
 use App\Support\EnumHelper;
@@ -81,19 +82,21 @@ class CustomerPortalApiController extends Controller
 
         [$checkIn, $checkOut] = $this->parseOptionalStayDates($request);
         $dateFilter = $checkIn !== null && $checkOut !== null;
+        $adminWalkIn = $this->isAdminWalkInRequest($request);
         $availableValue = RoomStatus::AVAILABLE->value;
 
         $categories = RoomCategory::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
             ->orderBy('name')
             ->get(['id', 'name', 'description', 'image_url'])
-            ->map(function (RoomCategory $cat) use ($hotelId, $dateFilter, $checkIn, $checkOut) {
+            ->map(function (RoomCategory $cat) use ($hotelId, $dateFilter, $checkIn, $checkOut, $adminWalkIn) {
                 $available = $this->countAvailableRoomsInCategory(
                     $hotelId,
                     (string) $cat->id,
                     null,
-                    $dateFilter ? $checkIn : null,
-                    $dateFilter ? $checkOut : null,
+                    $dateFilter && ! $adminWalkIn ? $checkIn : null,
+                    $dateFilter && ! $adminWalkIn ? $checkOut : null,
+                    $adminWalkIn,
                 );
 
                 return [
@@ -110,20 +113,24 @@ class CustomerPortalApiController extends Controller
                 ->get()
                 ->groupBy(fn (Room $room) => $this->roomTypeKey($room))
                 ->filter(fn (mixed $group, string $type) => $type !== '')
-                ->map(function ($roomsByType, $type) use ($hotelId, $dateFilter, $checkIn, $checkOut) {
-                    $available = $dateFilter
+                ->map(function ($roomsByType, $type) use ($hotelId, $dateFilter, $checkIn, $checkOut, $adminWalkIn) {
+                    $available = $dateFilter && ! $adminWalkIn
                         ? $this->countAvailableRoomsInCategory(
                             $hotelId,
                             null,
                             ucfirst((string) $type),
                             $checkIn,
                             $checkOut,
+                            false,
                         )
-                        : $roomsByType->filter(function ($room) {
-                            $st = strtolower(SafeModelAttributes::rawString($room, 'status'));
-
-                            return $st === RoomStatus::AVAILABLE->value;
-                        })->count();
+                        : $this->countAvailableRoomsInCategory(
+                            $hotelId,
+                            null,
+                            ucfirst((string) $type),
+                            null,
+                            null,
+                            $adminWalkIn,
+                        );
 
                     $coverRoom = $roomsByType->first(
                         fn ($room) => filled($room->image_url)
@@ -140,7 +147,7 @@ class CustomerPortalApiController extends Controller
                 ->values();
         }
 
-        if ($dateFilter) {
+        if ($dateFilter && ! $adminWalkIn) {
             $categories = $categories->filter(
                 fn (array $cat) => ((int) ($cat['available_rooms'] ?? 0)) > 0
             )->values();
@@ -172,19 +179,22 @@ class CustomerPortalApiController extends Controller
             ->first();
         [$checkIn, $checkOut] = $this->parseOptionalStayDates($request);
         $dateFilter = $checkIn !== null && $checkOut !== null;
+        $adminWalkIn = $this->isAdminWalkInRequest($request);
         $availableValue = RoomStatus::AVAILABLE->value;
         $categoryImage = ChatAttachmentUrl::fromStoredUrl($category?->image_url);
 
         $scopedRooms = $this->roomsInCategoryScope($hotelId, $category, $categoryId);
 
         $rooms = $scopedRooms
-            ->filter(fn (Room $room) => $this->roomVisibleToCustomer(
-                $room,
-                $hotelId,
-                $dateFilter,
-                $checkIn,
-                $checkOut,
-            ))
+            ->filter(fn (Room $room) => $adminWalkIn
+                ? AdminWalkInSupport::roomIsBookable($room)
+                : $this->roomVisibleToCustomer(
+                    $room,
+                    $hotelId,
+                    $dateFilter,
+                    $checkIn,
+                    $checkOut,
+                ))
             ->take(30)
             ->values()
             ->map(function (Room $room) use ($hotelId, $categoryImage, $availableValue) {
@@ -584,11 +594,17 @@ class CustomerPortalApiController extends Controller
 
         if ($category !== null) {
             $catId = (string) $category->id;
+            $catName = strtolower(trim((string) ($category->name ?? '')));
 
-            return $all->filter(function (Room $room) use ($catId) {
+            return $all->filter(function (Room $room) use ($catId, $catName) {
                 $roomCat = (string) ($room->getAttributes()['category_id'] ?? '');
+                if ($roomCat !== '' && HotelAvailabilityService::idsMatch($roomCat, $catId)) {
+                    return true;
+                }
 
-                return $roomCat !== '' && HotelAvailabilityService::idsMatch($roomCat, $catId);
+                $roomCatName = strtolower(trim((string) ($room->getAttributes()['category_name'] ?? '')));
+
+                return $catName !== '' && $roomCatName === $catName;
             })->values();
         }
 
@@ -637,6 +653,12 @@ class CustomerPortalApiController extends Controller
         ];
     }
 
+    private function isAdminWalkInRequest(Request $request): bool
+    {
+        return $request->boolean('admin_walk_in')
+            || $request->query('admin_walk_in') === '1';
+    }
+
     private function roomTypeKey(Room $room): string
     {
         return strtolower(SafeModelAttributes::rawString($room, 'room_type'));
@@ -648,6 +670,7 @@ class CustomerPortalApiController extends Controller
         ?string $roomType,
         ?Carbon $checkIn,
         ?Carbon $checkOut,
+        bool $adminWalkIn = false,
     ): int {
         $category = null;
         $scopeKey = '';
@@ -666,6 +689,12 @@ class CustomerPortalApiController extends Controller
         $scoped = $categoryId !== null || $roomType !== null
             ? $this->roomsInCategoryScope($hotelId, $category, $scopeKey)
             : Room::withoutGlobalScopes()->where('hotel_id', $hotelId)->get();
+
+        if ($adminWalkIn) {
+            return (int) $scoped->filter(
+                fn (Room $room) => AdminWalkInSupport::roomIsBookable($room)
+            )->count();
+        }
 
         if ($checkIn === null || $checkOut === null) {
             return (int) $scoped->filter(function (Room $room) {
