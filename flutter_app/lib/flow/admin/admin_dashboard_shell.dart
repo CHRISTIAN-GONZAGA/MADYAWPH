@@ -409,6 +409,10 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           hotelId: hotelId,
           hotelName: hotelName,
           onChanged: widget.onRefresh,
+          onBookingComplete: () async {
+            await widget.onRefresh();
+            _openBookingsTab('local');
+          },
         ),
         4,
       ),

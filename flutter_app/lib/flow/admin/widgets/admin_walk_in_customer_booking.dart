@@ -347,7 +347,7 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Room ${room['room_number']} booked. Check in from the Book tab when the guest arrives.',
+            'Room ${room['room_number']} booked. Open the Book tab to check the guest in when they arrive.',
           ),
         ),
       );

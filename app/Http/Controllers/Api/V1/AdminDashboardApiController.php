@@ -72,22 +72,30 @@ class AdminDashboardApiController extends Controller
         $pendingReservations = ExternalReservation::query()
             ->whereIn('status', ['pending_approval', 'pending'])
             ->count();
-        $today = now()->toDateString();
+        $todayStart = now()->startOfDay();
         $bookingsList = Booking::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
             ->whereNotIn('status', [
                 BookingStatus::COMPLETED->value,
                 BookingStatus::CANCELLED->value,
             ])
-            ->where(function ($q) use ($today) {
-                $q->whereNull('check_out_date')
-                    ->orWhere('check_out_date', '>=', $today);
-            })
             ->with('room')
             ->latest('created_at')
-            ->limit(120)
+            ->limit(200)
             ->get()
-            ->map(fn (Booking $b) => AdminBookingPresenter::present($b, $b->room));
+            ->filter(function (Booking $booking) use ($todayStart) {
+                if (filled($booking->checked_out_at)) {
+                    return false;
+                }
+                if ($booking->check_out_date === null) {
+                    return true;
+                }
+
+                return Carbon::parse($booking->check_out_date)->startOfDay()->gte($todayStart);
+            })
+            ->take(120)
+            ->map(fn (Booking $b) => AdminBookingPresenter::present($b, $b->room))
+            ->values();
 
         $latestBookingsByRoom = Booking::withoutGlobalScopes()
             ->where('hotel_id', (string) $user->hotel_id)

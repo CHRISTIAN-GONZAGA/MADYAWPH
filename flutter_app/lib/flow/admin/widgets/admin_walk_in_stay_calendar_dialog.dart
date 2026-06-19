@@ -144,11 +144,43 @@ class _WalkInStayCalendarDialogState extends State<_WalkInStayCalendarDialog> {
       if (inD == null || outD == null) continue;
       final stayStart = DateUtils.dateOnly(inD);
       final stayEnd = DateUtils.dateOnly(outD);
+
+      // Checkout-day turnover: a stay ending on the new check-in day does not block.
+      if (rangeStart == stayEnd && stayStart.isBefore(stayEnd)) {
+        continue;
+      }
+
       if (!rangeEnd.isBefore(stayStart) && !rangeStart.isAfter(stayEnd)) {
         return true;
       }
     }
     return false;
+  }
+
+  DateTime _defaultCheckOutFor(DateTime checkIn) {
+    if (_hourly) {
+      return checkIn;
+    }
+    return checkIn.add(const Duration(days: 1));
+  }
+
+  WalkInStayDates? _resolveSelection() {
+    final checkIn = _checkIn;
+    if (checkIn == null) {
+      return null;
+    }
+    final checkOut = _checkOut ?? _defaultCheckOutFor(checkIn);
+    if (_hourly) {
+      if (checkOut.isBefore(checkIn)) {
+        return null;
+      }
+    } else if (!checkOut.isAfter(checkIn)) {
+      return null;
+    }
+    if (_rangeOverlapsStay(checkIn, checkOut)) {
+      return null;
+    }
+    return WalkInStayDates(checkIn: checkIn, checkOut: checkOut);
   }
 
   String _fmt(DateTime d) =>
@@ -159,12 +191,14 @@ class _WalkInStayCalendarDialogState extends State<_WalkInStayCalendarDialog> {
     setState(() {
       if (_checkIn == null || _checkOut != null) {
         _checkIn = day;
-        _checkOut = null;
+        final autoOut = _defaultCheckOutFor(day);
+        _checkOut = _rangeOverlapsStay(day, autoOut) ? null : autoOut;
         return;
       }
       if (day.isBefore(_checkIn!)) {
         _checkIn = day;
-        _checkOut = null;
+        final autoOut = _defaultCheckOutFor(day);
+        _checkOut = _rangeOverlapsStay(day, autoOut) ? null : autoOut;
         return;
       }
       if (_hourly) {
@@ -173,7 +207,8 @@ class _WalkInStayCalendarDialogState extends State<_WalkInStayCalendarDialog> {
         _checkOut = day;
       } else {
         _checkIn = day;
-        _checkOut = null;
+        final autoOut = _defaultCheckOutFor(day);
+        _checkOut = _rangeOverlapsStay(day, autoOut) ? null : autoOut;
       }
     });
   }
@@ -181,18 +216,14 @@ class _WalkInStayCalendarDialogState extends State<_WalkInStayCalendarDialog> {
   @override
   Widget build(BuildContext context) {
     final selectedDay = _checkOut ?? _checkIn ?? _today;
+    final selection = _resolveSelection();
+    final previewCheckOut =
+        _checkIn == null ? null : (_checkOut ?? _defaultCheckOutFor(_checkIn!));
     final rangeLabel = _checkIn == null
-        ? 'Tap check-in date'
-        : _checkOut == null
-            ? 'Check-in: ${_fmt(_checkIn!)} · tap check-out'
-            : 'Stay: ${_fmt(_checkIn!)} → ${_fmt(_checkOut!)}';
-
-    final rangeValid = _checkIn != null &&
-        _checkOut != null &&
-        (_hourly
-            ? !_checkOut!.isBefore(_checkIn!)
-            : _checkOut!.isAfter(_checkIn!)) &&
-        !_rangeOverlapsStay(_checkIn!, _checkOut!);
+        ? 'Tap check-in date (1 night is selected automatically)'
+        : previewCheckOut == null
+            ? 'Check-in: ${_fmt(_checkIn!)} · choose check-out'
+            : 'Stay: ${_fmt(_checkIn!)} → ${_fmt(previewCheckOut)}';
 
     final eventsForDay =
         _stays.where((s) => _stayOnDay(s, selectedDay)).toList();
@@ -242,8 +273,8 @@ class _WalkInStayCalendarDialogState extends State<_WalkInStayCalendarDialog> {
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     if (_checkIn != null &&
-                        _checkOut != null &&
-                        _rangeOverlapsStay(_checkIn!, _checkOut!)) ...[
+                        previewCheckOut != null &&
+                        _rangeOverlapsStay(_checkIn!, previewCheckOut)) ...[
                       const SizedBox(height: 8),
                       Text(
                         'Selected dates overlap an existing stay.',
@@ -292,16 +323,9 @@ class _WalkInStayCalendarDialogState extends State<_WalkInStayCalendarDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: _loading || !rangeValid
+          onPressed: _loading || selection == null
               ? null
-              : () {
-                  Navigator.of(context).pop(
-                    WalkInStayDates(
-                      checkIn: _checkIn!,
-                      checkOut: _checkOut!,
-                    ),
-                  );
-                },
+              : () => Navigator.of(context).pop(selection),
           child: const Text('Continue'),
         ),
       ],

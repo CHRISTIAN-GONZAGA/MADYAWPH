@@ -15,11 +15,13 @@ class AdminBookingSection extends StatefulWidget {
     required this.hotelId,
     required this.hotelName,
     required this.onChanged,
+    this.onBookingComplete,
   });
 
   final String hotelId;
   final String hotelName;
   final Future<void> Function() onChanged;
+  final Future<void> Function()? onBookingComplete;
 
   @override
   State<AdminBookingSection> createState() => _AdminBookingSectionState();
@@ -77,7 +79,11 @@ class _AdminBookingSectionState extends State<AdminBookingSection> {
   }
 
   Future<void> _onBooked() async {
-    await widget.onChanged();
+    if (widget.onBookingComplete != null) {
+      await widget.onBookingComplete!();
+    } else {
+      await widget.onChanged();
+    }
     if (mounted) await _load();
   }
 

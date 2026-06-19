@@ -73,6 +73,57 @@ class AdminDashboardTest extends TestCase
         $this->assertNotEmpty($response->json('amenityClaims'));
     }
 
+    public function test_admin_dashboard_lists_walk_in_booking_in_bookings_payload(): void
+    {
+        $hotel = Hotel::create(['name' => 'Walk-in Dashboard Hotel', 'location' => 'City']);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'admin_walkin_dash',
+            'email' => 'admin-walkin-dash@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => 'W1',
+            'category_name' => 'Standard',
+            'room_type' => 'Standard',
+            'price_per_night' => 1500,
+            'status' => 'available',
+        ]);
+
+        $checkIn = now()->setTime(14, 0);
+        $checkOut = now()->addDay()->setTime(11, 0);
+
+        $this->actingAs($admin)
+            ->postJson('/api/v1/admin/bookings', [
+                'room_id' => (string) $room->id,
+                'guest_name' => 'Walk-in Dash Guest',
+                'guest_email' => 'walkin-dash@test.local',
+                'guest_phone' => '09170000050',
+                'check_in_at' => $checkIn->toIso8601String(),
+                'check_out_at' => $checkOut->toIso8601String(),
+                'payment_method' => 'Cash',
+                'check_in_now' => false,
+            ])
+            ->assertCreated();
+
+        $response = $this->actingAs($admin)->getJson('/api/v1/admin/dashboard');
+        $response->assertOk();
+
+        $bookings = collect($response->json('bookings'));
+        $this->assertTrue(
+            $bookings->contains(
+                fn (array $booking) => ($booking['guest_name'] ?? '') === 'Walk-in Dash Guest'
+            )
+        );
+        $this->assertTrue(
+            $bookings->contains(
+                fn (array $booking) => ($booking['booking_type'] ?? '') === 'local'
+            )
+        );
+    }
+
     public function test_admin_chat_inbox_returns_threads(): void
     {
         $hotel = Hotel::create(['name' => 'Chat Hotel', 'location' => 'City']);

@@ -3251,7 +3251,9 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
         if (!mounted) return;
         if (booked) {
           await widget.onBooked?.call();
-          await _load();
+          if (mounted) {
+            Navigator.of(context).pop();
+          }
         }
       } finally {
         if (mounted) setState(() => _booking = false);

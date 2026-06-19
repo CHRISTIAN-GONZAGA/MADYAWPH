@@ -470,6 +470,9 @@ Route::middleware('role:admin')->group(function (): void {
             ->orderByDesc('check_in_date')
             ->get()
             ->filter(function (Booking $booking) use ($todayStart) {
+                if (filled($booking->checked_out_at)) {
+                    return false;
+                }
                 if ($booking->check_out_date === null) {
                     return false;
                 }

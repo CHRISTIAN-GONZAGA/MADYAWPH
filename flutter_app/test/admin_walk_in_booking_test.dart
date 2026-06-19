@@ -11,9 +11,8 @@ void main() {
     });
   });
 
-  testWidgets('walk-in calendar opens before guest details', (tester) async {
+  testWidgets('walk-in calendar continues after one tap for nightly stay', (tester) async {
     final tomorrow = DateTime.now().add(const Duration(days: 1));
-    final dayAfter = tomorrow.add(const Duration(days: 1));
 
     await tester.pumpWidget(
       MaterialApp(
@@ -47,15 +46,13 @@ void main() {
 
     expect(find.textContaining('Select dates'), findsOneWidget);
 
-    final tomorrowDay = '${tomorrow.day}';
-    await tester.tap(find.text(tomorrowDay).first);
+    await tester.tap(find.text('${tomorrow.day}').first);
     await tester.pumpAndSettle();
 
-    final dayAfterDay = '${dayAfter.day}';
-    await tester.tap(find.text(dayAfterDay).first);
-    await tester.pumpAndSettle();
+    final continueButton = find.widgetWithText(FilledButton, 'Continue');
+    expect(tester.widget<FilledButton>(continueButton).onPressed, isNotNull);
 
-    await tester.tap(find.text('Continue'));
+    await tester.tap(continueButton);
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Select dates'), findsNothing);

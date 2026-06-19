@@ -107,45 +107,95 @@ class _BookingsSectionState extends State<BookingsSection>
       widget.reservations.whereType<Map<String, dynamic>>().toList();
 
   List<Map<String, dynamic>> get _bookedRooms {
-    final today = DateUtils.dateOnly(DateTime.now());
-    final out = widget.rooms
-        .where((r) => AdminDashboardModels.statusOf(r) == 'booked')
-        .toList();
-    final seen = out.map(AdminDashboardModels.roomIdOf).where((id) => id.isNotEmpty).toSet();
+    final seen = <String>{};
+    final out = <Map<String, dynamic>>[];
 
     for (final booking in widget.bookings) {
       final status = (booking['status'] ?? '').toString().toLowerCase();
-      if (status == 'completed' || status == 'cancelled') {
+      if (status == 'completed' ||
+          status == 'cancelled' ||
+          status == 'checked_in') {
         continue;
       }
-      final checkIn = AdminDashboardModels.parseDate(
-        (booking['check_in_date'] ?? '').toString(),
+      if (status != 'booked' &&
+          status != 'reserved' &&
+          status != 'confirmed') {
+        continue;
+      }
+
+      final roomId = AdminDashboardModels.normalizeRoomIdString(
+        booking['room_id'],
       );
-      if (checkIn == null || checkIn.isAfter(today)) {
-        continue;
-      }
-      final roomId = (booking['room_id'] ?? '').toString();
       if (roomId.isEmpty || seen.contains(roomId)) {
         continue;
       }
+
       Map<String, dynamic>? room;
       for (final r in widget.rooms) {
-        if (AdminDashboardModels.roomIdOf(r) == roomId) {
+        if (AdminDashboardModels.normalizeRoomIdString(
+              AdminDashboardModels.roomIdOf(r),
+            ) ==
+            roomId) {
           room = r;
           break;
         }
       }
-      if (room == null) {
+
+      if (room != null && AdminDashboardModels.statusOf(room) == 'checked_in') {
         continue;
       }
-      if (AdminDashboardModels.statusOf(room) == 'checked_in') {
+
+      out.add(_queueRoomFromBooking(booking, room));
+      seen.add(roomId);
+    }
+
+    for (final room in widget.rooms) {
+      if (AdminDashboardModels.statusOf(room) != 'booked') {
+        continue;
+      }
+      final roomId =
+          AdminDashboardModels.normalizeRoomIdString(AdminDashboardModels.roomIdOf(room));
+      if (roomId.isEmpty || seen.contains(roomId)) {
         continue;
       }
       out.add(room);
       seen.add(roomId);
     }
 
+    out.sort((a, b) {
+      final aIn = AdminDashboardModels.stayStartDate(a);
+      final bIn = AdminDashboardModels.stayStartDate(b);
+      if (aIn == null && bIn == null) return 0;
+      if (aIn == null) return 1;
+      if (bIn == null) return -1;
+      return aIn.compareTo(bIn);
+    });
+
     return out;
+  }
+
+  Map<String, dynamic> _queueRoomFromBooking(
+    Map<String, dynamic> booking,
+    Map<String, dynamic>? room,
+  ) {
+    return {
+      if (room != null) ...room,
+      'id': room != null
+          ? AdminDashboardModels.roomIdOf(room)
+          : AdminDashboardModels.normalizeRoomIdString(booking['room_id']),
+      'room_number': booking['room_number'] ?? room?['room_number'],
+      'category_name': booking['category_name'] ?? room?['category_name'],
+      'current_guest_name': booking['guest_name'],
+      'current_check_in': booking['check_in_date'],
+      'current_check_out': booking['check_out_date'],
+      'latest_booking': booking,
+    };
+  }
+
+  bool _canCheckInToday(Map<String, dynamic> room) {
+    final checkIn = AdminDashboardModels.stayStartDate(room);
+    if (checkIn == null) return true;
+    return !DateUtils.dateOnly(checkIn).isAfter(DateUtils.dateOnly(DateTime.now()));
   }
 
   List<Map<String, dynamic>> get _pendingReservations => _resList
@@ -712,6 +762,7 @@ class _BookingsSectionState extends State<BookingsSection>
   }
 
   Widget _bookingCard(Map<String, dynamic> room) {
+    final canCheckIn = _canCheckInToday(room);
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       child: ListTile(
@@ -722,8 +773,8 @@ class _BookingsSectionState extends State<BookingsSection>
         subtitle: Text(AdminDashboardModels.formatStayRange(room)),
         isThreeLine: true,
         trailing: FilledButton(
-          onPressed: _busy ? null : () => _checkInRoom(room),
-          child: const Text('Check in'),
+          onPressed: _busy || !canCheckIn ? null : () => _checkInRoom(room),
+          child: Text(canCheckIn ? 'Check in' : 'Awaiting'),
         ),
         onTap: () {
           AdminRoomNavigation.openDetailById(
