@@ -144,50 +144,92 @@ class _BookingsSectionState extends State<BookingsSection>
     return d.year == day.year && d.month == day.month && d.day == day.day;
   }
 
-  /// Current and upcoming stays from dashboard booking records.
-  List<Map<String, dynamic>> get _calendarBookings {
+  /// Current and upcoming stays for the calendar (booking records + room holds).
+  List<Map<String, dynamic>> get _calendarStays {
     final today = DateUtils.dateOnly(DateTime.now());
-    return widget.bookings.where((b) {
+    final seenRoomIds = <String>{};
+    final out = <Map<String, dynamic>>[];
+
+    for (final b in widget.bookings) {
       final status = (b['status'] ?? '').toString().toLowerCase();
       if (status == 'cancelled' || status == 'completed') {
-        return false;
+        continue;
       }
       final checkOut = AdminDashboardModels.parseDate(
         (b['check_out_date'] ?? '').toString(),
       );
       if (checkOut != null && checkOut.isBefore(today)) {
-        return false;
+        continue;
       }
-      return true;
-    }).toList();
+      final roomId = (b['room_id'] ?? '').toString();
+      if (roomId.isNotEmpty) {
+        seenRoomIds.add(roomId);
+      }
+      out.add({...b, '_calendar_source': 'booking'});
+    }
+
+    for (final room in widget.rooms) {
+      final roomId = AdminDashboardModels.roomIdOf(room);
+      if (roomId.isEmpty || seenRoomIds.contains(roomId)) {
+        continue;
+      }
+      final status = AdminDashboardModels.statusOf(room);
+      if (!['booked', 'checked_in', 'reserved'].contains(status)) {
+        continue;
+      }
+      final checkIn = AdminDashboardModels.stayStartDate(room);
+      final checkOut = AdminDashboardModels.stayEndDate(room);
+      if (checkIn == null || checkOut == null) {
+        continue;
+      }
+      if (checkOut.isBefore(today)) {
+        continue;
+      }
+      final booking = room['latest_booking'] as Map<String, dynamic>?;
+      out.add({
+        'id': booking?['id'] ?? roomId,
+        'room_id': roomId,
+        'guest_name': AdminDashboardModels.guestName(room),
+        'room_number': room['room_number'],
+        'category_name': room['category_name'],
+        'check_in_date': _fmt(checkIn),
+        'check_out_date': _fmt(checkOut),
+        'status': status,
+        'booking_type': 'local',
+        '_calendar_source': 'room',
+        '_room': room,
+      });
+    }
+
+    return out;
   }
 
-  bool _bookingActiveOnDay(Map<String, dynamic> b, DateTime day) {
+  bool _stayActiveOnDay(Map<String, dynamic> entry, DateTime day) {
     final checkIn = AdminDashboardModels.parseDate(
-      (b['check_in_date'] ?? '').toString(),
+      (entry['check_in_date'] ?? '').toString(),
     );
     final checkOut = AdminDashboardModels.parseDate(
-      (b['check_out_date'] ?? '').toString(),
+      (entry['check_out_date'] ?? '').toString(),
     );
     if (checkIn == null || checkOut == null) {
       return false;
     }
     final d = DateUtils.dateOnly(day);
-    if (DateUtils.isSameDay(d, checkIn)) {
-      return true;
-    }
-    return d.isAfter(checkIn) && d.isBefore(checkOut);
+    final start = DateUtils.dateOnly(checkIn);
+    final end = DateUtils.dateOnly(checkOut);
+
+    return !d.isBefore(start) && !d.isAfter(end);
   }
 
   int _bookingCountOnDay(DateTime day) =>
-      _calendarBookings.where((b) => _bookingActiveOnDay(b, day)).length;
+      _calendarStays.where((b) => _stayActiveOnDay(b, day)).length;
 
   bool _hasCalendarEvent(DateTime day) => _bookingCountOnDay(day) > 0;
 
   List<Map<String, dynamic>> _eventsOnDay(DateTime day) {
     final out = <Map<String, dynamic>>[];
-    for (final b in _calendarBookings) {
-      if (_bookingActiveOnDay(b, day)) {
+    for (final b in _calendarStays) {
+      if (_stayActiveOnDay(b, day)) {
         out.add({
           'type': 'booking_record',
           'booking': b,
@@ -709,7 +751,7 @@ class _BookingsSectionState extends State<BookingsSection>
 
   Widget _calendarView() {
     final events = _eventsOnDay(_selectedDay);
-    final monthBookings = _calendarBookings.length;
+    final monthBookings = _calendarStays.length;
     final bookedRooms = AdminDashboardModels.activeStayRoomCount(widget.rooms);
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),

@@ -136,6 +136,10 @@ class HotelAvailabilityService
                 continue;
             }
 
+            if ($this->bookingIsInactive($booking)) {
+                continue;
+            }
+
             $bookingCheckIn = Carbon::parse($booking->check_in_date)->startOfDay();
             if ($bookingCheckIn->gte($out)) {
                 continue;
@@ -173,7 +177,30 @@ class HotelAvailabilityService
             return false;
         }
 
+        if (in_array($status, [RoomStatus::AVAILABLE->value, RoomStatus::CHECKED_OUT->value], true)) {
+            return true;
+        }
+
         return trim((string) ($room->current_guest_name ?? '')) === '';
+    }
+
+    private function bookingIsInactive(Booking $booking): bool
+    {
+        $status = strtolower((string) ($booking->status?->value ?? $booking->status ?? ''));
+        if (in_array($status, [BookingStatus::COMPLETED->value, BookingStatus::CANCELLED->value], true)) {
+            return true;
+        }
+
+        if (filled($booking->checked_out_at)) {
+            return true;
+        }
+
+        $stayEnd = $this->bookingStayEndsAt($booking, null);
+        if ($stayEnd->lt(now())) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -196,6 +223,10 @@ class HotelAvailabilityService
     ): bool {
         $bookingStart = $this->bookingStayStartsAt($booking, $room);
         $bookingEnd = $this->bookingStayEndsAt($booking, $room);
+
+        if ($bookingEnd->lte($requestStart)) {
+            return false;
+        }
 
         return $bookingStart->lt($requestEnd) && $bookingEnd->gt($requestStart);
     }
@@ -383,11 +414,35 @@ class HotelAvailabilityService
                 continue;
             }
 
+            if ($this->reservationShouldNotBlock($reservation)) {
+                continue;
+            }
+
             $reservationCheckIn = Carbon::parse($reservation->check_in_date)->startOfDay();
             if ($reservationCheckIn->gte($requestEndsAt->copy()->startOfDay())) {
                 continue;
             }
 
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Past stays and reservations whose linked booking already checked out must not block new bookings.
+     */
+    private function reservationShouldNotBlock(ExternalReservation $reservation): bool
+    {
+        if (filled($reservation->booking_id)) {
+            $booking = Booking::withoutGlobalScopes()->find($reservation->booking_id);
+            if ($booking === null || $this->bookingIsInactive($booking)) {
+                return true;
+            }
+        }
+
+        $stayEnd = Carbon::parse($reservation->check_out_date)->endOfDay();
+        if ($stayEnd->lt(now())) {
             return true;
         }
 

@@ -121,4 +121,45 @@ class AdminWalkInDefaultStayWindowTest extends TestCase
 
         $response->assertStatus(422);
     }
+
+    public function test_admin_walk_in_without_check_in_now_leaves_room_booked(): void
+    {
+        $hotel = Hotel::create(['name' => 'Booked Queue Hotel', 'location' => 'Loc']);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'admin-queue',
+            'email' => 'admin-queue@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '104',
+            'category_name' => 'Standard',
+            'room_type' => 'Standard',
+            'price_per_night' => 1500,
+            'status' => 'available',
+        ]);
+
+        $checkIn = Carbon::now()->setTime(14, 0);
+        $checkOut = Carbon::now()->addDay()->setTime(11, 0);
+
+        $this->actingAs($admin)
+            ->postJson('/api/v1/admin/bookings', [
+                'room_id' => (string) $room->id,
+                'guest_name' => 'Queue Guest',
+                'guest_email' => 'queue@test.local',
+                'guest_phone' => '09170000004',
+                'check_in_at' => $checkIn->toIso8601String(),
+                'check_out_at' => $checkOut->toIso8601String(),
+                'payment_method' => 'Cash',
+                'check_in_now' => false,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('ok', true);
+
+        $room->refresh();
+        $this->assertSame('booked', $room->status?->value ?? (string) $room->status);
+        $this->assertSame('Queue Guest', (string) $room->current_guest_name);
+    }
 }

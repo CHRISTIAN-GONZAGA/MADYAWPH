@@ -6,6 +6,7 @@ use App\Enums\BookingStatus;
 use App\Enums\RoomStatus;
 use App\Models\Booking;
 use App\Models\CheckoutReminder;
+use App\Models\ExternalReservation;
 use App\Services\FinancialComputationService;
 use App\Services\RoomPricingService;
 use App\Models\GuestMessage;
@@ -226,6 +227,7 @@ class RoomCheckoutService
             }
             $booking->update($updates);
             $this->clearCheckoutReminders($hotelId, (string) $booking->id);
+            $this->closeLinkedReservations($booking);
         }
 
         $chatDeleted = $this->clearGuestChat($hotelId, $roomId);
@@ -331,6 +333,17 @@ class RoomCheckoutService
         $raw = SafeModelAttributes::rawString($room, 'status');
 
         return strtolower(trim($raw));
+    }
+
+    private function closeLinkedReservations(Booking $booking): void
+    {
+        $hotelId = (string) $booking->hotel_id;
+
+        ExternalReservation::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where('booking_id', (string) $booking->id)
+            ->whereIn('status', ['approved', 'reserved', 'booked'])
+            ->update(['status' => 'completed']);
     }
 
     private function clearRoomGuestFields(Room $room, string $status): void

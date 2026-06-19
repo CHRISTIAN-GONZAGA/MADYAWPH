@@ -86,7 +86,6 @@ class CompleteGuestBookingConfig {
       initialCheckOut: today.add(const Duration(days: 1)),
       requireGuestId: false,
       showAdminPaymentMethods: true,
-      showAdminTimeSlots: true,
     );
   }
 

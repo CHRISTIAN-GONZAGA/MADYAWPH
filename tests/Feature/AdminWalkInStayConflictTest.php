@@ -285,4 +285,137 @@ class AdminWalkInStayConflictTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('ok', true);
     }
+
+    public function test_admin_walk_in_ignores_completed_checkout_reservation_hold(): void
+    {
+        $hotel = Hotel::create(['name' => 'Res Hold Hotel', 'location' => 'Loc']);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'admin_res_hold',
+            'email' => 'admin-res-hold@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => 'S2',
+            'category_name' => 'Single',
+            'room_type' => 'Single',
+            'billing_mode' => 'hourly',
+            'block_hours' => 3,
+            'price_per_block' => 450,
+            'status' => RoomStatus::AVAILABLE->value,
+        ]);
+
+        $booking = Booking::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'booking_reference' => 'BK-OLD-SINGLE',
+            'guest_name' => 'Previous Guest',
+            'guest_email' => 'previous@test.local',
+            'guest_phone' => '09170000021',
+            'check_in_date' => Carbon::today()->subDay()->toDateString(),
+            'check_out_date' => Carbon::today()->toDateString(),
+            'check_in_time' => '14:00',
+            'check_out_time' => '17:00',
+            'billing_mode' => 'hourly',
+            'nights' => 0,
+            'total_amount' => 450,
+            'payment_status' => 'paid',
+            'status' => BookingStatus::COMPLETED->value,
+            'checked_out_at' => Carbon::today()->setTime(11, 0),
+        ]);
+
+        ExternalReservation::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'source' => 'app-customer',
+            'external_reference' => 'RESSTALE001',
+            'guest_name' => 'Previous Guest',
+            'guest_email' => 'previous@test.local',
+            'guest_phone' => '09170000021',
+            'check_in_date' => Carbon::today()->subDay()->toDateString(),
+            'check_out_date' => Carbon::today()->toDateString(),
+            'assigned_room_id' => (string) $room->id,
+            'booking_id' => (string) $booking->id,
+            'status' => 'booked',
+        ]);
+
+        $checkIn = Carbon::today()->setTime(14, 0);
+        $checkOut = Carbon::today()->setTime(17, 0);
+
+        $this->actingAs($admin)
+            ->postJson('/api/v1/admin/bookings', [
+                'room_id' => (string) $room->id,
+                'guest_name' => 'New Walk-in',
+                'guest_email' => 'new-single@test.local',
+                'guest_phone' => '09170000022',
+                'check_in_at' => $checkIn->toIso8601String(),
+                'check_out_at' => $checkOut->toIso8601String(),
+                'payment_method' => 'Cash',
+                'check_in_now' => true,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('ok', true);
+    }
+
+    public function test_admin_walk_in_ignores_checked_out_room_with_stale_guest_fields(): void
+    {
+        $hotel = Hotel::create(['name' => 'Checked Out Hotel', 'location' => 'Loc']);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'admin_checked_out',
+            'email' => 'admin-checked-out@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => 'T2',
+            'category_name' => 'Twin',
+            'room_type' => 'Twin',
+            'billing_mode' => 'hourly',
+            'block_hours' => 3,
+            'price_per_block' => 500,
+            'status' => RoomStatus::CHECKED_OUT->value,
+            'current_guest_name' => 'Stale Guest Name',
+            'current_check_in' => Carbon::today()->subDay()->toDateString(),
+            'current_check_out' => Carbon::today()->toDateString(),
+        ]);
+
+        Booking::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'booking_reference' => 'BK-STALE-TWIN2',
+            'guest_name' => 'Stale Guest Name',
+            'guest_email' => 'stale-twin@test.local',
+            'guest_phone' => '09170000023',
+            'check_in_date' => Carbon::today()->subDay()->toDateString(),
+            'check_out_date' => Carbon::today()->toDateString(),
+            'check_in_time' => '14:00',
+            'check_out_time' => '17:00',
+            'billing_mode' => 'hourly',
+            'nights' => 0,
+            'total_amount' => 500,
+            'payment_status' => 'paid',
+            'status' => BookingStatus::BOOKED->value,
+            'checked_out_at' => Carbon::today()->setTime(11, 0),
+        ]);
+
+        $checkIn = Carbon::today()->setTime(15, 0);
+        $checkOut = Carbon::today()->setTime(18, 0);
+
+        $this->actingAs($admin)
+            ->postJson('/api/v1/admin/bookings', [
+                'room_id' => (string) $room->id,
+                'guest_name' => 'Fresh Walk-in',
+                'guest_email' => 'fresh-twin@test.local',
+                'guest_phone' => '09170000024',
+                'check_in_at' => $checkIn->toIso8601String(),
+                'check_out_at' => $checkOut->toIso8601String(),
+                'payment_method' => 'Cash',
+                'check_in_now' => true,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('ok', true);
+    }
 }

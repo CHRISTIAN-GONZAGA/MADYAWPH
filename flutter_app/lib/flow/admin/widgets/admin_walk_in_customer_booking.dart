@@ -8,7 +8,6 @@ import '../../../locale_controller.dart';
 import '../../../widgets/app_button.dart';
 import '../../../widgets/app_input.dart';
 import '../../../widgets/chat_attachment.dart';
-import '../../../widgets/admin_time_slot_field.dart';
 import '../../widgets/complete_guest_booking_dialog.dart';
 import 'hourly_billing.dart';
 import 'manual_booking_dialog.dart';
@@ -39,13 +38,6 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
   DateTime? checkOutDate = today.add(const Duration(days: 1));
   checkInCtrl.text = checkInDate.toIso8601String().split('T').first;
   checkOutCtrl.text = checkOutDate.toIso8601String().split('T').first;
-  var checkInTime = HourlyBilling.defaultAdminCheckInTime();
-  var checkOutTime = HourlyBilling.defaultAdminCheckOutTime(
-    room,
-    checkInDate,
-    checkOutDate,
-    checkInTime,
-  );
 
   var discountType = 'none';
   var paymentMethod = 'Cash';
@@ -62,12 +54,10 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
             : 0;
         final safeNights = nights > 0 ? nights : 0;
         final estTotal = (checkInDate != null && checkOutDate != null)
-            ? HourlyBilling.adminDateStayCharge(
+            ? HourlyBilling.customerDateStayCharge(
                 room,
                 checkInDate!,
                 checkOutDate!,
-                checkInTime,
-                checkOutTime,
               )
             : 0.0;
         final discountPct = switch (discountType) {
@@ -82,10 +72,11 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
             ? (HourlyBilling.isHourly(room)
                 ? () {
                     final inAt =
-                        HourlyBilling.adminStayCheckIn(checkInDate!, checkInTime);
-                    final outAt = HourlyBilling.combineDateAndTime(
+                        HourlyBilling.customerStayCheckIn(checkInDate!);
+                    final outAt = HourlyBilling.customerStayCheckOut(
+                      room,
+                      checkInDate!,
                       checkOutDate!,
-                      checkOutTime,
                     );
                     final hours = HourlyBilling.stayHours(inAt, outAt);
                     final blocks = HourlyBilling.blocksForStay(
@@ -111,13 +102,6 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
             checkOutCtrl.clear();
           }
           checkInCtrl.text = picked.toIso8601String().split('T').first;
-          final outDate = checkOutDate ?? picked;
-          checkOutTime = HourlyBilling.defaultAdminCheckOutTime(
-            room,
-            picked,
-            outDate,
-            checkInTime,
-          );
           setLocal(() {});
         }
 
@@ -142,14 +126,6 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
           if (picked == null) return;
           checkOutDate = picked;
           checkOutCtrl.text = picked.toIso8601String().split('T').first;
-          if (checkInDate != null) {
-            checkOutTime = HourlyBilling.defaultAdminCheckOutTime(
-              room,
-              checkInDate!,
-              picked,
-              checkInTime,
-            );
-          }
           setLocal(() {});
         }
 
@@ -233,32 +209,6 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                   suffixIcon: const Icon(Icons.calendar_month_outlined),
                 ),
                 const SizedBox(height: 8),
-                AdminTimeSlotField(
-                  label: 'Check-in time',
-                  value: checkInTime,
-                  onChanged: (t) {
-                    if (t == null) return;
-                    checkInTime = t;
-                    if (checkInDate != null && checkOutDate != null) {
-                      final suggested = HourlyBilling.defaultAdminCheckOutTime(
-                        room,
-                        checkInDate!,
-                        checkOutDate!,
-                        t,
-                      );
-                      if (!HourlyBilling.combineDateAndTime(
-                            checkOutDate!,
-                            checkOutTime,
-                          ).isAfter(
-                            HourlyBilling.adminStayCheckIn(checkInDate!, t),
-                          )) {
-                        checkOutTime = suggested;
-                      }
-                    }
-                    setLocal(() {});
-                  },
-                ),
-                const SizedBox(height: 8),
                 AppInput(
                   controller: checkOutCtrl,
                   label: 'Check-out date',
@@ -266,16 +216,6 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                   readOnly: true,
                   onTap: pickCheckOut,
                   suffixIcon: const Icon(Icons.calendar_month_outlined),
-                ),
-                const SizedBox(height: 8),
-                AdminTimeSlotField(
-                  label: 'Check-out time',
-                  value: checkOutTime,
-                  onChanged: (t) {
-                    if (t == null) return;
-                    checkOutTime = t;
-                    setLocal(() {});
-                  },
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
@@ -353,30 +293,12 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                   );
                   return;
                 }
-                final inAt = HourlyBilling.adminStayCheckIn(
-                  DateTime.parse(checkInCtrl.text.trim()),
-                  checkInTime,
-                );
-                final outAt = HourlyBilling.combineDateAndTime(
-                  DateTime.parse(checkOutCtrl.text.trim()),
-                  checkOutTime,
-                );
-                if (!outAt.isAfter(inAt)) {
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    const SnackBar(
-                      content: Text('Check-out must be after check-in.'),
-                    ),
-                  );
-                  return;
-                }
                 Navigator.of(dialogContext).pop({
                   'guest_name': nameCtrl.text.trim(),
                   'guest_email': emailCtrl.text.trim(),
                   'guest_phone': phoneCtrl.text.trim(),
                   'check_in': checkInCtrl.text.trim(),
                   'check_out': checkOutCtrl.text.trim(),
-                  'check_in_time': checkInTime,
-                  'check_out_time': checkOutTime,
                   'discount_type': discountType,
                   'payment_method': paymentMethod,
                 });
@@ -405,8 +327,6 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
         guestPhone: (payload['guest_phone'] ?? '').toString(),
         checkIn: (payload['check_in'] ?? '').toString(),
         checkOut: (payload['check_out'] ?? '').toString(),
-        checkInTime: payload['check_in_time'] as TimeOfDay?,
-        checkOutTime: payload['check_out_time'] as TimeOfDay?,
         discountType: (payload['discount_type'] ?? 'none').toString(),
         paymentMethod: (payload['payment_method'] ?? 'Cash').toString(),
         guestIdFile: guestIdFile,
@@ -417,7 +337,7 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Room ${room['room_number']} booked as a local walk-in.',
+            'Room ${room['room_number']} booked. Check in from the Book tab when the guest arrives.',
           ),
         ),
       );

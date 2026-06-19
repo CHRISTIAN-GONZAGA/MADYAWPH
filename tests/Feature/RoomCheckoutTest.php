@@ -6,6 +6,7 @@ use App\Enums\BookingStatus;
 use App\Enums\RoomStatus;
 use App\Enums\UserRole;
 use App\Models\Booking;
+use App\Models\ExternalReservation;
 use App\Models\GuestMessage;
 use App\Models\Hotel;
 use App\Models\Room;
@@ -50,6 +51,19 @@ class RoomCheckoutTest extends TestCase
             'paid_at' => now(),
             'status' => BookingStatus::CONFIRMED,
         ]);
+        $reservation = ExternalReservation::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'source' => 'app-customer',
+            'external_reference' => 'RESCHECKOUT1',
+            'guest_name' => 'Jane Doe',
+            'guest_email' => 'jane@test.local',
+            'guest_phone' => '09170000099',
+            'check_in_date' => now()->toDateString(),
+            'check_out_date' => now()->addDay()->toDateString(),
+            'assigned_room_id' => (string) $room->id,
+            'booking_id' => (string) $booking->id,
+            'status' => 'booked',
+        ]);
         GuestMessage::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_id' => (string) $room->id,
@@ -75,6 +89,10 @@ class RoomCheckoutTest extends TestCase
         $this->assertNull($room->current_access_code);
         $this->assertSame(BookingStatus::COMPLETED->value, $booking->status?->value ?? (string) $booking->status);
         $this->assertNotNull($booking->checked_out_at);
+        $this->assertSame(
+            'completed',
+            (string) ExternalReservation::withoutGlobalScopes()->find($reservation->id)?->status
+        );
         $this->assertSame(
             0,
             GuestMessage::withoutGlobalScopes()

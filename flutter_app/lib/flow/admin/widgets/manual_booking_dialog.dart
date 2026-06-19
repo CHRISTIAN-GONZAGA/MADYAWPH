@@ -17,14 +17,9 @@ Future<void> submitAdminWalkInBooking({
 
   final checkInDate = DateTime.parse(payload.checkIn);
   final checkOutDate = DateTime.parse(payload.checkOut);
-  final inAt = payload.checkInTime != null
-      ? HourlyBilling.adminStayCheckIn(checkInDate, payload.checkInTime!)
-      : HourlyBilling.customerStayCheckIn(checkInDate);
-  final outAt = payload.checkInTime != null && payload.checkOutTime != null
-      ? HourlyBilling.combineDateAndTime(checkOutDate, payload.checkOutTime!)
-      : HourlyBilling.customerStayCheckOut(room, checkInDate, checkOutDate);
-
-  final checkInNow = !HourlyBilling.isHourly(room);
+  final inAt = HourlyBilling.customerStayCheckIn(checkInDate);
+  final outAt =
+      HourlyBilling.customerStayCheckOut(room, checkInDate, checkOutDate);
 
   final body = <String, dynamic>{
     'room_id': roomId,
@@ -34,7 +29,7 @@ Future<void> submitAdminWalkInBooking({
     'check_in_at': inAt.toIso8601String(),
     'check_out_at': outAt.toIso8601String(),
     'payment_method': payload.paymentMethod,
-    'check_in_now': checkInNow ? 1 : 0,
+    'check_in_now': 0,
     if (payload.discountType != 'none') 'discount_type': payload.discountType,
   };
 
