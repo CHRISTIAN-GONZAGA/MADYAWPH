@@ -114,6 +114,12 @@ class HotelAvailabilityService
             if (! $this->bookingMatchesRoomId($booking, $roomId)) {
                 continue;
             }
+
+            $bookingCheckIn = Carbon::parse($booking->check_in_date)->startOfDay();
+            if ($bookingCheckIn->gte($out)) {
+                continue;
+            }
+
             if ($this->bookingAlreadyEnded($booking, $in)) {
                 continue;
             }
@@ -177,13 +183,27 @@ class HotelAvailabilityService
      */
     private function bookingAlreadyEnded(Booking $booking, CarbonInterface $requestedCheckIn): bool
     {
+        $status = strtolower((string) ($booking->status?->value ?? $booking->status ?? ''));
+        if (in_array($status, [BookingStatus::COMPLETED->value, BookingStatus::CANCELLED->value], true)) {
+            return true;
+        }
+
         if (filled($booking->checked_out_at)) {
             return true;
         }
 
         $stayEnd = Carbon::parse($booking->check_out_date)->startOfDay();
-        if ($stayEnd->lt($requestedCheckIn)) {
+        $requestStart = Carbon::parse($requestedCheckIn)->startOfDay();
+
+        if ($stayEnd->lt($requestStart)) {
             return true;
+        }
+
+        // Checkout-day turnover: a stay ending today does not block a new check-in today.
+        if ($stayEnd->equalTo($requestStart)) {
+            $stayStart = Carbon::parse($booking->check_in_date)->startOfDay();
+
+            return $stayStart->lt($requestStart);
         }
 
         return false;
@@ -236,9 +256,16 @@ class HotelAvailabilityService
                 && self::idsMatch($reservation->id, $excludeReservationId)) {
                 continue;
             }
-            if ($this->reservationMatchesRoomId($reservation, $roomId)) {
-                return true;
+            if (! $this->reservationMatchesRoomId($reservation, $roomId)) {
+                continue;
             }
+
+            $reservationCheckIn = Carbon::parse($reservation->check_in_date)->startOfDay();
+            if ($reservationCheckIn->gte($checkOut)) {
+                continue;
+            }
+
+            return true;
         }
 
         return false;

@@ -320,12 +320,29 @@ class RoomSummarySection extends StatelessWidget {
               value: '${totals['cleaning']}',
               icon: Icons.cleaning_services_outlined,
               color: Colors.orange.shade800,
-              onTap: () => _showRoomList(
-                context,
-                title: 'Rooms in cleaning',
-                items: cleaningIssues,
-                useMaintenanceRooms: true,
-              ),
+              onTap: () {
+                if (maintenanceRooms.isNotEmpty) {
+                  _openRooms(
+                    context,
+                    title: 'Rooms in cleaning',
+                    list: maintenanceRooms,
+                    subtitle: 'Turnover / housekeeping',
+                    showGuest: false,
+                  );
+                  return;
+                }
+                if (cleaningIssues.isNotEmpty) {
+                  _showRoomList(
+                    context,
+                    title: 'Cleaning tasks',
+                    items: cleaningIssues,
+                  );
+                  return;
+                }
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('No rooms in cleaning.')),
+                );
+              },
             ),
             _TotalStatCard(
               label: 'Maintenance',

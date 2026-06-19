@@ -26,6 +26,8 @@ class HotelTotalsRoomPanelScope extends InheritedWidget {
     super.key,
     required this.openRoomList,
     required this.openRoomDetail,
+    required this.openRoomDetailFromList,
+    required this.openRoomDetailColdStart,
     required this.closePanel,
     required this.isOpen,
     required super.child,
@@ -39,6 +41,17 @@ class HotelTotalsRoomPanelScope extends InheritedWidget {
   }) openRoomList;
 
   final void Function(String roomId) openRoomDetail;
+
+  final void Function({
+    required String roomId,
+    Map<String, dynamic>? roomSnapshot,
+  }) openRoomDetailFromList;
+
+  final void Function({
+    required Map<String, dynamic> room,
+    String listTitle,
+    bool showGuest,
+  }) openRoomDetailColdStart;
 
   final VoidCallback closePanel;
 
@@ -143,14 +156,43 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     _slideCtrl.forward(from: 0);
   }
 
-  void _openRoomDetail(String roomId) {
+  void openRoomDetailFromList({
+    required String roomId,
+    Map<String, dynamic>? roomSnapshot,
+  }) {
     final id = AdminDashboardModels.normalizeRoomIdString(roomId);
     if (id.isEmpty || !mounted) return;
     HapticFeedback.selectionClick();
     setState(() {
       _detailRoomId = id;
-      _detailSnapshot = _roomSnapshotForDetail(id);
+      _detailSnapshot = roomSnapshot ?? _roomSnapshotForDetail(id);
     });
+  }
+
+  void openRoomDetailColdStart({
+    required Map<String, dynamic> room,
+    String listTitle = 'Room details',
+    bool showGuest = true,
+  }) {
+    final id = AdminDashboardModels.roomIdOf(room);
+    if (id.isEmpty || !mounted) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _visible = true;
+      _list = _RoomListPayload(
+        title: listTitle,
+        rooms: [room],
+        showGuest: showGuest,
+      );
+      _detailRoomId = id;
+      _detailSnapshot = room;
+    });
+    _syncOpenFlag();
+    _slideCtrl.forward(from: 0);
+  }
+
+  void _openRoomDetail(String roomId) {
+    openRoomDetailFromList(roomId: roomId);
   }
 
   void _backFromDetail() {
@@ -276,6 +318,8 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
       isOpen: _visible,
       openRoomList: _openRoomList,
       openRoomDetail: _openRoomDetail,
+      openRoomDetailFromList: openRoomDetailFromList,
+      openRoomDetailColdStart: openRoomDetailColdStart,
       closePanel: _closePanel,
       child: Stack(
         fit: StackFit.expand,
@@ -525,11 +569,16 @@ void openHotelTotalsRoomDetail(
   }
 
   if (!panel.isOpen) {
-    panel.openRoomList(
-      title: 'Occupied rooms',
-      rooms: [room],
+    panel.openRoomDetailColdStart(
+      room: room,
+      listTitle: 'Room details',
       showGuest: true,
     );
+    return;
   }
-  panel.openRoomDetail(id);
+
+  panel.openRoomDetailFromList(
+    roomId: id,
+    roomSnapshot: room,
+  );
 }
