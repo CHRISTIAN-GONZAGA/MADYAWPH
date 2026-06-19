@@ -96,6 +96,13 @@ class HotelAvailabilityService
         $in = Carbon::parse($checkInDate)->startOfDay();
         $out = Carbon::parse($checkOutDate)->startOfDay();
 
+        $room = Room::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where(function ($query) use ($roomId): void {
+                $query->where('id', $roomId)->orWhere('_id', $roomId);
+            })
+            ->first();
+
         if ($this->reservationOverlaps($hotelId, $roomId, $in, $out, $excludeReservationId)) {
             return true;
         }
@@ -124,10 +131,31 @@ class HotelAvailabilityService
                 continue;
             }
 
+            if ($room !== null && $this->bookingIsStaleForVacantRoom($booking, $room)) {
+                continue;
+            }
+
             return true;
         }
 
         return false;
+    }
+
+    /**
+     * Orphan booking rows must not block new stays when the room is physically vacant.
+     */
+    private function bookingIsStaleForVacantRoom(Booking $booking, Room $room): bool
+    {
+        if (filled($booking->checked_out_at)) {
+            return true;
+        }
+
+        $status = strtolower($room->status?->value ?? (string) ($room->status ?? ''));
+        if (! in_array($status, [RoomStatus::AVAILABLE->value, RoomStatus::CHECKED_OUT->value], true)) {
+            return false;
+        }
+
+        return trim((string) ($room->current_guest_name ?? '')) === '';
     }
 
     /**

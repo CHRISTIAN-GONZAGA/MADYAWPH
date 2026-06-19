@@ -8,6 +8,7 @@ import '../customer_search_context.dart' as customer;
 import '../../widgets/app_button.dart';
 import '../../widgets/app_input.dart';
 import '../../widgets/chat_attachment.dart';
+import '../../widgets/admin_time_slot_field.dart';
 
 /// Result from [showCompleteGuestBookingDialog].
 class CompleteGuestBookingPayload {
@@ -19,6 +20,8 @@ class CompleteGuestBookingPayload {
     required this.checkOut,
     required this.discountType,
     required this.paymentMethod,
+    this.checkInTime,
+    this.checkOutTime,
     this.guestIdFile,
     this.discountIdFile,
   });
@@ -30,6 +33,8 @@ class CompleteGuestBookingPayload {
   final String checkOut;
   final String discountType;
   final String paymentMethod;
+  final TimeOfDay? checkInTime;
+  final TimeOfDay? checkOutTime;
   final XFile? guestIdFile;
   final XFile? discountIdFile;
 }
@@ -46,6 +51,7 @@ class CompleteGuestBookingConfig {
     this.lockDates = false,
     this.requireGuestId = true,
     this.showAdminPaymentMethods = false,
+    this.showAdminTimeSlots = false,
     this.reserveMode = false,
     this.hotelId,
     this.showOnlinePayment = false,
@@ -61,6 +67,7 @@ class CompleteGuestBookingConfig {
   final bool lockDates;
   final bool requireGuestId;
   final bool showAdminPaymentMethods;
+  final bool showAdminTimeSlots;
   final bool reserveMode;
   final String? hotelId;
   final bool showOnlinePayment;
@@ -79,6 +86,7 @@ class CompleteGuestBookingConfig {
       initialCheckOut: today.add(const Duration(days: 1)),
       requireGuestId: false,
       showAdminPaymentMethods: true,
+      showAdminTimeSlots: true,
     );
   }
 
@@ -177,6 +185,8 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
 
   DateTime? _checkInDate;
   DateTime? _checkOutDate;
+  TimeOfDay? _checkInTime;
+  TimeOfDay? _checkOutTime;
   var _discountType = 'none';
   var _paymentMethod = 'Cash';
   XFile? _guestIdFile;
@@ -202,6 +212,17 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
     }
     if (_checkOutDate != null) {
       _checkOutCtrl.text = _fmtDate(_checkOutDate!);
+    }
+    if (config.showAdminTimeSlots) {
+      _checkInTime = HourlyBilling.defaultAdminCheckInTime();
+      _checkOutTime = _checkInDate != null && _checkOutDate != null
+          ? HourlyBilling.defaultAdminCheckOutTime(
+              room,
+              _checkInDate!,
+              _checkOutDate!,
+              _checkInTime!,
+            )
+          : const TimeOfDay(hour: 11, minute: 0);
     }
   }
 
@@ -253,6 +274,15 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
         _checkOutCtrl.clear();
       }
       _checkInCtrl.text = _fmtDate(picked);
+      if (config.showAdminTimeSlots && _checkInTime != null) {
+        final outDate = _checkOutDate ?? picked;
+        _checkOutTime = HourlyBilling.defaultAdminCheckOutTime(
+          room,
+          picked,
+          outDate,
+          _checkInTime!,
+        );
+      }
     });
   }
 
@@ -279,6 +309,16 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
     setState(() {
       _checkOutDate = picked;
       _checkOutCtrl.text = _fmtDate(picked);
+      if (config.showAdminTimeSlots &&
+          _checkInDate != null &&
+          _checkInTime != null) {
+        _checkOutTime = HourlyBilling.defaultAdminCheckOutTime(
+          room,
+          _checkInDate!,
+          picked,
+          _checkInTime!,
+        );
+      }
     });
   }
 
@@ -310,6 +350,24 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
       _snack('Select check-in and check-out.');
       return;
     }
+    if (config.showAdminTimeSlots) {
+      if (_checkInTime == null || _checkOutTime == null) {
+        _snack('Select check-in and check-out times.');
+        return;
+      }
+      final inAt = HourlyBilling.adminStayCheckIn(
+        DateTime.parse(_checkInCtrl.text.trim()),
+        _checkInTime!,
+      );
+      final outAt = HourlyBilling.combineDateAndTime(
+        DateTime.parse(_checkOutCtrl.text.trim()),
+        _checkOutTime!,
+      );
+      if (!outAt.isAfter(inAt)) {
+        _snack('Check-out must be after check-in.');
+        return;
+      }
+    }
 
     Navigator.of(context).pop(
       CompleteGuestBookingPayload(
@@ -320,6 +378,8 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
         checkOut: _checkOutCtrl.text.trim(),
         discountType: _discountType,
         paymentMethod: _paymentMethod,
+        checkInTime: config.showAdminTimeSlots ? _checkInTime : null,
+        checkOutTime: config.showAdminTimeSlots ? _checkOutTime : null,
         guestIdFile: _guestIdFile,
         discountIdFile: _discountIdFile,
       ),
@@ -338,7 +398,21 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
         : 0;
     final safeNights = nights > 0 ? nights : 0;
     final estTotal = (_checkInDate != null && _checkOutDate != null)
-        ? HourlyBilling.customerDateStayCharge(room, _checkInDate!, _checkOutDate!)
+        ? (config.showAdminTimeSlots &&
+                _checkInTime != null &&
+                _checkOutTime != null
+            ? HourlyBilling.adminDateStayCharge(
+                room,
+                _checkInDate!,
+                _checkOutDate!,
+                _checkInTime!,
+                _checkOutTime!,
+              )
+            : HourlyBilling.customerDateStayCharge(
+                room,
+                _checkInDate!,
+                _checkOutDate!,
+              ))
         : 0.0;
     final discountPct = switch (_discountType) {
       'pwd' => 20.0,
@@ -350,12 +424,21 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
     final durationLabel = (_checkInDate != null && _checkOutDate != null)
         ? (HourlyBilling.isHourly(room)
             ? () {
-                final inAt = HourlyBilling.customerStayCheckIn(_checkInDate!);
-                final outAt = HourlyBilling.customerStayCheckOut(
-                  room,
-                  _checkInDate!,
-                  _checkOutDate!,
-                );
+                final inAt = config.showAdminTimeSlots && _checkInTime != null
+                    ? HourlyBilling.adminStayCheckIn(_checkInDate!, _checkInTime!)
+                    : HourlyBilling.customerStayCheckIn(_checkInDate!);
+                final outAt = config.showAdminTimeSlots &&
+                        _checkInTime != null &&
+                        _checkOutTime != null
+                    ? HourlyBilling.combineDateAndTime(
+                        _checkOutDate!,
+                        _checkOutTime!,
+                      )
+                    : HourlyBilling.customerStayCheckOut(
+                        room,
+                        _checkInDate!,
+                        _checkOutDate!,
+                      );
                 final hours = HourlyBilling.stayHours(inAt, outAt);
                 final blocks = HourlyBilling.blocksForStay(
                   hours,
@@ -545,6 +628,31 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
         onTap: config.lockDates ? null : _pickCheckIn,
         suffixIcon: const Icon(Icons.calendar_month_outlined),
       ),
+      if (config.showAdminTimeSlots) ...[
+        const SizedBox(height: 8),
+        AdminTimeSlotField(
+          label: 'Check-in time',
+          value: _checkInTime,
+          onChanged: (t) => setState(() {
+            _checkInTime = t;
+            if (t != null &&
+                _checkInDate != null &&
+                _checkOutDate != null &&
+                _checkOutTime != null) {
+              final suggested = HourlyBilling.defaultAdminCheckOutTime(
+                room,
+                _checkInDate!,
+                _checkOutDate!,
+                t,
+              );
+              if (!HourlyBilling.combineDateAndTime(_checkOutDate!, _checkOutTime!)
+                  .isAfter(HourlyBilling.adminStayCheckIn(_checkInDate!, t))) {
+                _checkOutTime = suggested;
+              }
+            }
+          }),
+        ),
+      ],
       const SizedBox(height: 8),
       AppInput(
         controller: _checkOutCtrl,
@@ -554,6 +662,14 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
         onTap: config.lockDates ? null : _pickCheckOut,
         suffixIcon: const Icon(Icons.calendar_month_outlined),
       ),
+      if (config.showAdminTimeSlots) ...[
+        const SizedBox(height: 8),
+        AdminTimeSlotField(
+          label: 'Check-out time',
+          value: _checkOutTime,
+          onChanged: (t) => setState(() => _checkOutTime = t),
+        ),
+      ],
       if (config.showOnlinePayment || config.showAdminPaymentMethods) ...[
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(

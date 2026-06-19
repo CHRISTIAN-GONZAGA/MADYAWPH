@@ -17,9 +17,12 @@ Future<void> submitAdminWalkInBooking({
 
   final checkInDate = DateTime.parse(payload.checkIn);
   final checkOutDate = DateTime.parse(payload.checkOut);
-  final inAt = HourlyBilling.customerStayCheckIn(checkInDate);
-  final outAt =
-      HourlyBilling.customerStayCheckOut(room, checkInDate, checkOutDate);
+  final inAt = payload.checkInTime != null
+      ? HourlyBilling.adminStayCheckIn(checkInDate, payload.checkInTime!)
+      : HourlyBilling.customerStayCheckIn(checkInDate);
+  final outAt = payload.checkInTime != null && payload.checkOutTime != null
+      ? HourlyBilling.combineDateAndTime(checkOutDate, payload.checkOutTime!)
+      : HourlyBilling.customerStayCheckOut(room, checkInDate, checkOutDate);
 
   final checkInNow = !HourlyBilling.isHourly(room);
 

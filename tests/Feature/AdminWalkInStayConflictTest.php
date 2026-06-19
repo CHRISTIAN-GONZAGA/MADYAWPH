@@ -117,4 +117,59 @@ class AdminWalkInStayConflictTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('ok', true);
     }
+
+    public function test_admin_walk_in_succeeds_on_vacant_dorm_with_stale_booking_row(): void
+    {
+        $hotel = Hotel::create(['name' => 'Stale Row Hotel', 'location' => 'Loc']);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'admin_stale',
+            'email' => 'admin-stale@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => 'D4',
+            'category_name' => 'Dorm Room',
+            'room_type' => 'Dorm',
+            'price_per_night' => 350,
+            'billing_mode' => 'hourly',
+            'block_hours' => 3,
+            'price_per_block' => 350,
+            'status' => RoomStatus::AVAILABLE->value,
+        ]);
+
+        Booking::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'booking_reference' => 'BK-STALE-DORM',
+            'guest_name' => 'Previous Guest',
+            'guest_email' => 'stale@test.local',
+            'guest_phone' => '09170000015',
+            'check_in_date' => Carbon::today()->toDateString(),
+            'check_out_date' => Carbon::today()->toDateString(),
+            'nights' => 0,
+            'total_amount' => 350,
+            'payment_status' => 'paid',
+            'status' => BookingStatus::BOOKED->value,
+        ]);
+
+        $checkIn = Carbon::today()->setTime(14, 0);
+        $checkOut = Carbon::today()->setTime(17, 0);
+
+        $this->actingAs($admin)
+            ->postJson('/api/v1/admin/bookings', [
+                'room_id' => (string) $room->id,
+                'guest_name' => 'Walk-in Guest',
+                'guest_email' => 'walkin-dorm@test.local',
+                'guest_phone' => '09170000016',
+                'check_in_at' => $checkIn->toIso8601String(),
+                'check_out_at' => $checkOut->toIso8601String(),
+                'payment_method' => 'Cash',
+                'check_in_now' => true,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('ok', true);
+    }
 }

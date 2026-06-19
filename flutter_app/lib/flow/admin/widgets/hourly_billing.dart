@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 /// Shared hourly block pricing helpers (mirrors backend RoomBillingSupport).
 class HourlyBilling {
   HourlyBilling._();
@@ -136,4 +138,76 @@ class HourlyBilling {
   static double _round50(double value) => (value / 50).round() * 50;
 
   static double round50(double value) => _round50(value);
+
+  static DateTime combineDateAndTime(DateTime date, TimeOfDay time) => DateTime(
+        date.year,
+        date.month,
+        date.day,
+        time.hour,
+        time.minute,
+      );
+
+  /// Default admin walk-in check-in time (nearest 30-minute slot from now).
+  static TimeOfDay defaultAdminCheckInTime() =>
+      snapToSlot(TimeOfDay.now());
+
+  static TimeOfDay snapToSlot(TimeOfDay time) {
+    final total = time.hour * 60 + time.minute;
+    final snapped = ((total + 15) ~/ 30) * 30;
+    final clamped = snapped % (24 * 60);
+    return TimeOfDay(hour: clamped ~/ 60, minute: clamped % 60);
+  }
+
+  /// Default admin walk-in check-out time for the selected stay window.
+  static TimeOfDay defaultAdminCheckOutTime(
+    Map<String, dynamic> room,
+    DateTime checkInDate,
+    DateTime checkOutDate,
+    TimeOfDay checkInTime,
+  ) {
+    final outAt = adminStayCheckOut(room, checkInDate, checkOutDate, checkInTime);
+    return TimeOfDay(hour: outAt.hour, minute: outAt.minute);
+  }
+
+  static DateTime adminStayCheckIn(DateTime checkInDate, TimeOfDay checkInTime) =>
+      combineDateAndTime(checkInDate, checkInTime);
+
+  static DateTime adminStayCheckOut(
+    Map<String, dynamic> room,
+    DateTime checkInDate,
+    DateTime checkOutDate,
+    TimeOfDay checkInTime,
+  ) {
+    if (!isHourly(room)) {
+      return combineDateAndTime(
+        checkOutDate,
+        const TimeOfDay(hour: 11, minute: 0),
+      );
+    }
+    final sameDay = checkInDate.year == checkOutDate.year &&
+        checkInDate.month == checkOutDate.month &&
+        checkInDate.day == checkOutDate.day;
+    if (sameDay) {
+      return adminStayCheckIn(checkInDate, checkInTime)
+          .add(Duration(hours: blockHours(room)));
+    }
+    return combineDateAndTime(
+      checkOutDate,
+      const TimeOfDay(hour: 11, minute: 0),
+    );
+  }
+
+  static double adminDateStayCharge(
+    Map<String, dynamic> room,
+    DateTime checkInDate,
+    DateTime checkOutDate,
+    TimeOfDay checkInTime,
+    TimeOfDay checkOutTime,
+  ) {
+    return stayCharge(
+      room,
+      adminStayCheckIn(checkInDate, checkInTime),
+      combineDateAndTime(checkOutDate, checkOutTime),
+    );
+  }
 }
