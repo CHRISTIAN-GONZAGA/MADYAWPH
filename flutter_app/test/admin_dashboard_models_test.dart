@@ -115,6 +115,13 @@ void main() {
         'In House Guest',
       );
     });
+
+    test('checked_out room is walk-in bookable', () {
+      expect(
+        AdminDashboardModels.isWalkInBookable({'status': 'checked_out'}),
+        isTrue,
+      );
+    });
   });
 
   group('roomsForCategory', () {

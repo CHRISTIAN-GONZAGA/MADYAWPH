@@ -87,7 +87,9 @@ class AdminDashboardModels {
   static bool isWalkInBookable(Map<String, dynamic> room) {
     final status = statusOf(room);
     if (status == 'maintenance' || status == 'checked_in') return false;
-    if (status == 'available' || status == 'reserved') return true;
+    if (status == 'available' || status == 'reserved' || status == 'checked_out') {
+      return true;
+    }
     if (status == 'booked') {
       final start = stayStartDate(room);
       if (start == null) return true;
@@ -183,7 +185,7 @@ class AdminDashboardModels {
   static String walkInTileStatus(Map<String, dynamic> room) {
     final status = statusOf(room);
     if (status == 'maintenance' || status == 'checked_in') return 'occupied';
-    if (status == 'available') return 'available';
+    if (status == 'available' || status == 'checked_out') return 'available';
     if (status.isEmpty) {
       final guest = (room['current_guest_name'] ?? '').toString().trim();
       return guest.isEmpty ? 'available' : 'occupied';

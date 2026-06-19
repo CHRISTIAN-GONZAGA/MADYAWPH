@@ -14,7 +14,7 @@ import 'sections/amenities_section.dart';
 import 'sections/bookings_section.dart';
 import 'sections/checkout_section.dart';
 import 'sections/guest_portfolio_section.dart';
-import 'sections/manual_booking_section.dart';
+import 'sections/admin_booking_section.dart';
 import 'sections/room_summary_section.dart';
 import 'sections/resellers_section.dart';
 import 'sections/settings_section.dart';
@@ -404,9 +404,9 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         3,
       ),
       wrapTab(
-        ManualBookingSection(
+        AdminBookingSection(
           key: refreshKey,
-          rooms: _rooms,
+          hotelId: hotelId,
           hotelName: hotelName,
           onChanged: widget.onRefresh,
         ),
