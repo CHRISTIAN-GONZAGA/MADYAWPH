@@ -86,6 +86,16 @@ class RoomCheckoutTest extends TestCase
         $this->getJson('/api/v1/admin/guest-history')
             ->assertOk()
             ->assertJsonFragment(['booking_reference' => 'BK-CO-1']);
+
+        $this->getJson('/api/v1/admin/rooms/'.(string) $room->id)
+            ->assertOk()
+            ->assertJsonPath('active_booking', null);
+
+        $dashboard = $this->getJson('/api/v1/admin/dashboard')->assertOk();
+        $rooms = collect($dashboard->json('rooms'));
+        $roomPayload = $rooms->firstWhere('id', (string) $room->id);
+        $this->assertNotNull($roomPayload);
+        $this->assertNull($roomPayload['latest_booking'] ?? null);
     }
 
     public function test_checkout_from_booked_status_clears_guest_and_sets_maintenance(): void

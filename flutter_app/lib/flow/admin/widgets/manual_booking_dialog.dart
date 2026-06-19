@@ -21,6 +21,8 @@ Future<void> submitAdminWalkInBooking({
   final outAt =
       HourlyBilling.customerStayCheckOut(room, checkInDate, checkOutDate);
 
+  final checkInNow = !HourlyBilling.isHourly(room);
+
   final body = <String, dynamic>{
     'room_id': roomId,
     'guest_name': payload.guestName,
@@ -29,7 +31,7 @@ Future<void> submitAdminWalkInBooking({
     'check_in_at': inAt.toIso8601String(),
     'check_out_at': outAt.toIso8601String(),
     'payment_method': payload.paymentMethod,
-    'check_in_now': !HourlyBilling.isHourly(room),
+    'check_in_now': checkInNow ? 1 : 0,
     if (payload.discountType != 'none') 'discount_type': payload.discountType,
   };
 

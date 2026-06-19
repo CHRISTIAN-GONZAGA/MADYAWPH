@@ -334,11 +334,12 @@ class AdminDashboardModels {
 
   /// Checkout moment using booking time when available (defaults 11:00 AM).
   static DateTime? checkoutDateTime(Map<String, dynamic> room) {
-    final booking = room['latest_booking'] as Map?;
-    final raw = (room['current_check_out'] ??
-            booking?['check_out_date'] ??
-            '')
-        .toString();
+    final currentOut = (room['current_check_out'] ?? '').toString();
+    final booking =
+        hasActiveGuestStay(room) ? room['latest_booking'] as Map? : null;
+    final raw = currentOut.isNotEmpty
+        ? currentOut
+        : (booking?['check_out_date'] ?? '').toString();
     if (raw.isEmpty) return null;
     final d = DateTime.tryParse(raw.split('T').first);
     if (d == null) return null;
@@ -467,9 +468,22 @@ class AdminDashboardModels {
     return status;
   }
 
+  /// True when the room still has an in-house or upcoming guest stay.
+  static bool hasActiveGuestStay(Map<String, dynamic> room) {
+    final status = statusOf(room);
+    if (status == 'checked_in' || status == 'booked' || status == 'reserved') {
+      return true;
+    }
+    if (status == 'maintenance') {
+      return (room['current_guest_name'] ?? '').toString().trim().isNotEmpty;
+    }
+    return false;
+  }
+
   static String guestName(Map<String, dynamic> room) {
     final n = (room['current_guest_name'] ?? '').toString();
     if (n.isNotEmpty) return n;
+    if (!hasActiveGuestStay(room)) return '—';
     final b = room['latest_booking'] as Map<String, dynamic>?;
     return (b?['guest_name'] ?? '—').toString();
   }

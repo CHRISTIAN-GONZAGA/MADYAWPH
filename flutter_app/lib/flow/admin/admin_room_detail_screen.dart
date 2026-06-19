@@ -69,19 +69,27 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     Map<String, dynamic> fresh,
   ) {
     final merged = <String, dynamic>{...?prior, ...fresh};
-    if (prior != null) {
+    if (prior == null) return merged;
+
+    final freshStatus = AdminDashboardModels.statusOf(fresh);
+    if (freshStatus.isEmpty) {
       final priorStatus = AdminDashboardModels.statusOf(prior);
-      final freshStatus = AdminDashboardModels.statusOf(fresh);
-      if (freshStatus.isEmpty && priorStatus.isNotEmpty) {
+      if (priorStatus.isNotEmpty) {
         merged['status'] = prior['status'];
       }
-      final priorGuest =
-          (prior['current_guest_name'] ?? '').toString().trim();
-      final freshGuest =
-          (fresh['current_guest_name'] ?? '').toString().trim();
-      if (freshGuest.isEmpty && priorGuest.isNotEmpty) {
-        merged['current_guest_name'] = prior['current_guest_name'];
-      }
+    }
+
+    // After checkout the API clears guest fields — do not restore stale snapshot data.
+    if ({'maintenance', 'available'}.contains(freshStatus)) {
+      return merged;
+    }
+
+    final priorGuest =
+        (prior['current_guest_name'] ?? '').toString().trim();
+    final freshGuest =
+        (fresh['current_guest_name'] ?? '').toString().trim();
+    if (freshGuest.isEmpty && priorGuest.isNotEmpty) {
+      merged['current_guest_name'] = prior['current_guest_name'];
     }
     return merged;
   }
@@ -109,6 +117,25 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     if (fromRoom != null) {
       _data = {...?_data, 'active_booking': fromRoom};
     }
+  }
+
+  void _clearActiveStayFromState() {
+    final roomMap = _asMap(_data?['room']);
+    if (_data == null || roomMap == null) return;
+    final room = Map<String, dynamic>.from(roomMap);
+    room['status'] = 'maintenance';
+    room['current_guest_name'] = null;
+    room['current_check_in'] = null;
+    room['current_check_out'] = null;
+    room['room_access_password'] = '';
+    _data = {
+      ..._data!,
+      'room': room,
+      'active_booking': null,
+      'booking_charges': const [],
+      'booking_charges_total': 0,
+      'refund_total': 0,
+    };
   }
 
   List<dynamic> _chargesList() {
@@ -151,17 +178,20 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         final room = payload != null ? _asMap(payload['room']) : null;
         if (payload != null && room != null) {
           final priorRoom = _asMap(_data?['room']);
-          final priorBooking = _data?['active_booking'];
+          final activeBooking = payload['active_booking'];
           _data = {
             ...?_data,
             'room': _mergeRoomMaps(priorRoom, room),
-            'active_booking':
-                payload['active_booking'] ?? priorBooking,
-            'booking_charges':
-                payload['booking_charges'] ?? _data?['booking_charges'],
-            'booking_charges_total': payload['booking_charges_total'] ??
-                _data?['booking_charges_total'],
-            'refund_total': payload['refund_total'] ?? _data?['refund_total'],
+            'active_booking': activeBooking,
+            'booking_charges': activeBooking == null
+                ? const []
+                : (payload['booking_charges'] ?? const []),
+            'booking_charges_total': activeBooking == null
+                ? 0
+                : (payload['booking_charges_total'] ?? 0),
+            'refund_total': activeBooking == null
+                ? 0
+                : (payload['refund_total'] ?? 0),
             'can_edit_guest_stay': payload['can_edit_guest_stay'] ??
                 _data?['can_edit_guest_stay'],
             'management_blocked_reason': payload['management_blocked_reason'] ??
@@ -174,7 +204,6 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
           if (_canEditGuestStay) {
             _data!.remove('management_blocked_reason');
           }
-          _applyActiveBookingFallback();
           _error = null;
         } else if (_data == null) {
           _error = payload == null || payload.isEmpty
@@ -406,6 +435,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       );
       if (!mounted) return;
       final msg = (res.data?['message'] ?? 'Guest checked out.').toString();
+      setState(_clearActiveStayFromState);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
       await _load();
     } on DioException catch (e) {
@@ -489,13 +519,14 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       }
       if (!mounted) return;
       final msg = (res.data?['message'] ?? 'Status updated.').toString();
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
       if (chosen == 'checked_out') {
+        setState(_clearActiveStayFromState);
         final receipt = res.data?['receipt'] as Map<String, dynamic>?;
         if (context.mounted) {
           await showStayReceiptDialog(context, receipt: receipt);
         }
       }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;

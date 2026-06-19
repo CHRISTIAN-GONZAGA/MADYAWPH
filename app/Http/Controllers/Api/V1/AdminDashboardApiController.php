@@ -91,6 +91,10 @@ class AdminDashboardApiController extends Controller
 
         $latestBookingsByRoom = Booking::withoutGlobalScopes()
             ->where('hotel_id', (string) $user->hotel_id)
+            ->whereNotIn('status', [
+                BookingStatus::COMPLETED->value,
+                BookingStatus::CANCELLED->value,
+            ])
             ->latest('created_at')
             ->get()
             ->groupBy('room_id')

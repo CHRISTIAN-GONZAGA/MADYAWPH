@@ -95,6 +95,28 @@ void main() {
     });
   });
 
+  group('guestName', () {
+    test('maintenance without guest does not show completed booking guest', () {
+      expect(
+        AdminDashboardModels.guestName({
+          'status': 'maintenance',
+          'latest_booking': {'guest_name': 'Old Guest'},
+        }),
+        '—',
+      );
+    });
+
+    test('falls back to latest_booking for checked-in room', () {
+      expect(
+        AdminDashboardModels.guestName({
+          'status': 'checked_in',
+          'latest_booking': {'guest_name': 'In House Guest'},
+        }),
+        'In House Guest',
+      );
+    });
+  });
+
   group('roomsForCategory', () {
     const rooms = [
       {

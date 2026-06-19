@@ -453,6 +453,17 @@ Route::middleware('role:admin')->group(function (): void {
         BookingService $bookingService,
         RoomCheckoutService $roomCheckoutService,
     ) {
+        if ($request->has('check_in_now')) {
+            $parsed = filter_var(
+                $request->input('check_in_now'),
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE
+            );
+            if ($parsed !== null) {
+                $request->merge(['check_in_now' => $parsed]);
+            }
+        }
+
         $validated = $request->validate([
             'room_id' => ['required', 'string'],
             'guest_name' => ['required', 'string', 'max:255'],
