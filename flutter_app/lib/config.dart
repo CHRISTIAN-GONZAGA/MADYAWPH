@@ -35,3 +35,11 @@ String _normalizeApiBaseUrl(String raw) {
 
   return '$s/api/v1';
 }
+
+/// Direct HTTPS link to the Android APK for "Share app" install QR.
+/// Override at build time, e.g.:
+/// flutter build apk --dart-define=APP_INSTALL_URL=https://your-host/downloads/madyaw.apk
+final String kAppInstallUrl = const String.fromEnvironment(
+  'APP_INSTALL_URL',
+  defaultValue: '',
+).trim();

@@ -31,6 +31,7 @@ class PlatformSettingsService
 
         return [
             'member_monthly_fee' => $fee,
+            'app_install_url' => trim((string) config('platform.app_install_url', '')),
             'member_subscription_qr_url' => ChatAttachmentUrl::fromStoredUrl(
                 filled($row->member_subscription_qr_url ?? null)
                     ? (string) $row->member_subscription_qr_url

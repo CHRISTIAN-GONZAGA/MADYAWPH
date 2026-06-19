@@ -11,6 +11,7 @@ import '../data/philippine_destination_presets.dart';
 import '../dio_client.dart';
 import '../locale_controller.dart';
 import '../ui/app_visual.dart';
+import '../widgets/app_install_share_dialog.dart';
 import '../widgets/language_picker_button.dart';
 import '../widgets/philippine_destination_field.dart';
 import 'customer_browse_layout.dart';
@@ -574,6 +575,10 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
     );
   }
 
+  void _openShareAppInstallQr() {
+    showAppInstallShareDialog(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -602,6 +607,11 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                     ),
                     const Spacer(),
                     const LanguagePickerButton(),
+                    IconButton(
+                      tooltip: 'Share app — install QR',
+                      onPressed: _openShareAppInstallQr,
+                      icon: const Icon(Icons.share_outlined),
+                    ),
                     IconButton(
                       tooltip: 'Scan hotel guest QR',
                       onPressed: _openGuestQrScanner,
