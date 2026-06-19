@@ -1,6 +1,6 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gloretto_mobile/flow/admin/widgets/admin_walk_in_customer_booking.dart';
+import 'package:gloretto_mobile/flow/admin/widgets/admin_walk_in_stay_calendar_dialog.dart';
 import 'package:gloretto_mobile/navigation_keys.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -11,8 +11,10 @@ void main() {
     });
   });
 
-  testWidgets('showAdminWalkInBookingDialog opens complete booking popup',
-      (tester) async {
+  testWidgets('walk-in calendar opens before guest details', (tester) async {
+    final tomorrow = DateTime.now().add(const Duration(days: 1));
+    final dayAfter = tomorrow.add(const Duration(days: 1));
+
     await tester.pumpWidget(
       MaterialApp(
         navigatorKey: appNavigatorKey,
@@ -21,16 +23,15 @@ void main() {
             body: Center(
               child: FilledButton(
                 onPressed: () async {
-                  await showAdminWalkInBookingDialog(
+                  await showWalkInRoomStayCalendar(
                     context: context,
                     room: const {
                       'id': 'room-1',
                       'room_number': '101',
                       'status': 'available',
-                      'price_per_night': 1500,
-                      'category_name': 'Standard',
                       'billing_mode': 'nightly',
                     },
+                    prefetchedStays: const [],
                   );
                 },
                 child: const Text('Open'),
@@ -44,7 +45,19 @@ void main() {
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Complete your booking'), findsOneWidget);
-    expect(find.text('Submit booking'), findsOneWidget);
+    expect(find.textContaining('Select dates'), findsOneWidget);
+
+    final tomorrowDay = '${tomorrow.day}';
+    await tester.tap(find.text(tomorrowDay).first);
+    await tester.pumpAndSettle();
+
+    final dayAfterDay = '${dayAfter.day}';
+    await tester.tap(find.text(dayAfterDay).first);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Select dates'), findsNothing);
   });
 }

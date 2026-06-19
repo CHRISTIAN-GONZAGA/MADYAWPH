@@ -448,6 +448,82 @@ Route::middleware('role:admin')->group(function (): void {
         ]);
     })->name('api.v1.admin.rooms.status');
 
+    Route::get('/admin/rooms/{id}/stay-calendar', function (Request $request, string $id) {
+        $hotelId = (string) $request->user()->hotel_id;
+        $room = Room::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->findOrFail($id);
+        if ((string) $room->hotel_id !== $hotelId) {
+            return response()->json(['message' => 'Room outside hotel scope.'], 403);
+        }
+
+        $roomId = (string) $room->id;
+        $todayStart = now()->startOfDay();
+
+        $bookings = Booking::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where('room_id', $roomId)
+            ->whereNotIn('status', [
+                BookingStatus::COMPLETED->value,
+                BookingStatus::CANCELLED->value,
+            ])
+            ->orderByDesc('check_in_date')
+            ->get()
+            ->filter(function (Booking $booking) use ($todayStart) {
+                if ($booking->check_out_date === null) {
+                    return false;
+                }
+
+                return Carbon::parse($booking->check_out_date)->startOfDay()->gte($todayStart);
+            })
+            ->values()
+            ->map(fn (Booking $booking) => [
+                'id' => (string) $booking->id,
+                'type' => 'booking',
+                'guest_name' => (string) ($booking->guest_name ?? ''),
+                'check_in_date' => optional($booking->check_in_date)->toDateString(),
+                'check_out_date' => optional($booking->check_out_date)->toDateString(),
+                'check_in_time' => (string) ($booking->check_in_time ?? ''),
+                'check_out_time' => (string) ($booking->check_out_time ?? ''),
+                'status' => (string) ($booking->status?->value ?? $booking->status ?? ''),
+                'billing_mode' => (string) ($booking->billing_mode ?? ''),
+            ]);
+
+        $reservations = ExternalReservation::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where('assigned_room_id', $roomId)
+            ->whereNotIn('status', ['cancelled', 'rejected', 'completed'])
+            ->get()
+            ->filter(function (ExternalReservation $reservation) use ($todayStart) {
+                if ($reservation->check_out_date === null) {
+                    return false;
+                }
+
+                return Carbon::parse($reservation->check_out_date)->startOfDay()->gte($todayStart);
+            })
+            ->values()
+            ->map(fn (ExternalReservation $reservation) => [
+                'id' => (string) $reservation->id,
+                'type' => 'reservation',
+                'guest_name' => (string) ($reservation->guest_name ?? ''),
+                'check_in_date' => optional($reservation->check_in_date)->toDateString(),
+                'check_out_date' => optional($reservation->check_out_date)->toDateString(),
+                'status' => (string) ($reservation->status ?? ''),
+            ]);
+
+        return response()->json([
+            'room' => [
+                'id' => $roomId,
+                'room_number' => (string) ($room->room_number ?? ''),
+                'billing_mode' => RoomBillingSupport::billingMode($room),
+            ],
+            'stays' => $bookings
+                ->concat($reservations)
+                ->values()
+                ->all(),
+        ]);
+    })->name('api.v1.admin.rooms.stay-calendar');
+
     Route::post('/admin/bookings', function (
         Request $request,
         BookingService $bookingService,

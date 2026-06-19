@@ -149,10 +149,11 @@ class BookingService
             $generatedPassword = $this->guestRoomAccessCodeService->generateUnique();
             $checkInDay = $stay['check_in']->copy()->startOfDay();
             $today = now()->startOfDay();
+            $checkInNow = filter_var($data['check_in_now'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
-            // Same-day / overdue arrivals occupy the room tile; future stays keep the bed
-            // bookable on the walk-in board until check-in day (booking record holds dates).
-            if ($checkInDay->lte($today)) {
+            // Only occupy the room tile when checking the guest in now. Walk-in bookings
+            // keep the bed on the board so staff can add other date ranges until check-in.
+            if ($checkInNow && $checkInDay->lte($today)) {
                 $room->update([
                     'status' => RoomStatus::BOOKED->value,
                     'current_guest_name' => $booking->guest_name,

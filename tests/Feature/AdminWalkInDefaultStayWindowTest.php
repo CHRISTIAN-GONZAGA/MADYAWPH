@@ -122,7 +122,7 @@ class AdminWalkInDefaultStayWindowTest extends TestCase
         $response->assertStatus(422);
     }
 
-    public function test_admin_walk_in_without_check_in_now_leaves_room_booked(): void
+    public function test_admin_walk_in_without_check_in_now_keeps_room_on_walk_in_board(): void
     {
         $hotel = Hotel::create(['name' => 'Booked Queue Hotel', 'location' => 'Loc']);
         $admin = User::create([
@@ -159,7 +159,16 @@ class AdminWalkInDefaultStayWindowTest extends TestCase
             ->assertJsonPath('ok', true);
 
         $room->refresh();
-        $this->assertSame('booked', $room->status?->value ?? (string) $room->status);
-        $this->assertSame('Queue Guest', (string) $room->current_guest_name);
+        $this->assertSame('available', $room->status?->value ?? (string) $room->status);
+        $this->assertNull($room->current_guest_name);
+
+        $rooms = $this->getJson(
+            '/api/v1/customer/categories?hotel_id='.(string) $hotel->id.'&admin_walk_in=1'
+        );
+        $rooms->assertOk();
+        $standard = collect($rooms->json('categories'))
+            ->first(fn (array $cat) => str_contains(strtolower((string) ($cat['name'] ?? '')), 'standard'));
+        $this->assertNotNull($standard);
+        $this->assertGreaterThanOrEqual(1, (int) ($standard['available_rooms'] ?? 0));
     }
 }

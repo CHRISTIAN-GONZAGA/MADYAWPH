@@ -10,6 +10,7 @@ import '../../../widgets/app_input.dart';
 import '../../../widgets/chat_attachment.dart';
 import '../../widgets/complete_guest_booking_dialog.dart';
 import 'hourly_billing.dart';
+import 'admin_walk_in_stay_calendar_dialog.dart';
 import 'manual_booking_dialog.dart';
 
 /// Same booking popup + submit path as [CustomerRoomsScreen] admin walk-in.
@@ -26,16 +27,25 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
   }
   if (!context.mounted) return false;
 
+  final selectedDates = await showWalkInRoomStayCalendar(
+    context: context,
+    room: room,
+  );
+  if (selectedDates == null || !context.mounted) return false;
+
   final nameCtrl = TextEditingController(text: savedGuest?.name ?? '');
   final emailCtrl = TextEditingController(text: savedGuest?.email ?? '');
   final phoneCtrl = TextEditingController(text: savedGuest?.phone ?? '');
   final checkInCtrl = TextEditingController();
   final checkOutCtrl = TextEditingController();
 
-  final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
-  DateTime? checkInDate = today;
-  DateTime? checkOutDate = today.add(const Duration(days: 1));
+  final today = DateTime(
+    DateTime.now().year,
+    DateTime.now().month,
+    DateTime.now().day,
+  );
+  DateTime? checkInDate = selectedDates.checkIn;
+  DateTime? checkOutDate = selectedDates.checkOut;
   checkInCtrl.text = checkInDate.toIso8601String().split('T').first;
   checkOutCtrl.text = checkOutDate.toIso8601String().split('T').first;
 

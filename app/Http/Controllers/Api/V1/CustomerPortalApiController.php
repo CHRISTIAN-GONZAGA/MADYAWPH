@@ -723,72 +723,12 @@ class CustomerPortalApiController extends Controller
         if (in_array($status, [RoomStatus::MAINTENANCE->value, RoomStatus::CHECKED_IN->value], true)) {
             return false;
         }
-        if (in_array($status, [
-            RoomStatus::AVAILABLE->value,
-            RoomStatus::CHECKED_OUT->value,
-        ], true)) {
-            return true;
-        }
-
-        if ($this->roomOnlyHasFutureStayHold($room)) {
-            return true;
-        }
-
-        if ($status === RoomStatus::RESERVED->value) {
-            return $this->roomStayStartDay($room)?->gt(now()->startOfDay()) ?? true;
-        }
 
         if ($status === '') {
             return trim((string) ($room->current_guest_name ?? '')) === '';
         }
 
-        return false;
-    }
-
-    /**
-     * Room is held for a stay that has not started yet (check-in after today).
-     */
-    private function roomOnlyHasFutureStayHold(Room $room): bool
-    {
-        $today = now()->startOfDay();
-        $stayStart = $this->roomStayStartDay($room);
-        if ($stayStart !== null && $stayStart->gt($today)) {
-            return true;
-        }
-
-        return Booking::withoutGlobalScopes()
-            ->where('hotel_id', (string) $room->hotel_id)
-            ->where('room_id', (string) $room->id)
-            ->whereNotIn('status', [
-                BookingStatus::COMPLETED->value,
-                BookingStatus::CANCELLED->value,
-            ])
-            ->where('check_in_date', '>', $today->toDateString())
-            ->exists();
-    }
-
-    private function roomStayStartDay(Room $room): ?Carbon
-    {
-        $checkInRaw = $room->current_check_in ?? null;
-        if (filled($checkInRaw)) {
-            return Carbon::parse((string) $checkInRaw)->startOfDay();
-        }
-
-        $booking = Booking::withoutGlobalScopes()
-            ->where('hotel_id', (string) $room->hotel_id)
-            ->where('room_id', (string) $room->id)
-            ->whereNotIn('status', [
-                BookingStatus::COMPLETED->value,
-                BookingStatus::CANCELLED->value,
-            ])
-            ->orderByDesc('check_in_date')
-            ->first();
-
-        if ($booking === null || $booking->check_in_date === null) {
-            return null;
-        }
-
-        return Carbon::parse($booking->check_in_date)->startOfDay();
+        return true;
     }
 
     private function countAvailableRoomsInCategory(

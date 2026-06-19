@@ -176,6 +176,118 @@ class AdminWalkInFutureBookingTest extends TestCase
             ->assertStatus(422);
     }
 
+    public function test_same_day_walk_in_booking_keeps_room_on_walk_in_board(): void
+    {
+        $hotel = Hotel::create(['name' => 'Same Day Walk-in Hotel', 'location' => 'Loc']);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'admin_same_day',
+            'email' => 'admin-same-day@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $category = RoomCategory::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'Twin',
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => 'T14',
+            'category_id' => (string) $category->id,
+            'category_name' => 'Twin',
+            'room_type' => 'Twin',
+            'price_per_night' => 900,
+            'status' => RoomStatus::AVAILABLE->value,
+        ]);
+
+        $checkIn = Carbon::today()->setTime(14, 0);
+        $checkOut = Carbon::today()->addDay()->setTime(11, 0);
+
+        $this->actingAs($admin)
+            ->postJson('/api/v1/admin/bookings', [
+                'room_id' => (string) $room->id,
+                'guest_name' => 'Today Guest',
+                'guest_email' => 'today@test.local',
+                'guest_phone' => '09170000035',
+                'check_in_at' => $checkIn->toIso8601String(),
+                'check_out_at' => $checkOut->toIso8601String(),
+                'payment_method' => 'Cash',
+                'check_in_now' => false,
+            ])
+            ->assertCreated();
+
+        $room->refresh();
+        $this->assertSame(
+            RoomStatus::AVAILABLE->value,
+            $room->status?->value ?? (string) $room->status
+        );
+
+        $rooms = $this->getJson(
+            '/api/v1/customer/categories/'.(string) $category->id.'/rooms?hotel_id='
+            .(string) $hotel->id.'&admin_walk_in=1'
+        );
+        $rooms->assertOk();
+        $numbers = collect($rooms->json('rooms'))->pluck('room_number')->all();
+        $this->assertContains('T14', $numbers);
+    }
+
+    public function test_admin_room_stay_calendar_lists_bookings_and_reservations(): void
+    {
+        $hotel = Hotel::create(['name' => 'Calendar Hotel', 'location' => 'Loc']);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'admin_calendar',
+            'email' => 'admin-calendar@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => 'C1',
+            'category_name' => 'Twin',
+            'room_type' => 'Twin',
+            'price_per_night' => 900,
+            'status' => RoomStatus::AVAILABLE->value,
+        ]);
+
+        Booking::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'booking_reference' => 'BK-CAL-1',
+            'guest_name' => 'Booked Guest',
+            'guest_email' => 'booked@test.local',
+            'guest_phone' => '09170000040',
+            'check_in_date' => Carbon::tomorrow()->toDateString(),
+            'check_out_date' => Carbon::tomorrow()->addDay()->toDateString(),
+            'nights' => 1,
+            'total_amount' => 900,
+            'payment_status' => 'unpaid',
+            'status' => BookingStatus::BOOKED->value,
+        ]);
+
+        \App\Models\ExternalReservation::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'source' => 'app-customer',
+            'external_reference' => 'RESCAL001',
+            'guest_name' => 'Reserved Guest',
+            'guest_email' => 'reserved@test.local',
+            'guest_phone' => '09170000041',
+            'check_in_date' => Carbon::now()->addDays(5)->toDateString(),
+            'check_out_date' => Carbon::now()->addDays(7)->toDateString(),
+            'assigned_room_id' => (string) $room->id,
+            'status' => 'approved',
+        ]);
+
+        $response = $this->actingAs($admin)->getJson(
+            '/api/v1/admin/rooms/'.(string) $room->id.'/stay-calendar'
+        );
+
+        $response->assertOk();
+        $stays = collect($response->json('stays'));
+        $this->assertTrue($stays->contains(fn (array $stay) => ($stay['type'] ?? '') === 'booking'));
+        $this->assertTrue($stays->contains(fn (array $stay) => ($stay['type'] ?? '') === 'reservation'));
+    }
+
     public function test_admin_walk_in_room_payload_includes_future_hold_metadata(): void
     {
         $hotel = Hotel::create(['name' => 'Walk-in Payload Hotel', 'location' => 'Loc']);
