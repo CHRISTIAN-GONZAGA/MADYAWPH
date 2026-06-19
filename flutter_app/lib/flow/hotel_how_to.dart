@@ -200,10 +200,16 @@ Future<void> showHotelRegistrationCredentialsDialog(
   String? registrationPassword,
 }) async {
   final email = (verifiedEmail ?? '').trim();
+  final propertyA = portalAccounts?['property'] as Map<String, dynamic>?;
   final superA = portalAccounts?['super_admin'] as Map<String, dynamic>?;
   final adminA = portalAccounts?['admin'] as Map<String, dynamic>?;
-  final ownerUser = (registrationUsername ?? superA?['username'] ?? '').toString().trim();
-  final ownerPass = (registrationPassword ?? superA?['password'] ?? '').toString();
+  final propertyUser = (registrationUsername ?? propertyA?['username'] ?? superA?['username'] ?? '')
+      .toString()
+      .trim();
+  final propertyPass = (registrationPassword ?? propertyA?['password'] ?? superA?['password'] ?? '')
+      .toString();
+  final ownerUser = propertyUser;
+  final ownerPass = propertyPass;
   final adminUser = ownerUser.isEmpty
       ? (adminA?['username'] ?? '').toString()
       : '${ownerUser}_admin';
@@ -217,8 +223,12 @@ Future<void> showHotelRegistrationCredentialsDialog(
   final buffer = StringBuffer()
     ..writeln('Hotel: $hotelName')
     ..writeln()
-    ..writeln('Sign in from the role menu after selecting this hotel.')
-    ..writeln('Use the same password you entered when registering.')
+    ..writeln('── Property login ──')
+    ..writeln('Username: $propertyUser')
+    ..writeln('Password: $propertyPass')
+    ..writeln('(Home → Property sign in — unlocks your hotel in the app)')
+    ..writeln()
+    ..writeln('After property sign-in, open the role menu for staff roles.')
     ..writeln()
     ..writeln('── Super admin ──')
     ..writeln('Username: $ownerUser')
@@ -241,7 +251,9 @@ Future<void> showHotelRegistrationCredentialsDialog(
           children: [
             Text(
               'Write these down or copy them now. Passwords are shown once. '
-              'You will enter the admin dashboard next — use Settings → Categories & rooms to set up rooms.',
+              'Property login unlocks your hotel on the home screen; admin and super admin '
+              'are used from the role menu after that. You will enter the admin dashboard next — '
+              'use Settings → Categories & rooms to set up rooms.',
               style: Theme.of(ctx).textTheme.bodyMedium,
             ),
             if (freeCredits != null && freeCredits > 0) ...[
@@ -295,6 +307,13 @@ Future<void> showHotelRegistrationCredentialsDialog(
                 ),
               ),
             const SizedBox(height: 16),
+            _CredentialBlock(
+              title: 'Property login',
+              subtitle: 'Home → Property sign in · unlocks this hotel in the app',
+              username: propertyUser,
+              password: propertyPass,
+            ),
+            const SizedBox(height: 12),
             _CredentialBlock(
               title: 'Super admin',
               subtitle: 'Role menu → Super admin · same password you just entered',

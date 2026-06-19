@@ -713,6 +713,11 @@ class PortalAuthController extends Controller
             'registration_password' => $ownerPassword,
             'passwords_verified' => $passwordsVerified,
             'portal_accounts' => [
+                'property' => [
+                    'username' => $validated['username'],
+                    'password' => $ownerPassword,
+                    'note' => 'Home → Property sign in. Same username and password as on the registration form.',
+                ],
                 'super_admin' => [
                     'username' => $validated['username'],
                     'password' => $ownerPassword,

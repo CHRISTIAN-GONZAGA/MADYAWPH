@@ -44,6 +44,8 @@ class HotelRegistrationLoginTest extends TestCase
             ->first();
         $this->assertNotNull($credit);
         $this->assertSame(20000.0, (float) $credit->current_credits);
+        $this->assertSame('palmresort', $response->json('portal_accounts.property.username'));
+        $this->assertSame('OwnerSecret9', $response->json('portal_accounts.property.password'));
         $this->assertSame('OwnerSecret9', $response->json('portal_accounts.super_admin.password'));
         $this->assertSame('OwnerSecret9', $response->json('portal_accounts.admin.password'));
         $this->assertSame('palmresort_admin', $response->json('portal_accounts.admin.username'));
