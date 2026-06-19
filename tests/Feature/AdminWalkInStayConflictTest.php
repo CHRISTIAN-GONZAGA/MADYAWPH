@@ -172,4 +172,117 @@ class AdminWalkInStayConflictTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('ok', true);
     }
+
+    public function test_admin_walk_in_hourly_dorm_allows_non_overlapping_same_day_times(): void
+    {
+        $hotel = Hotel::create(['name' => 'Hourly Dorm Hotel', 'location' => 'Loc']);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'admin_hourly',
+            'email' => 'admin-hourly@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => 'D5',
+            'category_name' => 'Dorm Room',
+            'room_type' => 'Dorm',
+            'billing_mode' => 'hourly',
+            'block_hours' => 3,
+            'price_per_block' => 350,
+            'status' => RoomStatus::AVAILABLE->value,
+        ]);
+
+        Booking::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'booking_reference' => 'BK-MORNING',
+            'guest_name' => 'Morning Guest',
+            'guest_email' => 'morning@test.local',
+            'guest_phone' => '09170000017',
+            'check_in_date' => Carbon::today()->toDateString(),
+            'check_out_date' => Carbon::today()->toDateString(),
+            'check_in_time' => '09:00',
+            'check_out_time' => '12:00',
+            'billing_mode' => 'hourly',
+            'block_hours' => 3,
+            'nights' => 0,
+            'total_amount' => 350,
+            'payment_status' => 'paid',
+            'status' => BookingStatus::BOOKED->value,
+        ]);
+
+        $checkIn = Carbon::today()->setTime(14, 0);
+        $checkOut = Carbon::today()->setTime(17, 0);
+
+        $this->actingAs($admin)
+            ->postJson('/api/v1/admin/bookings', [
+                'room_id' => (string) $room->id,
+                'guest_name' => 'Afternoon Guest',
+                'guest_email' => 'afternoon@test.local',
+                'guest_phone' => '09170000018',
+                'check_in_at' => $checkIn->toIso8601String(),
+                'check_out_at' => $checkOut->toIso8601String(),
+                'payment_method' => 'Cash',
+                'check_in_now' => true,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('ok', true);
+    }
+
+    public function test_admin_walk_in_succeeds_on_reserved_vacant_twin_with_stale_confirmed_booking(): void
+    {
+        $hotel = Hotel::create(['name' => 'Twin Hotel', 'location' => 'Loc']);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'admin_twin',
+            'email' => 'admin-twin@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => 'T1',
+            'category_name' => 'Twin',
+            'room_type' => 'Twin',
+            'billing_mode' => 'hourly',
+            'block_hours' => 3,
+            'price_per_block' => 500,
+            'status' => RoomStatus::RESERVED->value,
+        ]);
+
+        Booking::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'booking_reference' => 'BK-STALE-TWIN',
+            'guest_name' => 'Old Guest',
+            'guest_email' => 'old-twin@test.local',
+            'guest_phone' => '09170000019',
+            'check_in_date' => Carbon::today()->toDateString(),
+            'check_out_date' => Carbon::today()->toDateString(),
+            'billing_mode' => 'hourly',
+            'nights' => 0,
+            'total_amount' => 500,
+            'payment_status' => 'paid',
+            'status' => BookingStatus::CONFIRMED->value,
+        ]);
+
+        $checkIn = Carbon::today()->setTime(15, 0);
+        $checkOut = Carbon::today()->setTime(18, 0);
+
+        $this->actingAs($admin)
+            ->postJson('/api/v1/admin/bookings', [
+                'room_id' => (string) $room->id,
+                'guest_name' => 'Walk-in Twin',
+                'guest_email' => 'twin-walkin@test.local',
+                'guest_phone' => '09170000020',
+                'check_in_at' => $checkIn->toIso8601String(),
+                'check_out_at' => $checkOut->toIso8601String(),
+                'payment_method' => 'Cash',
+                'check_in_now' => true,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('ok', true);
+    }
 }

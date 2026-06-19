@@ -11,6 +11,7 @@ use App\Models\Room;
 use App\Support\ChatAttachmentUrl;
 use App\Support\CustomerStayPricing;
 use App\Support\HotelDirectory;
+use App\Support\RoomBillingSupport;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 
@@ -92,6 +93,8 @@ class HotelAvailabilityService
         string $checkInDate,
         string $checkOutDate,
         ?string $excludeReservationId = null,
+        ?CarbonInterface $requestedCheckInAt = null,
+        ?CarbonInterface $requestedCheckOutAt = null,
     ): bool {
         $in = Carbon::parse($checkInDate)->startOfDay();
         $out = Carbon::parse($checkOutDate)->startOfDay();
@@ -103,9 +106,20 @@ class HotelAvailabilityService
             })
             ->first();
 
-        if ($this->reservationOverlaps($hotelId, $roomId, $in, $out, $excludeReservationId)) {
+        if ($this->reservationOverlaps(
+            $hotelId,
+            $roomId,
+            $in,
+            $out,
+            $excludeReservationId,
+            $requestedCheckOutAt,
+        )) {
             return true;
         }
+
+        $requestStart = $requestedCheckInAt ?? $in;
+        $requestEnd = $requestedCheckOutAt ?? $out->copy()->endOfDay();
+        $useDateTimeOverlap = $requestedCheckInAt !== null && $requestedCheckOutAt !== null;
 
         $bookings = Booking::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
@@ -127,11 +141,19 @@ class HotelAvailabilityService
                 continue;
             }
 
-            if ($this->bookingAlreadyEnded($booking, $in)) {
+            if ($room !== null && $this->bookingIsStaleForVacantRoom($booking, $room)) {
                 continue;
             }
 
-            if ($room !== null && $this->bookingIsStaleForVacantRoom($booking, $room)) {
+            if ($useDateTimeOverlap) {
+                if ($this->bookingOverlapsRequestWindow($booking, $room, $requestStart, $requestEnd)) {
+                    return true;
+                }
+
+                continue;
+            }
+
+            if ($this->bookingAlreadyEnded($booking, $in)) {
                 continue;
             }
 
@@ -139,6 +161,19 @@ class HotelAvailabilityService
         }
 
         return false;
+    }
+
+    /**
+     * Room is physically empty and eligible for admin walk-in turnover.
+     */
+    private function roomIsVacantForWalkIn(Room $room): bool
+    {
+        $status = strtolower($room->status?->value ?? (string) ($room->status ?? ''));
+        if (in_array($status, [RoomStatus::CHECKED_IN->value, RoomStatus::MAINTENANCE->value], true)) {
+            return false;
+        }
+
+        return trim((string) ($room->current_guest_name ?? '')) === '';
     }
 
     /**
@@ -150,12 +185,69 @@ class HotelAvailabilityService
             return true;
         }
 
-        $status = strtolower($room->status?->value ?? (string) ($room->status ?? ''));
-        if (! in_array($status, [RoomStatus::AVAILABLE->value, RoomStatus::CHECKED_OUT->value], true)) {
-            return false;
+        return $this->roomIsVacantForWalkIn($room);
+    }
+
+    private function bookingOverlapsRequestWindow(
+        Booking $booking,
+        ?Room $room,
+        CarbonInterface $requestStart,
+        CarbonInterface $requestEnd,
+    ): bool {
+        $bookingStart = $this->bookingStayStartsAt($booking, $room);
+        $bookingEnd = $this->bookingStayEndsAt($booking, $room);
+
+        return $bookingStart->lt($requestEnd) && $bookingEnd->gt($requestStart);
+    }
+
+    private function bookingStayStartsAt(Booking $booking, ?Room $room): Carbon
+    {
+        $day = Carbon::parse($booking->check_in_date)->startOfDay();
+        if (filled($booking->check_in_time)) {
+            $parts = explode(':', (string) $booking->check_in_time);
+
+            return $day->copy()->setTime((int) ($parts[0] ?? 0), (int) ($parts[1] ?? 0));
         }
 
-        return trim((string) ($room->current_guest_name ?? '')) === '';
+        if ($room !== null && RoomBillingSupport::isHourly($room)) {
+            return $day->copy()->setTime(CustomerStayPricing::DEFAULT_HOURLY_CHECK_IN_HOUR, 0);
+        }
+
+        if (strtolower((string) ($booking->billing_mode ?? '')) === RoomBillingSupport::MODE_HOURLY) {
+            return $day->copy()->setTime(CustomerStayPricing::DEFAULT_HOURLY_CHECK_IN_HOUR, 0);
+        }
+
+        return $day;
+    }
+
+    private function bookingStayEndsAt(Booking $booking, ?Room $room): Carbon
+    {
+        $checkInDay = Carbon::parse($booking->check_in_date)->startOfDay();
+        $checkOutDay = Carbon::parse($booking->check_out_date)->startOfDay();
+
+        if (filled($booking->check_out_time)) {
+            $parts = explode(':', (string) $booking->check_out_time);
+
+            return $checkOutDay->copy()->setTime((int) ($parts[0] ?? 0), (int) ($parts[1] ?? 0));
+        }
+
+        $isHourly = $room !== null && RoomBillingSupport::isHourly($room)
+            || strtolower((string) ($booking->billing_mode ?? '')) === RoomBillingSupport::MODE_HOURLY;
+
+        if ($isHourly) {
+            if ($checkOutDay->equalTo($checkInDay)) {
+                $blockHours = max(1, (int) ($booking->block_hours ?? 0));
+                if ($blockHours <= 1 && $room !== null) {
+                    $blockHours = RoomBillingSupport::hourlyConfig($room)['block_hours'];
+                }
+
+                return $this->bookingStayStartsAt($booking, $room)->copy()->addHours($blockHours);
+            }
+
+            return $checkOutDay->copy()->setTime(CustomerStayPricing::DEFAULT_HOURLY_CHECK_OUT_HOUR, 0);
+        }
+
+        return $checkOutDay->copy()->endOfDay();
     }
 
     /**
@@ -270,6 +362,7 @@ class HotelAvailabilityService
         CarbonInterface $checkIn,
         CarbonInterface $checkOut,
         ?string $excludeReservationId,
+        ?CarbonInterface $requestedCheckOutAt = null,
     ): bool {
         $reservations = ExternalReservation::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
@@ -277,6 +370,8 @@ class HotelAvailabilityService
             ->where('check_in_date', '<=', $checkOut)
             ->where('check_out_date', '>=', $checkIn)
             ->get();
+
+        $requestEndsAt = $requestedCheckOutAt ?? Carbon::parse($checkOut)->startOfDay();
 
         foreach ($reservations as $reservation) {
             if ($excludeReservationId !== null
@@ -289,7 +384,7 @@ class HotelAvailabilityService
             }
 
             $reservationCheckIn = Carbon::parse($reservation->check_in_date)->startOfDay();
-            if ($reservationCheckIn->gte($checkOut)) {
+            if ($reservationCheckIn->gte($requestEndsAt->copy()->startOfDay())) {
                 continue;
             }
 

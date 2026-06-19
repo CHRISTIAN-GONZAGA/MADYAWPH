@@ -78,6 +78,8 @@ class DomainGuardService
             $checkIn->toDateString(),
             $checkOut->toDateString(),
             null,
+            $checkIn,
+            $checkOut,
         )) {
             throw ValidationException::withMessages([
                 'check_in_at' => 'Selected dates conflict with an existing stay or reservation.',
