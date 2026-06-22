@@ -25,6 +25,15 @@ final class AdminBookingPresenter
             'guest_name' => (string) $booking->guest_name,
             'guest_email' => (string) ($booking->guest_email ?? ''),
             'guest_phone' => (string) ($booking->guest_phone ?? ''),
+            'adults' => (int) ($booking->adults ?? 1),
+            'children' => (int) ($booking->children ?? 0),
+            'guests_male' => (int) ($booking->guests_male ?? 0),
+            'guests_female' => (int) ($booking->guests_female ?? 0),
+            'guests_hispanic' => (int) ($booking->guests_hispanic ?? 0),
+            'guest_nationality' => (string) ($booking->guest_nationality ?? ''),
+            'free_breakfast_options' => array_values(
+                array_map('strval', (array) ($booking->free_breakfast_options ?? []))
+            ),
             'check_in_date' => optional($booking->check_in_date)->toDateString(),
             'check_out_date' => optional($booking->check_out_date)->toDateString(),
             'check_in_time' => (string) ($booking->check_in_time ?? ''),

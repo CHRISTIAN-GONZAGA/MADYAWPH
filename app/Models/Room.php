@@ -19,6 +19,7 @@ class Room extends Model
         'category_name',
         'display_name',
         'room_number',
+        'floor',
         'room_type',
         'price_per_night',
         'billing_mode',
@@ -47,6 +48,7 @@ class Room extends Model
             'price_per_night' => 'decimal:2',
             'price_per_block' => 'decimal:2',
             'block_hours' => 'integer',
+            'floor' => 'integer',
             'current_check_in' => 'date',
             'current_check_out' => 'date',
         ];

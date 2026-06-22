@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../admin_dashboard_models.dart';
+import '../widgets/admin_floor_picker_grid.dart';
 import '../widgets/admin_hotel_totals_room_panel.dart';
 import '../widgets/booking_overview_cards.dart';
 import '../widgets/admin_room_navigation.dart';
@@ -211,7 +212,7 @@ class RoomSummarySection extends StatelessWidget {
                           ),
                     ),
                     Text(
-                      'Tap a category to open reserved, occupied, and vacant lists',
+                      'Tap a category to browse floors, then rooms',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: scheme.onSurfaceVariant,
                           ),
@@ -379,6 +380,16 @@ class RoomSummarySection extends StatelessWidget {
     required Map<String, dynamic> stats,
   }) {
     HapticFeedback.selectionClick();
+    if (!AdminDashboardModels.needsFloorDrilldown(rooms)) {
+      _openRooms(
+        context,
+        title: label,
+        list: AdminDashboardModels.sortRoomsByNumber(rooms),
+        subtitle: '${rooms.length} room(s)',
+      );
+      return;
+    }
+
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -386,18 +397,51 @@ class RoomSummarySection extends StatelessWidget {
       useSafeArea: true,
       useRootNavigator: true,
       builder: (ctx) {
-        return _CategoryBreakdownSheet(
-          label: label,
-          rooms: rooms,
-          stats: stats,
-          onOpenSection: (sectionTitle, filtered, subtitle) {
-            Navigator.of(ctx).pop();
-            _openRooms(
-              context,
-              title: '$label · $sectionTitle',
-              list: filtered,
-              subtitle: subtitle,
-              showGuest: sectionTitle != 'Vacant',
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.55,
+          minChildSize: 0.35,
+          maxChildSize: 0.85,
+          builder: (ctx, scrollController) {
+            return Material(
+              color: Theme.of(ctx).colorScheme.surface,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: Text(
+                      label,
+                      style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                  ),
+                  Text(
+                    '${stats['total']} rooms · ${AdminDashboardModels.distinctFloors(rooms).length} floors',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(ctx).textTheme.bodySmall,
+                  ),
+                  Expanded(
+                    child: AdminFloorPickerGrid(
+                      rooms: rooms,
+                      onFloorTap: (floor) {
+                        Navigator.of(ctx).pop();
+                        final onFloor = AdminDashboardModels.roomsOnFloor(
+                          rooms,
+                          floor,
+                        );
+                        _openRooms(
+                          context,
+                          title: '$label · ${AdminDashboardModels.floorLabel(floor)}',
+                          list: onFloor,
+                          subtitle: '${onFloor.length} room(s)',
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
             );
           },
         );
@@ -417,16 +461,6 @@ int _summaryGridColumns(BuildContext context) {
   if (width >= 900) return 4;
   if (width >= 600) return 3;
   return 2;
-}
-
-List<Map<String, dynamic>> _sortRoomsByNumber(List<Map<String, dynamic>> rooms) {
-  final copy = List<Map<String, dynamic>>.from(rooms);
-  copy.sort((a, b) {
-    final an = (a['room_number'] ?? '').toString();
-    final bn = (b['room_number'] ?? '').toString();
-    return an.compareTo(bn);
-  });
-  return copy;
 }
 
 class _SummaryRoomListSheet extends StatefulWidget {
@@ -455,7 +489,7 @@ class _SummaryRoomListSheetState extends State<_SummaryRoomListSheet> {
 
   List<Map<String, dynamic>> get _filtered {
     final q = _query.trim().toLowerCase();
-    final sorted = _sortRoomsByNumber(widget.rooms);
+    final sorted = AdminDashboardModels.sortRoomsByNumber(widget.rooms);
     if (q.isEmpty) return sorted;
     return sorted.where((r) {
       final parts = [
@@ -955,223 +989,6 @@ class _CategoryMiniStat extends StatelessWidget {
                 ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _CategoryBreakdownSheet extends StatelessWidget {
-  const _CategoryBreakdownSheet({
-    required this.label,
-    required this.rooms,
-    required this.stats,
-    required this.onOpenSection,
-  });
-
-  final String label;
-  final List<Map<String, dynamic>> rooms;
-  final Map<String, dynamic> stats;
-  final void Function(
-    String sectionTitle,
-    List<Map<String, dynamic>> rooms,
-    String subtitle,
-  ) onOpenSection;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final reservedSoon =
-        AdminDashboardModels.categoryReservedSoonRooms(rooms, withinDays: 1);
-    final occupied = AdminDashboardModels.categoryOccupiedRooms(rooms);
-    final vacant = AdminDashboardModels.categoryVacantRooms(rooms);
-
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        bottom: 16 + MediaQuery.paddingOf(context).bottom,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 22,
-                backgroundColor: scheme.primaryContainer,
-                child: Icon(
-                  Icons.king_bed_rounded,
-                  color: scheme.onPrimaryContainer,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
-                    ),
-                    Text(
-                      '${stats['total']} rooms in this category',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Tap a section to view rooms',
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-          const SizedBox(height: 10),
-          _CategorySectionTile(
-            icon: Icons.schedule_rounded,
-            label: 'Reserved (0–1 day)',
-            subtitle: 'Check-in today or tomorrow',
-            count: reservedSoon.length,
-            color: Colors.orange.shade800,
-            onTap: reservedSoon.isEmpty
-                ? null
-                : () => onOpenSection(
-                      'Reserved (0–1 day)',
-                      reservedSoon,
-                      '${reservedSoon.length} room(s)',
-                    ),
-          ),
-          const SizedBox(height: 8),
-          _CategorySectionTile(
-            icon: Icons.person_pin_circle_outlined,
-            label: 'Occupied',
-            subtitle: 'Guests currently checked in',
-            count: occupied.length,
-            color: Colors.green.shade700,
-            onTap: occupied.isEmpty
-                ? null
-                : () => onOpenSection(
-                      'Occupied',
-                      occupied,
-                      '${occupied.length} room(s)',
-                    ),
-          ),
-          const SizedBox(height: 8),
-          _CategorySectionTile(
-            icon: Icons.meeting_room_outlined,
-            label: 'Vacant',
-            subtitle: 'Available for walk-in booking',
-            count: vacant.length,
-            color: Colors.teal.shade700,
-            onTap: vacant.isEmpty
-                ? null
-                : () => onOpenSection(
-                      'Vacant',
-                      vacant,
-                      '${vacant.length} room(s)',
-                    ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CategorySectionTile extends StatelessWidget {
-  const _CategorySectionTile({
-    required this.icon,
-    required this.label,
-    required this.subtitle,
-    required this.count,
-    required this.color,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final String subtitle;
-  final int count;
-  final Color color;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final enabled = onTap != null && count > 0;
-
-    return Material(
-      color: enabled
-          ? color.withValues(alpha: 0.08)
-          : scheme.surfaceContainerHighest.withValues(alpha: 0.45),
-      borderRadius: BorderRadius.circular(12),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: enabled ? onTap : null,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: enabled
-                      ? color.withValues(alpha: 0.15)
-                      : scheme.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  icon,
-                  color: enabled ? color : scheme.outline,
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: enabled ? null : scheme.onSurfaceVariant,
-                          ),
-                    ),
-                    Text(
-                      subtitle,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                            fontSize: 11,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-              Text(
-                '$count',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w900,
-                      color: enabled ? color : scheme.outline,
-                    ),
-              ),
-              const SizedBox(width: 4),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: enabled ? color : scheme.outline,
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

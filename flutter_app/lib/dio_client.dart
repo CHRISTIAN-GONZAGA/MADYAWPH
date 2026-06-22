@@ -112,6 +112,9 @@ Dio _authedDio(_AuthKind kind) {
   return dio;
 }
 
-Dio portalDio() => _authedDio(_AuthKind.portal);
+Dio portalDio() => portalDioTestOverride?.call() ?? _authedDio(_AuthKind.portal);
 
 Dio guestDio() => _authedDio(_AuthKind.guest);
+
+/// Widget tests set this to mock walk-in calendar / amenity API calls.
+Dio Function()? portalDioTestOverride;

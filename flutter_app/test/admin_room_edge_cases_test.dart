@@ -7,6 +7,7 @@ import 'test_helpers.dart';
 
 void main() {
   setUp(initWidgetTestBindings);
+  tearDown(clearWidgetTestBindings);
 
   testWidgets('room without id shows snackbar not blank screen', (tester) async {
     await tester.pumpWidget(
@@ -59,7 +60,7 @@ void main() {
     );
 
     await tester.tap(find.text('202'));
-    await tester.pumpAndSettle();
+    await advanceWalkInThroughCalendar(tester);
 
     expect(find.text('Complete your booking'), findsOneWidget);
     expect(find.byType(AlertDialog), findsOneWidget);

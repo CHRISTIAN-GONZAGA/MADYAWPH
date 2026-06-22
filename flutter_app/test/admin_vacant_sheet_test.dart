@@ -6,6 +6,7 @@ import 'test_helpers.dart';
 
 void main() {
   setUp(initWidgetTestBindings);
+  tearDown(clearWidgetTestBindings);
 
   testWidgets('bottom sheet room tap opens walk-in route after dismiss',
       (tester) async {
@@ -60,7 +61,7 @@ void main() {
 
     await tester.tap(find.text('Room 101'));
     await tester.pump();
-    await tester.pumpAndSettle();
+    await advanceWalkInThroughCalendar(tester);
 
     expect(find.text('Complete your booking'), findsOneWidget);
   });

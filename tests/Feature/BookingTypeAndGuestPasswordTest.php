@@ -20,6 +20,7 @@ class BookingTypeAndGuestPasswordTest extends TestCase
     public function test_customer_booking_is_online_and_password_is_four_chars(): void
     {
         $hotel = Hotel::create(['name' => 'Booking Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $category = RoomCategory::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'Deluxe',
@@ -62,6 +63,7 @@ class BookingTypeAndGuestPasswordTest extends TestCase
     public function test_guest_login_rejects_non_four_char_password(): void
     {
         $hotel = Hotel::create(['name' => 'Guest Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_number' => '202',
@@ -88,6 +90,7 @@ class BookingTypeAndGuestPasswordTest extends TestCase
     public function test_room_create_rounds_price(): void
     {
         $hotel = Hotel::create(['name' => 'Room Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $admin = User::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'Admin',
@@ -115,6 +118,7 @@ class BookingTypeAndGuestPasswordTest extends TestCase
     public function test_customer_rooms_only_lists_available(): void
     {
         $hotel = Hotel::create(['name' => 'Public Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $category = RoomCategory::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'Cat',

@@ -53,6 +53,7 @@ class RoomController extends Controller
             'category_id' => ['required', 'string', 'max:64'],
             'display_name' => ['required', 'string', 'max:100'],
             'room_number' => ['required', 'string', 'max:50'],
+            'floor' => ['nullable', 'integer', 'min:1', 'max:99'],
             'room_type' => ['required', 'in:Single,Double,Suite,Deluxe'],
             'price_per_night' => ['nullable', 'numeric', 'min:0'],
             'billing_mode' => ['nullable', 'in:nightly,hourly'],
@@ -74,6 +75,7 @@ class RoomController extends Controller
 
         $payload = RoomMediaStorage::stripUploadField($validated);
         $payload = $this->roomAttributesFromValidated($payload, $hotelId, $category);
+        $this->assertValidFloorForCategory($payload, $category);
         $payload['status'] = $payload['status'] ?? RoomStatus::AVAILABLE->value;
 
         if ($request->hasFile('image_file')) {
@@ -93,6 +95,7 @@ class RoomController extends Controller
         $validated = $request->validate([
             'display_name' => ['sometimes', 'string', 'max:100'],
             'room_number' => ['sometimes', 'string', 'max:50'],
+            'floor' => ['sometimes', 'integer', 'min:1', 'max:99'],
             'room_type' => ['sometimes', 'in:Single,Double,Suite,Deluxe'],
             'price_per_night' => ['sometimes', 'numeric', 'min:0'],
             'billing_mode' => ['sometimes', 'in:nightly,hourly'],
@@ -140,6 +143,10 @@ class RoomController extends Controller
             $payload['price_per_extra_hour'] = PriceRounding::nearest50(
                 (float) ($category->price_per_extra_hour ?? 0)
             );
+        }
+
+        if ($category && array_key_exists('floor', $payload)) {
+            $this->assertValidFloorForCategory($payload, $category);
         }
 
         $room->update($payload);
@@ -295,6 +302,7 @@ class RoomController extends Controller
         $payload['category_name'] = (string) $category->name;
         $payload['display_name'] = trim((string) ($payload['display_name'] ?? ''));
         $payload['room_number'] = trim((string) ($payload['room_number'] ?? ''));
+        $payload['floor'] = max(1, (int) ($payload['floor'] ?? 1));
         $payload['room_type'] = trim((string) ($payload['room_type'] ?? RoomType::SINGLE->value));
         $billingMode = strtolower((string) ($payload['billing_mode'] ?? $category->billing_mode ?? 'nightly'));
         $payload['billing_mode'] = $billingMode === 'hourly' ? 'hourly' : 'nightly';
@@ -317,5 +325,20 @@ class RoomController extends Controller
         }
 
         return $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function assertValidFloorForCategory(array $payload, RoomCategory $category): void
+    {
+        $maxFloor = max(1, (int) ($category->floor_count ?? 1));
+        $floor = max(1, (int) ($payload['floor'] ?? 1));
+        if ($floor > $maxFloor) {
+            throw ValidationException::withMessages([
+                'floor' => ["Floor must be between 1 and {$maxFloor} for this category."],
+            ]);
+        }
+        $payload['floor'] = $floor;
     }
 }

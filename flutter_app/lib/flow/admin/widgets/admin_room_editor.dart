@@ -194,6 +194,9 @@ Future<bool> showAdminEditRoomDialog(
       (cat['block_hours'] as num?)?.toInt() ??
       3;
   var status = (room['status'] ?? 'available').toString();
+  final floorCount = (cat['floor_count'] as num?)?.toInt() ?? 1;
+  var selectedFloor = (room['floor'] as num?)?.toInt() ?? 1;
+  if (selectedFloor < 1) selectedFloor = 1;
   final nightlyCtrl = TextEditingController(text: '$roomPricePerNight');
   final blockPriceCtrl = TextEditingController(text: '$roomPricePerBlock');
   final existingImageUrl = (room['image_url'] ?? '').toString().trim();
@@ -226,6 +229,26 @@ Future<bool> showAdminEditRoomDialog(
                         ),
                   ),
                   const SizedBox(height: 18),
+                  if (floorCount > 1) ...[
+                    DropdownButtonFormField<int>(
+                      key: ValueKey<int>(selectedFloor),
+                      initialValue: selectedFloor.clamp(1, floorCount),
+                      decoration: const InputDecoration(
+                        labelText: 'Floor',
+                        prefixIcon: Icon(Icons.layers_outlined),
+                      ),
+                      items: List.generate(
+                        floorCount,
+                        (i) => DropdownMenuItem(
+                          value: i + 1,
+                          child: Text('Floor ${i + 1}'),
+                        ),
+                      ),
+                      onChanged: (v) =>
+                          setLocal(() => selectedFloor = v ?? selectedFloor),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
                   TextField(
                     controller: nameCtrl,
                     textInputAction: TextInputAction.next,
@@ -342,6 +365,7 @@ Future<bool> showAdminEditRoomDialog(
                         onPressed: () => Navigator.pop(context, {
                           'display_name': nameCtrl.text.trim(),
                           'room_number': roomNoCtrl.text.trim(),
+                          'floor': selectedFloor,
                           'room_type': roomType,
                           'billing_mode': roomBillingMode,
                           'price_per_night': roomPricePerNight,
@@ -406,6 +430,8 @@ Future<bool> showAdminCreateRoomDialog(
   var roomBlockHours = (category['block_hours'] as num?)?.toInt() ?? 3;
   var roomType = 'Single';
   var status = 'available';
+  final floorCount = (category['floor_count'] as num?)?.toInt() ?? 1;
+  var selectedFloor = 1;
   XFile? pickedImage;
 
   final payload = await showDialog<Map<String, dynamic>>(
@@ -427,6 +453,27 @@ Future<bool> showAdminCreateRoomDialog(
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 18),
+                  if (floorCount > 1) ...[
+                    DropdownButtonFormField<int>(
+                      key: ValueKey<int>(selectedFloor),
+                      initialValue: selectedFloor,
+                      decoration: const InputDecoration(
+                        labelText: 'Floor',
+                        prefixIcon: Icon(Icons.layers_outlined),
+                        helperText: 'Select which floor this room is on',
+                      ),
+                      items: List.generate(
+                        floorCount,
+                        (i) => DropdownMenuItem(
+                          value: i + 1,
+                          child: Text('Floor ${i + 1}'),
+                        ),
+                      ),
+                      onChanged: (v) =>
+                          setLocal(() => selectedFloor = v ?? selectedFloor),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
                   TextField(
                     controller: nameCtrl,
                     textInputAction: TextInputAction.next,
@@ -525,6 +572,7 @@ Future<bool> showAdminCreateRoomDialog(
                           'category_id': categoryId,
                           'display_name': nameCtrl.text.trim(),
                           'room_number': roomNoCtrl.text.trim(),
+                          'floor': selectedFloor,
                           'room_type': roomType,
                           'billing_mode': roomBillingMode,
                           'price_per_night': roomPricePerNight,

@@ -18,6 +18,7 @@ class AdminWalkInStayConflictTest extends TestCase
     public function test_admin_walk_in_succeeds_after_previous_guest_checked_out_today(): void
     {
         $hotel = Hotel::create(['name' => 'Turnover Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'admin_turnover',
@@ -71,6 +72,7 @@ class AdminWalkInStayConflictTest extends TestCase
     public function test_admin_walk_in_succeeds_when_future_reservation_starts_on_walk_out_day(): void
     {
         $hotel = Hotel::create(['name' => 'Future Start Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'admin_future_start',
@@ -121,6 +123,7 @@ class AdminWalkInStayConflictTest extends TestCase
     public function test_admin_walk_in_succeeds_on_vacant_dorm_with_stale_booking_row(): void
     {
         $hotel = Hotel::create(['name' => 'Stale Row Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'admin_stale',
@@ -176,6 +179,7 @@ class AdminWalkInStayConflictTest extends TestCase
     public function test_admin_walk_in_hourly_dorm_allows_non_overlapping_same_day_times(): void
     {
         $hotel = Hotel::create(['name' => 'Hourly Dorm Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'admin_hourly',
@@ -234,6 +238,7 @@ class AdminWalkInStayConflictTest extends TestCase
     public function test_admin_walk_in_succeeds_on_reserved_vacant_twin_with_stale_confirmed_booking(): void
     {
         $hotel = Hotel::create(['name' => 'Twin Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'admin_twin',
@@ -289,6 +294,7 @@ class AdminWalkInStayConflictTest extends TestCase
     public function test_admin_walk_in_ignores_completed_checkout_reservation_hold(): void
     {
         $hotel = Hotel::create(['name' => 'Res Hold Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'admin_res_hold',
@@ -361,6 +367,7 @@ class AdminWalkInStayConflictTest extends TestCase
     public function test_admin_walk_in_ignores_checked_out_room_with_stale_guest_fields(): void
     {
         $hotel = Hotel::create(['name' => 'Checked Out Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'admin_checked_out',

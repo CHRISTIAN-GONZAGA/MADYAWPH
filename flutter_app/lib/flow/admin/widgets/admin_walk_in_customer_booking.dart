@@ -11,6 +11,7 @@ import '../../../widgets/chat_attachment.dart';
 import '../../widgets/complete_guest_booking_dialog.dart';
 import 'hourly_billing.dart';
 import 'admin_walk_in_stay_calendar_dialog.dart';
+import 'guest_nationalities.dart';
 import 'manual_booking_dialog.dart';
 
 /// Same booking popup + submit path as [CustomerRoomsScreen] admin walk-in.
@@ -53,6 +54,33 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
   var paymentMethod = 'Cash';
   XFile? discountIdFile;
   XFile? guestIdFile;
+  var adults = 1;
+  var children = 0;
+  var guestsMale = 0;
+  var guestsFemale = 0;
+  var guestNationality = 'Filipino';
+  final selectedBreakfast = <String>{};
+  var breakfastMenu = const <String>[];
+
+  try {
+    final menuRes =
+        await portalDio().get<Map<String, dynamic>>('/admin/amenity-menu');
+    breakfastMenu = ((menuRes.data?['data'] as List?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .where((item) {
+          final type = (item['amenity_type'] ?? '').toString().toLowerCase();
+          final name = (item['name'] ?? '').toString().toLowerCase();
+          final active = item['is_active'] != false;
+          return active &&
+              (type.contains('breakfast') || name.contains('breakfast'));
+        })
+        .map((item) => (item['name'] ?? '').toString().trim())
+        .where((name) => name.isNotEmpty)
+        .toList();
+  } catch (_) {
+    breakfastMenu = const [];
+  }
+  if (!context.mounted) return false;
 
   final payload = await showDialog<Map<String, dynamic>>(
     context: context,
@@ -161,6 +189,89 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                   label: dialogContext.tr('phone_number'),
                   keyboardType: TextInputType.phone,
                 ),
+                const SizedBox(height: 12),
+                Text(
+                  'Guests in room',
+                  style: Theme.of(dialogContext).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 6),
+                _WalkInCounterRow(
+                  label: 'Adults',
+                  value: adults,
+                  min: 1,
+                  onChanged: (v) => setLocal(() => adults = v),
+                ),
+                _WalkInCounterRow(
+                  label: 'Children',
+                  value: children,
+                  onChanged: (v) => setLocal(() => children = v),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Demographics (head count)',
+                  style: Theme.of(dialogContext).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 6),
+                _WalkInCounterRow(
+                  label: 'Male',
+                  value: guestsMale,
+                  onChanged: (v) => setLocal(() => guestsMale = v),
+                ),
+                _WalkInCounterRow(
+                  label: 'Female',
+                  value: guestsFemale,
+                  onChanged: (v) => setLocal(() => guestsFemale = v),
+                ),
+                DropdownButtonFormField<String>(
+                  value: guestNationality,
+                  decoration: const InputDecoration(
+                    labelText: 'Nationality',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: GuestNationalities.all
+                      .map(
+                        (n) => DropdownMenuItem(value: n, child: Text(n)),
+                      )
+                      .toList(),
+                  onChanged: (v) => setLocal(() {
+                    guestNationality = v ?? 'Filipino';
+                  }),
+                ),
+                if (breakfastMenu.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Free breakfast (select all that apply)',
+                    style:
+                        Theme.of(dialogContext).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: breakfastMenu.map((option) {
+                      final selected = selectedBreakfast.contains(option);
+                      return FilterChip(
+                        label: Text(option),
+                        selected: selected,
+                        onSelected: (on) {
+                          setLocal(() {
+                            if (on) {
+                              selectedBreakfast.add(option);
+                            } else {
+                              selectedBreakfast.remove(option);
+                            }
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
                   onPressed: () async {
@@ -311,6 +422,12 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                   'check_out': checkOutCtrl.text.trim(),
                   'discount_type': discountType,
                   'payment_method': paymentMethod,
+                  'adults': adults,
+                  'children': children,
+                  'guests_male': guestsMale,
+                  'guests_female': guestsFemale,
+                  'guest_nationality': guestNationality,
+                  'free_breakfast_options': selectedBreakfast.toList(),
                 });
               },
             ),
@@ -341,6 +458,16 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
         paymentMethod: (payload['payment_method'] ?? 'Cash').toString(),
         guestIdFile: guestIdFile,
         discountIdFile: discountIdFile,
+        adults: (payload['adults'] as num?)?.toInt() ?? 1,
+        children: (payload['children'] as num?)?.toInt() ?? 0,
+        guestsMale: (payload['guests_male'] as num?)?.toInt() ?? 0,
+        guestsFemale: (payload['guests_female'] as num?)?.toInt() ?? 0,
+        guestNationality: (payload['guest_nationality'] ?? 'Filipino').toString(),
+        freeBreakfastOptions: (payload['free_breakfast_options'] as List?)
+                ?.map((e) => e.toString())
+                .where((s) => s.isNotEmpty)
+                .toList() ??
+            const [],
       ),
     );
     if (context.mounted) {
@@ -381,4 +508,48 @@ Future<bool> showAdminWalkInBookingDialog({
     hotelId: hotelId,
     room: room,
   );
+}
+
+class _WalkInCounterRow extends StatelessWidget {
+  const _WalkInCounterRow({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+    this.min = 0,
+  });
+
+  final String label;
+  final int value;
+  final int min;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          Expanded(child: Text(label)),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            onPressed: value > min ? () => onChanged(value - 1) : null,
+            icon: const Icon(Icons.remove_circle_outline),
+          ),
+          SizedBox(
+            width: 28,
+            child: Text(
+              '$value',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            onPressed: () => onChanged(value + 1),
+            icon: const Icon(Icons.add_circle_outline),
+          ),
+        ],
+      ),
+    );
+  }
 }

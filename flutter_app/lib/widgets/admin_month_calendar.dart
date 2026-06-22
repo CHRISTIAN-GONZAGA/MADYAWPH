@@ -10,6 +10,7 @@ class AdminMonthCalendar extends StatefulWidget {
     required this.hasEvent,
     this.eventCount,
     this.onMonthChanged,
+    this.dayCellExtent,
   });
 
   final DateTime focusedMonth;
@@ -18,6 +19,7 @@ class AdminMonthCalendar extends StatefulWidget {
   final bool Function(DateTime day) hasEvent;
   final int Function(DateTime day)? eventCount;
   final ValueChanged<DateTime>? onMonthChanged;
+  final double? dayCellExtent;
 
   @override
   State<AdminMonthCalendar> createState() => _AdminMonthCalendarState();
@@ -98,10 +100,11 @@ class _AdminMonthCalendarState extends State<AdminMonthCalendar> {
             GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 7,
-                mainAxisSpacing: 4,
-                crossAxisSpacing: 4,
+                mainAxisSpacing: 6,
+                crossAxisSpacing: 6,
+                mainAxisExtent: widget.dayCellExtent ?? 36,
               ),
               itemCount: startWeekday + daysInMonth,
               itemBuilder: (context, i) {

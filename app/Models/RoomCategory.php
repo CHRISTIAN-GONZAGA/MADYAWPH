@@ -20,6 +20,7 @@ class RoomCategory extends Model
         'block_hours',
         'price_per_extra_hour',
         'image_url',
+        'floor_count',
     ];
 
     protected function casts(): array
@@ -29,6 +30,7 @@ class RoomCategory extends Model
             'price_per_block' => 'decimal:2',
             'price_per_extra_hour' => 'decimal:2',
             'block_hours' => 'integer',
+            'floor_count' => 'integer',
         ];
     }
 }

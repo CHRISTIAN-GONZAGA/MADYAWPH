@@ -37,6 +37,7 @@ class HourlyRoomBillingTest extends TestCase
     public function test_admin_manual_booking_with_hourly_room(): void
     {
         $hotel = Hotel::create(['name' => 'Hourly Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'name' => 'Admin',
             'email' => 'admin-hourly@test.local',
@@ -88,6 +89,7 @@ class HourlyRoomBillingTest extends TestCase
     public function test_guest_extend_stay_uses_per_hour_rate(): void
     {
         $hotel = Hotel::create(['name' => 'Extend Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_number' => '311',
@@ -143,6 +145,7 @@ class HourlyRoomBillingTest extends TestCase
     public function test_admin_extend_stay_uses_per_hour_rate(): void
     {
         $hotel = Hotel::create(['name' => 'Same Duration Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'name' => 'Admin',
             'email' => 'admin-same-duration@test.local',
@@ -211,6 +214,7 @@ class HourlyRoomBillingTest extends TestCase
     public function test_custom_hours_extension_uses_per_hour_rate(): void
     {
         $hotel = Hotel::create(['name' => 'Custom Hours Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_number' => '502',
@@ -268,6 +272,7 @@ class HourlyRoomBillingTest extends TestCase
     public function test_repeated_per_hour_extensions_accumulate_fees(): void
     {
         $hotel = Hotel::create(['name' => 'Repeat Extend Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'name' => 'Admin',
             'email' => 'admin-repeat@test.local',
@@ -344,6 +349,7 @@ class HourlyRoomBillingTest extends TestCase
     public function test_booked_stay_hours_derived_from_room_charge_for_legacy_bookings(): void
     {
         $hotel = Hotel::create(['name' => 'Legacy Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_number' => '504',
@@ -401,6 +407,7 @@ class HourlyRoomBillingTest extends TestCase
     public function test_extra_hour_rate_uses_category_over_stale_room_value(): void
     {
         $hotel = Hotel::create(['name' => 'Category Rate Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $category = \App\Models\RoomCategory::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'Hourly Cat',
@@ -426,6 +433,7 @@ class HourlyRoomBillingTest extends TestCase
     public function test_custom_hours_extension_rejects_more_than_ten_hours(): void
     {
         $hotel = Hotel::create(['name' => 'Cap Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_number' => '602',
@@ -469,6 +477,7 @@ class HourlyRoomBillingTest extends TestCase
     public function test_extend_stay_total_includes_prior_amenity_charges(): void
     {
         $hotel = Hotel::create(['name' => 'Bill Sync Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'name' => 'Admin',
             'email' => 'admin-bill-sync@test.local',
@@ -542,6 +551,7 @@ class HourlyRoomBillingTest extends TestCase
     public function test_stay_extension_preview_lists_per_hour_options(): void
     {
         $hotel = Hotel::create(['name' => 'Preview Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_number' => '604',
@@ -580,6 +590,7 @@ class HourlyRoomBillingTest extends TestCase
     public function test_customer_booking_on_hourly_room_uses_block_pricing(): void
     {
         $hotel = Hotel::create(['name' => 'Customer Hourly', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_number' => '412',

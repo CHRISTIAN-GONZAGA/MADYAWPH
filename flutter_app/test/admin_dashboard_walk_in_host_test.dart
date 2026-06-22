@@ -7,6 +7,7 @@ import 'test_helpers.dart';
 
 void main() {
   setUp(initWidgetTestBindings);
+  tearDown(clearWidgetTestBindings);
 
   testWidgets('walk-in tab opens complete booking dialog on root navigator',
       (tester) async {
@@ -33,7 +34,7 @@ void main() {
     );
 
     await tester.tap(find.text('101'));
-    await tester.pumpAndSettle();
+    await advanceWalkInThroughCalendar(tester);
 
     expect(find.text('Complete your booking'), findsOneWidget);
     expect(find.textContaining('Upload government ID'), findsOneWidget);

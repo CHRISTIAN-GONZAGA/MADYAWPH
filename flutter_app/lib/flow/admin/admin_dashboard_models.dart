@@ -586,4 +586,69 @@ class AdminDashboardModels {
     }
     return sum;
   }
+
+  /// Physical floor for a room (stored value or parsed from room number).
+  static int floorOf(Map<String, dynamic> room) {
+    final raw = room['floor'];
+    if (raw is int && raw > 0) return raw;
+    if (raw is num && raw.toInt() > 0) return raw.toInt();
+    final parsed = int.tryParse('$raw');
+    if (parsed != null && parsed > 0) return parsed;
+    final rn = (room['room_number'] ?? '').toString();
+    final match = RegExp(r'^(\d+)').firstMatch(rn);
+    if (match != null) {
+      final fromNumber = int.tryParse(match.group(1)!);
+      if (fromNumber != null && fromNumber > 0) return fromNumber;
+    }
+    return 1;
+  }
+
+  static List<int> distinctFloors(List<Map<String, dynamic>> rooms) {
+    final floors = <int>{};
+    for (final room in rooms) {
+      floors.add(floorOf(room));
+    }
+    final list = floors.toList()..sort();
+    return list;
+  }
+
+  static bool needsFloorDrilldown(List<Map<String, dynamic>> rooms) {
+    return distinctFloors(rooms).length > 1;
+  }
+
+  static List<Map<String, dynamic>> roomsOnFloor(
+    List<Map<String, dynamic>> rooms,
+    int floor,
+  ) {
+    return sortRoomsByNumber(
+      rooms.where((r) => floorOf(r) == floor).toList(),
+    );
+  }
+
+  static List<Map<String, dynamic>> sortRoomsByNumber(
+    List<Map<String, dynamic>> rooms,
+  ) {
+    final copy = List<Map<String, dynamic>>.from(rooms);
+    int numericKey(Map<String, dynamic> room) {
+      final rn = (room['room_number'] ?? '').toString();
+      return int.tryParse(RegExp(r'\d+').firstMatch(rn)?.group(0) ?? '') ?? 0;
+    }
+
+    copy.sort((a, b) {
+      final ak = numericKey(a);
+      final bk = numericKey(b);
+      if (ak != bk) return ak.compareTo(bk);
+      return (a['room_number'] ?? '')
+          .toString()
+          .compareTo((b['room_number'] ?? '').toString());
+    });
+    return copy;
+  }
+
+  static String floorLabel(int floor) => 'Floor $floor';
+
+  static String formatFreeBreakfast(List<dynamic>? options) {
+    if (options == null || options.isEmpty) return '';
+    return options.map((e) => e.toString()).where((s) => s.isNotEmpty).join(', ');
+  }
 }

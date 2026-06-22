@@ -3,14 +3,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gloretto_mobile/flow/admin/sections/room_board_section.dart';
 import 'package:gloretto_mobile/flow/widgets/complete_guest_booking_dialog.dart';
 import 'package:gloretto_mobile/navigation_keys.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
+import 'test_helpers.dart';
 
 void main() {
-  setUp(() {
-    SharedPreferences.setMockInitialValues({
-      'auth_storage_migrated_v2': true,
-    });
-  });
+  setUp(initWidgetTestBindings);
+  tearDown(clearWidgetTestBindings);
 
   testWidgets('walk-in tab room tap opens customer-style booking popup',
       (tester) async {
@@ -40,7 +38,7 @@ void main() {
     );
 
     await tester.tap(find.text('101'));
-    await tester.pumpAndSettle();
+    await advanceWalkInThroughCalendar(tester);
 
     expect(find.text('Complete your booking'), findsOneWidget);
     expect(find.text('Submit booking'), findsOneWidget);

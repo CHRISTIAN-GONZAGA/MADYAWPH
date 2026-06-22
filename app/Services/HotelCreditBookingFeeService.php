@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Booking;
 use App\Models\ExternalReservation;
 use App\Models\HotelCredit;
 use App\Models\Room;
@@ -16,11 +17,12 @@ class HotelCreditBookingFeeService
     public function __construct(
         private readonly RoomPricingService $roomPricingService,
         private readonly FinancialComputationService $financialComputationService,
+        private readonly PlatformSettingsService $platformSettings,
     ) {}
 
     public function feePercent(): float
     {
-        return (float) config('services.hotel_credits.booking_confirm_fee_percent', 8);
+        return $this->platformSettings->bookingConfirmFeePercent();
     }
 
     public function computeRoomTotal(Room $room, mixed $checkIn, mixed $checkOut): float
@@ -51,6 +53,20 @@ class HotelCreditBookingFeeService
         );
     }
 
+    public function computeRoomTotalForBooking(Booking $booking, Room $room): float
+    {
+        $total = (float) ($booking->total_amount ?? 0);
+        if ($total > 0) {
+            return $total;
+        }
+
+        return $this->computeRoomTotal(
+            $room,
+            $booking->check_in_date,
+            $booking->check_out_date
+        );
+    }
+
     public function computeFee(float $roomTotal): float
     {
         if ($roomTotal <= 0) {
@@ -61,38 +77,106 @@ class HotelCreditBookingFeeService
     }
 
     /**
-     * Deduct platform fee when an admin confirms a reservation/booking.
-     *
-     * @return array{
-     *     fee: float,
-     *     room_total: float,
-     *     fee_percent: float,
-     *     balance_before: float,
-     *     balance_after: float
-     * }
+     * @return array<string, mixed>
      */
     public function deductForReservationConfirmation(
         ExternalReservation $reservation,
         Room $room,
         ?string $actorUserId = null,
     ): array {
-        $hotelId = (string) $room->hotel_id;
         $reservationId = (string) $reservation->id;
         $reference = (string) ($reservation->external_reference ?? $reservationId);
         $transactionKey = "booking-fee-res-{$reservationId}";
+        $roomTotal = $this->computeRoomTotalForReservation($reservation, $room);
 
+        return $this->applyDeduction(
+            hotelId: (string) $room->hotel_id,
+            fee: $this->computeFee($roomTotal),
+            roomTotal: $roomTotal,
+            transactionKey: $transactionKey,
+            description: sprintf(
+                'Booking confirmation fee (%s%% of booking total ₱%s) for reservation %s',
+                rtrim(rtrim(number_format($this->feePercent(), 2), '0'), '.'),
+                number_format($roomTotal, 2),
+                $reference
+            ),
+            metadata: [
+                'reference' => $reference,
+                'reservation_id' => $reservationId,
+                'room_id' => (string) $room->id,
+                'initiated_by' => $actorUserId,
+            ],
+        );
+    }
+
+    /**
+     * Deduct when a customer submits a reservation request.
+     *
+     * @return array<string, mixed>
+     */
+    public function deductForReservationSubmission(
+        ExternalReservation $reservation,
+        Room $room,
+        ?string $actorUserId = null,
+    ): array {
+        return $this->deductForReservationConfirmation($reservation, $room, $actorUserId);
+    }
+
+    /**
+     * Deduct when an admin creates a walk-in / local booking.
+     *
+     * @return array<string, mixed>
+     */
+    public function deductForBooking(
+        Booking $booking,
+        Room $room,
+        ?string $actorUserId = null,
+    ): array {
+        $bookingId = (string) $booking->id;
+        $reference = (string) ($booking->booking_reference ?? $bookingId);
+        $transactionKey = "booking-fee-bk-{$bookingId}";
+        $roomTotal = $this->computeRoomTotalForBooking($booking, $room);
+
+        return $this->applyDeduction(
+            hotelId: (string) $room->hotel_id,
+            fee: $this->computeFee($roomTotal),
+            roomTotal: $roomTotal,
+            transactionKey: $transactionKey,
+            description: sprintf(
+                'Booking fee (%s%% of booking total ₱%s) for %s',
+                rtrim(rtrim(number_format($this->feePercent(), 2), '0'), '.'),
+                number_format($roomTotal, 2),
+                $reference
+            ),
+            metadata: [
+                'reference' => $reference,
+                'booking_id' => $bookingId,
+                'room_id' => (string) $room->id,
+                'initiated_by' => $actorUserId,
+            ],
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     * @return array<string, mixed>
+     */
+    private function applyDeduction(
+        string $hotelId,
+        float $fee,
+        float $roomTotal,
+        string $transactionKey,
+        string $description,
+        array $metadata = [],
+    ): array {
         return DB::transaction(function () use (
             $hotelId,
-            $reservation,
-            $room,
-            $reference,
+            $fee,
+            $roomTotal,
             $transactionKey,
-            $actorUserId,
-            $reservationId,
+            $description,
+            $metadata,
         ): array {
-            $roomTotal = $this->computeRoomTotalForReservation($reservation, $room);
-            $fee = $this->computeFee($roomTotal);
-
             if ($fee <= 0) {
                 return [
                     'fee' => 0.0,
@@ -174,22 +258,14 @@ class HotelCreditBookingFeeService
             $transactions = $transactions->push([
                 'id' => (string) Str::uuid(),
                 'type' => 'booking_fee',
-                'description' => sprintf(
-                    'Booking confirmation fee (%s%% of booking total ₱%s) for reservation %s',
-                    rtrim(rtrim(number_format($this->feePercent(), 2), '0'), '.'),
-                    number_format($roomTotal, 2),
-                    $reference
-                ),
+                'description' => $description,
                 'amount' => -$fee,
                 'timestamp' => now()->toISOString(),
                 'balanceAfter' => $balanceAfter,
                 'transactionId' => $transactionKey,
-                'reference' => $reference,
-                'reservation_id' => $reservationId,
-                'room_id' => (string) $room->id,
                 'room_total' => $roomTotal,
                 'fee_percent' => $this->feePercent(),
-                'initiated_by' => $actorUserId,
+                ...$metadata,
             ])->values()->all();
 
             $credit->update([

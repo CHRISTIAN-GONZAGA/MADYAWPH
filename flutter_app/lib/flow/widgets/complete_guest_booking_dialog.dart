@@ -24,6 +24,12 @@ class CompleteGuestBookingPayload {
     this.checkOutTime,
     this.guestIdFile,
     this.discountIdFile,
+    this.adults = 1,
+    this.children = 0,
+    this.guestsMale = 0,
+    this.guestsFemale = 0,
+    this.guestNationality = '',
+    this.freeBreakfastOptions = const [],
   });
 
   final String guestName;
@@ -37,6 +43,12 @@ class CompleteGuestBookingPayload {
   final TimeOfDay? checkOutTime;
   final XFile? guestIdFile;
   final XFile? discountIdFile;
+  final int adults;
+  final int children;
+  final int guestsMale;
+  final int guestsFemale;
+  final String guestNationality;
+  final List<String> freeBreakfastOptions;
 }
 
 class CompleteGuestBookingConfig {

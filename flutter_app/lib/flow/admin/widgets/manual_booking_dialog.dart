@@ -30,6 +30,13 @@ Future<void> submitAdminWalkInBooking({
     'check_out_at': outAt.toIso8601String(),
     'payment_method': payload.paymentMethod,
     'check_in_now': 0,
+    'adults': payload.adults,
+    'children': payload.children,
+    'guests_male': payload.guestsMale,
+    'guests_female': payload.guestsFemale,
+    'guest_nationality': payload.guestNationality,
+    if (payload.freeBreakfastOptions.isNotEmpty)
+      'free_breakfast_options': payload.freeBreakfastOptions,
     if (payload.discountType != 'none') 'discount_type': payload.discountType,
   };
 
@@ -39,7 +46,11 @@ Future<void> submitAdminWalkInBooking({
   if (hasGuestId || hasDiscountId) {
     final map = <String, dynamic>{};
     for (final entry in body.entries) {
+      if (entry.value is List) continue;
       map[entry.key] = entry.value.toString();
+    }
+    for (var i = 0; i < payload.freeBreakfastOptions.length; i++) {
+      map['free_breakfast_options[$i]'] = payload.freeBreakfastOptions[i];
     }
     if (hasGuestId) {
       map['guest_id_file'] = await MultipartFile.fromFile(

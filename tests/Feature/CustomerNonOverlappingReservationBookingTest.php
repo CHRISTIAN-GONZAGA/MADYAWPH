@@ -14,6 +14,7 @@ class CustomerNonOverlappingReservationBookingTest extends TestCase
     public function test_customer_can_book_today_when_room_has_future_reservation(): void
     {
         $hotel = Hotel::create(['name' => 'Overlap Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_number' => '501',
@@ -56,6 +57,7 @@ class CustomerNonOverlappingReservationBookingTest extends TestCase
     public function test_customer_can_reserve_non_overlapping_dates_on_reserved_room(): void
     {
         $hotel = Hotel::create(['name' => 'Reserve Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_number' => '502',
@@ -98,6 +100,7 @@ class CustomerNonOverlappingReservationBookingTest extends TestCase
     public function test_customer_still_blocked_on_overlapping_dates(): void
     {
         $hotel = Hotel::create(['name' => 'Conflict Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_number' => '503',

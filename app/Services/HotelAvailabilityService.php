@@ -49,6 +49,7 @@ class HotelAvailabilityService
         CarbonInterface $checkIn,
         CarbonInterface $checkOut,
         ?string $excludeReservationId = null,
+        ?string $excludeBookingId = null,
     ): bool {
         $room = Room::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
@@ -73,7 +74,16 @@ class HotelAvailabilityService
         $in = Carbon::parse($checkIn)->startOfDay()->toDateString();
         $out = Carbon::parse($checkOut)->startOfDay()->toDateString();
 
-        return ! $this->roomHasStayConflict($roomId, $hotelId, $in, $out, $excludeReservationId);
+        return ! $this->roomHasStayConflict(
+            $roomId,
+            $hotelId,
+            $in,
+            $out,
+            $excludeReservationId,
+            null,
+            null,
+            $excludeBookingId,
+        );
     }
 
     public function hotelCanAccommodate(
@@ -95,6 +105,7 @@ class HotelAvailabilityService
         ?string $excludeReservationId = null,
         ?CarbonInterface $requestedCheckInAt = null,
         ?CarbonInterface $requestedCheckOutAt = null,
+        ?string $excludeBookingId = null,
     ): bool {
         $in = Carbon::parse($checkInDate)->startOfDay();
         $out = Carbon::parse($checkOutDate)->startOfDay();
@@ -132,6 +143,10 @@ class HotelAvailabilityService
             ->get();
 
         foreach ($bookings as $booking) {
+            if ($excludeBookingId !== null && (string) $booking->id === $excludeBookingId) {
+                continue;
+            }
+
             if (! $this->bookingMatchesRoomId($booking, $roomId)) {
                 continue;
             }

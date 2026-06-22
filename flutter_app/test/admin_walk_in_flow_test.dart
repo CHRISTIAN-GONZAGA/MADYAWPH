@@ -11,6 +11,7 @@ import 'test_helpers.dart';
 /// Every path that opens walk-in booking must render the complete booking dialog.
 void main() {
   setUp(initWidgetTestBindings);
+  tearDown(clearWidgetTestBindings);
 
   group('dashboard nested navigator (walk-in tab)', () {
     testWidgets('room board gray tile opens complete booking dialog',
@@ -24,7 +25,7 @@ void main() {
       ));
 
       await tester.tap(find.text('101'));
-      await tester.pumpAndSettle();
+      await advanceWalkInThroughCalendar(tester);
 
       expect(find.text('Complete your booking'), findsOneWidget);
       expect(find.text('Submit booking'), findsOneWidget);
@@ -42,7 +43,7 @@ void main() {
       ));
 
       await tester.tap(find.text('101'));
-      await tester.pumpAndSettle();
+      await advanceWalkInThroughCalendar(tester);
 
       expect(find.text('Complete your booking'), findsOneWidget);
       expect(find.text('Submit booking'), findsOneWidget);
@@ -84,7 +85,7 @@ void main() {
 
       await tester.tap(find.text('Room 101'));
       await tester.pump();
-      await tester.pumpAndSettle();
+      await advanceWalkInThroughCalendar(tester);
 
       expect(find.text('Complete your booking'), findsOneWidget);
     });

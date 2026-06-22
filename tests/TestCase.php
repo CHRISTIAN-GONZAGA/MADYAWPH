@@ -2,12 +2,26 @@
 
 namespace Tests;
 
+use App\Models\Hotel;
+use App\Models\HotelCredit;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 
 abstract class TestCase extends BaseTestCase
 {
+    protected function seedHotelCredits(Hotel $hotel, float $credits = 50000): void
+    {
+        HotelCredit::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'current_credits' => $credits,
+            'warning_threshold' => 500,
+            'custom_markup_percentage' => 10,
+            'total_spent' => 0,
+            'transactions' => [],
+        ]);
+    }
+
     protected function setUp(): void
     {
         parent::setUp();

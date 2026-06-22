@@ -46,6 +46,13 @@ class Booking extends Model
         'discount_percent',
         'discount_id_url',
         'discount_id_verified',
+        'adults',
+        'children',
+        'guests_male',
+        'guests_female',
+        'guests_hispanic',
+        'guest_nationality',
+        'free_breakfast_options',
     ];
 
     protected function casts(): array
@@ -66,6 +73,12 @@ class Booking extends Model
             'price_per_block' => 'decimal:2',
             'discount_percent' => 'decimal:2',
             'discount_id_verified' => 'boolean',
+            'adults' => 'integer',
+            'children' => 'integer',
+            'guests_male' => 'integer',
+            'guests_female' => 'integer',
+            'guests_hispanic' => 'integer',
+            'free_breakfast_options' => 'array',
         ];
     }
 

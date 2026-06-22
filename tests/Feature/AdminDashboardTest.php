@@ -15,6 +15,7 @@ class AdminDashboardTest extends TestCase
     public function test_admin_dashboard_returns_core_payload(): void
     {
         $hotel = Hotel::create(['name' => 'Dashboard Hotel', 'location' => 'City']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'admin1',
@@ -76,6 +77,7 @@ class AdminDashboardTest extends TestCase
     public function test_admin_dashboard_lists_walk_in_booking_in_bookings_payload(): void
     {
         $hotel = Hotel::create(['name' => 'Walk-in Dashboard Hotel', 'location' => 'City']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'admin_walkin_dash',
@@ -127,6 +129,7 @@ class AdminDashboardTest extends TestCase
     public function test_admin_chat_inbox_returns_threads(): void
     {
         $hotel = Hotel::create(['name' => 'Chat Hotel', 'location' => 'City']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'admin2',

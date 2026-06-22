@@ -188,4 +188,33 @@ void main() {
       expect(summary['fulfilled_orders'], 1);
     });
   });
+
+  group('floor helpers', () {
+    test('sortRoomsByNumber orders numerically', () {
+      final sorted = AdminDashboardModels.sortRoomsByNumber([
+        {'room_number': '102'},
+        {'room_number': '2'},
+        {'room_number': '11'},
+      ]);
+      expect(
+        sorted.map((r) => r['room_number']).toList(),
+        ['2', '11', '102'],
+      );
+    });
+
+    test('distinctFloors and roomsOnFloor', () {
+      final rooms = [
+        {'room_number': '201', 'floor': 2},
+        {'room_number': '101', 'floor': 1},
+        {'room_number': '102', 'floor': 1},
+      ];
+      expect(AdminDashboardModels.distinctFloors(rooms), [1, 2]);
+      expect(
+        AdminDashboardModels.roomsOnFloor(rooms, 1)
+            .map((r) => r['room_number'])
+            .toList(),
+        ['101', '102'],
+      );
+    });
+  });
 }

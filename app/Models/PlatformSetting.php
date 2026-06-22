@@ -11,12 +11,14 @@ class PlatformSetting extends Model
         'credit_wallet_qr_url',
         'member_subscription_qr_url',
         'member_monthly_fee',
+        'booking_confirm_fee_percent',
     ];
 
     protected function casts(): array
     {
         return [
             'member_monthly_fee' => 'float',
+            'booking_confirm_fee_percent' => 'float',
         ];
     }
 }

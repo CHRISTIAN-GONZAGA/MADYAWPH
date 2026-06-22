@@ -6,6 +6,7 @@ import '../../../widgets/insufficient_hotel_credits.dart';
 import '../../../widgets/admin_month_calendar.dart';
 import '../../../widgets/admin_time_slot_field.dart';
 import '../admin_dashboard_models.dart';
+import '../widgets/admin_booking_manage_dialog.dart';
 import '../widgets/admin_room_navigation.dart';
 import '../../admin_chat.dart';
 
@@ -377,6 +378,19 @@ class _BookingsSectionState extends State<BookingsSection>
             _detailRow('Status', '${b['status']} / ${b['payment_status'] ?? ''}'),
             _detailRow('Total', '₱${(b['total_amount'] as num?) ?? 0}'),
             _detailRow('Booked on', '${b['date_booked'] ?? b['created_at'] ?? '—'}'),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                final ok = await showAdminManageBookingDialog(
+                  context: context,
+                  booking: b,
+                );
+                if (ok && mounted) await widget.onChanged();
+              },
+              icon: const Icon(Icons.edit_calendar_outlined),
+              label: const Text('Edit dates / cancel'),
+            ),
           ],
         ),
       ),
@@ -667,6 +681,20 @@ class _BookingsSectionState extends State<BookingsSection>
                   'Total',
                   '₱${((b['total_amount'] as num?) ?? 0).toStringAsFixed(0)}',
                 ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _busy
+                      ? null
+                      : () async {
+                          final ok = await showAdminManageBookingDialog(
+                            context: context,
+                            booking: b,
+                          );
+                          if (ok && mounted) await widget.onChanged();
+                        },
+                  icon: const Icon(Icons.edit_calendar_outlined, size: 18),
+                  label: const Text('Edit dates / cancel'),
+                ),
               ],
             ),
           ),
@@ -772,9 +800,30 @@ class _BookingsSectionState extends State<BookingsSection>
         ),
         subtitle: Text(AdminDashboardModels.formatStayRange(room)),
         isThreeLine: true,
-        trailing: FilledButton(
-          onPressed: _busy || !canCheckIn ? null : () => _checkInRoom(room),
-          child: Text(canCheckIn ? 'Check in' : 'Awaiting'),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: 'Edit booking',
+              onPressed: _busy
+                  ? null
+                  : () async {
+                      final booking =
+                          room['latest_booking'] as Map<String, dynamic>?;
+                      if (booking == null) return;
+                      final ok = await showAdminManageBookingDialog(
+                        context: context,
+                        booking: booking,
+                      );
+                      if (ok && mounted) await widget.onChanged();
+                    },
+              icon: const Icon(Icons.edit_calendar_outlined),
+            ),
+            FilledButton(
+              onPressed: _busy || !canCheckIn ? null : () => _checkInRoom(room),
+              child: Text(canCheckIn ? 'Check in' : 'Awaiting'),
+            ),
+          ],
         ),
         onTap: () {
           AdminRoomNavigation.openDetailById(
@@ -819,6 +868,20 @@ class _BookingsSectionState extends State<BookingsSection>
                     child: const Text('Reject'),
                   ),
                 ],
+                if (!pending)
+                  OutlinedButton.icon(
+                    onPressed: _busy
+                        ? null
+                        : () async {
+                            final ok = await showAdminManageReservationDialog(
+                              context: context,
+                              reservation: r,
+                            );
+                            if (ok && mounted) await widget.onChanged();
+                          },
+                    icon: const Icon(Icons.edit_calendar_outlined, size: 18),
+                    label: const Text('Edit dates / cancel'),
+                  ),
                 OutlinedButton.icon(
                   onPressed: () {
                     Navigator.of(context).push<void>(

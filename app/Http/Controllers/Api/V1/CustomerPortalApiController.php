@@ -19,6 +19,7 @@ use App\Services\ActivityLogService;
 use App\Services\FinancialComputationService;
 use App\Services\GuestRoomAccessCodeService;
 use App\Services\HotelAvailabilityService;
+use App\Services\HotelCreditBookingFeeService;
 use App\Services\RoomPricingService;
 use App\Services\SmsService;
 use App\Support\ChatAttachmentUrl;
@@ -439,6 +440,18 @@ class CustomerPortalApiController extends Controller
                 'children' => (int) ($validated['children'] ?? 0),
             ]),
         ]);
+
+        try {
+            $walletFee = app(HotelCreditBookingFeeService::class)->deductForReservationSubmission(
+                $reservation,
+                $room,
+                Auth::id() ? (string) Auth::id() : null,
+            );
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $reservation->delete();
+            throw $e;
+        }
+
         app(ActivityLogService::class)->log(
             $hotelId,
             Auth::user(),
@@ -449,6 +462,7 @@ class CustomerPortalApiController extends Controller
         return response()->json([
             'ok' => true,
             'reservation' => $this->serializeReservation($reservation, $room),
+            'wallet' => $walletFee,
         ]);
     }
 

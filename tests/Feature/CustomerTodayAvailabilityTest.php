@@ -16,6 +16,7 @@ class CustomerTodayAvailabilityTest extends TestCase
     public function test_available_room_shows_for_todays_dates_in_category_list(): void
     {
         $hotel = Hotel::create(['name' => 'Today Hotel', 'location' => 'Manila', 'city' => 'Manila']);
+        $this->seedHotelCredits($hotel);
         $category = RoomCategory::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'Standard',
@@ -67,6 +68,7 @@ class CustomerTodayAvailabilityTest extends TestCase
     public function test_stale_past_booking_does_not_block_today_on_available_room(): void
     {
         $hotel = Hotel::create(['name' => 'Stale Booking Hotel', 'location' => 'Manila']);
+        $this->seedHotelCredits($hotel);
         $category = RoomCategory::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'Deluxe',
@@ -123,6 +125,7 @@ class CustomerTodayAvailabilityTest extends TestCase
     public function test_same_day_hourly_dates_are_accepted_for_availability_filter(): void
     {
         $hotel = Hotel::create(['name' => 'Hourly Hotel', 'location' => 'Manila']);
+        $this->seedHotelCredits($hotel);
         $category = RoomCategory::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'Hourly',

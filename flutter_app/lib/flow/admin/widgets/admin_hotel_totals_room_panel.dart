@@ -5,6 +5,7 @@ import '../admin_dashboard_models.dart';
 import '../admin_room_detail_screen.dart';
 import 'admin_room_detail_navigation.dart';
 import 'admin_summary_room_tile.dart';
+import 'admin_floor_picker_grid.dart';
 
 class _RoomListPayload {
   const _RoomListPayload({
@@ -12,12 +13,14 @@ class _RoomListPayload {
     required this.rooms,
     required this.showGuest,
     this.subtitle,
+    this.useFloorPicker = false,
   });
 
   final String title;
   final List<Map<String, dynamic>> rooms;
   final bool showGuest;
   final String? subtitle;
+  final bool useFloorPicker;
 }
 
 /// Slide-up room list for Summary → Hotel totals; detail stays in-panel until back.
@@ -94,6 +97,7 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
 
   bool _visible = false;
   _RoomListPayload? _list;
+  int? _pickedFloor;
   String? _detailRoomId;
   Map<String, dynamic>? _detailSnapshot;
 
@@ -141,15 +145,18 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     String? subtitle,
   }) {
     HapticFeedback.selectionClick();
+    final useFloorPicker = AdminDashboardModels.needsFloorDrilldown(rooms);
     setState(() {
       _visible = true;
       _detailRoomId = null;
       _detailSnapshot = null;
+      _pickedFloor = null;
       _list = _RoomListPayload(
         title: title,
         rooms: rooms,
         showGuest: showGuest,
         subtitle: subtitle,
+        useFloorPicker: useFloorPicker,
       );
     });
     _syncOpenFlag();
@@ -208,6 +215,7 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     setState(() {
       _detailRoomId = null;
       _detailSnapshot = null;
+      _pickedFloor = null;
     });
     await _slideCtrl.reverse();
     if (!mounted) return;
@@ -226,6 +234,11 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     if (!_visible) return false;
     if (_detailRoomId != null) {
       _backFromDetail();
+      return true;
+    }
+    final list = _list;
+    if (list != null && list.useFloorPicker && _pickedFloor != null) {
+      setState(() => _pickedFloor = null);
       return true;
     }
     _closePanel();
@@ -272,11 +285,42 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
       );
     }
 
+    if (list.useFloorPicker && _pickedFloor == null) {
+      return ColoredBox(
+        color: bg,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _HotelTotalsPanelHeader(
+              title: list.title,
+              backgroundColor: bg,
+              onBack: _closePanel,
+            ),
+            Expanded(
+              child: AdminFloorPickerGrid(
+                rooms: list.rooms,
+                subtitle: list.subtitle,
+                onFloorTap: (floor) => setState(() => _pickedFloor = floor),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final displayRooms = list.useFloorPicker && _pickedFloor != null
+        ? AdminDashboardModels.roomsOnFloor(list.rooms, _pickedFloor!)
+        : AdminDashboardModels.sortRoomsByNumber(list.rooms);
+    final displayTitle = list.useFloorPicker && _pickedFloor != null
+        ? '${list.title} · ${AdminDashboardModels.floorLabel(_pickedFloor!)}'
+        : list.title;
+
     return _HotelTotalsListPage(
-      title: list.title,
-      rooms: list.rooms,
+      title: displayTitle,
+      rooms: displayRooms,
       showGuest: list.showGuest,
       subtitle: list.subtitle,
+      onBack: _handleBack,
       onClosePanel: _closePanel,
       onRoomTap: _openRoomDetail,
     );
@@ -360,6 +404,7 @@ class _HotelTotalsListPage extends StatelessWidget {
     required this.showGuest,
     required this.onClosePanel,
     required this.onRoomTap,
+    required this.onBack,
     this.subtitle,
   });
 
@@ -368,6 +413,7 @@ class _HotelTotalsListPage extends StatelessWidget {
   final bool showGuest;
   final String? subtitle;
   final VoidCallback onClosePanel;
+  final VoidCallback onBack;
   final void Function(String roomId) onRoomTap;
 
   @override
@@ -382,7 +428,7 @@ class _HotelTotalsListPage extends StatelessWidget {
           _HotelTotalsPanelHeader(
             title: title,
             backgroundColor: bg,
-            onBack: onClosePanel,
+            onBack: onBack,
           ),
           Expanded(
             child: _HotelTotalsRoomGrid(
@@ -472,6 +518,7 @@ class _HotelTotalsRoomGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final columns = adminSummaryRoomGridColumns(context);
+    final sorted = AdminDashboardModels.sortRoomsByNumber(rooms);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -479,7 +526,7 @@ class _HotelTotalsRoomGrid extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: Text(
-            subtitle ?? '${rooms.length} room(s) · tap a tile for details',
+            subtitle ?? '${sorted.length} room(s) · tap a tile for details',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),
@@ -494,9 +541,9 @@ class _HotelTotalsRoomGrid extends StatelessWidget {
               crossAxisSpacing: 8,
               childAspectRatio: 1.28,
             ),
-            itemCount: rooms.length,
+            itemCount: sorted.length,
             itemBuilder: (context, i) {
-              final room = rooms[i];
+              final room = sorted[i];
               return AdminSummaryRoomGridTile(
                 room: room,
                 showGuest: showGuest,

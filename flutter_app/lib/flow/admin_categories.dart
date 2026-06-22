@@ -187,6 +187,8 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     var catPricePerBlock = 1000.0;
     var catBlockHours = 3;
     var catPricePerExtraHour = 0.0;
+    var catFloorCount = 1;
+    final floorCountCtrl = TextEditingController(text: '1');
     final extraHourPriceCtrl = TextEditingController(text: '0');
     XFile? pickedImage;
     final payload = await showDialog<Map<String, dynamic>>(
@@ -237,6 +239,21 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                       onClear: () => setLocal(() => pickedImage = null),
                     ),
                     const SizedBox(height: 16),
+                    TextField(
+                      controller: floorCountCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Number of floors',
+                        hintText: 'e.g. 3',
+                        prefixIcon: Icon(Icons.layers_outlined),
+                        helperText: 'Used when adding rooms to this building',
+                      ),
+                      onChanged: (v) {
+                        final n = int.tryParse(v.trim());
+                        if (n != null && n > 0) catFloorCount = n;
+                      },
+                    ),
+                    const SizedBox(height: 16),
                     RoomPricingFields(
                       billingMode: catBillingMode,
                       pricePerNight: catPricePerNight,
@@ -282,6 +299,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                             'price_per_block': catPricePerBlock,
                             'block_hours': catBlockHours,
                             'price_per_extra_hour': catPricePerExtraHour,
+                            'floor_count': int.tryParse(floorCountCtrl.text.trim()) ?? catFloorCount,
                             '__image': pickedImage,
                           }),
                           child: const Text('Create'),
@@ -581,6 +599,8 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     var catBlockHours = (category['block_hours'] as num?)?.toInt() ?? 3;
     var catPricePerExtraHour =
         (category['price_per_extra_hour'] as num?)?.toDouble() ?? 0.0;
+    var catFloorCount = (category['floor_count'] as num?)?.toInt() ?? 1;
+    final floorCountCtrl = TextEditingController(text: '$catFloorCount');
     final extraHourPriceCtrl =
         TextEditingController(text: '$catPricePerExtraHour');
     XFile? pickedImage;
@@ -603,6 +623,19 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                   controller: descCtrl,
                   maxLines: 3,
                   decoration: const InputDecoration(labelText: 'Description'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: floorCountCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Number of floors',
+                    prefixIcon: Icon(Icons.layers_outlined),
+                  ),
+                  onChanged: (v) {
+                    final n = int.tryParse(v.trim());
+                    if (n != null && n > 0) catFloorCount = n;
+                  },
                 ),
                 const SizedBox(height: 12),
                 RoomPricingFields(
@@ -653,6 +686,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                 'price_per_block': catPricePerBlock,
                 'block_hours': catBlockHours,
                 'price_per_extra_hour': catPricePerExtraHour,
+                'floor_count': int.tryParse(floorCountCtrl.text.trim()) ?? catFloorCount,
                 '__image': pickedImage,
               }),
               child: const Text('Save'),

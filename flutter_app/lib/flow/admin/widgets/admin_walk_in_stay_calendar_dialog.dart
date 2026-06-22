@@ -228,107 +228,133 @@ class _WalkInStayCalendarDialogState extends State<_WalkInStayCalendarDialog> {
     final eventsForDay =
         _stays.where((s) => _stayOnDay(s, selectedDay)).toList();
     final errorMessage = _error;
+    final dialogWidth = MediaQuery.sizeOf(context).width.clamp(360.0, 520.0);
 
-    return AlertDialog(
-      title: Text('Room ${widget.room['room_number'] ?? '—'} · Select dates'),
-      content: SizedBox(
-        width: 360,
-        child: _loading
-            ? const Padding(
-                padding: EdgeInsets.all(24),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            : SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (errorMessage != null) ...[
-                      Text(
-                        errorMessage,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
+    return Dialog(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: dialogWidth),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Room ${widget.room['room_number'] ?? '—'} · Select dates',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+              const SizedBox(height: 12),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: _loading
+                      ? const Padding(
+                          padding: EdgeInsets.all(32),
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      : Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (errorMessage != null) ...[
+                              Text(
+                                errorMessage,
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                            ],
+                            Text(
+                              rangeLabel,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 12),
+                            AdminMonthCalendar(
+                              focusedMonth: _month,
+                              selectedDay: selectedDay,
+                              hasEvent: _hasEvent,
+                              eventCount: _eventCount,
+                              dayCellExtent: 48,
+                              onMonthChanged: (m) => setState(() => _month = m),
+                              onDaySelected: _onDaySelected,
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              'Booked / reserved days are marked. Select open dates for the new stay.',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                            if (_checkIn != null &&
+                                previewCheckOut != null &&
+                                _rangeOverlapsStay(
+                                    _checkIn!, previewCheckOut)) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                'Selected dates overlap an existing stay.',
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.error,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                            if (eventsForDay.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              Text(
+                                'On ${_fmt(selectedDay)}',
+                                style: Theme.of(context).textTheme.titleSmall,
+                              ),
+                              const SizedBox(height: 6),
+                              ...eventsForDay.map((stay) {
+                                final type = (stay['type'] ?? 'stay').toString();
+                                final guest =
+                                    (stay['guest_name'] ?? 'Guest').toString();
+                                final range = AdminDashboardModels.formatDateRange(
+                                  stay['check_in_date'],
+                                  stay['check_out_date'],
+                                );
+                                final label = switch (type) {
+                                  'reservation' => 'Reservation',
+                                  'room_hold' => 'Room hold',
+                                  _ => 'Booking',
+                                };
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 4),
+                                  child: Text(
+                                    '$label · $guest · $range',
+                                    style: Theme.of(context).textTheme.bodySmall,
+                                  ),
+                                );
+                              }),
+                            ],
+                          ],
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                    Text(
-                      rangeLabel,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                    ),
-                    const SizedBox(height: 8),
-                    AdminMonthCalendar(
-                      focusedMonth: _month,
-                      selectedDay: selectedDay,
-                      hasEvent: _hasEvent,
-                      eventCount: _eventCount,
-                      onMonthChanged: (m) => setState(() => _month = m),
-                      onDaySelected: _onDaySelected,
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Booked / reserved days are marked. Select open dates for the new stay.',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    if (_checkIn != null &&
-                        previewCheckOut != null &&
-                        _rangeOverlapsStay(_checkIn!, previewCheckOut)) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        'Selected dates overlap an existing stay.',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                    if (eventsForDay.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      Text(
-                        'On ${_fmt(selectedDay)}',
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                      const SizedBox(height: 6),
-                      ...eventsForDay.map((stay) {
-                        final type = (stay['type'] ?? 'stay').toString();
-                        final guest =
-                            (stay['guest_name'] ?? 'Guest').toString();
-                        final range = AdminDashboardModels.formatDateRange(
-                          stay['check_in_date'],
-                          stay['check_out_date'],
-                        );
-                        final label = switch (type) {
-                          'reservation' => 'Reservation',
-                          'room_hold' => 'Room hold',
-                          _ => 'Booking',
-                        };
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
-                          child: Text(
-                            '$label · $guest · $range',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        );
-                      }),
-                    ],
-                  ],
                 ),
               ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: _loading || selection == null
+                        ? null
+                        : () => Navigator.of(context).pop(selection),
+                    child: const Text('Continue'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _loading || selection == null
-              ? null
-              : () => Navigator.of(context).pop(selection),
-          child: const Text('Continue'),
-        ),
-      ],
     );
   }
 }

@@ -20,6 +20,7 @@ class CustomerPortalBookingTest extends TestCase
     public function test_customer_today_booking_creates_pending_reservation(): void
     {
         $hotel = Hotel::create(['name' => 'Customer Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_number' => '201',
@@ -57,6 +58,7 @@ class CustomerPortalBookingTest extends TestCase
     public function test_customer_booking_with_discount_succeeds(): void
     {
         $hotel = Hotel::create(['name' => 'Discount Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_number' => '203',
@@ -83,6 +85,7 @@ class CustomerPortalBookingTest extends TestCase
     public function test_pwd_discount_applied_once_on_booking_total_and_charges(): void
     {
         $hotel = Hotel::create(['name' => 'PWD Once Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_number' => '204',
@@ -123,6 +126,7 @@ class CustomerPortalBookingTest extends TestCase
     public function test_student_discount_type_is_rejected(): void
     {
         $hotel = Hotel::create(['name' => 'No Student Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_number' => '205',
@@ -149,6 +153,7 @@ class CustomerPortalBookingTest extends TestCase
     public function test_customer_future_reservation_succeeds(): void
     {
         $hotel = Hotel::create(['name' => 'Customer Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_number' => '202',
@@ -179,6 +184,7 @@ class CustomerPortalBookingTest extends TestCase
     public function test_customer_online_reservation_includes_payment_reference(): void
     {
         $hotel = Hotel::create(['name' => 'Online Pay Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_number' => '305',
@@ -223,6 +229,7 @@ class CustomerPortalBookingTest extends TestCase
     public function test_same_day_reservation_submits_pending_request(): void
     {
         $hotel = Hotel::create(['name' => 'Same Day Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_number' => '210',
@@ -255,6 +262,7 @@ class CustomerPortalBookingTest extends TestCase
     public function test_same_day_booking_rejects_overlapping_pending_reservation(): void
     {
         $hotel = Hotel::create(['name' => 'Conflict Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_number' => '306',
@@ -297,6 +305,7 @@ class CustomerPortalBookingTest extends TestCase
     public function test_admin_approval_activates_same_day_reservation(): void
     {
         $hotel = Hotel::create(['name' => 'Approve Today Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_number' => '211',

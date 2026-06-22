@@ -84,6 +84,23 @@ class PlatformAdminController extends Controller
         ]);
     }
 
+    public function updateBookingFeePercent(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'booking_confirm_fee_percent' => ['required', 'numeric', 'min:0', 'max:100'],
+        ]);
+
+        $row = $this->settings->row();
+        $row->update([
+            'booking_confirm_fee_percent' => (float) $validated['booking_confirm_fee_percent'],
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'booking_confirm_fee_percent' => $this->settings->bookingConfirmFeePercent(),
+        ]);
+    }
+
     public function hotels(): JsonResponse
     {
         $creditRows = HotelCredit::withoutGlobalScopes()

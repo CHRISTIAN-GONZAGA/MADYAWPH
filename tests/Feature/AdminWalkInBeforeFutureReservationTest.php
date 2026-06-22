@@ -15,6 +15,7 @@ class AdminWalkInBeforeFutureReservationTest extends TestCase
     public function test_admin_can_book_room_before_future_reservation_dates(): void
     {
         $hotel = Hotel::create(['name' => 'Future Res Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'admin',
@@ -68,6 +69,7 @@ class AdminWalkInBeforeFutureReservationTest extends TestCase
     public function test_admin_cannot_book_overlapping_future_reservation(): void
     {
         $hotel = Hotel::create(['name' => 'Conflict Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'admin2',

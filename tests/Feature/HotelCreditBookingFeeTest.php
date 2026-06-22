@@ -159,4 +159,46 @@ class HotelCreditBookingFeeTest extends TestCase
         $res->refresh();
         $this->assertSame('pending_approval', (string) $res->status);
     }
+
+    public function test_admin_walk_in_booking_deducts_eight_percent_from_hotel_wallet(): void
+    {
+        $hotel = Hotel::create(['name' => 'Walk-in Fee Hotel', 'location' => 'City']);
+        $this->seedHotelCredits($hotel, 5000);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'adminwalkin',
+            'email' => 'adminwalkin@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '501',
+            'category_name' => 'Deluxe',
+            'room_type' => 'Deluxe',
+            'price_per_night' => 1000,
+            'status' => 'available',
+        ]);
+
+        $checkIn = now()->setTime(14, 0);
+        $checkOut = now()->addDay()->setTime(11, 0);
+
+        $response = $this->actingAs($admin)->postJson('/api/v1/admin/bookings', [
+            'room_id' => (string) $room->id,
+            'guest_name' => 'Walk-in Fee Guest',
+            'guest_email' => 'walkin-fee@test.local',
+            'guest_phone' => '09171234570',
+            'check_in_at' => $checkIn->toIso8601String(),
+            'check_out_at' => $checkOut->toIso8601String(),
+            'payment_method' => 'Cash',
+            'check_in_now' => false,
+        ]);
+
+        $response->assertCreated();
+        $response->assertJsonPath('wallet.fee', 80);
+        $response->assertJsonPath('wallet.balance_after', 4920);
+
+        $credit = HotelCredit::withoutGlobalScopes()->where('hotel_id', (string) $hotel->id)->first();
+        $this->assertSame(4920.0, (float) $credit->current_credits);
+    }
 }

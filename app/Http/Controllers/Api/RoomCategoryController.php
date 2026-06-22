@@ -29,6 +29,7 @@ class RoomCategoryController extends Controller
                 'price_per_block' => (float) ($category->price_per_block ?? 0),
                 'block_hours' => (int) ($category->block_hours ?? 3),
                 'price_per_extra_hour' => (float) ($category->price_per_extra_hour ?? 0),
+                'floor_count' => max(1, (int) ($category->floor_count ?? 1)),
                 'image_url' => (string) (ChatAttachmentUrl::fromStoredUrl($category->image_url) ?? ''),
             ]);
 
@@ -47,6 +48,7 @@ class RoomCategoryController extends Controller
             'price_per_block' => ['nullable', 'numeric', 'min:0'],
             'block_hours' => ['nullable', 'integer', 'min:1', 'max:48'],
             'price_per_extra_hour' => ['nullable', 'numeric', 'min:0'],
+            'floor_count' => ['nullable', 'integer', 'min:1', 'max:99'],
             'image_file' => RoomImageUploadRules::fileRules(),
         ]);
 
@@ -67,6 +69,7 @@ class RoomCategoryController extends Controller
         if ($payload['billing_mode'] === 'hourly') {
             $payload['block_hours'] = max(1, (int) ($payload['block_hours'] ?? 3));
         }
+        $payload['floor_count'] = max(1, (int) ($payload['floor_count'] ?? 1));
 
         if ($request->hasFile('image_file')) {
             $payload['image_url'] = RoomMediaStorage::store(
@@ -86,6 +89,7 @@ class RoomCategoryController extends Controller
             'price_per_block' => (float) ($category->price_per_block ?? 0),
             'block_hours' => (int) ($category->block_hours ?? 3),
             'price_per_extra_hour' => (float) ($category->price_per_extra_hour ?? 0),
+            'floor_count' => max(1, (int) ($category->floor_count ?? 1)),
             'image_url' => (string) (ChatAttachmentUrl::fromStoredUrl($category->image_url) ?? ''),
         ], 201);
     }
@@ -102,6 +106,7 @@ class RoomCategoryController extends Controller
             'price_per_block' => ['nullable', 'numeric', 'min:0'],
             'block_hours' => ['nullable', 'integer', 'min:1', 'max:48'],
             'price_per_extra_hour' => ['nullable', 'numeric', 'min:0'],
+            'floor_count' => ['nullable', 'integer', 'min:1', 'max:99'],
             'image_file' => RoomImageUploadRules::fileRules(),
             'remove_image' => ['sometimes', 'boolean'],
         ]);
@@ -121,6 +126,9 @@ class RoomCategoryController extends Controller
             $payload['billing_mode'] = strtolower((string) $payload['billing_mode']) === 'hourly'
                 ? 'hourly'
                 : 'nightly';
+        }
+        if (array_key_exists('floor_count', $payload)) {
+            $payload['floor_count'] = max(1, (int) $payload['floor_count']);
         }
 
         if ($request->boolean('remove_image')) {
@@ -154,6 +162,7 @@ class RoomCategoryController extends Controller
             'price_per_block' => (float) ($roomCategory->price_per_block ?? 0),
             'block_hours' => (int) ($roomCategory->block_hours ?? 3),
             'price_per_extra_hour' => (float) ($roomCategory->price_per_extra_hour ?? 0),
+            'floor_count' => max(1, (int) ($roomCategory->floor_count ?? 1)),
             'image_url' => (string) (ChatAttachmentUrl::fromStoredUrl($roomCategory->image_url) ?? ''),
         ]);
     }

@@ -14,6 +14,7 @@ class AdminWalkInDefaultStayWindowTest extends TestCase
     public function test_admin_walk_in_with_standard_nightly_times_succeeds(): void
     {
         $hotel = Hotel::create(['name' => 'Walk-in Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'admin-walkin',
@@ -52,6 +53,7 @@ class AdminWalkInDefaultStayWindowTest extends TestCase
     public function test_admin_walk_in_multipart_string_true_is_accepted(): void
     {
         $hotel = Hotel::create(['name' => 'Multipart Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'admin-multipart',
@@ -89,6 +91,7 @@ class AdminWalkInDefaultStayWindowTest extends TestCase
     public function test_admin_walk_in_rejects_checkout_before_checkin_time_same_day(): void
     {
         $hotel = Hotel::create(['name' => 'Bad Window Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'admin-bad',
@@ -125,6 +128,7 @@ class AdminWalkInDefaultStayWindowTest extends TestCase
     public function test_admin_walk_in_without_check_in_now_keeps_room_on_walk_in_board(): void
     {
         $hotel = Hotel::create(['name' => 'Booked Queue Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'admin-queue',

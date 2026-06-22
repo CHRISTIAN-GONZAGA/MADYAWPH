@@ -35,6 +35,7 @@ use App\Models\SystemSetting;
 use App\Models\User;
 use App\Models\UserSetting;
 use App\Services\ActivityLogService;
+use App\Services\AdminReservationService;
 use App\Services\BookingPaymentService;
 use App\Services\BookingService;
 use App\Services\FinancialComputationService;
@@ -531,6 +532,7 @@ Route::middleware('role:admin')->group(function (): void {
         Request $request,
         BookingService $bookingService,
         RoomCheckoutService $roomCheckoutService,
+        HotelCreditBookingFeeService $walletFeeService,
     ) {
         if ($request->has('check_in_now')) {
             $parsed = filter_var(
@@ -553,6 +555,13 @@ Route::middleware('role:admin')->group(function (): void {
             'payment_method' => ['required', 'in:Cash,GCash,PayMaya,Credit Card'],
             'check_in_now' => ['nullable', 'boolean'],
             'discount_type' => ['nullable', 'string', 'in:none,pwd,senior'],
+            'adults' => ['nullable', 'integer', 'min:1', 'max:20'],
+            'children' => ['nullable', 'integer', 'min:0', 'max:20'],
+            'guests_male' => ['nullable', 'integer', 'min:0', 'max:20'],
+            'guests_female' => ['nullable', 'integer', 'min:0', 'max:20'],
+            'guest_nationality' => ['nullable', 'string', 'max:100'],
+            'free_breakfast_options' => ['nullable', 'array'],
+            'free_breakfast_options.*' => ['string', 'max:255'],
             'guest_id_file' => ['nullable', 'image', 'max:5120'],
             'discount_id_file' => ['nullable', 'image', 'max:5120'],
         ]);
@@ -581,9 +590,29 @@ Route::middleware('role:admin')->group(function (): void {
             $bookingData['discount_type'] = $discountType;
             $bookingData['discount_percent'] = $discountPercent;
         }
+        $bookingData['adults'] = max(1, (int) ($validated['adults'] ?? 1));
+        $bookingData['children'] = max(0, (int) ($validated['children'] ?? 0));
+        $bookingData['guests_male'] = max(0, (int) ($validated['guests_male'] ?? 0));
+        $bookingData['guests_female'] = max(0, (int) ($validated['guests_female'] ?? 0));
+        $bookingData['guest_nationality'] = trim((string) ($validated['guest_nationality'] ?? ''));
+        $bookingData['free_breakfast_options'] = array_values(
+            array_map('strval', (array) ($validated['free_breakfast_options'] ?? []))
+        );
         unset($bookingData['guest_id_file'], $bookingData['discount_id_file']);
 
         $booking = $bookingService->create($bookingData, $request->user());
+        $room = $room->fresh() ?? $room;
+        try {
+            $walletFee = $walletFeeService->deductForBooking(
+                $booking->fresh() ?? $booking,
+                $room,
+                (string) $request->user()->id,
+            );
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $bookingService->adminCancel($booking, $request->user());
+
+            throw $e;
+        }
 
         if ($request->boolean('check_in_now')) {
             $checkIn = Carbon::parse($validated['check_in_at']);
@@ -596,8 +625,50 @@ Route::middleware('role:admin')->group(function (): void {
         return response()->json([
             'ok' => true,
             'booking' => AdminBookingPresenter::present($booking, $room->fresh() ?? $room),
+            'wallet' => $walletFee,
         ], 201);
     })->middleware(['prevent.double.booking'])->name('api.v1.admin.bookings.store');
+
+    Route::patch('/admin/bookings/{booking}', function (
+        Request $request,
+        Booking $booking,
+        BookingService $bookingService,
+    ) {
+        if ((string) $booking->hotel_id !== (string) $request->user()->hotel_id) {
+            return response()->json(['message' => 'Booking outside hotel scope.'], 403);
+        }
+
+        $validated = $request->validate([
+            'check_in_at' => ['required', 'date'],
+            'check_out_at' => ['required', 'date', 'after:check_in_at'],
+        ]);
+
+        $updated = $bookingService->reschedule($booking, $validated, $request->user());
+        $room = Room::withoutGlobalScopes()->find((string) $updated->room_id);
+
+        return response()->json([
+            'ok' => true,
+            'booking' => AdminBookingPresenter::present($updated, $room),
+        ]);
+    })->middleware('role:admin')->name('api.v1.admin.bookings.reschedule');
+
+    Route::post('/admin/bookings/{booking}/cancel', function (
+        Request $request,
+        Booking $booking,
+        BookingService $bookingService,
+    ) {
+        if ((string) $booking->hotel_id !== (string) $request->user()->hotel_id) {
+            return response()->json(['message' => 'Booking outside hotel scope.'], 403);
+        }
+
+        $updated = $bookingService->adminCancel($booking, $request->user());
+        $room = Room::withoutGlobalScopes()->find((string) $updated->room_id);
+
+        return response()->json([
+            'ok' => true,
+            'booking' => AdminBookingPresenter::present($updated, $room),
+        ]);
+    })->middleware('role:admin')->name('api.v1.admin.bookings.cancel');
 
     Route::post('/admin/theme', function (Request $request) {
         $validated = $request->validate([
@@ -1395,6 +1466,41 @@ Route::post('/admin/reservations/{id}/reject', function (Request $request, strin
     return response()->json(['ok' => true, 'reservation' => $res->fresh()]);
 })->middleware('role:admin')->name('api.v1.admin.reservations.reject');
 
+Route::patch('/admin/reservations/{id}', function (
+    Request $request,
+    string $id,
+    AdminReservationService $reservationService,
+) {
+    $hotelId = (string) $request->user()->hotel_id;
+    $res = ExternalReservation::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->findOrFail($id);
+
+    $validated = $request->validate([
+        'check_in_at' => ['required', 'date'],
+        'check_out_at' => ['required', 'date', 'after:check_in_at'],
+    ]);
+
+    $updated = $reservationService->reschedule($res, $validated, $request->user());
+
+    return response()->json(['ok' => true, 'reservation' => $updated]);
+})->middleware('role:admin')->name('api.v1.admin.reservations.reschedule');
+
+Route::post('/admin/reservations/{id}/cancel', function (
+    Request $request,
+    string $id,
+    AdminReservationService $reservationService,
+) {
+    $hotelId = (string) $request->user()->hotel_id;
+    $res = ExternalReservation::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->findOrFail($id);
+
+    $updated = $reservationService->cancel($res, $request->user());
+
+    return response()->json(['ok' => true, 'reservation' => $updated]);
+})->middleware('role:admin')->name('api.v1.admin.reservations.cancel');
+
 Route::put('/admin/profile', function (Request $request) {
     $validated = $request->validate([
         'name' => ['required', 'string', 'max:255'],
@@ -1879,6 +1985,7 @@ Route::middleware('role:central_admin')->prefix('platform')->group(function () {
     Route::get('/revenue-analytics', [$platform, 'revenueAnalytics']);
     Route::post('/settings/credit-wallet-qr', [$platform, 'uploadCreditWalletQr']);
     Route::post('/settings/member-qr', [$platform, 'uploadMemberQr']);
+    Route::patch('/settings/booking-fee-percent', [$platform, 'updateBookingFeePercent']);
     Route::get('/hotels', [$platform, 'hotels']);
     Route::get('/hotels/{hotelId}/credits', [$platform, 'hotelCredits']);
     Route::post('/hotels/{hotelId}/credits/grant', [$platform, 'grantHotelCredits']);

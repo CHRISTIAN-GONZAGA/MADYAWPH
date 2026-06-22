@@ -50,6 +50,8 @@ class DomainGuardService
         CarbonInterface $checkIn,
         CarbonInterface $checkOut,
         ?string $hotelId = null,
+        ?string $excludeReservationId = null,
+        ?string $excludeBookingId = null,
     ): void {
         $this->ensureRoomBelongsToHotel($room, $hotelId);
 
@@ -77,9 +79,10 @@ class DomainGuardService
             $scopedHotelId,
             $checkIn->toDateString(),
             $checkOut->toDateString(),
-            null,
+            $excludeReservationId,
             $checkIn,
             $checkOut,
+            $excludeBookingId,
         )) {
             throw ValidationException::withMessages([
                 'check_in_at' => 'Selected dates conflict with an existing stay or reservation.',

@@ -18,6 +18,7 @@ class AdminWalkInFutureBookingTest extends TestCase
     public function test_future_walk_in_booking_keeps_room_on_admin_walk_in_board(): void
     {
         $hotel = Hotel::create(['name' => 'Future Walk-in Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'admin_future',
@@ -81,6 +82,7 @@ class AdminWalkInFutureBookingTest extends TestCase
     public function test_legacy_booked_room_with_future_check_in_stays_on_walk_in_board(): void
     {
         $hotel = Hotel::create(['name' => 'Legacy Future Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $category = RoomCategory::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'Single',
@@ -124,6 +126,7 @@ class AdminWalkInFutureBookingTest extends TestCase
     public function test_admin_cannot_double_book_room_with_future_hold_on_available_tile(): void
     {
         $hotel = Hotel::create(['name' => 'Future Hold Conflict Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'admin_conflict',
@@ -179,6 +182,7 @@ class AdminWalkInFutureBookingTest extends TestCase
     public function test_same_day_walk_in_booking_keeps_room_on_walk_in_board(): void
     {
         $hotel = Hotel::create(['name' => 'Same Day Walk-in Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'admin_same_day',
@@ -234,6 +238,7 @@ class AdminWalkInFutureBookingTest extends TestCase
     public function test_admin_room_stay_calendar_lists_bookings_and_reservations(): void
     {
         $hotel = Hotel::create(['name' => 'Calendar Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'admin_calendar',
@@ -291,6 +296,7 @@ class AdminWalkInFutureBookingTest extends TestCase
     public function test_admin_walk_in_room_payload_includes_future_hold_metadata(): void
     {
         $hotel = Hotel::create(['name' => 'Walk-in Payload Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
         $category = RoomCategory::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'Twin',

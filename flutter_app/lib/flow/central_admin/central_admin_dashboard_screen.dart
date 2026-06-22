@@ -117,6 +117,25 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
     }
   }
 
+  Future<void> _updateBookingFeePercent(double percent) async {
+    try {
+      await portalDio().patch<Map<String, dynamic>>(
+        '/platform/settings/booking-fee-percent',
+        data: {'booking_confirm_fee_percent': percent},
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Booking fee percent updated.')),
+      );
+      await _loadAll();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dioErrorMessage(e))),
+      );
+    }
+  }
+
   Future<void> _uploadQr({required bool creditWallet}) async {
     final image = await ChatAttachment.pickRoomImageFromGallery(context);
     if (image == null || !mounted) return;
@@ -425,6 +444,7 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
                       settings: _settings ?? const {},
                       onUploadCredit: () => _uploadQr(creditWallet: true),
                       onUploadMember: () => _uploadQr(creditWallet: false),
+                      onUpdateBookingFeePercent: _updateBookingFeePercent,
                     ),
                     _HotelsSection(
                       hotels: _hotels,
@@ -1164,24 +1184,80 @@ class _MemberCard extends StatelessWidget {
   }
 }
 
-class _QrSettingsSection extends StatelessWidget {
+class _QrSettingsSection extends StatefulWidget {
   const _QrSettingsSection({
     required this.settings,
     required this.onUploadCredit,
     required this.onUploadMember,
+    required this.onUpdateBookingFeePercent,
   });
 
   final Map<String, dynamic> settings;
   final VoidCallback onUploadCredit;
   final VoidCallback onUploadMember;
+  final Future<void> Function(double percent) onUpdateBookingFeePercent;
+
+  @override
+  State<_QrSettingsSection> createState() => _QrSettingsSectionState();
+}
+
+class _QrSettingsSectionState extends State<_QrSettingsSection> {
+  late final TextEditingController _feePercentCtrl;
+  var _savingFee = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _feePercentCtrl = TextEditingController(
+      text: _feePercentText(widget.settings),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _QrSettingsSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final next = _feePercentText(widget.settings);
+    if (next != _feePercentCtrl.text) {
+      _feePercentCtrl.text = next;
+    }
+  }
+
+  @override
+  void dispose() {
+    _feePercentCtrl.dispose();
+    super.dispose();
+  }
+
+  static String _feePercentText(Map<String, dynamic> settings) {
+    final raw = settings['booking_confirm_fee_percent'];
+    if (raw == null) return '8';
+    return (raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 8)
+        .toStringAsFixed(raw is num && raw % 1 == 0 ? 0 : 1);
+  }
+
+  Future<void> _saveFeePercent() async {
+    final parsed = double.tryParse(_feePercentCtrl.text.trim());
+    if (parsed == null || parsed < 0 || parsed > 100) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a fee between 0 and 100.')),
+      );
+      return;
+    }
+    setState(() => _savingFee = true);
+    try {
+      await widget.onUpdateBookingFeePercent(parsed);
+    } finally {
+      if (mounted) setState(() => _savingFee = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final creditQr = ChatAttachment.resolveMediaUrl(
-      (settings['credit_wallet_qr_url'] ?? '').toString(),
+      (widget.settings['credit_wallet_qr_url'] ?? '').toString(),
     );
     final memberQr = ChatAttachment.resolveMediaUrl(
-      (settings['member_subscription_qr_url'] ?? '').toString(),
+      (widget.settings['member_subscription_qr_url'] ?? '').toString(),
     );
 
     return ListView(
@@ -1212,14 +1288,66 @@ class _QrSettingsSection extends StatelessWidget {
                 title: 'Hotel credit wallet',
                 subtitle: 'Used when hotels request credit top-ups.',
                 imageUrl: creditQr,
-                onUpload: onUploadCredit,
+                onUpload: widget.onUploadCredit,
               ),
               const SizedBox(height: 16),
               _QrUploadCard(
                 title: 'Become a member',
-                subtitle: 'Guests pay ₱${settings['member_monthly_fee'] ?? 300}/month.',
+                subtitle:
+                    'Guests pay ₱${widget.settings['member_monthly_fee'] ?? 300}/month.',
                 imageUrl: memberQr,
-                onUpload: onUploadMember,
+                onUpload: widget.onUploadMember,
+              ),
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Booking confirmation fee',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Deducted from a hotel\'s credit wallet when a walk-in or public customer booking is confirmed.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _feePercentCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Fee percent',
+                          suffixText: '%',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      FilledButton.icon(
+                        onPressed: _savingFee ? null : _saveFeePercent,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _kPlatformNavy,
+                          foregroundColor: Colors.white,
+                        ),
+                        icon: _savingFee
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.save_outlined),
+                        label: Text(_savingFee ? 'Saving…' : 'Save fee percent'),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),

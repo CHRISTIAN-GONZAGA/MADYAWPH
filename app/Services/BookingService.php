@@ -272,4 +272,218 @@ class BookingService
         });
     }
 
+    /**
+     * Admin reschedule: change stay dates on a booked/reserved hold before check-in.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function reschedule(Booking $booking, array $data, ?User $actor = null): Booking
+    {
+        return DB::transaction(function () use ($booking, $data, $actor): Booking {
+            $booking = Booking::withoutGlobalScopes()->lockForUpdate()->findOrFail($booking->id);
+            $status = $booking->status instanceof BookingStatus
+                ? $booking->status->value
+                : (string) $booking->status;
+
+            if (in_array($status, [BookingStatus::COMPLETED->value, BookingStatus::CANCELLED->value], true)) {
+                throw ValidationException::withMessages([
+                    'booking' => 'Completed or cancelled bookings cannot be rescheduled.',
+                ]);
+            }
+
+            if ($status === BookingStatus::COMPLETED->value || filled($booking->checked_out_at)) {
+                throw ValidationException::withMessages([
+                    'booking' => 'Checked-in stays cannot be rescheduled here. Use room detail tools.',
+                ]);
+            }
+
+            $room = Room::withoutGlobalScopes()->lockForUpdate()->findOrFail($booking->room_id);
+            $roomStatus = strtolower($room->status?->value ?? (string) ($room->status ?? ''));
+            if ($roomStatus === RoomStatus::CHECKED_IN->value) {
+                throw ValidationException::withMessages([
+                    'booking' => 'Checked-in stays cannot be rescheduled here.',
+                ]);
+            }
+            $stay = $this->resolveStayWindow($data);
+
+            $this->domainGuardService->ensureRoomCanBeBookedForStay(
+                $room,
+                $stay['check_in'],
+                $stay['check_out'],
+                (string) $booking->hotel_id,
+                null,
+                (string) $booking->id,
+            );
+
+            $charge = RoomBillingSupport::computeStayCharge(
+                $room,
+                $stay['check_in'],
+                $stay['check_out'],
+                $this->financialComputationService,
+                $this->roomPricingService,
+            );
+
+            $updates = [
+                'check_in_date' => $stay['check_in_date'],
+                'check_out_date' => $stay['check_out_date'],
+                'check_in_time' => $stay['check_in_time'],
+                'check_out_time' => $stay['check_out_time'],
+                'nights' => $charge['nights'],
+                'billing_mode' => $charge['billing_mode'],
+                'total_amount' => $charge['amount'],
+            ];
+            if ($charge['billing_mode'] === RoomBillingSupport::MODE_HOURLY) {
+                $updates['stay_hours'] = $charge['stay_hours'];
+                $updates['booked_stay_hours'] = $charge['stay_hours'];
+                $updates['block_hours'] = $charge['block_hours'];
+                $updates['price_per_block'] = $charge['price_per_block'];
+            }
+
+            $booking->update($updates);
+
+            BillingCharge::withoutGlobalScopes()
+                ->where('booking_id', (string) $booking->id)
+                ->where('type', 'room')
+                ->latest('created_at')
+                ->limit(1)
+                ->get()
+                ->each(function (BillingCharge $roomCharge) use ($charge): void {
+                    $roomCharge->update([
+                        'label' => $charge['label'],
+                        'amount' => $charge['amount'],
+                        'metadata' => $charge['metadata'],
+                    ]);
+                });
+
+            $this->syncRoomHoldFromBooking($room, $booking);
+
+            $this->activityLogService->log(
+                (string) $booking->hotel_id,
+                $actor,
+                "Rescheduled booking {$booking->booking_reference} for room {$room->room_number}",
+                [
+                    'booking_id' => (string) $booking->id,
+                    'room_id' => (string) $room->id,
+                    'check_in_date' => $stay['check_in_date'],
+                    'check_out_date' => $stay['check_out_date'],
+                ]
+            );
+
+            return $booking->fresh();
+        });
+    }
+
+    public function adminCancel(Booking $booking, ?User $actor = null): Booking
+    {
+        return DB::transaction(function () use ($booking, $actor): Booking {
+            $booking = Booking::withoutGlobalScopes()->lockForUpdate()->findOrFail($booking->id);
+            $fromStatus = $booking->status instanceof BookingStatus
+                ? $booking->status->value
+                : (string) $booking->status;
+
+            if (in_array($fromStatus, [BookingStatus::COMPLETED->value, BookingStatus::CANCELLED->value], true)) {
+                throw ValidationException::withMessages([
+                    'booking' => 'This booking is already closed.',
+                ]);
+            }
+
+            if ($fromStatus === BookingStatus::COMPLETED->value || filled($booking->checked_out_at)) {
+                throw ValidationException::withMessages([
+                    'booking' => 'Checked-in stays must be checked out, not cancelled here.',
+                ]);
+            }
+
+            $room = Room::withoutGlobalScopes()->lockForUpdate()->find($booking->room_id);
+            if ($room) {
+                $roomStatus = strtolower($room->status?->value ?? (string) ($room->status ?? ''));
+                if ($roomStatus === RoomStatus::CHECKED_IN->value) {
+                    throw ValidationException::withMessages([
+                        'booking' => 'Checked-in stays must be checked out, not cancelled here.',
+                    ]);
+                }
+            }
+
+            $this->domainGuardService->ensureBookingTransition($fromStatus, BookingStatus::CANCELLED->value);
+            $booking->update(['status' => BookingStatus::CANCELLED->value]);
+
+            if ($room) {
+                $this->releaseRoomIfHeldForBooking($room, $booking);
+            }
+
+            $this->activityLogService->log(
+                (string) $booking->hotel_id,
+                $actor,
+                "Cancelled booking {$booking->booking_reference}",
+                [
+                    'booking_reference' => $booking->booking_reference,
+                    'room_id' => (string) $booking->room_id,
+                    'previous_status' => $fromStatus,
+                    'status' => BookingStatus::CANCELLED->value,
+                ]
+            );
+
+            return $booking->fresh();
+        });
+    }
+
+    private function syncRoomHoldFromBooking(Room $room, Booking $booking): void
+    {
+        $roomStatus = strtolower($room->status?->value ?? (string) ($room->status ?? ''));
+        if ($roomStatus === RoomStatus::CHECKED_IN->value) {
+            return;
+        }
+
+        $guestOnRoom = trim((string) ($room->current_guest_name ?? ''));
+        $bookingGuest = trim((string) ($booking->guest_name ?? ''));
+        if ($guestOnRoom !== '' && $guestOnRoom !== $bookingGuest) {
+            return;
+        }
+
+        $room->update([
+            'current_guest_name' => $booking->guest_name,
+            'current_check_in' => $booking->check_in_date,
+            'current_check_out' => $booking->check_out_date,
+        ]);
+    }
+
+    private function releaseRoomIfHeldForBooking(Room $room, Booking $booking): void
+    {
+        $roomStatus = strtolower($room->status?->value ?? (string) ($room->status ?? ''));
+        if ($roomStatus === RoomStatus::CHECKED_IN->value) {
+            return;
+        }
+
+        $guestOnRoom = trim((string) ($room->current_guest_name ?? ''));
+        $bookingGuest = trim((string) ($booking->guest_name ?? ''));
+        $datesMatch = optional($room->current_check_in)->toDateString() === optional($booking->check_in_date)->toDateString()
+            && optional($room->current_check_out)->toDateString() === optional($booking->check_out_date)->toDateString();
+
+        if ($guestOnRoom !== '' && $guestOnRoom !== $bookingGuest && ! $datesMatch) {
+            return;
+        }
+
+        $hasOtherActiveStays = Booking::withoutGlobalScopes()
+            ->where('hotel_id', (string) $room->hotel_id)
+            ->where('room_id', (string) $room->id)
+            ->where('id', '!=', (string) $booking->id)
+            ->whereNotIn('status', [
+                BookingStatus::CANCELLED->value,
+                BookingStatus::COMPLETED->value,
+            ])
+            ->where('check_out_date', '>=', now()->toDateString())
+            ->exists();
+
+        if ($hasOtherActiveStays) {
+            return;
+        }
+
+        $room->update([
+            'status' => RoomStatus::AVAILABLE->value,
+            'current_guest_name' => null,
+            'current_check_in' => null,
+            'current_check_out' => null,
+            'current_access_code' => null,
+        ]);
+    }
+
 }

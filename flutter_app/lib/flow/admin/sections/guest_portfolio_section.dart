@@ -70,6 +70,14 @@ class _GuestPortfolioSectionState extends State<GuestPortfolioSection>
             ),
             'payment_status': (b?['payment_status'] ?? 'unpaid').toString(),
             'booking_reference': (b?['booking_reference'] ?? '').toString(),
+            'adults': (b?['adults'] as num?)?.toInt() ?? 1,
+            'children': (b?['children'] as num?)?.toInt() ?? 0,
+            'guests_male': (b?['guests_male'] as num?)?.toInt() ?? 0,
+            'guests_female': (b?['guests_female'] as num?)?.toInt() ?? 0,
+            'guest_nationality': (b?['guest_nationality'] ?? '').toString(),
+            'free_breakfast': AdminDashboardModels.formatFreeBreakfast(
+              b?['free_breakfast_options'] as List?,
+            ),
           };
         })
         .toList();
@@ -150,6 +158,17 @@ class _GuestPortfolioSectionState extends State<GuestPortfolioSection>
                             'booking_reference':
                                 (h['booking_reference'] ?? '').toString(),
                             'category': '',
+                            'adults': (h['adults'] as num?)?.toInt() ?? 1,
+                            'children': (h['children'] as num?)?.toInt() ?? 0,
+                            'guests_male': (h['guests_male'] as num?)?.toInt() ?? 0,
+                            'guests_female':
+                                (h['guests_female'] as num?)?.toInt() ?? 0,
+                            'guest_nationality':
+                                (h['guest_nationality'] ?? '').toString(),
+                            'free_breakfast':
+                                AdminDashboardModels.formatFreeBreakfast(
+                              h['free_breakfast_options'] as List?,
+                            ),
                           },
                           isHistory: true,
                         );
@@ -209,6 +228,24 @@ class _GuestCard extends StatelessWidget {
                 if ((data['check_out'] ?? '').toString().isNotEmpty &&
                     data['check_out'] != '—')
                   _row('Check-out', data['check_out'].toString()),
+                if (((data['adults'] as num?)?.toInt() ?? 0) > 0 ||
+                    ((data['children'] as num?)?.toInt() ?? 0) > 0)
+                  _row(
+                    'Party',
+                    'Adults ${(data['adults'] as num?)?.toInt() ?? 1} · '
+                        'Children ${(data['children'] as num?)?.toInt() ?? 0}',
+                  ),
+                if (((data['guests_male'] as num?)?.toInt() ?? 0) > 0 ||
+                    ((data['guests_female'] as num?)?.toInt() ?? 0) > 0)
+                  _row(
+                    'Demographics',
+                    'Male ${(data['guests_male'] as num?)?.toInt() ?? 0} · '
+                        'Female ${(data['guests_female'] as num?)?.toInt() ?? 0}',
+                  ),
+                if ((data['guest_nationality'] ?? '').toString().isNotEmpty)
+                  _row('Nationality', data['guest_nationality'].toString()),
+                if ((data['free_breakfast'] ?? '').toString().isNotEmpty)
+                  _row('Free breakfast', data['free_breakfast'].toString()),
                 if ((data['payment_status'] ?? '').toString().isNotEmpty)
                   _row('Payment', data['payment_status'].toString()),
                 if ((data['booking_reference'] ?? '').toString().isNotEmpty)
