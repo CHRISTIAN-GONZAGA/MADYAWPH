@@ -245,7 +245,7 @@ class _GuestCard extends StatelessWidget {
                 if ((data['guest_nationality'] ?? '').toString().isNotEmpty)
                   _row('Nationality', data['guest_nationality'].toString()),
                 if ((data['free_breakfast'] ?? '').toString().isNotEmpty)
-                  _row('Free breakfast', data['free_breakfast'].toString()),
+                  _row('Complimentary items', data['free_breakfast'].toString()),
                 if ((data['payment_status'] ?? '').toString().isNotEmpty)
                   _row('Payment', data['payment_status'].toString()),
                 if ((data['booking_reference'] ?? '').toString().isNotEmpty)

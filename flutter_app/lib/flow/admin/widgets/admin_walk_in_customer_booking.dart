@@ -9,6 +9,7 @@ import '../../../widgets/app_button.dart';
 import '../../../widgets/app_input.dart';
 import '../../../widgets/chat_attachment.dart';
 import '../../widgets/complete_guest_booking_dialog.dart';
+import 'free_breakfast_selection.dart';
 import 'hourly_billing.dart';
 import 'admin_walk_in_stay_calendar_dialog.dart';
 import 'guest_nationalities.dart';
@@ -59,26 +60,18 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
   var guestsMale = 0;
   var guestsFemale = 0;
   var guestNationality = 'Filipino';
-  final selectedBreakfast = <String>{};
-  var breakfastMenu = const <String>[];
+  final complimentaryQty = <String, int>{};
+  var amenityMenuItems = const <Map<String, dynamic>>[];
 
   try {
     final menuRes =
         await portalDio().get<Map<String, dynamic>>('/admin/amenity-menu');
-    breakfastMenu = ((menuRes.data?['data'] as List?) ?? const [])
+    amenityMenuItems = ((menuRes.data?['data'] as List?) ?? const [])
         .whereType<Map<String, dynamic>>()
-        .where((item) {
-          final type = (item['amenity_type'] ?? '').toString().toLowerCase();
-          final name = (item['name'] ?? '').toString().toLowerCase();
-          final active = item['is_active'] != false;
-          return active &&
-              (type.contains('breakfast') || name.contains('breakfast'));
-        })
-        .map((item) => (item['name'] ?? '').toString().trim())
-        .where((name) => name.isNotEmpty)
+        .where((item) => item['is_active'] != false)
         .toList();
   } catch (_) {
-    breakfastMenu = const [];
+    amenityMenuItems = const [];
   }
   if (!context.mounted) return false;
 
@@ -241,36 +234,45 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                     guestNationality = v ?? 'Filipino';
                   }),
                 ),
-                if (breakfastMenu.isNotEmpty) ...[
+                if (amenityMenuItems.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Text(
-                    'Free breakfast (select all that apply)',
+                    'Complimentary items (from amenities menu)',
                     style:
                         Theme.of(dialogContext).textTheme.titleSmall?.copyWith(
                               fontWeight: FontWeight.w700,
                             ),
                   ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: breakfastMenu.map((option) {
-                      final selected = selectedBreakfast.contains(option);
-                      return FilterChip(
-                        label: Text(option),
-                        selected: selected,
-                        onSelected: (on) {
-                          setLocal(() {
-                            if (on) {
-                              selectedBreakfast.add(option);
-                            } else {
-                              selectedBreakfast.remove(option);
-                            }
-                          });
-                        },
-                      );
-                    }).toList(),
+                  Text(
+                    'Set quantity per product — e.g. 2× Continental + 1× Juice.',
+                    style: Theme.of(dialogContext).textTheme.bodySmall,
                   ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Total complimentary: ${complimentaryQty.values.fold<int>(0, (a, b) => a + b)}',
+                    style: Theme.of(dialogContext).textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...amenityMenuItems.map((item) {
+                    final id = (item['id'] ?? item['_id'] ?? '').toString();
+                    final name = (item['name'] ?? 'Item').toString();
+                    final type =
+                        (item['amenity_type'] ?? item['type'] ?? '').toString();
+                    final qty = complimentaryQty[id] ?? 0;
+                    return _WalkInCounterRow(
+                      label: type.isEmpty ? name : '$name · $type',
+                      value: qty,
+                      onChanged: (v) => setLocal(() {
+                        if (v <= 0) {
+                          complimentaryQty.remove(id);
+                        } else {
+                          complimentaryQty[id] = v;
+                        }
+                      }),
+                    );
+                  }),
                 ],
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
@@ -427,7 +429,22 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                   'guests_male': guestsMale,
                   'guests_female': guestsFemale,
                   'guest_nationality': guestNationality,
-                  'free_breakfast_options': selectedBreakfast.toList(),
+                  'free_breakfast_options': amenityMenuItems
+                      .map((item) {
+                        final id = (item['id'] ?? item['_id'] ?? '').toString();
+                        final qty = complimentaryQty[id] ?? 0;
+                        if (qty <= 0) return null;
+                        return {
+                          'menu_item_id': id,
+                          'name': (item['name'] ?? '').toString(),
+                          'quantity': qty,
+                          'amenity_type':
+                              (item['amenity_type'] ?? item['type'] ?? '')
+                                  .toString(),
+                        };
+                      })
+                      .whereType<Map<String, dynamic>>()
+                      .toList(),
                 });
               },
             ),
@@ -463,11 +480,9 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
         guestsMale: (payload['guests_male'] as num?)?.toInt() ?? 0,
         guestsFemale: (payload['guests_female'] as num?)?.toInt() ?? 0,
         guestNationality: (payload['guest_nationality'] ?? 'Filipino').toString(),
-        freeBreakfastOptions: (payload['free_breakfast_options'] as List?)
-                ?.map((e) => e.toString())
-                .where((s) => s.isNotEmpty)
-                .toList() ??
-            const [],
+        freeBreakfastSelections: FreeBreakfastSelection.listFromDynamic(
+          payload['free_breakfast_options'] as List?,
+        ),
       ),
     );
     if (context.mounted) {

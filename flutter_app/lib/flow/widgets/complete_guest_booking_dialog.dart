@@ -8,6 +8,7 @@ import '../customer_search_context.dart' as customer;
 import '../../widgets/app_button.dart';
 import '../../widgets/app_input.dart';
 import '../../widgets/chat_attachment.dart';
+import '../admin/widgets/free_breakfast_selection.dart';
 import '../../widgets/admin_time_slot_field.dart';
 
 /// Result from [showCompleteGuestBookingDialog].
@@ -29,7 +30,7 @@ class CompleteGuestBookingPayload {
     this.guestsMale = 0,
     this.guestsFemale = 0,
     this.guestNationality = '',
-    this.freeBreakfastOptions = const [],
+    this.freeBreakfastSelections = const [],
   });
 
   final String guestName;
@@ -48,7 +49,7 @@ class CompleteGuestBookingPayload {
   final int guestsMale;
   final int guestsFemale;
   final String guestNationality;
-  final List<String> freeBreakfastOptions;
+  final List<FreeBreakfastSelection> freeBreakfastSelections;
 }
 
 class CompleteGuestBookingConfig {

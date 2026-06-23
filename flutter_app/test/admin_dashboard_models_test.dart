@@ -187,6 +187,16 @@ void main() {
       expect(summary['pending_orders'], 1);
       expect(summary['fulfilled_orders'], 1);
     });
+
+    test('formatFreeBreakfast shows quantities', () {
+      expect(
+        AdminDashboardModels.formatFreeBreakfast([
+          {'name': 'Continental Breakfast', 'quantity': 2},
+          'Filipino Breakfast',
+        ]),
+        '2× Continental Breakfast, Filipino Breakfast',
+      );
+    });
   });
 
   group('floor helpers', () {

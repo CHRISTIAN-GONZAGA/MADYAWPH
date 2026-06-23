@@ -299,6 +299,107 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
     );
   }
 
+  void _showBreakfastClaimsSheet({required bool fulfilled}) {
+    final claims = AdminDashboardModels.breakfastClaims(
+      widget.claims,
+      fulfilled: fulfilled,
+    );
+    final title = fulfilled ? 'Breakfast prepared' : 'Breakfast to prepare';
+    final scheme = Theme.of(context).colorScheme;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  title,
+                  style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                Text(
+                  fulfilled
+                      ? 'Fulfilled breakfast requests from guests.'
+                      : 'Pending breakfast requests waiting for prep.',
+                  style: Theme.of(ctx).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                if (claims.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Text(
+                      fulfilled
+                          ? 'No fulfilled breakfast requests yet.'
+                          : 'Nothing to prepare right now.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(ctx).textTheme.bodyMedium,
+                    ),
+                  )
+                else
+                  SizedBox(
+                    height: (claims.length * 88.0).clamp(120, 420),
+                    child: ListView.separated(
+                      itemCount: claims.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, i) {
+                        final c = claims[i];
+                        final id = (c['id'] ?? c['_id'] ?? '').toString();
+                        final status = (c['status'] ?? 'pending').toString();
+                        final isDone = status == 'fulfilled';
+                        return Card(
+                          child: ListTile(
+                            leading: Icon(
+                              isDone
+                                  ? Icons.check_circle_outline
+                                  : Icons.free_breakfast_outlined,
+                              color: isDone
+                                  ? Colors.green.shade700
+                                  : scheme.primary,
+                            ),
+                            title: Text(
+                              (c['amenityName'] ??
+                                      c['amenity_name'] ??
+                                      'Breakfast')
+                                  .toString(),
+                            ),
+                            subtitle: Text(
+                              'Room ${c['roomNumber'] ?? c['room_number'] ?? '—'} · '
+                              'Qty ${c['quantity'] ?? 1} · $status',
+                            ),
+                            trailing: isDone
+                                ? null
+                                : FilledButton(
+                                    onPressed: id.isEmpty
+                                        ? null
+                                        : () async {
+                                            await _fulfillClaim(id);
+                                            if (ctx.mounted) {
+                                              Navigator.pop(ctx);
+                                            }
+                                          },
+                                    child: const Text('Mark done'),
+                                  ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _breakfastPrepSummary() {
     final summary = AdminDashboardModels.breakfastPrepSummary(widget.claims);
     final toPrepare = summary['to_prepare'] ?? 0;
@@ -339,6 +440,7 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
                         : '$pendingOrders requests',
                     color: Colors.orange.shade800,
                     icon: Icons.pending_actions_outlined,
+                    onTap: () => _showBreakfastClaimsSheet(fulfilled: false),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -351,6 +453,7 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
                         : '$fulfilledOrders fulfilled',
                     color: Colors.green.shade700,
                     icon: Icons.check_circle_outline,
+                    onTap: () => _showBreakfastClaimsSheet(fulfilled: true),
                   ),
                 ),
               ],
@@ -522,6 +625,7 @@ class _BreakfastPrepStat extends StatelessWidget {
     required this.subtitle,
     required this.color,
     required this.icon,
+    this.onTap,
   });
 
   final String label;
@@ -529,48 +633,60 @@ class _BreakfastPrepStat extends StatelessWidget {
   final String subtitle;
   final Color color;
   final IconData icon;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: 0.25)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: color.withValues(alpha: 0.25)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(icon, size: 18, color: color),
-              const SizedBox(width: 6),
+              Row(
+                children: [
+                  Icon(icon, size: 18, color: color),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: color,
+                          ),
+                    ),
+                  ),
+                  if (onTap != null)
+                    Icon(Icons.chevron_right, size: 18, color: color),
+                ],
+              ),
+              const SizedBox(height: 6),
               Text(
-                label,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
+                '$count',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w900,
                       color: color,
+                      height: 1,
+                    ),
+              ),
+              Text(
+                subtitle,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: color.withValues(alpha: 0.85),
                     ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            '$count',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  color: color,
-                  height: 1,
-                ),
-          ),
-          Text(
-            subtitle,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: color.withValues(alpha: 0.85),
-                ),
-          ),
-        ],
+        ),
       ),
     );
   }

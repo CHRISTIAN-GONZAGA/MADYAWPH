@@ -561,7 +561,6 @@ Route::middleware('role:admin')->group(function (): void {
             'guests_female' => ['nullable', 'integer', 'min:0', 'max:20'],
             'guest_nationality' => ['nullable', 'string', 'max:100'],
             'free_breakfast_options' => ['nullable', 'array'],
-            'free_breakfast_options.*' => ['string', 'max:255'],
             'guest_id_file' => ['nullable', 'image', 'max:5120'],
             'discount_id_file' => ['nullable', 'image', 'max:5120'],
         ]);
@@ -595,8 +594,8 @@ Route::middleware('role:admin')->group(function (): void {
         $bookingData['guests_male'] = max(0, (int) ($validated['guests_male'] ?? 0));
         $bookingData['guests_female'] = max(0, (int) ($validated['guests_female'] ?? 0));
         $bookingData['guest_nationality'] = trim((string) ($validated['guest_nationality'] ?? ''));
-        $bookingData['free_breakfast_options'] = array_values(
-            array_map('strval', (array) ($validated['free_breakfast_options'] ?? []))
+        $bookingData['free_breakfast_options'] = \App\Support\FreeBreakfastOptionsSupport::normalize(
+            $validated['free_breakfast_options'] ?? []
         );
         unset($bookingData['guest_id_file'], $bookingData['discount_id_file']);
 

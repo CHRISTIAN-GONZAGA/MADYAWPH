@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'widgets/free_breakfast_selection.dart';
+
 /// Pure helpers for admin dashboard UI (no API changes).
 class AdminDashboardModels {
   AdminDashboardModels._();
@@ -647,8 +649,29 @@ class AdminDashboardModels {
 
   static String floorLabel(int floor) => 'Floor $floor';
 
+  static List<Map<String, dynamic>> breakfastClaims(
+    List<dynamic> claims, {
+    required bool fulfilled,
+  }) {
+    return claims.whereType<Map<String, dynamic>>().where((claim) {
+      if (!isBreakfastClaim(claim)) return false;
+      final status = (claim['status'] ?? 'pending').toString();
+      return fulfilled ? status == 'fulfilled' : status != 'fulfilled';
+    }).toList(growable: false);
+  }
+
   static String formatFreeBreakfast(List<dynamic>? options) {
     if (options == null || options.isEmpty) return '';
-    return options.map((e) => e.toString()).where((s) => s.isNotEmpty).join(', ');
+    final parts = <String>[];
+    for (final raw in options) {
+      final selection = FreeBreakfastSelection.fromDynamic(raw);
+      if (selection == null) continue;
+      if (selection.quantity > 1) {
+        parts.add('${selection.quantity}× ${selection.name}');
+      } else {
+        parts.add(selection.name);
+      }
+    }
+    return parts.join(', ');
   }
 }

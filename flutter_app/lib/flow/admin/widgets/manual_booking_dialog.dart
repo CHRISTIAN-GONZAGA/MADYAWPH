@@ -3,7 +3,26 @@ import 'package:dio/dio.dart';
 import '../../../dio_client.dart';
 import '../admin_dashboard_models.dart';
 import '../../widgets/complete_guest_booking_dialog.dart';
+import 'free_breakfast_selection.dart';
 import 'hourly_billing.dart';
+
+void _appendFreeBreakfastToMap(
+  Map<String, dynamic> map,
+  List<FreeBreakfastSelection> selections,
+) {
+  for (var i = 0; i < selections.length; i++) {
+    final row = selections[i];
+    final prefix = 'free_breakfast_options[$i]';
+    if (row.menuItemId.isNotEmpty) {
+      map['$prefix[menu_item_id]'] = row.menuItemId;
+    }
+    map['$prefix[name]'] = row.name;
+    map['$prefix[quantity]'] = row.quantity.toString();
+    if (row.amenityType.isNotEmpty) {
+      map['$prefix[amenity_type]'] = row.amenityType;
+    }
+  }
+}
 
 /// Admin walk-in gateway — always creates a **local** booking (`source: admin`).
 Future<void> submitAdminWalkInBooking({
@@ -21,6 +40,10 @@ Future<void> submitAdminWalkInBooking({
   final outAt =
       HourlyBilling.customerStayCheckOut(room, checkInDate, checkOutDate);
 
+  final breakfastJson = payload.freeBreakfastSelections
+      .map((selection) => selection.toJson())
+      .toList();
+
   final body = <String, dynamic>{
     'room_id': roomId,
     'guest_name': payload.guestName,
@@ -35,8 +58,7 @@ Future<void> submitAdminWalkInBooking({
     'guests_male': payload.guestsMale,
     'guests_female': payload.guestsFemale,
     'guest_nationality': payload.guestNationality,
-    if (payload.freeBreakfastOptions.isNotEmpty)
-      'free_breakfast_options': payload.freeBreakfastOptions,
+    if (breakfastJson.isNotEmpty) 'free_breakfast_options': breakfastJson,
     if (payload.discountType != 'none') 'discount_type': payload.discountType,
   };
 
@@ -49,9 +71,7 @@ Future<void> submitAdminWalkInBooking({
       if (entry.value is List) continue;
       map[entry.key] = entry.value.toString();
     }
-    for (var i = 0; i < payload.freeBreakfastOptions.length; i++) {
-      map['free_breakfast_options[$i]'] = payload.freeBreakfastOptions[i];
-    }
+    _appendFreeBreakfastToMap(map, payload.freeBreakfastSelections);
     if (hasGuestId) {
       map['guest_id_file'] = await MultipartFile.fromFile(
         payload.guestIdFile!.path,
