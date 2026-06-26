@@ -59,6 +59,7 @@ class _AdminMonthCalendarState extends State<AdminMonthCalendar> {
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Row(
               children: [

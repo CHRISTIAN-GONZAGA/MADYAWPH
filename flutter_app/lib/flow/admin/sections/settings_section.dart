@@ -8,7 +8,6 @@ import '../../admin_reports.dart';
 import '../../admin_rooms.dart';
 import '../../admin_staff.dart';
 import '../../admin_tasks.dart';
-import '../../guest_list_history.dart';
 import '../admin_guest_portal_qr_screen.dart';
 import '../admin_hotel_logo_screen.dart';
 import '../admin_online_payment_screen.dart';
@@ -89,19 +88,6 @@ class SettingsSection extends StatelessWidget {
                   ),
                 );
                 await onRefreshAfterNav();
-              },
-            ),
-            _SettingsTile(
-              icon: Icons.history_edu_outlined,
-              title: 'Guest history',
-              subtitle: 'Completed stays archive',
-              enabled: !creditsLocked,
-              onTap: () async {
-                await Navigator.of(context).push<void>(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const GuestListHistoryScreen(),
-                  ),
-                );
               },
             ),
           ],

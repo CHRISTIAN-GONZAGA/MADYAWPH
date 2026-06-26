@@ -983,6 +983,7 @@ class _PaidTransactionsPanelState extends State<_PaidTransactionsPanel> {
                   ? Padding(
                       padding: const EdgeInsets.all(12),
                       child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(_error!, textAlign: TextAlign.center),
                           const SizedBox(height: 8),
@@ -999,6 +1000,7 @@ class _PaidTransactionsPanelState extends State<_PaidTransactionsPanel> {
                           child: Text('No paid transactions in selected range.'),
                         )
                       : Column(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             ..._rows.map((txn) => _TransactionTile(txn: txn)),
                             if (_lastPage > 1) ...[
@@ -1255,6 +1257,7 @@ class _ResellerPeriodRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
@@ -1494,6 +1497,7 @@ class _KpiCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return AppSectionCard(
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(icon, color: scheme.primary, size: 22),
