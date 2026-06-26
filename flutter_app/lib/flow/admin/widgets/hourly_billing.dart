@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'admin_room_form_constants.dart';
+
 /// Shared hourly block pricing helpers (mirrors backend RoomBillingSupport).
 class HourlyBilling {
   HourlyBilling._();
@@ -10,12 +12,13 @@ class HourlyBilling {
       (room['billing_mode'] ?? 'nightly').toString().toLowerCase() == 'hourly';
 
   static int blockHours(Map<String, dynamic> room) =>
-      (room['block_hours'] as num?)?.toInt() ?? 1;
+      parseAdminInt(room['block_hours'], 1);
 
-  static double pricePerBlock(Map<String, dynamic> room) =>
-      (room['price_per_block'] as num?)?.toDouble() ??
-      (room['price_per_night'] as num?)?.toDouble() ??
-      0;
+  static double pricePerBlock(Map<String, dynamic> room) {
+    final block = parseAdminDouble(room['price_per_block']);
+    if (block > 0) return block;
+    return parseAdminDouble(room['price_per_night']);
+  }
 
   static int stayHours(DateTime checkIn, DateTime checkOut) {
     final minutes = checkOut.difference(checkIn).inMinutes;
@@ -58,7 +61,7 @@ class HourlyBilling {
       );
     }
     return nightlyCharge(
-      pricePerNight: (room['price_per_night'] as num?)?.toDouble() ?? 0,
+      pricePerNight: parseAdminDouble(room['price_per_night']),
       checkIn: checkIn,
       checkOut: checkOut,
     );
@@ -121,12 +124,12 @@ class HourlyBilling {
       final hours = blockHours(room);
       return '₱${price.toStringAsFixed(0)} / $hours hr';
     }
-    final nightly = (room['price_per_night'] as num?)?.toDouble() ?? 0;
+    final nightly = parseAdminDouble(room['price_per_night']);
     return '₱${nightly.toStringAsFixed(0)} / night';
   }
 
   static double extraHourRate(Map<String, dynamic> room) {
-    final rate = (room['price_per_extra_hour'] as num?)?.toDouble() ?? 0;
+    final rate = parseAdminDouble(room['price_per_extra_hour']);
     return rate > 0 ? _round50(rate) : 0;
   }
 

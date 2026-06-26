@@ -82,23 +82,28 @@ class _AdminRoomEditScreenState extends State<AdminRoomEditScreen> {
       if (_roomBillingMode != 'hourly') {
         _roomBillingMode = 'nightly';
       }
-      _roomPricePerNight =
-          (_room['price_per_night'] as num?)?.toDouble() ??
-          (cat['default_price'] as num?)?.toDouble() ??
-          0.0;
-      _roomPricePerBlock = (_room['price_per_block'] as num?)?.toDouble() ??
-          (cat['price_per_block'] as num?)?.toDouble() ??
-          _roomPricePerNight;
-      _roomBlockHours = (_room['block_hours'] as num?)?.toInt() ??
-          (cat['block_hours'] as num?)?.toInt() ??
-          3;
+      _roomPricePerNight = parseAdminDouble(
+        _room['price_per_night'],
+        parseAdminDouble(cat['default_price']),
+      );
+      _roomPricePerBlock = parseAdminDouble(
+        _room['price_per_block'],
+        parseAdminDouble(
+          cat['price_per_block'],
+          _roomPricePerNight,
+        ),
+      );
+      _roomBlockHours = parseAdminInt(
+        _room['block_hours'],
+        parseAdminInt(cat['block_hours'], 3),
+      );
       _status = normalizeAdminRoomChoice(
         _room['status'],
         'available',
         adminRoomStatusOptions,
       );
-      _floorCount = (cat['floor_count'] as num?)?.toInt() ?? 1;
-      _selectedFloor = (_room['floor'] as num?)?.toInt() ?? 1;
+      _floorCount = parseAdminInt(cat['floor_count'], 1);
+      _selectedFloor = parseAdminInt(_room['floor'], 1);
       if (_selectedFloor < 1) _selectedFloor = 1;
       if (_selectedFloor > _floorCount) {
         _selectedFloor = _floorCount.clamp(1, 99);
@@ -517,7 +522,7 @@ Future<Map<String, dynamic>?> showAdminRoomPickerSheet(
                     final no = (room['room_number'] ?? '—').toString();
                     final name =
                         (room['display_name'] ?? room['name'] ?? '').toString();
-                    final floor = (room['floor'] as num?)?.toInt();
+                    final floor = parseAdminInt(room['floor'], 0);
                     final subtitle = [
                       if (name.isNotEmpty) name,
                       if (floor != null && floor > 0) 'Floor $floor',

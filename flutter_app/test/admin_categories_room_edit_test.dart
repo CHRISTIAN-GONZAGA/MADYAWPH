@@ -190,17 +190,19 @@ void main() {
                         'id': 'room-201',
                         'room_number': '201',
                         'category_id': 'cat-family',
-                        'price_per_night': 1800,
+                        'price_per_night': '1800',
                         'status': 'available',
                         'room_type': 'Double',
+                        'floor': '1',
                       },
                       {
                         'id': 'room-202',
                         'room_number': '202',
                         'category_id': 'cat-family',
-                        'price_per_night': 2000,
+                        'price_per_night': '2000',
                         'status': 'available',
                         'room_type': 'Suite',
+                        'floor': '2',
                       },
                     ],
                   },
@@ -243,6 +245,8 @@ void main() {
     expect(find.text('Select room · Family Room'), findsOneWidget);
     expect(find.text('Room 201'), findsOneWidget);
     expect(find.text('Room 202'), findsOneWidget);
+    expect(find.textContaining('₱1800 / night'), findsOneWidget);
+    expect(find.textContaining('₱2000 / night'), findsOneWidget);
 
     await tester.tap(find.text('Room 202'));
     await tester.pumpAndSettle();

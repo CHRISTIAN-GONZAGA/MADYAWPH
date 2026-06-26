@@ -9,6 +9,32 @@ const adminRoomStatusOptions = [
   'reserved',
 ];
 
+/// Mongo / Laravel JSON often returns decimals as strings — never use `as num?`.
+double parseAdminDouble(dynamic raw, [double fallback = 0]) {
+  if (raw == null) return fallback;
+  if (raw is num) return raw.toDouble();
+  if (raw is String) {
+    final cleaned = raw.trim().replaceAll(RegExp(r'[₱,\s]'), '');
+    if (cleaned.isEmpty) return fallback;
+    return double.tryParse(cleaned) ?? fallback;
+  }
+  return fallback;
+}
+
+int parseAdminInt(dynamic raw, [int fallback = 0]) {
+  if (raw == null) return fallback;
+  if (raw is int) return raw;
+  if (raw is num) return raw.round();
+  if (raw is String) {
+    final cleaned = raw.trim();
+    if (cleaned.isEmpty) return fallback;
+    return int.tryParse(cleaned) ??
+        double.tryParse(cleaned)?.round() ??
+        fallback;
+  }
+  return fallback;
+}
+
 String normalizeAdminRoomChoice(
   dynamic raw,
   String fallback,
@@ -33,19 +59,14 @@ String normalizeAdminRoomChoice(
 }
 
 String safeAdminRoomRateLabel(Map<String, dynamic> room) {
-  try {
-    final billing =
-        (room['billing_mode'] ?? 'nightly').toString().toLowerCase();
-    if (billing == 'hourly') {
-      final price = (room['price_per_block'] as num?)?.toDouble() ??
-          (room['price_per_night'] as num?)?.toDouble() ??
-          0;
-      final hours = (room['block_hours'] as num?)?.toInt() ?? 1;
-      return '₱${price.toStringAsFixed(0)} / $hours hr';
-    }
-    final nightly = (room['price_per_night'] as num?)?.toDouble() ?? 0;
-    return '₱${nightly.toStringAsFixed(0)} / night';
-  } catch (e) {
-    return 'Rate unavailable ($e)';
+  final billing = (room['billing_mode'] ?? 'nightly').toString().toLowerCase();
+  if (billing == 'hourly') {
+    final block = parseAdminDouble(room['price_per_block']);
+    final nightly = parseAdminDouble(room['price_per_night']);
+    final price = block > 0 ? block : nightly;
+    final hours = parseAdminInt(room['block_hours'], 1);
+    return '₱${price.toStringAsFixed(0)} / $hours hr';
   }
+  final nightly = parseAdminDouble(room['price_per_night']);
+  return '₱${nightly.toStringAsFixed(0)} / night';
 }

@@ -42,8 +42,14 @@ Map<String, dynamic> normalizeAdminRoomForEdit(Map<String, dynamic> raw) {
   );
   room['billing_mode'] =
       (room['billing_mode'] ?? 'nightly').toString().toLowerCase();
-  final floor = (room['floor'] as num?)?.toInt();
-  if (floor != null && floor > 0) {
+  room['price_per_night'] = parseAdminDouble(room['price_per_night']);
+  room['price_per_block'] = parseAdminDouble(
+    room['price_per_block'],
+    parseAdminDouble(room['price_per_night']),
+  );
+  room['block_hours'] = parseAdminInt(room['block_hours'], 3);
+  final floor = parseAdminInt(room['floor'], 0);
+  if (floor > 0) {
     room['floor'] = floor;
   }
   return room;
@@ -251,22 +257,23 @@ Future<bool> showAdminCreateRoomDialog(
   final nameCtrl = TextEditingController();
   final roomNoCtrl = TextEditingController();
   final nightlyCtrl = TextEditingController(
-    text: '${(category['default_price'] as num?)?.toDouble() ?? 0}',
+    text: '${parseAdminDouble(category['default_price'])}',
   );
   final blockPriceCtrl = TextEditingController(
     text:
-        '${(category['price_per_block'] as num?)?.toDouble() ?? (category['default_price'] as num?)?.toDouble() ?? 1000}',
+        '${parseAdminDouble(category['price_per_block'], parseAdminDouble(category['default_price'], 1000))}',
   );
   var roomBillingMode =
       (category['billing_mode'] ?? 'nightly').toString().toLowerCase();
-  var roomPricePerNight =
-      (category['default_price'] as num?)?.toDouble() ?? 0;
-  var roomPricePerBlock =
-      (category['price_per_block'] as num?)?.toDouble() ?? roomPricePerNight;
-  var roomBlockHours = (category['block_hours'] as num?)?.toInt() ?? 3;
+  var roomPricePerNight = parseAdminDouble(category['default_price']);
+  var roomPricePerBlock = parseAdminDouble(
+    category['price_per_block'],
+    roomPricePerNight,
+  );
+  var roomBlockHours = parseAdminInt(category['block_hours'], 3);
   var roomType = 'Single';
   var status = 'available';
-  final floorCount = (category['floor_count'] as num?)?.toInt() ?? 1;
+  final floorCount = parseAdminInt(category['floor_count'], 1);
   var selectedFloor = 1;
   XFile? pickedImage;
 
