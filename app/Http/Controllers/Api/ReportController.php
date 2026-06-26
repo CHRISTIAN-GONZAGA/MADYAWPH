@@ -363,50 +363,96 @@ class ReportController extends Controller
 
     public function profitOverview(Request $request)
     {
-        $validated = $request->validate([
-            'anchor_date' => ['nullable', 'date'],
-        ]);
-        $anchor = isset($validated['anchor_date'])
-            ? Carbon::parse($validated['anchor_date'])
-            : now();
+        try {
+            $validated = $request->validate([
+                'anchor_date' => ['nullable', 'date'],
+            ]);
+            $anchor = isset($validated['anchor_date'])
+                ? Carbon::parse($validated['anchor_date'])
+                : now();
 
-        return response()->json([
-            'anchor_date' => $anchor->toDateString(),
-            'daily' => $this->financialSummary(
-                $anchor->copy()->startOfDay(),
-                $anchor->copy()->endOfDay()
-            ),
-            'weekly' => $this->financialSummary(
-                $anchor->copy()->startOfWeek(),
-                $anchor->copy()->endOfWeek()
-            ),
-            'monthly' => $this->financialSummary(
-                $anchor->copy()->startOfMonth(),
-                $anchor->copy()->endOfMonth()
-            ),
-            'annual' => $this->financialSummary(
-                $anchor->copy()->startOfYear(),
-                $anchor->copy()->endOfYear()
-            ),
-            'reseller_payments' => [
-                'daily' => $this->resellerCommissionSummary(
+            return response()->json([
+                'anchor_date' => $anchor->toDateString(),
+                'daily' => $this->safeFinancialSummary(
                     $anchor->copy()->startOfDay(),
                     $anchor->copy()->endOfDay()
                 ),
-                'weekly' => $this->resellerCommissionSummary(
+                'weekly' => $this->safeFinancialSummary(
                     $anchor->copy()->startOfWeek(),
                     $anchor->copy()->endOfWeek()
                 ),
-                'monthly' => $this->resellerCommissionSummary(
+                'monthly' => $this->safeFinancialSummary(
                     $anchor->copy()->startOfMonth(),
                     $anchor->copy()->endOfMonth()
                 ),
-                'annual' => $this->resellerCommissionSummary(
+                'annual' => $this->safeFinancialSummary(
                     $anchor->copy()->startOfYear(),
                     $anchor->copy()->endOfYear()
                 ),
-            ],
-        ]);
+                'reseller_payments' => [
+                    'daily' => $this->resellerCommissionSummary(
+                        $anchor->copy()->startOfDay(),
+                        $anchor->copy()->endOfDay()
+                    ),
+                    'weekly' => $this->resellerCommissionSummary(
+                        $anchor->copy()->startOfWeek(),
+                        $anchor->copy()->endOfWeek()
+                    ),
+                    'monthly' => $this->resellerCommissionSummary(
+                        $anchor->copy()->startOfMonth(),
+                        $anchor->copy()->endOfMonth()
+                    ),
+                    'annual' => $this->resellerCommissionSummary(
+                        $anchor->copy()->startOfYear(),
+                        $anchor->copy()->endOfYear()
+                    ),
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+
+            $anchor = $request->filled('anchor_date')
+                ? Carbon::parse((string) $request->query('anchor_date'))
+                : now();
+
+            return response()->json([
+                'anchor_date' => $anchor->toDateString(),
+                'daily' => $this->emptyFinancialSummary(
+                    $anchor->copy()->startOfDay(),
+                    $anchor->copy()->endOfDay()
+                ),
+                'weekly' => $this->emptyFinancialSummary(
+                    $anchor->copy()->startOfWeek(),
+                    $anchor->copy()->endOfWeek()
+                ),
+                'monthly' => $this->emptyFinancialSummary(
+                    $anchor->copy()->startOfMonth(),
+                    $anchor->copy()->endOfMonth()
+                ),
+                'annual' => $this->emptyFinancialSummary(
+                    $anchor->copy()->startOfYear(),
+                    $anchor->copy()->endOfYear()
+                ),
+                'reseller_payments' => [
+                    'daily' => $this->resellerCommissionSummary(
+                        $anchor->copy()->startOfDay(),
+                        $anchor->copy()->endOfDay()
+                    ),
+                    'weekly' => $this->resellerCommissionSummary(
+                        $anchor->copy()->startOfWeek(),
+                        $anchor->copy()->endOfWeek()
+                    ),
+                    'monthly' => $this->resellerCommissionSummary(
+                        $anchor->copy()->startOfMonth(),
+                        $anchor->copy()->endOfMonth()
+                    ),
+                    'annual' => $this->resellerCommissionSummary(
+                        $anchor->copy()->startOfYear(),
+                        $anchor->copy()->endOfYear()
+                    ),
+                ],
+            ]);
+        }
     }
 
     public function resellerPaymentsTimeseries(Request $request)
@@ -774,9 +820,14 @@ class ReportController extends Controller
             ->filter(fn ($c) => in_array((string) ($c->type ?? ''), ['room', 'extend-stay', 'early-check-in', 'late-checkout'], true))
             ->sum(fn ($c) => max(0, (float) ($c->amount ?? 0)));
 
-        $transferAdjustments = (float) RoomTransfer::query()
-            ->whereBetween('transferred_at', [$from, $to])
-            ->sum('price_adjustment');
+        $transferAdjustments = 0.0;
+        try {
+            $transferAdjustments = (float) RoomTransfer::query()
+                ->whereBetween('transferred_at', [$from, $to])
+                ->sum('price_adjustment');
+        } catch (\Throwable) {
+            $transferAdjustments = 0.0;
+        }
 
         $resellerCommissions = $this->resellerCommissionTotal($from, $to);
         $netRevenue = $grossRevenue + $refunds + $transferAdjustments;
@@ -804,6 +855,44 @@ class ReportController extends Controller
             'net_revenue' => round($netRevenue, 2),
             'profit' => round($profitAfterReseller, 2),
             'profit_before_reseller_payouts' => round($netRevenue, 2),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function safeFinancialSummary(Carbon $from, Carbon $to): array
+    {
+        try {
+            return $this->financialSummary($from, $to);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return $this->emptyFinancialSummary($from, $to);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function emptyFinancialSummary(Carbon $from, Carbon $to): array
+    {
+        return [
+            'from' => $from->toDateString(),
+            'to' => $to->toDateString(),
+            'bookings' => 0,
+            'gross_revenue' => 0.0,
+            'revenue' => 0.0,
+            'refunds' => 0.0,
+            'refund_expense' => 0.0,
+            'amenity_revenue' => 0.0,
+            'room_revenue' => 0.0,
+            'transfer_adjustments' => 0.0,
+            'reseller_commissions_paid' => 0.0,
+            'expenses' => 0.0,
+            'net_revenue' => 0.0,
+            'profit' => 0.0,
+            'profit_before_reseller_payouts' => 0.0,
         ];
     }
 

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../dio_client.dart';
+import '../navigation_keys.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/app_state_views.dart';
 import '../widgets/chat_attachment.dart';
@@ -125,8 +126,9 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
 
   Future<Map<String, dynamic>?> _fetchRoomForEdit(String roomId) async {
     try {
-      final res =
-          await portalDio().get<Map<String, dynamic>>('/rooms/$roomId');
+      final res = await portalDio().get<Map<String, dynamic>>(
+        '/admin/rooms/$roomId',
+      );
       final data = res.data;
       if (data == null) return null;
       if (data['room'] is Map) {
@@ -137,6 +139,9 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
       return null;
     }
   }
+
+  BuildContext get _dialogContext =>
+      adminDashboardNavigatorKey.currentContext ?? context;
 
   Future<void> _putMultipart(
     String path,
@@ -612,8 +617,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
       if (!mounted) return;
       var selectedId = _roomId(room);
       final picked = await showDialog<Map<String, dynamic>>(
-        context: context,
-        useRootNavigator: true,
+        context: _dialogContext,
         builder: (context) => StatefulBuilder(
             builder: (context, setLocal) {
               final ids = rooms.map(_roomId).where((id) => id.isNotEmpty).toSet();
@@ -680,10 +684,18 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     }
 
     final detailed = await _fetchRoomForEdit(roomId);
+    final roomForEdit = Map<String, dynamic>.from(detailed ?? room);
+    if (_roomId(roomForEdit).isEmpty) {
+      roomForEdit['id'] = roomId;
+    }
+
     if (!mounted) return;
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted) return;
+
     final saved = await showAdminEditRoomDialog(
-      context,
-      room: detailed ?? room,
+      _dialogContext,
+      room: roomForEdit,
       categoryDefaults: category,
     );
     if (!mounted) return;

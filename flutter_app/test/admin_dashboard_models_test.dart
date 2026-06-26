@@ -3,8 +3,8 @@ import 'package:gloretto_mobile/flow/admin/admin_dashboard_models.dart';
 
 void main() {
   group('isAwaitingCheckIn', () {
-    test('includes reserved with future check-in', () {
-      final tomorrow = DateTime.now().add(const Duration(days: 2));
+    test('includes reserved with check-in tomorrow', () {
+      final tomorrow = DateTime.now().add(const Duration(days: 1));
       final room = {
         'status': 'reserved',
         'latest_booking': {
@@ -12,6 +12,21 @@ void main() {
         },
       };
       expect(AdminDashboardModels.isAwaitingCheckIn(room), isTrue);
+    });
+
+    test('includes available room with tomorrow booking', () {
+      final tomorrow = DateTime.now().add(const Duration(days: 1));
+      final room = {
+        'status': 'available',
+        'latest_booking': {
+          'check_in_date': tomorrow.toIso8601String().split('T').first,
+        },
+      };
+      expect(AdminDashboardModels.isAwaitingCheckIn(room), isTrue);
+      expect(
+        AdminDashboardModels.isSummaryReserved(room, maxDaysAhead: 1),
+        isTrue,
+      );
     });
 
     test('excludes reserved with past check-in', () {
@@ -34,6 +49,17 @@ void main() {
         },
       };
       expect(AdminDashboardModels.isAwaitingCheckIn(room), isTrue);
+    });
+
+    test('excludes reserved with check-in beyond tomorrow', () {
+      final dayAfterTomorrow = DateTime.now().add(const Duration(days: 2));
+      final room = {
+        'status': 'reserved',
+        'latest_booking': {
+          'check_in_date': dayAfterTomorrow.toIso8601String().split('T').first,
+        },
+      };
+      expect(AdminDashboardModels.isAwaitingCheckIn(room), isFalse);
     });
   });
 

@@ -5,9 +5,41 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../dio_client.dart';
+import '../../../navigation_keys.dart';
 import '../../../widgets/chat_attachment.dart';
 import 'hourly_billing.dart';
 import 'hourly_price_picker.dart';
+
+const _roomTypeOptions = ['Single', 'Double', 'Suite', 'Deluxe'];
+const _roomStatusOptions = [
+  'available',
+  'booked',
+  'checked_in',
+  'checked_out',
+  'maintenance',
+  'reserved',
+];
+
+BuildContext _adminDialogContext(BuildContext context) {
+  return adminDashboardNavigatorKey.currentContext ??
+      appNavigatorKey.currentContext ??
+      context;
+}
+
+String _normalizeRoomChoice(
+  dynamic raw,
+  String fallback,
+  List<String> allowed,
+) {
+  final v = (raw is Map ? (raw['value'] ?? raw['name'] ?? '') : raw)
+      .toString()
+      .trim();
+  if (v.isEmpty) return fallback;
+  for (final option in allowed) {
+    if (option.toLowerCase() == v.toLowerCase()) return option;
+  }
+  return fallback;
+}
 
 Future<void> putPortalMultipart(
   String path,
@@ -189,7 +221,7 @@ Future<bool> showAdminEditRoomDialog(
   final roomNoCtrl = TextEditingController(
     text: (room['room_number'] ?? '').toString(),
   );
-  var roomType = (room['room_type'] ?? 'Single').toString();
+  var roomType = _normalizeRoomChoice(room['room_type'], 'Single', _roomTypeOptions);
   var roomBillingMode =
       (room['billing_mode'] ?? cat['billing_mode'] ?? 'nightly').toString();
   var roomPricePerNight =
@@ -202,7 +234,11 @@ Future<bool> showAdminEditRoomDialog(
   var roomBlockHours = (room['block_hours'] as num?)?.toInt() ??
       (cat['block_hours'] as num?)?.toInt() ??
       3;
-  var status = (room['status'] ?? 'available').toString();
+  var status = _normalizeRoomChoice(
+    room['status'],
+    'available',
+    _roomStatusOptions,
+  );
   final floorCount = (cat['floor_count'] as num?)?.toInt() ?? 1;
   var selectedFloor = (room['floor'] as num?)?.toInt() ?? 1;
   if (selectedFloor < 1) selectedFloor = 1;
@@ -212,10 +248,12 @@ Future<bool> showAdminEditRoomDialog(
   XFile? pickedImage;
   var removeExistingImage = false;
 
+  final dialogContext = _adminDialogContext(context);
+  if (!dialogContext.mounted) return false;
+
   final payload = await showDialog<Map<String, dynamic>>(
-    context: context,
-    useRootNavigator: true,
-    barrierDismissible: false,
+    context: dialogContext,
+    barrierDismissible: true,
     builder: (context) => StatefulBuilder(
       builder: (context, setLocal) => Dialog(
         insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
@@ -436,10 +474,12 @@ Future<bool> showAdminCreateRoomDialog(
   var selectedFloor = 1;
   XFile? pickedImage;
 
+  final dialogContext = _adminDialogContext(context);
+  if (!dialogContext.mounted) return false;
+
   final payload = await showDialog<Map<String, dynamic>>(
-    context: context,
-    useRootNavigator: true,
-    barrierDismissible: false,
+    context: dialogContext,
+    barrierDismissible: true,
     builder: (context) => StatefulBuilder(
       builder: (context, setLocal) => Dialog(
         insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 28),

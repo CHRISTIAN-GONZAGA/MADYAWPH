@@ -283,10 +283,8 @@ class RoomSummarySection extends StatelessWidget {
               onTap: () => _openRooms(
                 context,
                 title: 'Booked / reserved',
-                list: rooms
-                    .where(AdminDashboardModels.isAwaitingCheckIn)
-                    .toList(),
-                subtitle: 'Check-in today or later',
+                list: AdminDashboardModels.categoryBookedReservedRooms(rooms),
+                subtitle: 'Check-in today or tomorrow',
                 showGuest: true,
               ),
             ),
@@ -431,11 +429,11 @@ class RoomSummarySection extends StatelessWidget {
                           rooms,
                           floor,
                         );
-                        _openRooms(
+                        _showFloorStatusBreakdown(
                           context,
-                          title: '$label · ${AdminDashboardModels.floorLabel(floor)}',
-                          list: onFloor,
-                          subtitle: '${onFloor.length} room(s)',
+                          categoryLabel: label,
+                          floor: floor,
+                          floorRooms: onFloor,
                         );
                       },
                     ),
@@ -446,6 +444,168 @@ class RoomSummarySection extends StatelessWidget {
           },
         );
       },
+    );
+  }
+
+  void _showFloorStatusBreakdown(
+    BuildContext context, {
+    required String categoryLabel,
+    required int floor,
+    required List<Map<String, dynamic>> floorRooms,
+  }) {
+    HapticFeedback.selectionClick();
+    final floorLabel = AdminDashboardModels.floorLabel(floor);
+    final title = '$categoryLabel · $floorLabel';
+    final reserved = AdminDashboardModels.sortRoomsByNumber(
+      AdminDashboardModels.categoryReservedSoonRooms(floorRooms, withinDays: 1),
+    );
+    final occupied = AdminDashboardModels.sortRoomsByNumber(
+      AdminDashboardModels.categoryOccupiedRooms(floorRooms),
+    );
+    final vacant = AdminDashboardModels.sortRoomsByNumber(
+      AdminDashboardModels.categoryVacantRooms(floorRooms),
+    );
+
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      useRootNavigator: true,
+      builder: (ctx) {
+        final scheme = Theme.of(ctx).colorScheme;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                title,
+                style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${floorRooms.length} room(s) · choose status',
+                style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 16),
+              _FloorStatusOption(
+                label: 'Reserved',
+                count: reserved.length,
+                color: Colors.orange.shade800,
+                icon: Icons.event_available_outlined,
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _openRooms(
+                    context,
+                    title: '$title · Reserved',
+                    list: reserved,
+                    subtitle: 'Check-in today or tomorrow',
+                    showGuest: true,
+                  );
+                },
+              ),
+              const SizedBox(height: 8),
+              _FloorStatusOption(
+                label: 'Occupied',
+                count: occupied.length,
+                color: Colors.green.shade700,
+                icon: Icons.person_pin_circle_outlined,
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _openRooms(
+                    context,
+                    title: '$title · Occupied',
+                    list: occupied,
+                    subtitle: 'Guests checked in',
+                    showGuest: true,
+                  );
+                },
+              ),
+              const SizedBox(height: 8),
+              _FloorStatusOption(
+                label: 'Vacant',
+                count: vacant.length,
+                color: Colors.teal.shade700,
+                icon: Icons.meeting_room_outlined,
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _openRooms(
+                    context,
+                    title: '$title · Vacant',
+                    list: vacant,
+                    subtitle: 'Available for booking',
+                    showGuest: false,
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _FloorStatusOption extends StatelessWidget {
+  const _FloorStatusOption({
+    required this.label,
+    required this.count,
+    required this.color,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String label;
+  final int count;
+  final Color color;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: color.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          child: Row(
+            children: [
+              Icon(icon, color: color),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ),
+              Text(
+                '$count',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: color,
+                    ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: scheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

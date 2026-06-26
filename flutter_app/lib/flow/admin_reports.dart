@@ -57,6 +57,16 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     return null;
   }
 
+  bool _hasAnyReportData() {
+    return _sales != null ||
+        _timeline != null ||
+        _transfers != null ||
+        _tasks != null ||
+        _occupancy != null ||
+        _profitOverview != null ||
+        _resellerPayments != null;
+  }
+
   Future<Map<String, dynamic>?> _safeReportGet(
     String path, {
     Map<String, dynamic>? queryParameters,
@@ -220,7 +230,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         ),
       );
     }
-    if (_error != null && _profitOverview == null) {
+    if (_error != null && !_hasAnyReportData()) {
       return RefreshIndicator(
         onRefresh: _load,
         child: ListView(
@@ -263,8 +273,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       child: ListView(
         padding: EdgeInsets.fromLTRB(16, widget.embedded ? 8 : 16, 16, 32),
         children: [
-          if (_error != null &&
-              (_profitOverview != null || _sales != null)) ...[
+          if (_error != null && _hasAnyReportData()) ...[
             Card(
               color: scheme.errorContainer.withValues(alpha: 0.35),
               child: Padding(

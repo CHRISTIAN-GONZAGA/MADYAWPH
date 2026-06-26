@@ -162,14 +162,20 @@ class AdminDashboardModels {
   }
 
   /// Rooms with a booking not yet checked in (booked or reserved, check-in today+).
-  static bool isAwaitingCheckIn(Map<String, dynamic> room) {
-    final s = statusOf(room);
-    if (s != 'booked' && s != 'reserved') return false;
-    return hasCheckInTodayOrLater(room);
+  static bool isAwaitingCheckIn(
+    Map<String, dynamic> room, {
+    int maxDaysAhead = 1,
+  }) {
+    return qualifiesAsBookedReserved(room, maxDaysAhead: maxDaysAhead);
   }
 
-  static int bookedRoomCount(List<Map<String, dynamic>> rooms) {
-    return rooms.where(isAwaitingCheckIn).length;
+  static int bookedRoomCount(
+    List<Map<String, dynamic>> rooms, {
+    int maxDaysAhead = 1,
+  }) {
+    return rooms
+        .where((r) => qualifiesAsBookedReserved(r, maxDaysAhead: maxDaysAhead))
+        .length;
   }
 
   /// Walk-in tile grouping: available | reserved | occupied.
@@ -432,6 +438,64 @@ class AdminDashboardModels {
     return parseDate(raw);
   }
 
+  /// Days from today until check-in (0 = today, 1 = tomorrow). Null if unknown.
+  static int? daysUntilCheckIn(Map<String, dynamic> room) {
+    final start = stayStartDate(room);
+    if (start == null) return null;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final startDay = DateTime(start.year, start.month, start.day);
+    return startDay.difference(today).inDays;
+  }
+
+  static bool _hasUpcomingBookingRecord(Map<String, dynamic> room) {
+    final booking = room['latest_booking'];
+    return booking is Map && booking.isNotEmpty;
+  }
+
+  /// Booked / reserved arrivals from today through [maxDaysAhead] (1 = today + tomorrow).
+  static bool qualifiesAsBookedReserved(
+    Map<String, dynamic> room, {
+    int maxDaysAhead = 1,
+  }) {
+    if (statusOf(room) == 'checked_in') return false;
+
+    final days = daysUntilCheckIn(room);
+    if (days != null && (days < 0 || days > maxDaysAhead)) return false;
+
+    final status = statusOf(room);
+    if (status == 'booked' || status == 'reserved') {
+      if (days == null) return hasCheckInTodayOrLater(room);
+      return true;
+    }
+
+    if ((status == 'available' ||
+            status == 'checked_out' ||
+            status.isEmpty) &&
+        _hasUpcomingBookingRecord(room)) {
+      if (days == null) return false;
+      return days >= 0 && days <= maxDaysAhead;
+    }
+
+    return false;
+  }
+
+  /// Summary / category "reserved" bucket (upcoming stays, not yet checked in).
+  static bool isSummaryReserved(
+    Map<String, dynamic> room, {
+    int maxDaysAhead = 1,
+  }) {
+    if (qualifiesAsBookedReserved(room, maxDaysAhead: maxDaysAhead)) {
+      return true;
+    }
+    if (walkInTileStatus(room) == 'reserved') {
+      final days = daysUntilCheckIn(room);
+      if (days == null) return true;
+      return days >= 0 && days <= maxDaysAhead;
+    }
+    return false;
+  }
+
   /// Departures within [withinDays] (default 2).
   static bool isStayEndingSoon(Map<String, dynamic> room, {int withinDays = 2}) {
     final end = stayEndDate(room);
@@ -445,16 +509,7 @@ class AdminDashboardModels {
 
   /// Arrivals today through [withinDays] ahead for reserved/booked rooms.
   static bool isStayArrivingSoon(Map<String, dynamic> room, {int withinDays = 2}) {
-    final status = statusOf(room);
-    if (status == 'checked_in') return false;
-    if (status != 'reserved' && status != 'booked') return false;
-    final start = stayStartDate(room);
-    if (start == null) return false;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final startDay = DateTime(start.year, start.month, start.day);
-    final days = startDay.difference(today).inDays;
-    return days >= 0 && days <= withinDays;
+    return qualifiesAsBookedReserved(room, maxDaysAhead: withinDays);
   }
 
   /// Same-day or past check-in still marked reserved → treat as booked in UI.
@@ -532,7 +587,16 @@ class AdminDashboardModels {
     int withinDays = 1,
   }) {
     return rooms
-        .where((r) => isStayArrivingSoon(r, withinDays: withinDays))
+        .where((r) => isSummaryReserved(r, maxDaysAhead: withinDays))
+        .toList();
+  }
+
+  static List<Map<String, dynamic>> categoryBookedReservedRooms(
+    List<Map<String, dynamic>> rooms, {
+    int maxDaysAhead = 1,
+  }) {
+    return rooms
+        .where((r) => qualifiesAsBookedReserved(r, maxDaysAhead: maxDaysAhead))
         .toList();
   }
 
@@ -549,8 +613,12 @@ class AdminDashboardModels {
       final s = statusOf(r);
       if (walkInTileStatus(r) == 'available') vacant++;
       if (s == 'checked_in') checkedIn++;
-      if (s == 'reserved' && hasCheckInTodayOrLater(r)) reserved++;
-      if (s == 'booked' && hasCheckInTodayOrLater(r)) booked++;
+      if (isSummaryReserved(r, maxDaysAhead: 1)) reserved++;
+      if (s == 'booked' &&
+          hasCheckInTodayOrLater(r) &&
+          !isSummaryReserved(r, maxDaysAhead: 1)) {
+        booked++;
+      }
       if (s == 'maintenance') maintenance++;
     }
     final reservedSoon = reservedArrivingSoonCount(rooms, withinDays: 1);
