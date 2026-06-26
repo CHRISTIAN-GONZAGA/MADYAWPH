@@ -14,7 +14,6 @@ import 'flow_state.dart';
 import 'hotel_property_login_screen.dart';
 import 'hotel_screens.dart';
 import 'owner_dashboard_screen.dart';
-import 'public_hotel_search_screen.dart';
 
 /// Role-based portal sign-in after property gate (System Access UI).
 class SystemAccessScreen extends StatefulWidget {
@@ -169,10 +168,14 @@ class _SystemAccessScreenState extends State<SystemAccessScreen> {
       if (_isPublicCustomer) {
         await AuthStorage.clearPortalAuth();
         await AuthStorage.clearGuestAuth();
+        await AuthStorage.setHotelContext(
+          id: widget.session.hotelId,
+          name: widget.session.hotelName,
+        );
         HapticFeedback.lightImpact();
         if (!mounted) return;
         await _openDashboard(
-          const PublicHotelSearchScreen(),
+          CustomerDashboardScreen(hotelId: widget.session.hotelId),
           replace: false,
         );
         return;
