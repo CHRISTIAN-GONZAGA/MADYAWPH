@@ -5,10 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../dio_client.dart';
-import '../navigation_keys.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/app_state_views.dart';
+import '../widgets/app_overlay.dart';
 import '../widgets/chat_attachment.dart';
+import 'admin/admin_dashboard_models.dart';
 import 'admin/widgets/admin_room_editor.dart';
 import 'admin/widgets/hourly_price_picker.dart';
 
@@ -63,7 +64,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
       (category['id'] ?? category['_id'] ?? '').toString().trim();
 
   String _roomId(Map<String, dynamic> room) =>
-      (room['id'] ?? room['_id'] ?? '').toString().trim();
+      AdminDashboardModels.roomIdOf(room);
 
   bool _roomBelongsToCategory(
     Map<String, dynamic> room,
@@ -96,7 +97,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
   List<Map<String, dynamic>> _parseRoomRows(dynamic raw) {
     return (raw as List<dynamic>? ?? [])
         .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
+        .map((e) => normalizeAdminRoomForEdit(Map<String, dynamic>.from(e)))
         .where((r) => _roomId(r).isNotEmpty)
         .toList();
   }
@@ -131,17 +132,14 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
       );
       final data = res.data;
       if (data == null) return null;
-      if (data['room'] is Map) {
-        return Map<String, dynamic>.from(data['room'] as Map);
-      }
-      return Map<String, dynamic>.from(data);
+      final raw = data['room'] is Map
+          ? Map<String, dynamic>.from(data['room'] as Map)
+          : Map<String, dynamic>.from(data);
+      return normalizeAdminRoomForEdit(raw);
     } on DioException {
       return null;
     }
   }
-
-  BuildContext get _dialogContext =>
-      adminDashboardNavigatorKey.currentContext ?? context;
 
   Future<void> _putMultipart(
     String path,
@@ -616,8 +614,9 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     if (rooms.length > 1) {
       if (!mounted) return;
       var selectedId = _roomId(room);
-      final picked = await showDialog<Map<String, dynamic>>(
-        context: _dialogContext,
+      final picked = await showAppOverlayDialog<Map<String, dynamic>>(
+        context: context,
+        barrierDismissible: true,
         builder: (context) => StatefulBuilder(
             builder: (context, setLocal) {
               final ids = rooms.map(_roomId).where((id) => id.isNotEmpty).toSet();
@@ -684,17 +683,17 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     }
 
     final detailed = await _fetchRoomForEdit(roomId);
-    final roomForEdit = Map<String, dynamic>.from(detailed ?? room);
+    final roomForEdit = normalizeAdminRoomForEdit(
+      Map<String, dynamic>.from(detailed ?? room),
+    );
     if (_roomId(roomForEdit).isEmpty) {
       roomForEdit['id'] = roomId;
     }
 
     if (!mounted) return;
-    await Future<void>.delayed(Duration.zero);
-    if (!mounted) return;
 
     final saved = await showAdminEditRoomDialog(
-      _dialogContext,
+      context,
       room: roomForEdit,
       categoryDefaults: category,
     );

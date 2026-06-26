@@ -5,8 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../dio_client.dart';
-import '../../../navigation_keys.dart';
+import '../../../widgets/app_overlay.dart';
 import '../../../widgets/chat_attachment.dart';
+import '../admin_dashboard_models.dart';
 import 'hourly_billing.dart';
 import 'hourly_price_picker.dart';
 
@@ -19,12 +20,6 @@ const _roomStatusOptions = [
   'maintenance',
   'reserved',
 ];
-
-BuildContext _adminDialogContext(BuildContext context) {
-  return adminDashboardNavigatorKey.currentContext ??
-      appNavigatorKey.currentContext ??
-      context;
-}
 
 String _normalizeRoomChoice(
   dynamic raw,
@@ -39,6 +34,32 @@ String _normalizeRoomChoice(
     if (option.toLowerCase() == v.toLowerCase()) return option;
   }
   return fallback;
+}
+
+/// Flattens API/Mongo room maps so edit dialogs always receive usable fields.
+Map<String, dynamic> normalizeAdminRoomForEdit(Map<String, dynamic> raw) {
+  final room = Map<String, dynamic>.from(raw);
+  final id = AdminDashboardModels.roomIdOf(room);
+  if (id.isNotEmpty) {
+    room['id'] = id;
+  }
+  room['status'] = _normalizeRoomChoice(
+    room['status'],
+    'available',
+    _roomStatusOptions,
+  );
+  room['room_type'] = _normalizeRoomChoice(
+    room['room_type'],
+    'Single',
+    _roomTypeOptions,
+  );
+  room['billing_mode'] =
+      (room['billing_mode'] ?? 'nightly').toString().toLowerCase();
+  final floor = (room['floor'] as num?)?.toInt();
+  if (floor != null && floor > 0) {
+    room['floor'] = floor;
+  }
+  return room;
 }
 
 Future<void> putPortalMultipart(
@@ -202,7 +223,8 @@ Future<bool> showAdminEditRoomDialog(
   required Map<String, dynamic> room,
   Map<String, dynamic>? categoryDefaults,
 }) async {
-  final roomId = (room['id'] ?? room['_id'] ?? '').toString().trim();
+  room = normalizeAdminRoomForEdit(room);
+  final roomId = AdminDashboardModels.roomIdOf(room);
   if (roomId.isEmpty) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -248,11 +270,10 @@ Future<bool> showAdminEditRoomDialog(
   XFile? pickedImage;
   var removeExistingImage = false;
 
-  final dialogContext = _adminDialogContext(context);
-  if (!dialogContext.mounted) return false;
+  if (!context.mounted) return false;
 
-  final payload = await showDialog<Map<String, dynamic>>(
-    context: dialogContext,
+  final payload = await showAppOverlayDialog<Map<String, dynamic>>(
+    context: context,
     barrierDismissible: true,
     builder: (context) => StatefulBuilder(
       builder: (context, setLocal) => Dialog(
@@ -474,11 +495,10 @@ Future<bool> showAdminCreateRoomDialog(
   var selectedFloor = 1;
   XFile? pickedImage;
 
-  final dialogContext = _adminDialogContext(context);
-  if (!dialogContext.mounted) return false;
+  if (!context.mounted) return false;
 
-  final payload = await showDialog<Map<String, dynamic>>(
-    context: dialogContext,
+  final payload = await showAppOverlayDialog<Map<String, dynamic>>(
+    context: context,
     barrierDismissible: true,
     builder: (context) => StatefulBuilder(
       builder: (context, setLocal) => Dialog(
