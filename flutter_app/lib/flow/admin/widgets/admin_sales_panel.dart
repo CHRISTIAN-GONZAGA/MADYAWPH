@@ -80,6 +80,7 @@ class _AdminSalesPanelState extends State<AdminSalesPanel> {
   Widget build(BuildContext context) {
     final overview = _overview ?? {};
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (_loading) const LinearProgressIndicator(minHeight: 2),
@@ -112,6 +113,7 @@ class _AdminSalesPanelState extends State<AdminSalesPanel> {
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(

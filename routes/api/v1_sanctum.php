@@ -548,8 +548,8 @@ Route::middleware('role:admin')->group(function (): void {
         $validated = $request->validate([
             'room_id' => ['required', 'string'],
             'guest_name' => ['required', 'string', 'max:255'],
-            'guest_email' => ['required', 'email', 'max:255'],
-            'guest_phone' => ['required', 'string', 'max:50'],
+            'guest_email' => ['nullable', 'email', 'max:255'],
+            'guest_phone' => ['nullable', 'string', 'max:50'],
             'check_in_at' => ['required', 'date'],
             'check_out_at' => ['required', 'date', 'after:check_in_at'],
             'payment_method' => ['required', 'in:Cash,GCash,PayMaya,Credit Card'],
@@ -594,6 +594,8 @@ Route::middleware('role:admin')->group(function (): void {
         $bookingData['guests_male'] = max(0, (int) ($validated['guests_male'] ?? 0));
         $bookingData['guests_female'] = max(0, (int) ($validated['guests_female'] ?? 0));
         $bookingData['guest_nationality'] = trim((string) ($validated['guest_nationality'] ?? ''));
+        $bookingData['guest_email'] = trim((string) ($validated['guest_email'] ?? ''));
+        $bookingData['guest_phone'] = trim((string) ($validated['guest_phone'] ?? ''));
         $bookingData['free_breakfast_options'] = \App\Support\FreeBreakfastOptionsSupport::normalize(
             $validated['free_breakfast_options'] ?? []
         );

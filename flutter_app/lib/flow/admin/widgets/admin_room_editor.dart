@@ -229,26 +229,12 @@ Future<bool> showAdminEditRoomDialog(
                         ),
                   ),
                   const SizedBox(height: 18),
-                  if (floorCount > 1) ...[
-                    DropdownButtonFormField<int>(
-                      key: ValueKey<int>(selectedFloor),
-                      initialValue: selectedFloor.clamp(1, floorCount),
-                      decoration: const InputDecoration(
-                        labelText: 'Floor',
-                        prefixIcon: Icon(Icons.layers_outlined),
-                      ),
-                      items: List.generate(
-                        floorCount,
-                        (i) => DropdownMenuItem(
-                          value: i + 1,
-                          child: Text('Floor ${i + 1}'),
-                        ),
-                      ),
-                      onChanged: (v) =>
-                          setLocal(() => selectedFloor = v ?? selectedFloor),
-                    ),
-                    const SizedBox(height: 14),
-                  ],
+                  AdminRoomFloorField(
+                    floorCount: floorCount,
+                    selectedFloor: selectedFloor,
+                    onChanged: (v) => setLocal(() => selectedFloor = v),
+                  ),
+                  const SizedBox(height: 14),
                   TextField(
                     controller: nameCtrl,
                     textInputAction: TextInputAction.next,
@@ -398,8 +384,13 @@ Future<bool> showAdminEditRoomDialog(
   try {
     await putPortalMultipart('/rooms/$roomId', payload, image);
     return true;
-  } on DioException {
-    rethrow;
+  } on DioException catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dioErrorMessage(e))),
+      );
+    }
+    return false;
   }
 }
 
@@ -453,27 +444,12 @@ Future<bool> showAdminCreateRoomDialog(
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 18),
-                  if (floorCount > 1) ...[
-                    DropdownButtonFormField<int>(
-                      key: ValueKey<int>(selectedFloor),
-                      initialValue: selectedFloor,
-                      decoration: const InputDecoration(
-                        labelText: 'Floor',
-                        prefixIcon: Icon(Icons.layers_outlined),
-                        helperText: 'Select which floor this room is on',
-                      ),
-                      items: List.generate(
-                        floorCount,
-                        (i) => DropdownMenuItem(
-                          value: i + 1,
-                          child: Text('Floor ${i + 1}'),
-                        ),
-                      ),
-                      onChanged: (v) =>
-                          setLocal(() => selectedFloor = v ?? selectedFloor),
-                    ),
-                    const SizedBox(height: 14),
-                  ],
+                  AdminRoomFloorField(
+                    floorCount: floorCount,
+                    selectedFloor: selectedFloor,
+                    onChanged: (v) => setLocal(() => selectedFloor = v),
+                  ),
+                  const SizedBox(height: 14),
                   TextField(
                     controller: nameCtrl,
                     textInputAction: TextInputAction.next,
@@ -605,10 +581,88 @@ Future<bool> showAdminCreateRoomDialog(
   }
 
   final image = payload.remove('__image') as XFile?;
-  await postPortalMultipart('/rooms', payload, image);
-  return true;
+  if (image == null) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Room photo is required. Pick an image from the gallery.'),
+        ),
+      );
+    }
+    return false;
+  }
+
+  try {
+    await postPortalMultipart('/rooms', payload, image);
+    return true;
+  } on DioException catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dioErrorMessage(e))),
+      );
+    }
+    return false;
+  }
 }
 
 String adminRoomRateLabel(Map<String, dynamic> room) {
   return HourlyBilling.priceLabel(room);
+}
+
+/// Floor picker shown when creating or editing a room.
+class AdminRoomFloorField extends StatelessWidget {
+  const AdminRoomFloorField({
+    super.key,
+    required this.floorCount,
+    required this.selectedFloor,
+    required this.onChanged,
+  });
+
+  final int floorCount;
+  final int selectedFloor;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final maxFloor = floorCount.clamp(1, 99);
+    final safeSelected = selectedFloor.clamp(1, maxFloor);
+
+    if (maxFloor <= 6) {
+      return DropdownButtonFormField<int>(
+        key: ValueKey<int>(safeSelected),
+        initialValue: safeSelected,
+        decoration: InputDecoration(
+          labelText: 'Floor',
+          prefixIcon: const Icon(Icons.layers_outlined),
+          helperText: maxFloor > 1
+              ? 'Select floor 1–$maxFloor for this category'
+              : 'This category has one floor (set more in category settings)',
+        ),
+        items: List.generate(
+          maxFloor,
+          (i) => DropdownMenuItem(
+            value: i + 1,
+            child: Text('Floor ${i + 1}'),
+          ),
+        ),
+        onChanged: (v) => onChanged(v ?? safeSelected),
+      );
+    }
+
+    return TextFormField(
+      key: ValueKey<int>(safeSelected),
+      initialValue: '$safeSelected',
+      keyboardType: TextInputType.number,
+      decoration: InputDecoration(
+        labelText: 'Floor',
+        prefixIcon: const Icon(Icons.layers_outlined),
+        helperText: 'Enter floor 1–$maxFloor',
+      ),
+      onChanged: (v) {
+        final parsed = int.tryParse(v.trim());
+        if (parsed == null) return;
+        onChanged(parsed.clamp(1, maxFloor));
+      },
+    );
+  }
 }

@@ -595,7 +595,7 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
                     ListView(
                       physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.all(12),
-                      children: const [AdminSalesPanel()],
+                      children: [AdminSalesPanel()],
                     ),
                     Column(
                       children: [

@@ -31,7 +31,7 @@ class FreeBreakfastSelection {
       return FreeBreakfastSelection(
         menuItemId: (raw['menu_item_id'] ?? raw['id'] ?? '').toString(),
         name: name,
-        quantity: (raw['quantity'] as num?)?.toInt().clamp(1, 20) ?? 1,
+        quantity: ((raw['quantity'] as num?)?.toInt() ?? 1).clamp(1, 20),
         amenityType: (raw['amenity_type'] ?? raw['amenityType'] ?? '').toString(),
       );
     }

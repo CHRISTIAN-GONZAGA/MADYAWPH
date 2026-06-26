@@ -11,6 +11,7 @@ import '../../../widgets/chat_attachment.dart';
 import '../../widgets/complete_guest_booking_dialog.dart';
 import 'free_breakfast_selection.dart';
 import 'hourly_billing.dart';
+import 'walk_in_complimentary_picker.dart';
 import 'admin_walk_in_stay_calendar_dialog.dart';
 import 'guest_nationalities.dart';
 import 'manual_booking_dialog.dart';
@@ -173,13 +174,13 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                 const SizedBox(height: 8),
                 AppInput(
                   controller: emailCtrl,
-                  label: dialogContext.tr('email_gmail'),
+                  label: '${dialogContext.tr('email_gmail')} (optional)',
                   keyboardType: TextInputType.emailAddress,
                 ),
                 const SizedBox(height: 8),
                 AppInput(
                   controller: phoneCtrl,
-                  label: dialogContext.tr('phone_number'),
+                  label: '${dialogContext.tr('phone_number')} (optional)',
                   keyboardType: TextInputType.phone,
                 ),
                 const SizedBox(height: 12),
@@ -236,43 +237,11 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                 ),
                 if (amenityMenuItems.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  Text(
-                    'Complimentary items (from amenities menu)',
-                    style:
-                        Theme.of(dialogContext).textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
+                  WalkInComplimentaryPicker(
+                    menuItems: amenityMenuItems,
+                    quantitiesById: complimentaryQty,
+                    onChanged: () => setLocal(() {}),
                   ),
-                  Text(
-                    'Set quantity per product — e.g. 2× Continental + 1× Juice.',
-                    style: Theme.of(dialogContext).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Total complimentary: ${complimentaryQty.values.fold<int>(0, (a, b) => a + b)}',
-                    style: Theme.of(dialogContext).textTheme.labelLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                  const SizedBox(height: 8),
-                  ...amenityMenuItems.map((item) {
-                    final id = (item['id'] ?? item['_id'] ?? '').toString();
-                    final name = (item['name'] ?? 'Item').toString();
-                    final type =
-                        (item['amenity_type'] ?? item['type'] ?? '').toString();
-                    final qty = complimentaryQty[id] ?? 0;
-                    return _WalkInCounterRow(
-                      label: type.isEmpty ? name : '$name · $type',
-                      value: qty,
-                      onChanged: (v) => setLocal(() {
-                        if (v <= 0) {
-                          complimentaryQty.remove(id);
-                        } else {
-                          complimentaryQty[id] = v;
-                        }
-                      }),
-                    );
-                  }),
                 ],
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
@@ -387,13 +356,13 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                   );
                   return;
                 }
-                if (email.isEmpty || !email.contains('@')) {
+                if (email.isNotEmpty && !email.contains('@')) {
                   ScaffoldMessenger.of(dialogContext).showSnackBar(
                     const SnackBar(content: Text('Enter a valid email address.')),
                   );
                   return;
                 }
-                if (phone.length < 7) {
+                if (phone.isNotEmpty && phone.length < 7) {
                   ScaffoldMessenger.of(dialogContext).showSnackBar(
                     const SnackBar(content: Text('Enter a valid phone number.')),
                   );

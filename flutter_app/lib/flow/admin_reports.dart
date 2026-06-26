@@ -189,10 +189,31 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
 
   Widget _buildBody() {
     if (_loading && _profitOverview == null) {
-      return const AppLoadingView();
+      return RefreshIndicator(
+        onRefresh: () => _load(silent: true),
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(16, widget.embedded ? 8 : 16, 16, 32),
+          children: const [
+            SizedBox(height: 220, child: AppLoadingView()),
+          ],
+        ),
+      );
     }
     if (_error != null && _profitOverview == null) {
-      return AppErrorView(message: _error!, onRetry: _load);
+      return RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(16, widget.embedded ? 8 : 16, 16, 32),
+          children: [
+            SizedBox(
+              height: 280,
+              child: AppErrorView(message: _error!, onRetry: _load),
+            ),
+          ],
+        ),
+      );
     }
     final scheme = Theme.of(context).colorScheme;
     final salesSummary = (_sales?['totals'] as Map<String, dynamic>?) ?? {};
@@ -224,6 +245,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         children: [
           AppSectionCard(
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
@@ -261,6 +283,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           const SizedBox(height: 16),
           AppSectionCard(
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (!widget.embedded)
@@ -308,6 +331,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           const SizedBox(height: 16),
           AppSectionCard(
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
@@ -397,6 +421,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           const SizedBox(height: 16),
           AppSectionCard(
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
@@ -464,6 +489,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           const SizedBox(height: 16),
           AppSectionCard(
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
@@ -898,6 +924,7 @@ class _PaidTransactionsPanelState extends State<_PaidTransactionsPanel> {
     final scheme = Theme.of(context).colorScheme;
 
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _SectionTitle('Paid transactions'),
@@ -1017,6 +1044,7 @@ class _TransactionTile extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
@@ -1078,6 +1106,7 @@ class _PeriodFinanceRow extends StatelessWidget {
     final transfers = (data?['transfer_adjustments'] ?? 0);
 
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
@@ -1347,6 +1376,7 @@ class _ResellerCommissionRecordFormState
     }
 
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         DropdownButtonFormField<String>(
