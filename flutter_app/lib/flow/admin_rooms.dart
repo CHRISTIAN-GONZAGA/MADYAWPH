@@ -25,6 +25,7 @@ class _AdminRoomsScreenState extends State<AdminRoomsScreen> {
   String? _error;
   bool _loading = true;
   bool _busy = false;
+  final Set<String> _expandedCategoryIds = {};
 
   static int _compareRoomNumber(Map<String, dynamic> a, Map<String, dynamic> b) {
     final na = (a['room_number'] ?? '').toString();
@@ -358,10 +359,20 @@ class _AdminRoomsScreenState extends State<AdminRoomsScreen> {
               ),
             ),
           ),
-          for (final section in sections) ...[
-            _CategoryHeader(
+          for (final section in sections)
+            _CategorySection(
               name: section.name,
-              roomCount: section.rooms.length,
+              rooms: section.rooms,
+              expanded: _expandedCategoryIds.contains(section.id),
+              onToggle: () {
+                setState(() {
+                  if (_expandedCategoryIds.contains(section.id)) {
+                    _expandedCategoryIds.remove(section.id);
+                  } else {
+                    _expandedCategoryIds.add(section.id);
+                  }
+                });
+              },
               onAddRoom: section.id == '_uncategorized' || section.id == '_all'
                   ? null
                   : () => _addRoom(
@@ -370,79 +381,119 @@ class _AdminRoomsScreenState extends State<AdminRoomsScreen> {
                           orElse: () => _categories.first,
                         ),
                       ),
+              onEditRoom: _editRoom,
+              onManageStay: _manageStay,
             ),
-            if (section.rooms.isEmpty)
-              Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    'No rooms in this category yet.',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              )
-            else
-              for (final room in section.rooms)
-                _AdminRoomRow(
-                  room: room,
-                  onEdit: () => _editRoom(room),
-                  onManageStay: () => _manageStay(room),
-                ),
-          ],
         ],
       ),
     );
   }
 }
 
-class _CategoryHeader extends StatelessWidget {
-  const _CategoryHeader({
+class _CategorySection extends StatelessWidget {
+  const _CategorySection({
     required this.name,
-    required this.roomCount,
+    required this.rooms,
+    required this.expanded,
+    required this.onToggle,
+    required this.onEditRoom,
+    required this.onManageStay,
     this.onAddRoom,
   });
 
   final String name;
-  final int roomCount;
+  final List<Map<String, dynamic>> rooms;
+  final bool expanded;
+  final VoidCallback onToggle;
   final VoidCallback? onAddRoom;
+  final Future<void> Function(Map<String, dynamic> room) onEditRoom;
+  final Future<void> Function(Map<String, dynamic> room) onManageStay;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 8),
-      child: Row(
+    final scheme = theme.colorScheme;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Icon(Icons.folder_outlined, color: theme.colorScheme.primary, size: 22),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+          Material(
+            color: scheme.surfaceContainerLow,
+            child: InkWell(
+              onTap: onToggle,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 4, 12),
+                child: Row(
+                  children: [
+                    Icon(
+                      expanded
+                          ? Icons.expand_more_rounded
+                          : Icons.chevron_right_rounded,
+                      color: scheme.primary,
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(Icons.folder_outlined, color: scheme.primary, size: 22),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            name,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            '${rooms.length} room${rooms.length == 1 ? '' : 's'}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (onAddRoom != null)
+                      TextButton.icon(
+                        onPressed: onAddRoom,
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('Add'),
+                      ),
+                  ],
                 ),
-                Text(
-                  '$roomCount room${roomCount == 1 ? '' : 's'}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
-          if (onAddRoom != null)
-            TextButton.icon(
-              onPressed: onAddRoom,
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('Add'),
-            ),
+          if (expanded) ...[
+            const Divider(height: 1),
+            if (rooms.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'No rooms in this category yet.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
+                child: Column(
+                  children: [
+                    for (final room in rooms)
+                      _AdminRoomRow(
+                        room: room,
+                        onEdit: () => onEditRoom(room),
+                        onManageStay: () => onManageStay(room),
+                      ),
+                  ],
+                ),
+              ),
+          ],
         ],
       ),
     );

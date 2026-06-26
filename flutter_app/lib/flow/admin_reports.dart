@@ -1,12 +1,13 @@
 import 'package:dio/dio.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../dio_client.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_state_views.dart';
 import '../widgets/admin_month_calendar.dart';
+import 'admin/widgets/admin_dev_error_panel.dart';
 
 /// Revenue and operations charts with daily / weekly / monthly / annual granularity.
 class AdminReportsScreen extends StatefulWidget {
@@ -26,6 +27,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   Map<String, dynamic>? _occupancy;
   Map<String, dynamic>? _profitOverview;
   Map<String, dynamic>? _resellerPayments;
+  String? _resellerPaymentsError;
+  String? _resellerSectionError;
   bool _loading = true;
   bool _refreshing = false;
   String? _error;
@@ -70,6 +73,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   Future<Map<String, dynamic>?> _safeReportGet(
     String path, {
     Map<String, dynamic>? queryParameters,
+    void Function(String message)? onError,
   }) async {
     try {
       final res = await portalDio().get<Map<String, dynamic>>(
@@ -77,7 +81,11 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         queryParameters: queryParameters,
       );
       return res.data;
-    } on DioException {
+    } on DioException catch (e) {
+      onError?.call(dioErrorMessage(e));
+      return null;
+    } catch (e, stack) {
+      onError?.call(AdminDevErrorPanel.formatError(e, stack));
       return null;
     }
   }
@@ -91,6 +99,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           _refreshing = true;
         }
         _error = null;
+        _resellerPaymentsError = null;
+        _resellerSectionError = null;
       });
     } else {
       setState(() => _refreshing = true);
@@ -122,20 +132,31 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         queryParameters: {'anchor_date': _fmtDay(_selectedDay)},
       );
       if (profitOverview == null) failures.add('profit overview');
+      String? resellerPaymentsError;
       final resellerPayments = await _safeReportGet(
         '/reports/reseller-payments/timeseries',
         queryParameters: commissionQp,
+        onError: (message) => resellerPaymentsError = message,
       );
+      if (resellerPayments == null && resellerPaymentsError == null) {
+        resellerPaymentsError =
+            'Reseller commissions request returned no data.';
+      }
       if (resellerPayments == null) failures.add('reseller commissions');
 
       final commissionPoints =
           (resellerPayments?['points'] as List<dynamic>?) ?? const [];
       final byDay = <String, double>{};
-      for (final raw in commissionPoints) {
-        if (raw is! Map) continue;
-        final label = (raw['period_label'] ?? '').toString();
-        if (label.isEmpty) continue;
-        byDay[label] = (raw['total_paid'] as num?)?.toDouble() ?? 0;
+      String? resellerSectionError;
+      try {
+        for (final raw in commissionPoints) {
+          if (raw is! Map) continue;
+          final label = (raw['period_label'] ?? '').toString();
+          if (label.isEmpty) continue;
+          byDay[label] = _parseAmount(raw['total_paid']);
+        }
+      } catch (e, stack) {
+        resellerSectionError = AdminDevErrorPanel.formatError(e, stack);
       }
       if (!mounted) return;
       setState(() {
@@ -147,6 +168,18 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         if (profitOverview != null) _profitOverview = profitOverview;
         if (resellerPayments != null) _resellerPayments = resellerPayments;
         _commissionByDay = byDay;
+        _resellerPaymentsError = resellerPaymentsError;
+        _resellerSectionError = resellerSectionError;
+        if (resellerSectionError == null) {
+          try {
+            _validateResellerSectionData(
+              overview: profitOverview ?? _profitOverview,
+              resellerPay: resellerPayments ?? _resellerPayments,
+            );
+          } catch (e, stack) {
+            _resellerSectionError = AdminDevErrorPanel.formatError(e, stack);
+          }
+        }
         _loading = false;
         _refreshing = false;
         if (failures.isNotEmpty && _profitOverview == null && _sales == null) {
@@ -260,7 +293,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         _asStringKeyedMap(overview['reseller_payments']);
     final monthDaysWithPayouts = resellerPoints.where((raw) {
       if (raw is! Map) return false;
-      return ((raw['total_paid'] as num?)?.toDouble() ?? 0) > 0;
+      return _parseAmount(raw['total_paid']) > 0;
     }).toList();
     final selectedDayCommission =
         _commissionByDay[_fmtDay(_selectedDay)] ?? 0.0;
@@ -395,13 +428,27 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                       ),
                 ),
                 Text(
-                  'Month total: ₱${_fmtNum(resellerTotals['total_paid'] ?? 0)} · '
-                  '${resellerTotals['payment_count'] ?? 0} payment(s)',
+                  'Month total: ₱${_fmtNum(_parseAmount(resellerTotals['total_paid']))} · '
+                  '${_parseInt(resellerTotals['payment_count'])} payment(s)',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
                 ),
-                const SizedBox(height: 16),
+                if (_resellerPaymentsError != null ||
+                    _resellerSectionError != null) ...[
+                  const SizedBox(height: 12),
+                  _InlineReportErrorPanel(
+                    title: 'Reseller commissions error',
+                    message: _resellerSectionError ??
+                        _resellerPaymentsError ??
+                        'Unknown error',
+                    hint: _resellerPaymentsError != null
+                        ? 'The API call failed. Check your connection or server logs.'
+                        : 'The response loaded but this section could not be rendered. Copy the error below.',
+                  ),
+                ],
+                if (_resellerSectionError == null) ...[
+                  const SizedBox(height: 16),
                 _ResellerPeriodRow(
                   label: isToday ? 'Today (selected)' : 'Selected day',
                   data: _asStringKeyedMap(resellerOverview?['daily']),
@@ -452,14 +499,15 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   ...monthDaysWithPayouts.map((raw) {
                     final m = Map<String, dynamic>.from(raw as Map);
                     final label = (m['period_label'] ?? '').toString();
-                    final paid = (m['total_paid'] as num?)?.toDouble() ?? 0;
-                    final count = m['payment_count'] ?? 0;
+                    final paid = _parseAmount(m['total_paid']);
+                    final count = _parseInt(m['payment_count']);
                     return _MetricLine(
                       label: label.isEmpty ? 'Day' : label,
                       value:
                           '₱${_fmtNum(paid)} · $count payment${count == 1 ? '' : 's'}',
                     );
                   }),
+                ],
                 ],
               ],
             ),
@@ -471,7 +519,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Chart period',
+                  'Report period',
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
@@ -563,51 +611,32 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           const SizedBox(height: 20),
           _SectionTitle('Revenue by period'),
           const SizedBox(height: 10),
-          AppSectionCard(
-            child: SizedBox(
-              height: 240,
-              child: salesPoints.isEmpty
-                  ? const Center(child: Text('No booking revenue in range.'))
-                  : Padding(
-                      padding: const EdgeInsets.only(
-                          right: 12, top: 12, bottom: 4),
-                      child: BarChart(
-                        _salesBarData(salesPoints, scheme),
-                      ),
-                    ),
-            ),
+          _ReportTimeseriesList(
+            points: salesPoints,
+            emptyLabel: 'No booking revenue in range.',
+            valueLabel: (point) =>
+                '₱${_fmtNum(_parseAmount(point['gross_sales'] ?? point['net_revenue'] ?? 0))}',
+            subtitleLabel: (point) =>
+                '${_parseInt(point['booking_count'])} booking(s)',
           ),
           const SizedBox(height: 20),
           _SectionTitle('Bookings count'),
           const SizedBox(height: 10),
-          AppSectionCard(
-            child: SizedBox(
-              height: 220,
-              child: salesPoints.isEmpty
-                  ? const Center(child: Text('No bookings in range.'))
-                  : Padding(
-                      padding: const EdgeInsets.only(
-                          right: 12, top: 12, bottom: 4),
-                      child: LineChart(_bookingsLineData(salesPoints, scheme)),
-                    ),
-            ),
+          _ReportTimeseriesList(
+            points: salesPoints,
+            emptyLabel: 'No bookings in range.',
+            valueLabel: (point) => '${_parseInt(point['booking_count'])}',
+            subtitleLabel: (point) =>
+                '₱${_fmtNum(_parseAmount(point['gross_sales'] ?? 0))} gross',
           ),
           const SizedBox(height: 20),
           _SectionTitle('Activity volume'),
           const SizedBox(height: 10),
-          AppSectionCard(
-            child: SizedBox(
-              height: 220,
-              child: timelinePoints.isEmpty
-                  ? const Center(child: Text('No activity logs in range.'))
-                  : Padding(
-                      padding: const EdgeInsets.only(
-                          right: 12, top: 12, bottom: 4),
-                      child: BarChart(
-                        _activityBarData(timelinePoints, scheme),
-                      ),
-                    ),
-            ),
+          _ReportTimeseriesList(
+            points: timelinePoints,
+            emptyLabel: 'No activity logs in range.',
+            valueLabel: (point) => '${_parseInt(point['total_events'])}',
+            subtitleLabel: (_) => 'events',
           ),
           const SizedBox(height: 20),
           _PaidTransactionsPanel(
@@ -621,224 +650,203 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     );
   }
 
-  BarChartData _salesBarData(List<dynamic> points, ColorScheme scheme) {
-    final groups = <BarChartGroupData>[];
-    final maxShow = points.length > 20 ? 20 : points.length;
-    var maxY = 1.0;
-    for (var i = 0; i < maxShow; i++) {
-      final m = points[i] as Map<String, dynamic>;
-      final v = (m['gross_sales'] ?? 0).toDouble();
-      if (v > maxY) maxY = v;
-      groups.add(
-        BarChartGroupData(
-          x: i,
-          barRods: [
-            BarChartRodData(
-              toY: v,
-              width: 10,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
-              color: scheme.primary,
-            ),
-          ],
-        ),
-      );
+  void _validateResellerSectionData({
+    Map<String, dynamic>? overview,
+    Map<String, dynamic>? resellerPay,
+  }) {
+    final overviewMap = overview ?? const <String, dynamic>{};
+    final resellerOverview = _asStringKeyedMap(overviewMap['reseller_payments']);
+    for (final key in ['daily', 'weekly', 'monthly', 'annual']) {
+      final period = _asStringKeyedMap(resellerOverview?[key]);
+      if (period == null) continue;
+      _parseAmount(period['total_paid']);
+      _parseInt(period['payment_count']);
+      _asCategoryMap(period['by_category']);
     }
 
-    return BarChartData(
-      maxY: maxY * 1.15,
-      gridData: FlGridData(
-        show: true,
-        drawVerticalLine: false,
-        horizontalInterval: maxY > 0 ? maxY / 4 : 1,
-        getDrawingHorizontalLine: (_) => FlLine(
-          color: scheme.outlineVariant.withValues(alpha: 0.5),
-          strokeWidth: 1,
-        ),
-      ),
-      borderData: FlBorderData(show: false),
-      titlesData: FlTitlesData(
-        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        leftTitles: AxisTitles(
-          sideTitles: SideTitles(
-            showTitles: true,
-            reservedSize: 48,
-            getTitlesWidget: (v, _) => Text(
-              v >= 1000 ? '${(v / 1000).toStringAsFixed(1)}k' : v.toInt().toString(),
-              style: const TextStyle(fontSize: 10),
-            ),
-          ),
-        ),
-        bottomTitles: AxisTitles(
-          sideTitles: SideTitles(
-            showTitles: true,
-            reservedSize: 32,
-            getTitlesWidget: (xv, _) {
-              final i = xv.toInt();
-              if (i < 0 || i >= maxShow) return const SizedBox.shrink();
-              final m = points[i] as Map<String, dynamic>;
-              final raw = (m['period_label'] ?? '').toString();
-              final short =
-                  raw.length > 8 ? raw.substring(raw.length - 7) : raw;
-              return Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(
-                  short,
-                  style: const TextStyle(fontSize: 9),
-                ),
-              );
-            },
-          ),
-        ),
-      ),
-      barGroups: groups,
-    );
+    final totals = _asStringKeyedMap(resellerPay?['totals']) ?? const {};
+    _parseAmount(totals['total_paid']);
+    _parseInt(totals['payment_count']);
+
+    final points = (resellerPay?['points'] as List<dynamic>?) ?? const [];
+    for (final raw in points) {
+      if (raw is! Map) continue;
+      _parseAmount(raw['total_paid']);
+      _parseInt(raw['payment_count']);
+      _asCategoryMap(raw['by_category']);
+    }
   }
 
-  LineChartData _bookingsLineData(List<dynamic> points, ColorScheme scheme) {
-    final spots = <FlSpot>[];
-    var maxY = 4.0;
-    final n = points.length > 24 ? 24 : points.length;
-    for (var i = 0; i < n; i++) {
-      final m = points[i] as Map<String, dynamic>;
-      final c = (m['booking_count'] ?? 0).toDouble();
-      if (c > maxY) maxY = c;
-      spots.add(FlSpot(i.toDouble(), c));
-    }
-
-    return LineChartData(
-      minY: 0,
-      maxY: maxY * 1.2,
-      gridData: FlGridData(
-        show: true,
-        drawVerticalLine: false,
-        getDrawingHorizontalLine: (_) => FlLine(
-          color: scheme.outlineVariant.withValues(alpha: 0.45),
-          strokeWidth: 1,
-        ),
-      ),
-      borderData: FlBorderData(show: false),
-      titlesData: FlTitlesData(
-        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        leftTitles: AxisTitles(
-          sideTitles: SideTitles(
-            showTitles: true,
-            reservedSize: 32,
-            getTitlesWidget: (v, _) => Text(
-              v.toInt().toString(),
-              style: const TextStyle(fontSize: 10),
-            ),
-          ),
-        ),
-        bottomTitles: AxisTitles(
-          sideTitles: SideTitles(
-            showTitles: true,
-            reservedSize: 28,
-            getTitlesWidget: (xv, _) {
-              final i = xv.toInt();
-              if (i < 0 || i >= n) return const SizedBox.shrink();
-              final m = points[i] as Map<String, dynamic>;
-              final raw = (m['period_label'] ?? '').toString();
-              final short =
-                  raw.length > 6 ? raw.substring(raw.length - 5) : raw;
-              return Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(short, style: const TextStyle(fontSize: 9)),
-              );
-            },
-          ),
-        ),
-      ),
-      lineBarsData: [
-        LineChartBarData(
-          spots: spots,
-          isCurved: true,
-          color: scheme.tertiary,
-          barWidth: 3,
-          dotData: const FlDotData(show: true),
-          belowBarData: BarAreaData(
-            show: true,
-            color: scheme.tertiary.withValues(alpha: 0.12),
-          ),
-        ),
-      ],
-    );
+  static double _parseAmount(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value.trim()) ?? 0;
+    return 0;
   }
 
-  BarChartData _activityBarData(List<dynamic> points, ColorScheme scheme) {
-    final groups = <BarChartGroupData>[];
-    final maxShow = points.length > 16 ? 16 : points.length;
-    var maxY = 1.0;
-    for (var i = 0; i < maxShow; i++) {
-      final m = points[i] as Map<String, dynamic>;
-      final v = (m['total_events'] ?? 0).toDouble();
-      if (v > maxY) maxY = v;
-      groups.add(
-        BarChartGroupData(
-          x: i,
-          barRods: [
-            BarChartRodData(
-              toY: v,
-              width: 14,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
-              color: scheme.secondary,
-            ),
-          ],
-        ),
-      );
-    }
+  static int _parseInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value.trim()) ?? 0;
+    return 0;
+  }
 
-    return BarChartData(
-      maxY: maxY * 1.2,
-      gridData: FlGridData(
-        show: true,
-        drawVerticalLine: false,
-        getDrawingHorizontalLine: (_) => FlLine(
-          color: scheme.outlineVariant.withValues(alpha: 0.45),
-          strokeWidth: 1,
-        ),
-      ),
-      borderData: FlBorderData(show: false),
-      titlesData: FlTitlesData(
-        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        leftTitles: AxisTitles(
-          sideTitles: SideTitles(
-            showTitles: true,
-            reservedSize: 32,
-            getTitlesWidget: (v, _) => Text(
-              v.toInt().toString(),
-              style: const TextStyle(fontSize: 10),
-            ),
-          ),
-        ),
-        bottomTitles: AxisTitles(
-          sideTitles: SideTitles(
-            showTitles: true,
-            reservedSize: 28,
-            getTitlesWidget: (xv, _) {
-              final i = xv.toInt();
-              if (i < 0 || i >= maxShow) return const SizedBox.shrink();
-              final m = points[i] as Map<String, dynamic>;
-              final raw = (m['period_label'] ?? '').toString();
-              final short =
-                  raw.length > 6 ? raw.substring(raw.length - 5) : raw;
-              return Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(short, style: const TextStyle(fontSize: 9)),
-              );
-            },
-          ),
-        ),
-      ),
-      barGroups: groups,
-    );
+  static Map<String, dynamic> _asCategoryMap(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return {};
   }
 
   static String _fmtNum(Object? v) {
-    final n = (v is num) ? v.toDouble() : double.tryParse('$v') ?? 0;
+    final n = _parseAmount(v);
     return n.toStringAsFixed(n >= 100 ? 0 : 2);
+  }
+}
+
+class _InlineReportErrorPanel extends StatelessWidget {
+  const _InlineReportErrorPanel({
+    required this.title,
+    required this.message,
+    this.hint,
+  });
+
+  final String title;
+  final String message;
+  final String? hint;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.error.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.bug_report_outlined, color: scheme.error, size: 22),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: scheme.error,
+                      ),
+                ),
+              ),
+            ],
+          ),
+          if (hint != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              hint!,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          SelectableText(
+            message,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  fontFamily: 'monospace',
+                  height: 1.35,
+                ),
+          ),
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: message.trim().isEmpty
+                  ? null
+                  : () {
+                      Clipboard.setData(ClipboardData(text: message));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Error copied to clipboard.'),
+                        ),
+                      );
+                    },
+              icon: const Icon(Icons.copy_outlined, size: 18),
+              label: const Text('Copy error'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReportTimeseriesList extends StatelessWidget {
+  const _ReportTimeseriesList({
+    required this.points,
+    required this.emptyLabel,
+    required this.valueLabel,
+    required this.subtitleLabel,
+  });
+
+  final List<dynamic> points;
+  final String emptyLabel;
+  final String Function(Map<String, dynamic> point) valueLabel;
+  final String Function(Map<String, dynamic> point) subtitleLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    if (points.isEmpty) {
+      return AppSectionCard(
+        child: Text(
+          emptyLabel,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+        ),
+      );
+    }
+
+    final rows = points
+        .whereType<Map>()
+        .map((raw) => Map<String, dynamic>.from(raw))
+        .toList();
+
+    return AppSectionCard(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < rows.length; i++) ...[
+            if (i > 0) const Divider(height: 1),
+            ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                (rows[i]['period_label'] ?? 'Period').toString(),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+              subtitle: Text(subtitleLabel(rows[i])),
+              trailing: Text(
+                valueLabel(rows[i]),
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: scheme.primary,
+                    ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
 
@@ -1246,10 +1254,11 @@ class _ResellerPeriodRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final total = (data?['total_paid'] ?? 0);
-    final count = data?['payment_count'] ?? 0;
-    final resellers = data?['unique_resellers'] ?? 0;
-    final byCat = data?['by_category'] as Map<String, dynamic>? ?? {};
+    final total = _AdminReportsScreenState._parseAmount(data?['total_paid']);
+    final count = _AdminReportsScreenState._parseInt(data?['payment_count']);
+    final resellers =
+        _AdminReportsScreenState._parseInt(data?['unique_resellers']);
+    final byCat = _AdminReportsScreenState._asCategoryMap(data?['by_category']);
 
     if (data == null) {
       return Padding(
@@ -1351,13 +1360,31 @@ class _ResellerCommissionRecordFormState
           _selectedResellerId = (_resellers.first['id'] ?? '').toString();
         }
       });
-    } catch (e) {
+    } on DioException catch (e) {
       if (!mounted) return;
       setState(() {
         _loadingResellers = false;
-        _error = '$e';
+        _error = dioErrorMessage(e);
+      });
+    } catch (e, stack) {
+      if (!mounted) return;
+      setState(() {
+        _loadingResellers = false;
+        _error = AdminDevErrorPanel.formatError(e, stack);
       });
     }
+  }
+
+  String? _selectedResellerValue() {
+    final ids = _resellers
+        .map((r) => (r['id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    if (_selectedResellerId != null && ids.contains(_selectedResellerId)) {
+      return _selectedResellerId;
+    }
+    if (ids.isEmpty) return null;
+    return ids.first;
   }
 
   Future<void> _submit() async {
@@ -1429,7 +1456,7 @@ class _ResellerCommissionRecordFormState
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         DropdownButtonFormField<String>(
-          initialValue: _selectedResellerId,
+          initialValue: _selectedResellerValue(),
           decoration: const InputDecoration(
             labelText: 'Reseller *',
             border: OutlineInputBorder(),
