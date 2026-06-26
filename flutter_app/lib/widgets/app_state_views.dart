@@ -109,3 +109,60 @@ class AppEmptyView extends StatelessWidget {
     );
   }
 }
+
+/// Scrollable loading placeholder for screens whose body sits in a scroll parent.
+Widget appScrollableLoading({
+  Future<void> Function()? onRefresh,
+  double minHeight = 280,
+}) {
+  return RefreshIndicator(
+    onRefresh: onRefresh ?? () async {},
+    child: ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        SizedBox(height: minHeight, child: const AppLoadingView()),
+      ],
+    ),
+  );
+}
+
+/// Scrollable error state — avoids unbounded-height gray gaps in nested layouts.
+Widget appScrollableError({
+  required String message,
+  required VoidCallback onRetry,
+  Future<void> Function()? onRefresh,
+  double minHeight = 300,
+}) {
+  return RefreshIndicator(
+    onRefresh: onRefresh ?? () async {},
+    child: ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        SizedBox(
+          height: minHeight,
+          child: AppErrorView(message: message, onRetry: onRetry),
+        ),
+      ],
+    ),
+  );
+}
+
+/// Scrollable empty-state message for list screens.
+Widget appScrollableEmpty({
+  required String message,
+  Future<void> Function()? onRefresh,
+  double minHeight = 280,
+}) {
+  return RefreshIndicator(
+    onRefresh: onRefresh ?? () async {},
+    child: ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        SizedBox(
+          height: minHeight,
+          child: AppEmptyView(message: message),
+        ),
+      ],
+    ),
+  );
+}

@@ -63,20 +63,17 @@ class _GuestListHistoryScreenState extends State<GuestListHistoryScreen> {
   }
 
   Widget _buildBody() {
-    if (_loading) return const AppLoadingView();
+    if (_loading) {
+      return appScrollableLoading(onRefresh: _load);
+    }
     if (_error != null) {
-      return AppErrorView(message: _error!, onRetry: _load);
+      return appScrollableError(message: _error!, onRetry: _load, onRefresh: _load);
     }
     if (_rows.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
+      return appScrollableEmpty(
+        message:
             'No completed stays recorded yet. Entries appear after checkout clears guest data from a room.',
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyLarge,
-          ),
-        ),
+        onRefresh: _load,
       );
     }
 

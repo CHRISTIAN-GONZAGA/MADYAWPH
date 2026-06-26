@@ -69,9 +69,19 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     Map<String, dynamic> category,
   ) {
     final catId = _categoryId(category);
-    final roomCatId = (room['category_id'] ?? '').toString().trim();
+    final roomCatId = (room['category_id'] ?? room['categoryId'] ?? '')
+        .toString()
+        .trim();
     if (catId.isNotEmpty && roomCatId.isNotEmpty && roomCatId == catId) {
       return true;
+    }
+    final nested = room['category'];
+    if (nested is Map) {
+      final nestedId =
+          (nested['id'] ?? nested['_id'] ?? '').toString().trim();
+      if (catId.isNotEmpty && nestedId.isNotEmpty && nestedId == catId) {
+        return true;
+      }
     }
     final catName = (category['name'] ?? category['category_name'] ?? '')
         .toString()
@@ -82,14 +92,50 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     return catName.isNotEmpty && roomCatName == catName;
   }
 
+  List<Map<String, dynamic>> _parseRoomRows(dynamic raw) {
+    return (raw as List<dynamic>? ?? [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .where((r) => _roomId(r).isNotEmpty)
+        .toList();
+  }
+
   Future<List<Map<String, dynamic>>> _roomsInCategory(
     Map<String, dynamic> category,
   ) async {
-    final res = await portalDio().get<Map<String, dynamic>>('/admin/rooms');
-    return (res.data?['data'] as List<dynamic>? ?? [])
-        .whereType<Map<String, dynamic>>()
+    final catId = _categoryId(category);
+    final params =
+        catId.isNotEmpty ? <String, dynamic>{'category_id': catId} : null;
+    final res = await portalDio().get<Map<String, dynamic>>(
+      '/admin/rooms',
+      queryParameters: params,
+    );
+    final fromApi = _parseRoomRows(res.data?['data']);
+    if (fromApi.isNotEmpty) {
+      return fromApi
+          .where((r) => _roomBelongsToCategory(r, category))
+          .toList();
+    }
+
+    final fallback = await portalDio().get<Map<String, dynamic>>('/admin/rooms');
+    return _parseRoomRows(fallback.data?['data'])
         .where((r) => _roomBelongsToCategory(r, category))
         .toList();
+  }
+
+  Future<Map<String, dynamic>?> _fetchRoomForEdit(String roomId) async {
+    try {
+      final res =
+          await portalDio().get<Map<String, dynamic>>('/rooms/$roomId');
+      final data = res.data;
+      if (data == null) return null;
+      if (data['room'] is Map) {
+        return Map<String, dynamic>.from(data['room'] as Map);
+      }
+      return Map<String, dynamic>.from(data);
+    } on DioException {
+      return null;
+    }
   }
 
   Future<void> _putMultipart(
@@ -538,24 +584,37 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
 
   Future<void> _editRoomInCategory(Map<String, dynamic> category) async {
     if (_busy) return;
+
+    List<Map<String, dynamic>> rooms;
     setState(() => _busy = true);
     try {
-      final rooms = await _roomsInCategory(category);
-      if (rooms.isEmpty) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No rooms in this category.')),
-        );
-        return;
-      }
+      rooms = await _roomsInCategory(category);
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dioErrorMessage(e))),
+      );
+      return;
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
 
-      Map<String, dynamic> room = rooms.first;
-      if (rooms.length > 1) {
-        if (!mounted) return;
-        var selectedId = _roomId(room);
-        final picked = await showDialog<Map<String, dynamic>>(
-          context: context,
-          builder: (context) => StatefulBuilder(
+    if (rooms.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No rooms in this category.')),
+      );
+      return;
+    }
+
+    Map<String, dynamic> room = rooms.first;
+    if (rooms.length > 1) {
+      if (!mounted) return;
+      var selectedId = _roomId(room);
+      final picked = await showDialog<Map<String, dynamic>>(
+        context: context,
+        useRootNavigator: true,
+        builder: (context) => StatefulBuilder(
             builder: (context, setLocal) {
               final ids = rooms.map(_roomId).where((id) => id.isNotEmpty).toSet();
               if (!ids.contains(selectedId) && ids.isNotEmpty) {
@@ -605,29 +664,34 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
             },
           ),
         );
-        if (picked == null || !mounted) return;
-        room = picked;
-      }
+      if (picked == null || !mounted) return;
+      room = picked;
+    }
 
-      if (!mounted) return;
-      final saved = await showAdminEditRoomDialog(
-        context,
-        room: room,
-        categoryDefaults: category,
-      );
-      if (!mounted) return;
-      if (saved) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Room updated.')),
-        );
-      }
-    } on DioException catch (e) {
+    final roomId = _roomId(room);
+    if (roomId.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
+        const SnackBar(
+          content: Text('Room id missing. Pull to refresh and try again.'),
+        ),
       );
-    } finally {
-      if (mounted) setState(() => _busy = false);
+      return;
+    }
+
+    final detailed = await _fetchRoomForEdit(roomId);
+    if (!mounted) return;
+    final saved = await showAdminEditRoomDialog(
+      context,
+      room: detailed ?? room,
+      categoryDefaults: category,
+    );
+    if (!mounted) return;
+    if (saved) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Room updated.')),
+      );
+      await _load();
     }
   }
 
@@ -732,9 +796,11 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
   }
 
   Widget _buildBody() {
-    if (_loading) return const AppLoadingView();
+    if (_loading) {
+      return appScrollableLoading(onRefresh: _load);
+    }
     if (_error != null) {
-      return AppErrorView(message: _error!, onRetry: _load);
+      return appScrollableError(message: _error!, onRetry: _load, onRefresh: _load);
     }
 
     return RefreshIndicator(

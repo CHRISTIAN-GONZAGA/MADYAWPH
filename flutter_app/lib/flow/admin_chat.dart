@@ -167,17 +167,18 @@ class _AdminChatInboxScreenState extends State<AdminChatInboxScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const AppLoadingView();
+    if (_loading) {
+      return appScrollableLoading(onRefresh: _load);
+    }
     if (_error != null) {
-      return AppErrorView(message: _error!, onRetry: _load);
+      return appScrollableError(message: _error!, onRetry: _load, onRefresh: _load);
     }
     if (_threads.isEmpty) {
-      return Center(
-        child: Text(
-          widget.staffOnly
-              ? 'No staff messages yet.'
-              : 'No guest messages yet.',
-        ),
+      return appScrollableEmpty(
+        message: widget.staffOnly
+            ? 'No staff messages yet.'
+            : 'No guest messages yet.',
+        onRefresh: _load,
       );
     }
     return RefreshIndicator(

@@ -29,6 +29,7 @@ use App\Models\Hotel;
 use App\Models\HotelCredit;
 use App\Models\PersonalAccessToken;
 use App\Models\Room;
+use App\Models\RoomCategory;
 use App\Models\RoomTransfer;
 use App\Models\StayReview;
 use App\Models\SystemSetting;
@@ -1827,9 +1828,29 @@ Route::put('/staff/profile', function (Request $request) {
 
 // Admin room list with access codes (admin-only visibility)
 Route::get('/admin/rooms', function (Request $request) {
+    $validated = $request->validate([
+        'category_id' => ['nullable', 'string', 'max:64'],
+    ]);
     $hotelId = (string) $request->user()->hotel_id;
-    $rooms = Room::withoutGlobalScopes()
-        ->where('hotel_id', $hotelId)
+    $query = Room::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId);
+    $categoryId = trim((string) ($validated['category_id'] ?? ''));
+    if ($categoryId !== '') {
+        $category = RoomCategory::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where(function ($q) use ($categoryId) {
+                $q->where('id', $categoryId)->orWhere('_id', $categoryId);
+            })
+            ->first();
+        $categoryName = $category ? trim((string) ($category->name ?? '')) : '';
+        $query->where(function ($q) use ($categoryId, $categoryName) {
+            $q->where('category_id', $categoryId);
+            if ($categoryName !== '') {
+                $q->orWhere('category_name', $categoryName);
+            }
+        });
+    }
+    $rooms = $query
         ->orderBy('room_number')
         ->get()
         ->map(function ($room) {

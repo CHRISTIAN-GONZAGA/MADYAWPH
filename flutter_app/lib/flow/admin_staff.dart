@@ -148,11 +148,16 @@ class _AdminStaffScreenState extends State<AdminStaffScreen> {
   }
 
   Widget _buildBody() {
-    if (_loading) return const AppLoadingView();
-    if (_error != null) return AppErrorView(message: _error!, onRetry: _load);
+    if (_loading) {
+      return appScrollableLoading(onRefresh: _load);
+    }
+    if (_error != null) {
+      return appScrollableError(message: _error!, onRetry: _load, onRefresh: _load);
+    }
     if (_rows.isEmpty) {
-      return const Center(
-        child: Text('No staff yet. Tap Add staff to create an account.'),
+      return appScrollableEmpty(
+        message: 'No staff yet. Tap Add staff to create an account.',
+        onRefresh: _load,
       );
     }
     return RefreshIndicator(

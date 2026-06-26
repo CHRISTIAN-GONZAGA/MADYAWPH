@@ -170,8 +170,17 @@ Future<bool> showAdminEditRoomDialog(
   required Map<String, dynamic> room,
   Map<String, dynamic>? categoryDefaults,
 }) async {
-  final roomId = (room['id'] ?? '').toString();
-  if (roomId.isEmpty) return false;
+  final roomId = (room['id'] ?? room['_id'] ?? '').toString().trim();
+  if (roomId.isEmpty) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot edit this room — id is missing. Refresh and try again.'),
+        ),
+      );
+    }
+    return false;
+  }
 
   final cat = categoryDefaults ?? const <String, dynamic>{};
   final nameCtrl = TextEditingController(
@@ -205,6 +214,8 @@ Future<bool> showAdminEditRoomDialog(
 
   final payload = await showDialog<Map<String, dynamic>>(
     context: context,
+    useRootNavigator: true,
+    barrierDismissible: false,
     builder: (context) => StatefulBuilder(
       builder: (context, setLocal) => Dialog(
         insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
@@ -427,6 +438,8 @@ Future<bool> showAdminCreateRoomDialog(
 
   final payload = await showDialog<Map<String, dynamic>>(
     context: context,
+    useRootNavigator: true,
+    barrierDismissible: false,
     builder: (context) => StatefulBuilder(
       builder: (context, setLocal) => Dialog(
         insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 28),

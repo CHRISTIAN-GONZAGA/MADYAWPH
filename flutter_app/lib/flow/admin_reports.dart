@@ -57,6 +57,21 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     return null;
   }
 
+  Future<Map<String, dynamic>?> _safeReportGet(
+    String path, {
+    Map<String, dynamic>? queryParameters,
+  }) async {
+    try {
+      final res = await portalDio().get<Map<String, dynamic>>(
+        path,
+        queryParameters: queryParameters,
+      );
+      return res.data;
+    } on DioException {
+      return null;
+    }
+  }
+
   Future<void> _load({bool silent = false}) async {
     if (!silent || _profitOverview == null) {
       setState(() {
@@ -79,29 +94,32 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         'from': _fmtDay(monthStart),
         'to': _fmtDay(monthEnd),
       };
-      final results = await Future.wait([
-        portalDio().get<Map<String, dynamic>>(
-          '/reports/sales/timeseries',
-          queryParameters: qp,
-        ),
-        portalDio().get<Map<String, dynamic>>(
-          '/reports/activity/timeline',
-          queryParameters: qp,
-        ),
-        portalDio().get<Map<String, dynamic>>('/reports/transfers'),
-        portalDio().get<Map<String, dynamic>>('/reports/tasks/performance'),
-        portalDio().get<Map<String, dynamic>>('/reports/room-occupancy'),
-        portalDio().get<Map<String, dynamic>>(
-          '/reports/profit-overview',
-          queryParameters: {'anchor_date': _fmtDay(_selectedDay)},
-        ),
-        portalDio().get<Map<String, dynamic>>(
-          '/reports/reseller-payments/timeseries',
-          queryParameters: commissionQp,
-        ),
-      ]);
+      final failures = <String>[];
+
+      final sales = await _safeReportGet('/reports/sales/timeseries', queryParameters: qp);
+      if (sales == null) failures.add('sales');
+      final timeline =
+          await _safeReportGet('/reports/activity/timeline', queryParameters: qp);
+      if (timeline == null) failures.add('activity');
+      final transfers = await _safeReportGet('/reports/transfers');
+      if (transfers == null) failures.add('transfers');
+      final tasks = await _safeReportGet('/reports/tasks/performance');
+      if (tasks == null) failures.add('tasks');
+      final occupancy = await _safeReportGet('/reports/room-occupancy');
+      if (occupancy == null) failures.add('occupancy');
+      final profitOverview = await _safeReportGet(
+        '/reports/profit-overview',
+        queryParameters: {'anchor_date': _fmtDay(_selectedDay)},
+      );
+      if (profitOverview == null) failures.add('profit overview');
+      final resellerPayments = await _safeReportGet(
+        '/reports/reseller-payments/timeseries',
+        queryParameters: commissionQp,
+      );
+      if (resellerPayments == null) failures.add('reseller commissions');
+
       final commissionPoints =
-          (results[6].data?['points'] as List<dynamic>?) ?? const [];
+          (resellerPayments?['points'] as List<dynamic>?) ?? const [];
       final byDay = <String, double>{};
       for (final raw in commissionPoints) {
         if (raw is! Map) continue;
@@ -111,23 +129,25 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       }
       if (!mounted) return;
       setState(() {
-        _sales = results[0].data;
-        _timeline = results[1].data;
-        _transfers = results[2].data;
-        _tasks = results[3].data;
-        _occupancy = results[4].data;
-        _profitOverview = results[5].data;
-        _resellerPayments = results[6].data;
+        if (sales != null) _sales = sales;
+        if (timeline != null) _timeline = timeline;
+        if (transfers != null) _transfers = transfers;
+        if (tasks != null) _tasks = tasks;
+        if (occupancy != null) _occupancy = occupancy;
+        if (profitOverview != null) _profitOverview = profitOverview;
+        if (resellerPayments != null) _resellerPayments = resellerPayments;
         _commissionByDay = byDay;
         _loading = false;
         _refreshing = false;
-      });
-    } on DioException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = dioErrorMessage(e);
-        _loading = false;
-        _refreshing = false;
+        if (failures.isNotEmpty && _profitOverview == null && _sales == null) {
+          _error =
+              'Could not load reports (${failures.join(', ')}). Pull to retry.';
+        } else if (failures.isNotEmpty) {
+          _error =
+              'Some report sections failed to load (${failures.join(', ')}). Showing available data.';
+        } else {
+          _error = null;
+        }
       });
     } catch (e) {
       if (!mounted) return;
@@ -243,6 +263,23 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       child: ListView(
         padding: EdgeInsets.fromLTRB(16, widget.embedded ? 8 : 16, 16, 32),
         children: [
+          if (_error != null &&
+              (_profitOverview != null || _sales != null)) ...[
+            Card(
+              color: scheme.errorContainer.withValues(alpha: 0.35),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(
+                  _error!,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onErrorContainer,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           AppSectionCard(
             child: Column(
               mainAxisSize: MainAxisSize.min,

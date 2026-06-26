@@ -251,18 +251,14 @@ class _AdminTasksScreenState extends State<AdminTasksScreen> {
         label: const Text('Assign task'),
       ),
       body: _loading
-          ? const AppLoadingView()
+          ? appScrollableLoading(onRefresh: _load)
           : _error != null
-              ? AppErrorView(message: _error!, onRetry: _load)
+              ? appScrollableError(message: _error!, onRetry: _load, onRefresh: _load)
               : _tasks.isEmpty
-                  ? const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Text(
+                  ? appScrollableEmpty(
+                      message:
                           'No tasks yet. Tap Assign task to give work to your staff team.',
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
+                      onRefresh: _load,
                     )
                   : RefreshIndicator(
                       onRefresh: _load,

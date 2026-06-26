@@ -306,9 +306,11 @@ class _AdminRoomsScreenState extends State<AdminRoomsScreen> {
   }
 
   Widget _buildBody() {
-    if (_loading) return const AppLoadingView();
+    if (_loading) {
+      return appScrollableLoading(onRefresh: _load);
+    }
     if (_error != null) {
-      return AppErrorView(message: _error!, onRetry: _load);
+      return appScrollableError(message: _error!, onRetry: _load, onRefresh: _load);
     }
 
     final sections = _roomSections();
