@@ -5,11 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../dio_client.dart';
-import '../widgets/app_scaffold.dart';
 import '../widgets/app_state_views.dart';
 import '../widgets/app_overlay.dart';
 import '../widgets/chat_attachment.dart';
 import 'admin/admin_dashboard_models.dart';
+import 'admin/widgets/admin_opaque_scaffold.dart';
+import 'admin/widgets/admin_room_edit_screen.dart';
 import 'admin/widgets/admin_room_editor.dart';
 import 'admin/widgets/hourly_price_picker.dart';
 
@@ -61,7 +62,9 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
   }
 
   String _categoryId(Map<String, dynamic> category) =>
-      (category['id'] ?? category['_id'] ?? '').toString().trim();
+      AdminDashboardModels.normalizeRoomIdString(
+        category['id'] ?? category['_id'],
+      );
 
   String _roomId(Map<String, dynamic> room) =>
       AdminDashboardModels.roomIdOf(room);
@@ -71,16 +74,17 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     Map<String, dynamic> category,
   ) {
     final catId = _categoryId(category);
-    final roomCatId = (room['category_id'] ?? room['categoryId'] ?? '')
-        .toString()
-        .trim();
+    final roomCatId = AdminDashboardModels.normalizeRoomIdString(
+      room['category_id'] ?? room['categoryId'],
+    );
     if (catId.isNotEmpty && roomCatId.isNotEmpty && roomCatId == catId) {
       return true;
     }
     final nested = room['category'];
     if (nested is Map) {
-      final nestedId =
-          (nested['id'] ?? nested['_id'] ?? '').toString().trim();
+      final nestedId = AdminDashboardModels.normalizeRoomIdString(
+        nested['id'] ?? nested['_id'],
+      );
       if (catId.isNotEmpty && nestedId.isNotEmpty && nestedId == catId) {
         return true;
       }
@@ -108,21 +112,22 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     final catId = _categoryId(category);
     final params =
         catId.isNotEmpty ? <String, dynamic>{'category_id': catId} : null;
-    final res = await portalDio().get<Map<String, dynamic>>(
-      '/admin/rooms',
-      queryParameters: params,
-    );
-    final fromApi = _parseRoomRows(res.data?['data']);
-    if (fromApi.isNotEmpty) {
-      return fromApi
+
+    List<Map<String, dynamic>> filterRooms(List<Map<String, dynamic>> raw) {
+      return raw
           .where((r) => _roomBelongsToCategory(r, category))
           .toList();
     }
 
+    final res = await portalDio().get<Map<String, dynamic>>(
+      '/admin/rooms',
+      queryParameters: params,
+    );
+    final filtered = filterRooms(_parseRoomRows(res.data?['data']));
+    if (filtered.isNotEmpty) return filtered;
+
     final fallback = await portalDio().get<Map<String, dynamic>>('/admin/rooms');
-    return _parseRoomRows(fallback.data?['data'])
-        .where((r) => _roomBelongsToCategory(r, category))
-        .toList();
+    return filterRooms(_parseRoomRows(fallback.data?['data']));
   }
 
   Future<Map<String, dynamic>?> _fetchRoomForEdit(String roomId) async {
@@ -613,60 +618,16 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     Map<String, dynamic> room = rooms.first;
     if (rooms.length > 1) {
       if (!mounted) return;
-      var selectedId = _roomId(room);
-      final picked = await showAppOverlayDialog<Map<String, dynamic>>(
-        context: context,
-        barrierDismissible: true,
-        builder: (context) => StatefulBuilder(
-            builder: (context, setLocal) {
-              final ids = rooms.map(_roomId).where((id) => id.isNotEmpty).toSet();
-              if (!ids.contains(selectedId) && ids.isNotEmpty) {
-                selectedId = ids.first;
-              }
-              return AlertDialog(
-                title: const Text('Select room to edit'),
-                content: DropdownButtonFormField<String>(
-                  key: ValueKey<String>(selectedId),
-                  initialValue: selectedId.isEmpty ? null : selectedId,
-                  decoration: const InputDecoration(
-                    labelText: 'Room',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: rooms
-                      .where((r) => _roomId(r).isNotEmpty)
-                      .map((r) {
-                    final id = _roomId(r);
-                    final no = (r['room_number'] ?? '').toString();
-                    final floor = (r['floor'] as num?)?.toInt();
-                    final floorLabel =
-                        floor != null && floor > 0 ? ' · Floor $floor' : '';
-                    return DropdownMenuItem(
-                      value: id,
-                      child: Text('Room $no$floorLabel'),
-                    );
-                  }).toList(),
-                  onChanged: (v) => setLocal(() => selectedId = v ?? selectedId),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel'),
-                  ),
-                  FilledButton(
-                    onPressed: () {
-                      final match = rooms.firstWhere(
-                        (r) => _roomId(r) == selectedId,
-                        orElse: () => rooms.first,
-                      );
-                      Navigator.pop(context, match);
-                    },
-                    child: const Text('Continue'),
-                  ),
-                ],
-              );
-            },
-          ),
-        );
+      final catName =
+          (category['name'] ?? category['category_name'] ?? 'Category')
+              .toString();
+      final picked = await pushAdminFullScreen<Map<String, dynamic>>(
+        context,
+        builder: (_) => AdminRoomPickerScreen(
+          title: 'Edit room · $catName',
+          rooms: rooms,
+        ),
+      );
       if (picked == null || !mounted) return;
       room = picked;
     }
@@ -793,7 +754,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return AppScaffold(
+    return AdminOpaqueScaffold(
       appBar: AppBar(
         title: const Text('Room categories'),
         actions: [

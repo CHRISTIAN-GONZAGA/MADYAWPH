@@ -8,6 +8,7 @@ import '../../../dio_client.dart';
 import '../../../widgets/app_overlay.dart';
 import '../../../widgets/chat_attachment.dart';
 import '../admin_dashboard_models.dart';
+import 'admin_room_edit_screen.dart';
 import 'hourly_billing.dart';
 import 'hourly_price_picker.dart';
 
@@ -229,239 +230,25 @@ Future<bool> showAdminEditRoomDialog(
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Cannot edit this room — id is missing. Refresh and try again.'),
+          content: Text(
+            'Cannot edit this room — id is missing. Refresh and try again.',
+          ),
         ),
       );
     }
     return false;
   }
-
-  final cat = categoryDefaults ?? const <String, dynamic>{};
-  final nameCtrl = TextEditingController(
-    text: (room['display_name'] ?? room['name'] ?? '').toString(),
-  );
-  final roomNoCtrl = TextEditingController(
-    text: (room['room_number'] ?? '').toString(),
-  );
-  var roomType = _normalizeRoomChoice(room['room_type'], 'Single', _roomTypeOptions);
-  var roomBillingMode =
-      (room['billing_mode'] ?? cat['billing_mode'] ?? 'nightly').toString();
-  var roomPricePerNight =
-      (room['price_per_night'] as num?)?.toDouble() ??
-      (cat['default_price'] as num?)?.toDouble() ??
-      0.0;
-  var roomPricePerBlock = (room['price_per_block'] as num?)?.toDouble() ??
-      (cat['price_per_block'] as num?)?.toDouble() ??
-      roomPricePerNight;
-  var roomBlockHours = (room['block_hours'] as num?)?.toInt() ??
-      (cat['block_hours'] as num?)?.toInt() ??
-      3;
-  var status = _normalizeRoomChoice(
-    room['status'],
-    'available',
-    _roomStatusOptions,
-  );
-  final floorCount = (cat['floor_count'] as num?)?.toInt() ?? 1;
-  var selectedFloor = (room['floor'] as num?)?.toInt() ?? 1;
-  if (selectedFloor < 1) selectedFloor = 1;
-  final nightlyCtrl = TextEditingController(text: '$roomPricePerNight');
-  final blockPriceCtrl = TextEditingController(text: '$roomPricePerBlock');
-  final existingImageUrl = (room['image_url'] ?? '').toString().trim();
-  XFile? pickedImage;
-  var removeExistingImage = false;
 
   if (!context.mounted) return false;
 
-  final payload = await showAppOverlayDialog<Map<String, dynamic>>(
-    context: context,
-    barrierDismissible: true,
-    builder: (context) => StatefulBuilder(
-      builder: (context, setLocal) => Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 480),
-          child: Padding(
-            padding: const EdgeInsets.all(22),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Edit room ${roomNoCtrl.text.trim().isEmpty ? '' : roomNoCtrl.text.trim()}',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Update photo, rates, and room details shown to guests.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                  ),
-                  const SizedBox(height: 18),
-                  AdminRoomFloorField(
-                    floorCount: floorCount,
-                    selectedFloor: selectedFloor,
-                    onChanged: (v) => setLocal(() => selectedFloor = v),
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: nameCtrl,
-                    textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      labelText: 'Display name',
-                      prefixIcon: Icon(Icons.badge_outlined),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: roomNoCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Room number',
-                      prefixIcon: Icon(Icons.door_front_door_outlined),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  DropdownButtonFormField<String>(
-                    key: ValueKey<String>(roomType),
-                    initialValue: roomType,
-                    decoration: const InputDecoration(labelText: 'Room type'),
-                    items: const [
-                      DropdownMenuItem(value: 'Single', child: Text('Single')),
-                      DropdownMenuItem(value: 'Double', child: Text('Double')),
-                      DropdownMenuItem(value: 'Suite', child: Text('Suite')),
-                      DropdownMenuItem(value: 'Deluxe', child: Text('Deluxe')),
-                    ],
-                    onChanged: (v) => setLocal(() => roomType = v ?? roomType),
-                  ),
-                  const SizedBox(height: 14),
-                  RoomPricingFields(
-                    billingMode: roomBillingMode,
-                    pricePerNight: roomPricePerNight,
-                    pricePerBlock: roomPricePerBlock,
-                    blockHours: roomBlockHours,
-                    showExtraHourRate: false,
-                    nightlyController: nightlyCtrl,
-                    blockPriceController: blockPriceCtrl,
-                    onChanged: ({
-                      required String billingMode,
-                      required double pricePerNight,
-                      required double pricePerBlock,
-                      required int blockHours,
-                      required double pricePerExtraHour,
-                    }) {
-                      setLocal(() {
-                        roomBillingMode = billingMode;
-                        roomPricePerNight = pricePerNight;
-                        roomPricePerBlock = pricePerBlock;
-                        roomBlockHours = blockHours;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 14),
-                  DropdownButtonFormField<String>(
-                    key: ValueKey<String>(status),
-                    initialValue: status,
-                    decoration: const InputDecoration(labelText: 'Status'),
-                    items: const [
-                      DropdownMenuItem(
-                          value: 'available', child: Text('Available')),
-                      DropdownMenuItem(value: 'booked', child: Text('Booked')),
-                      DropdownMenuItem(
-                          value: 'checked_in', child: Text('Checked in')),
-                      DropdownMenuItem(
-                          value: 'checked_out', child: Text('Checked out')),
-                      DropdownMenuItem(
-                          value: 'maintenance', child: Text('Maintenance')),
-                      DropdownMenuItem(
-                          value: 'reserved', child: Text('Reserved')),
-                    ],
-                    onChanged: (v) => setLocal(() => status = v ?? status),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Room photo',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                  const SizedBox(height: 8),
-                  AdminRoomGalleryPicker(
-                    pickedImage: pickedImage,
-                    existingImageUrl:
-                        removeExistingImage ? null : existingImageUrl,
-                    onPick: () async {
-                      final file =
-                          await ChatAttachment.pickRoomImageFromGallery(context);
-                      if (file != null) {
-                        setLocal(() {
-                          pickedImage = file;
-                          removeExistingImage = false;
-                        });
-                      }
-                    },
-                    onClearPicked: () => setLocal(() => pickedImage = null),
-                    onClearExisting: existingImageUrl.isEmpty
-                        ? null
-                        : () => setLocal(() {
-                              removeExistingImage = true;
-                              pickedImage = null;
-                            }),
-                  ),
-                  const SizedBox(height: 22),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Cancel'),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton(
-                        onPressed: () => Navigator.pop(context, {
-                          'display_name': nameCtrl.text.trim(),
-                          'room_number': roomNoCtrl.text.trim(),
-                          'floor': selectedFloor,
-                          'room_type': roomType,
-                          'billing_mode': roomBillingMode,
-                          'price_per_night': roomPricePerNight,
-                          'price_per_block': roomPricePerBlock,
-                          'block_hours': roomBlockHours,
-                          'status': status,
-                          if (removeExistingImage) 'remove_image': true,
-                          '__image': pickedImage,
-                        }),
-                        child: const Text('Save'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
+  final saved = await pushAdminFullScreen<bool>(
+    context,
+    builder: (_) => AdminRoomEditScreen(
+      room: room,
+      categoryDefaults: categoryDefaults,
     ),
   );
-
-  nameCtrl.dispose();
-  roomNoCtrl.dispose();
-  nightlyCtrl.dispose();
-  blockPriceCtrl.dispose();
-  if (payload == null) return false;
-
-  final image = payload.remove('__image') as XFile?;
-  try {
-    await putPortalMultipart('/rooms/$roomId', payload, image);
-    return true;
-  } on DioException catch (e) {
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
-    }
-    return false;
-  }
+  return saved == true;
 }
 
 /// Create a new room under [category].
