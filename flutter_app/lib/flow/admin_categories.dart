@@ -9,6 +9,7 @@ import '../widgets/app_state_views.dart';
 import '../widgets/app_overlay.dart';
 import '../widgets/chat_attachment.dart';
 import 'admin/admin_dashboard_models.dart';
+import 'admin/widgets/admin_dev_error_panel.dart';
 import 'admin/widgets/admin_opaque_scaffold.dart';
 import 'admin/widgets/admin_room_edit_screen.dart';
 import 'admin/widgets/admin_room_editor.dart';
@@ -616,17 +617,15 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     }
 
     Map<String, dynamic> room = rooms.first;
+    final catName =
+        (category['name'] ?? category['category_name'] ?? 'Category')
+            .toString();
     if (rooms.length > 1) {
       if (!mounted) return;
-      final catName =
-          (category['name'] ?? category['category_name'] ?? 'Category')
-              .toString();
-      final picked = await pushAdminFullScreen<Map<String, dynamic>>(
+      final picked = await showAdminRoomPickerSheet(
         context,
-        builder: (_) => AdminRoomPickerScreen(
-          title: 'Edit room · $catName',
-          rooms: rooms,
-        ),
+        categoryLabel: catName,
+        rooms: rooms,
       );
       if (picked == null || !mounted) return;
       room = picked;
@@ -643,27 +642,43 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
       return;
     }
 
-    final detailed = await _fetchRoomForEdit(roomId);
-    final roomForEdit = normalizeAdminRoomForEdit(
-      Map<String, dynamic>.from(detailed ?? room),
-    );
-    if (_roomId(roomForEdit).isEmpty) {
-      roomForEdit['id'] = roomId;
-    }
-
-    if (!mounted) return;
-
-    final saved = await showAdminEditRoomDialog(
-      context,
-      room: roomForEdit,
-      categoryDefaults: category,
-    );
-    if (!mounted) return;
-    if (saved) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Room updated.')),
+    try {
+      final detailed = await _fetchRoomForEdit(roomId);
+      final roomForEdit = normalizeAdminRoomForEdit(
+        Map<String, dynamic>.from(detailed ?? room),
       );
-      await _load();
+      if (_roomId(roomForEdit).isEmpty) {
+        roomForEdit['id'] = roomId;
+      }
+
+      if (!mounted) return;
+
+      final saved = await showAdminEditRoomDialog(
+        context,
+        room: roomForEdit,
+        categoryDefaults: category,
+        categoryLabel: catName,
+      );
+      if (!mounted) return;
+      if (saved) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Room updated.')),
+        );
+        await _load();
+      }
+    } catch (e, stack) {
+      if (!mounted) return;
+      await pushAdminFullScreen<void>(
+        context,
+        builder: (_) => AdminOpaqueScaffold(
+          appBar: AppBar(title: const Text('Edit room failed')),
+          body: AdminDevErrorPanel(
+            title: 'Could not open room editor',
+            message: AdminDevErrorPanel.formatError(e, stack),
+            hint: 'Copy this error and share it with your developer.',
+          ),
+        ),
+      );
     }
   }
 

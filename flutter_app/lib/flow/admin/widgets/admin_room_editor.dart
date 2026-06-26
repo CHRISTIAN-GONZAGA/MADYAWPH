@@ -9,33 +9,19 @@ import '../../../widgets/app_overlay.dart';
 import '../../../widgets/chat_attachment.dart';
 import '../admin_dashboard_models.dart';
 import 'admin_room_edit_screen.dart';
+import 'admin_room_form_constants.dart';
 import 'hourly_billing.dart';
 import 'hourly_price_picker.dart';
 
-const _roomTypeOptions = ['Single', 'Double', 'Suite', 'Deluxe'];
-const _roomStatusOptions = [
-  'available',
-  'booked',
-  'checked_in',
-  'checked_out',
-  'maintenance',
-  'reserved',
-];
+const _roomTypeOptions = adminRoomTypeOptions;
+const _roomStatusOptions = adminRoomStatusOptions;
 
 String _normalizeRoomChoice(
   dynamic raw,
   String fallback,
   List<String> allowed,
-) {
-  final v = (raw is Map ? (raw['value'] ?? raw['name'] ?? '') : raw)
-      .toString()
-      .trim();
-  if (v.isEmpty) return fallback;
-  for (final option in allowed) {
-    if (option.toLowerCase() == v.toLowerCase()) return option;
-  }
-  return fallback;
-}
+) =>
+    normalizeAdminRoomChoice(raw, fallback, allowed);
 
 /// Flattens API/Mongo room maps so edit dialogs always receive usable fields.
 Map<String, dynamic> normalizeAdminRoomForEdit(Map<String, dynamic> raw) {
@@ -223,6 +209,7 @@ Future<bool> showAdminEditRoomDialog(
   BuildContext context, {
   required Map<String, dynamic> room,
   Map<String, dynamic>? categoryDefaults,
+  String? categoryLabel,
 }) async {
   room = normalizeAdminRoomForEdit(room);
   final roomId = AdminDashboardModels.roomIdOf(room);
@@ -246,6 +233,7 @@ Future<bool> showAdminEditRoomDialog(
     builder: (_) => AdminRoomEditScreen(
       room: room,
       categoryDefaults: categoryDefaults,
+      categoryLabel: categoryLabel,
     ),
   );
   return saved == true;
