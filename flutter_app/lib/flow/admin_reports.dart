@@ -8,6 +8,7 @@ import '../widgets/app_card.dart';
 import '../widgets/app_state_views.dart';
 import '../widgets/admin_month_calendar.dart';
 import 'admin/widgets/admin_dev_error_panel.dart';
+import 'admin/widgets/admin_reports_ui.dart';
 
 /// Revenue and operations charts with daily / weekly / monthly / annual granularity.
 class AdminReportsScreen extends StatefulWidget {
@@ -527,143 +528,130 @@ ${subtitleLabel(point)}
             ),
             const SizedBox(height: 12),
           ],
-          AppSectionCard(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Commission calendar',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Tap a date to view payouts for that day. Daily totals reset each calendar day.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                ),
-                const SizedBox(height: 12),
-                AdminMonthCalendar(
-                  focusedMonth: _commissionMonth,
-                  selectedDay: _selectedDay,
-                  hasEvent: (d) => (_commissionByDay[_fmtDay(d)] ?? 0) > 0,
-                  eventCount: (d) =>
-                      (_commissionByDay[_fmtDay(d)] ?? 0).round(),
-                  onDaySelected: (d) {
-                    setState(() => _selectedDay = d);
-                    _load(silent: true);
-                  },
-                  onMonthChanged: (m) {
-                    setState(() => _commissionMonth = m);
-                    _load(silent: true);
-                  },
-                ),
-              ],
+          if (!widget.embedded)
+            ReportsHeroHeader(
+              selectedDateLabel: isToday
+                  ? 'Today · ${_fmtDay(_selectedDay)}'
+                  : _fmtDay(_selectedDay),
+              onRefresh: () => _load(silent: true),
+              isRefreshing: _refreshing,
             ),
-          ),
-          const SizedBox(height: 16),
-          AppSectionCard(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (!widget.embedded)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Text(
-                      'Financial overview',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
-                    ),
-                  ),
-                Text(
-                  isToday
-                      ? 'Selected: Today (${_fmtDay(_selectedDay)})'
-                      : 'Selected: ${_fmtDay(_selectedDay)}',
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: scheme.primary,
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+          if (!widget.embedded) const SizedBox(height: 16),
+          ReportsSection(
+            title: 'Financial overview',
+            subtitle: isToday
+                ? 'Today (${_fmtDay(_selectedDay)})'
+                : 'Selected: ${_fmtDay(_selectedDay)}',
+            icon: Icons.account_balance_wallet_outlined,
+            accent: scheme.primary,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final tileWidth = (constraints.maxWidth - 12) / 2;
+                return Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
                   children: [
-                    _ReportPeriodButton(
-                      label: 'Daily',
-                      subtitle: _fmtDay(_selectedDay),
-                      onTap: () => _openFinancePeriod(
-                        context,
-                        buttonLabel: 'Daily',
-                        periodLabel: isToday
-                            ? 'Daily (today — ${_fmtDay(_selectedDay)})'
-                            : 'Daily (${_fmtDay(_selectedDay)})',
-                        data: overview['daily'] as Map<String, dynamic>?,
+                    SizedBox(
+                      width: tileWidth,
+                      child: ReportsPeriodTile(
+                        label: 'Daily',
+                        subtitle: _fmtDay(_selectedDay),
+                        icon: Icons.today_outlined,
+                        accent: scheme.primary,
+                        onTap: () => _openFinancePeriod(
+                          context,
+                          buttonLabel: 'Daily',
+                          periodLabel: isToday
+                              ? 'Daily (today — ${_fmtDay(_selectedDay)})'
+                              : 'Daily (${_fmtDay(_selectedDay)})',
+                          data: overview['daily'] as Map<String, dynamic>?,
+                        ),
                       ),
                     ),
-                    _ReportPeriodButton(
-                      label: 'Weekly',
-                      subtitle: 'This week',
-                      onTap: () => _openFinancePeriod(
-                        context,
-                        buttonLabel: 'Weekly',
-                        periodLabel: 'This week',
-                        data: overview['weekly'] as Map<String, dynamic>?,
+                    SizedBox(
+                      width: tileWidth,
+                      child: ReportsPeriodTile(
+                        label: 'Weekly',
+                        subtitle: 'This week',
+                        icon: Icons.date_range_outlined,
+                        accent: scheme.tertiary,
+                        onTap: () => _openFinancePeriod(
+                          context,
+                          buttonLabel: 'Weekly',
+                          periodLabel: 'This week',
+                          data: overview['weekly'] as Map<String, dynamic>?,
+                        ),
                       ),
                     ),
-                    _ReportPeriodButton(
-                      label: 'Monthly',
-                      subtitle: 'This month',
-                      onTap: () => _openFinancePeriod(
-                        context,
-                        buttonLabel: 'Monthly',
-                        periodLabel: 'This month',
-                        data: overview['monthly'] as Map<String, dynamic>?,
+                    SizedBox(
+                      width: tileWidth,
+                      child: ReportsPeriodTile(
+                        label: 'Monthly',
+                        subtitle: 'This month',
+                        icon: Icons.calendar_month_outlined,
+                        accent: scheme.secondary,
+                        onTap: () => _openFinancePeriod(
+                          context,
+                          buttonLabel: 'Monthly',
+                          periodLabel: 'This month',
+                          data: overview['monthly'] as Map<String, dynamic>?,
+                        ),
                       ),
                     ),
-                    _ReportPeriodButton(
-                      label: 'Annual',
-                      subtitle: 'This year',
-                      onTap: () => _openFinancePeriod(
-                        context,
-                        buttonLabel: 'Annual',
-                        periodLabel: 'This year',
-                        data: overview['annual'] as Map<String, dynamic>?,
+                    SizedBox(
+                      width: tileWidth,
+                      child: ReportsPeriodTile(
+                        label: 'Annual',
+                        subtitle: 'This year',
+                        icon: Icons.event_note_outlined,
+                        accent: const Color(0xFF7C4DFF),
+                        onTap: () => _openFinancePeriod(
+                          context,
+                          buttonLabel: 'Annual',
+                          periodLabel: 'This year',
+                          data: overview['annual'] as Map<String, dynamic>?,
+                        ),
                       ),
                     ),
                   ],
-                ),
-              ],
+                );
+              },
             ),
           ),
           const SizedBox(height: 16),
-          AppSectionCard(
+          ReportsSection(
+            title: 'Commission calendar',
+            subtitle:
+                'Tap a date to view payouts. Daily totals reset each calendar day.',
+            icon: Icons.payments_outlined,
+            accent: scheme.tertiary,
+            child: AdminMonthCalendar(
+              focusedMonth: _commissionMonth,
+              selectedDay: _selectedDay,
+              hasEvent: (d) => (_commissionByDay[_fmtDay(d)] ?? 0) > 0,
+              eventCount: (d) => (_commissionByDay[_fmtDay(d)] ?? 0).round(),
+              onDaySelected: (d) {
+                setState(() => _selectedDay = d);
+                _load(silent: true);
+              },
+              onMonthChanged: (m) {
+                setState(() => _commissionMonth = m);
+                _load(silent: true);
+              },
+            ),
+          ),
+          const SizedBox(height: 16),
+          ReportsSection(
+            title: 'Reseller commissions',
+            subtitle:
+                'Selected day: ₱${_fmtNum(selectedDayCommission)} · Month: ₱${_fmtNum(_parseAmount(resellerTotals['total_paid']))}',
+            icon: Icons.handshake_outlined,
+            accent: const Color(0xFF00897B),
             child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'Reseller commissions (payouts)',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Selected day: ₱${_fmtNum(selectedDayCommission)}',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: scheme.primary,
-                      ),
-                ),
-                Text(
-                  'Month total: ₱${_fmtNum(_parseAmount(resellerTotals['total_paid']))} · '
-                  '${_parseInt(resellerTotals['payment_count'])} payment(s)',
+                  '${_parseInt(resellerTotals['payment_count'])} payment(s) this month',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
@@ -683,116 +671,110 @@ ${subtitleLabel(point)}
                 ],
                 if (_resellerSectionError == null) ...[
                   const SizedBox(height: 16),
-                _ResellerPeriodRow(
-                  label: isToday ? 'Today (selected)' : 'Selected day',
-                  data: _asStringKeyedMap(resellerOverview?['daily']),
-                ),
-                _ResellerPeriodRow(
-                  label: 'This week',
-                  data: _asStringKeyedMap(resellerOverview?['weekly']),
-                ),
-                _ResellerPeriodRow(
-                  label: 'This month',
-                  data: _asStringKeyedMap(resellerOverview?['monthly']),
-                ),
-                _ResellerPeriodRow(
-                  label: 'This year',
-                  data: _asStringKeyedMap(resellerOverview?['annual']),
-                ),
-                const SizedBox(height: 16),
-                const Divider(),
-                if (!widget.isFrontDesk) ...[
-                const SizedBox(height: 12),
-                Text(
-                  'Record reseller payout',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Log a cash or bank payout to a partner. This updates activity logs and the totals above.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                ),
-                const SizedBox(height: 12),
-                _ResellerCommissionRecordForm(
-                  onRecorded: () => _load(silent: true),
-                ),
-                ],
-                if (monthDaysWithPayouts.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  const Divider(),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Daily payouts this month',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
+                  _ResellerPeriodRow(
+                    label: isToday ? 'Today (selected)' : 'Selected day',
+                    data: _asStringKeyedMap(resellerOverview?['daily']),
                   ),
-                  const SizedBox(height: 8),
-                  ...monthDaysWithPayouts.map((raw) {
-                    final m = Map<String, dynamic>.from(raw as Map);
-                    final label = (m['period_label'] ?? '').toString();
-                    final paid = _parseAmount(m['total_paid']);
-                    final count = _parseInt(m['payment_count']);
-                    return _MetricLine(
-                      label: label.isEmpty ? 'Day' : label,
-                      value:
-                          '₱${_fmtNum(paid)} · $count payment${count == 1 ? '' : 's'}',
-                    );
-                  }),
-                ],
+                  _ResellerPeriodRow(
+                    label: 'This week',
+                    data: _asStringKeyedMap(resellerOverview?['weekly']),
+                  ),
+                  _ResellerPeriodRow(
+                    label: 'This month',
+                    data: _asStringKeyedMap(resellerOverview?['monthly']),
+                  ),
+                  _ResellerPeriodRow(
+                    label: 'This year',
+                    data: _asStringKeyedMap(resellerOverview?['annual']),
+                  ),
+                  if (!widget.isFrontDesk) ...[
+                    const SizedBox(height: 16),
+                    const Divider(),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Record reseller payout',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Log a cash or bank payout to a partner.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                    ),
+                    const SizedBox(height: 12),
+                    _ResellerCommissionRecordForm(
+                      onRecorded: () => _load(silent: true),
+                    ),
+                  ],
+                  if (monthDaysWithPayouts.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    const Divider(),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Daily payouts this month',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 8),
+                    ...monthDaysWithPayouts.map((raw) {
+                      final m = Map<String, dynamic>.from(raw as Map);
+                      final label = (m['period_label'] ?? '').toString();
+                      final paid = _parseAmount(m['total_paid']);
+                      final count = _parseInt(m['payment_count']);
+                      return _MetricLine(
+                        label: label.isEmpty ? 'Day' : label,
+                        value:
+                            '₱${_fmtNum(paid)} · $count payment${count == 1 ? '' : 's'}',
+                      );
+                    }),
+                  ],
                 ],
               ],
             ),
           ),
           const SizedBox(height: 16),
-          AppSectionCard(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Report period',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
+          ReportsSection(
+            title: 'Report period',
+            subtitle: reportFrom.isNotEmpty && reportTo.isNotEmpty
+                ? '$reportFrom → $reportTo'
+                : 'Choose how charts and KPIs are grouped',
+            icon: Icons.timeline_outlined,
+            accent: scheme.secondary,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SegmentedButton<String>(
+                segments: _granularityLabels.entries
+                    .map(
+                      (e) => ButtonSegment<String>(
+                        value: e.key,
+                        label: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Text(e.value),
+                        ),
                       ),
-                ),
-                const SizedBox(height: 12),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: SegmentedButton<String>(
-                    segments: _granularityLabels.entries
-                        .map(
-                          (e) => ButtonSegment<String>(
-                            value: e.key,
-                            label: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 4),
-                              child: Text(e.value),
-                            ),
-                          ),
-                        )
-                        .toList(),
-                    selected: {_granularity},
-                    onSelectionChanged: (s) {
-                      setState(() => _granularity = s.first);
-                      _load();
-                    },
-                  ),
-                ),
-              ],
+                    )
+                    .toList(),
+                selected: {_granularity},
+                onSelectionChanged: (s) {
+                  setState(() => _granularity = s.first);
+                  _load();
+                },
+              ),
             ),
           ),
           const SizedBox(height: 20),
           _KpiGrid(
             children: [
-              _KpiCard(
+              ReportsKpiTile(
                 label: 'Net revenue',
                 value:
                     '₱${_fmtNum(salesSummary['net_revenue'] ?? salesSummary['sales'] ?? salesSummary['gross_sales'] ?? 0)}',
                 icon: Icons.payments_outlined,
+                accent: scheme.primary,
                 onTap: () => _openKpiDetail(
                   context,
                   label: 'Net revenue',
@@ -802,40 +784,44 @@ ${subtitleLabel(point)}
                       'Report range: ${reportFrom.isEmpty ? '—' : reportFrom} to ${reportTo.isEmpty ? '—' : reportTo}',
                 ),
               ),
-              _KpiCard(
+              ReportsKpiTile(
                 label: 'Refunds',
                 value: '₱${_fmtNum(salesSummary['refunds'] ?? 0)}',
                 icon: Icons.money_off_outlined,
+                accent: scheme.error,
                 onTap: () => _openKpiDetail(
                   context,
                   label: 'Refunds',
                   value: '₱${_fmtNum(salesSummary['refunds'] ?? 0)}',
                 ),
               ),
-              _KpiCard(
+              ReportsKpiTile(
                 label: 'Bookings',
                 value: '${salesSummary['bookings'] ?? 0}',
                 icon: Icons.book_online_outlined,
+                accent: scheme.tertiary,
                 onTap: () => _openKpiDetail(
                   context,
                   label: 'Bookings',
                   value: '${salesSummary['bookings'] ?? 0}',
                 ),
               ),
-              _KpiCard(
+              ReportsKpiTile(
                 label: 'Room transfers',
                 value: '${transferSummary['count'] ?? 0}',
                 icon: Icons.swap_horiz_outlined,
+                accent: const Color(0xFF1976D2),
                 onTap: () => _openKpiDetail(
                   context,
                   label: 'Room transfers',
                   value: '${transferSummary['count'] ?? 0}',
                 ),
               ),
-              _KpiCard(
+              ReportsKpiTile(
                 label: 'Task completion',
                 value: '${taskSummary['completion_rate'] ?? 0}%',
                 icon: Icons.task_alt_outlined,
+                accent: const Color(0xFF00897B),
                 onTap: () => _openKpiDetail(
                   context,
                   label: 'Task completion',
@@ -845,10 +831,12 @@ ${subtitleLabel(point)}
             ],
           ),
           const SizedBox(height: 16),
-          _ClickableReportCard(
+          ReportsNavRow(
             title: 'Occupancy',
             subtitle:
                 'Booked ${_occupancy?['booked_rooms'] ?? 0} / ${_occupancy?['total_rooms'] ?? 0} rooms · ${_occupancy?['occupancy_rate'] ?? 0}% occupancy',
+            icon: Icons.hotel_outlined,
+            accent: scheme.primary,
             onTap: () {
               final occ = _occupancy ?? const {};
               final body = '''
@@ -885,8 +873,11 @@ Occupancy rate: ${occ['occupancy_rate'] ?? 0}%
             },
           ),
           const SizedBox(height: 20),
-          _ClickableSectionHeader(
+          ReportsNavRow(
             title: 'Revenue by period',
+            subtitle: 'Tap to open full report and print',
+            icon: Icons.trending_up_rounded,
+            accent: scheme.primary,
             onTap: () => _openTimeseriesReport(
               context,
               title: 'Revenue by period',
@@ -929,8 +920,11 @@ Occupancy rate: ${occ['occupancy_rate'] ?? 0}%
             },
           ),
           const SizedBox(height: 20),
-          _ClickableSectionHeader(
+          ReportsNavRow(
             title: 'Bookings count',
+            subtitle: 'Tap to open full report and print',
+            icon: Icons.confirmation_number_outlined,
+            accent: scheme.tertiary,
             onTap: () => _openTimeseriesReport(
               context,
               title: 'Bookings count',
@@ -970,8 +964,11 @@ Occupancy rate: ${occ['occupancy_rate'] ?? 0}%
             },
           ),
           const SizedBox(height: 20),
-          _ClickableSectionHeader(
+          ReportsNavRow(
             title: 'Activity volume',
+            subtitle: 'Tap to open full report and print',
+            icon: Icons.history_rounded,
+            accent: const Color(0xFF1976D2),
             onTap: () => _openTimeseriesReport(
               context,
               title: 'Activity volume',
@@ -1236,109 +1233,6 @@ class _ReportTimeseriesList extends StatelessWidget {
   }
 }
 
-class _ClickableSectionHeader extends StatelessWidget {
-  const _ClickableSectionHeader({
-    required this.title,
-    required this.onTap,
-  });
-
-  final String title;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: EdgeInsets.zero,
-      child: ListTile(
-        title: Text(
-          title,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
-        ),
-        subtitle: const Text('Tap to open full report and print'),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: onTap,
-      ),
-    );
-  }
-}
-
-class _ClickableReportCard extends StatelessWidget {
-  const _ClickableReportCard({
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: ListTile(
-        title: Text(
-          title,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
-        ),
-        subtitle: Text(subtitle),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: onTap,
-      ),
-    );
-  }
-}
-
-class _ReportPeriodButton extends StatelessWidget {
-  const _ReportPeriodButton({
-    required this.label,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  final String label;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return SizedBox(
-      width: 150,
-      child: OutlinedButton(
-        onPressed: onTap,
-        style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-          alignment: Alignment.centerLeft,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: scheme.primary,
-                  ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _ReportPrintableScreen extends StatelessWidget {
   const _ReportPrintableScreen({
     required this.title,
@@ -1354,6 +1248,7 @@ class _ReportPrintableScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return AppScaffold(
       appBar: AppBar(
         title: Text(title),
@@ -1368,9 +1263,26 @@ class _ReportPrintableScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          child,
+          DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  scheme.primaryContainer.withValues(alpha: 0.5),
+                  scheme.surfaceContainerLowest,
+                ],
+              ),
+              border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: child,
+            ),
+          ),
           const SizedBox(height: 24),
-          OutlinedButton.icon(
+          FilledButton.icon(
             onPressed: onPrint,
             icon: const Icon(Icons.print_outlined),
             label: const Text('Copy report for printing'),
@@ -1604,24 +1516,16 @@ class _PaidTransactionsPanelState extends State<_PaidTransactionsPanel> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Card(
-          margin: EdgeInsets.zero,
-          child: ListTile(
-            title: Text(
-              'Paid transactions',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-            ),
-            subtitle: Text(
-              _total > 0
-                  ? '$_total transaction(s) · tap to open and print'
-                  : 'No transactions in selected period',
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: widget.onOpenFull == null
-                ? null
-                : () {
+        ReportsNavRow(
+          title: 'Paid transactions',
+          subtitle: _total > 0
+              ? '$_total transaction(s) · tap to open and print'
+              : 'No transactions in selected period',
+          icon: Icons.receipt_long_outlined,
+          accent: Theme.of(context).colorScheme.primary,
+          onTap: widget.onOpenFull == null
+              ? () {}
+              : () {
                     final buf = StringBuffer()
                       ..writeln('Paid transactions')
                       ..writeln();
@@ -1645,7 +1549,6 @@ class _PaidTransactionsPanelState extends State<_PaidTransactionsPanel> {
                       listChild,
                     );
                   },
-          ),
         ),
         const SizedBox(height: 10),
         AppSectionCard(child: listChild),
@@ -2101,63 +2004,6 @@ class _ResellerCommissionRecordFormState
           label: const Text('Record payout'),
         ),
       ],
-    );
-  }
-}
-
-class _KpiCard extends StatelessWidget {
-  const _KpiCard({
-    required this.label,
-    required this.value,
-    required this.icon,
-    this.onTap,
-  });
-
-  final String label;
-  final String value;
-  final IconData icon;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return AppSectionCard(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(4),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(icon, color: scheme.primary, size: 22),
-                  if (onTap != null) ...[
-                    const Spacer(),
-                    Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
-                  ],
-                ],
-              ),
-              const SizedBox(height: 10),
-              Text(
-                label,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                value,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

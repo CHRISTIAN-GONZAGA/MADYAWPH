@@ -21,6 +21,11 @@ enum AdminRoomOpenMode {
 
 enum _AdminRoomAction { book, manage }
 
+typedef AdminRoomManageHandler = Future<void> Function(
+  BuildContext context,
+  Map<String, dynamic> room,
+);
+
 /// Centralized navigation for admin room tiles, sheets, walk-in, and manage-rooms.
 abstract final class AdminRoomNavigation {
   /// Tap on room tile — choose book or manage, unless [mode] is [AdminRoomOpenMode.manageOnly].
@@ -30,6 +35,7 @@ abstract final class AdminRoomNavigation {
     required Future<void> Function() onSuccess,
     BuildContext? sheetContext,
     AdminRoomOpenMode mode = AdminRoomOpenMode.bookOrManage,
+    AdminRoomManageHandler? onManageRoom,
   }) {
     return openRoom(
       context,
@@ -37,6 +43,7 @@ abstract final class AdminRoomNavigation {
       onSuccess: onSuccess,
       sheetContext: sheetContext,
       mode: mode,
+      onManageRoom: onManageRoom,
     );
   }
 
@@ -74,6 +81,7 @@ abstract final class AdminRoomNavigation {
     required Future<void> Function() onSuccess,
     BuildContext? sheetContext,
     AdminRoomOpenMode mode = AdminRoomOpenMode.bookOrManage,
+    AdminRoomManageHandler? onManageRoom,
   }) async {
     if (mode == AdminRoomOpenMode.manageOnly) {
       await openSummaryRoomDetail(
@@ -100,6 +108,7 @@ abstract final class AdminRoomNavigation {
         navContext,
         room: room,
         onSuccess: onSuccess,
+        onManageRoom: onManageRoom,
       );
     }
 
@@ -115,10 +124,12 @@ abstract final class AdminRoomNavigation {
     BuildContext context, {
     required Map<String, dynamic> room,
     required Future<void> Function() onSuccess,
+    AdminRoomManageHandler? onManageRoom,
   }) async {
     final roomNo = (room['room_number'] ?? 'Room').toString();
     final action = await showModalBottomSheet<_AdminRoomAction>(
       context: context,
+      useRootNavigator: true,
       showDragHandle: true,
       builder: (ctx) => SafeArea(
         child: Padding(
@@ -161,7 +172,11 @@ abstract final class AdminRoomNavigation {
     if (!context.mounted || action == null) return;
 
     if (action == _AdminRoomAction.manage) {
-      await AdminSummaryRoomActions.openRoomDetail(context, room);
+      if (onManageRoom != null) {
+        await onManageRoom(context, room);
+      } else {
+        await AdminSummaryRoomActions.openRoomDetail(context, room);
+      }
       await onSuccess();
       return;
     }

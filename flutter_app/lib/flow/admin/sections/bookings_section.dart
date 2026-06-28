@@ -397,8 +397,107 @@ class _BookingsSectionState extends State<BookingsSection>
     );
   }
 
+  void _showReservationDetails(Map<String, dynamic> r) {
+    final id = _resolveId(r);
+    final status = (r['status'] ?? '').toString();
+    final pending = status == 'pending_approval' || status == 'pending';
+
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text(
+              'Reservation ${r['external_reference'] ?? id}',
+              style: Theme.of(ctx).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 12),
+            _detailRow('Guest', '${r['guest_name']}'),
+            _detailRow('Phone', '${r['guest_phone'] ?? '—'}'),
+            _detailRow('Email', '${r['guest_email'] ?? '—'}'),
+            _detailRow(
+              'Check-in',
+              AdminDashboardModels.formatDisplayDate(r['check_in_date']),
+            ),
+            _detailRow(
+              'Check-out',
+              AdminDashboardModels.formatDisplayDate(r['check_out_date']),
+            ),
+            _detailRow('Status', _reservationStatusLabel(status)),
+            _detailRow('Total', '₱${(r['total_amount'] as num?) ?? 0}'),
+            const SizedBox(height: 12),
+            if (pending) ...[
+              FilledButton(
+                onPressed: _busy
+                    ? null
+                    : () {
+                        Navigator.pop(ctx);
+                        _approveReservation(id);
+                      },
+                child: const Text('Approve'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: _busy
+                    ? null
+                    : () {
+                        Navigator.pop(ctx);
+                        _rejectReservation(id);
+                      },
+                child: const Text('Reject'),
+              ),
+            ] else
+              FilledButton.icon(
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  final ok = await showAdminManageReservationDialog(
+                    context: context,
+                    reservation: r,
+                  );
+                  if (ok && mounted) await widget.onChanged();
+                },
+                icon: const Icon(Icons.edit_calendar_outlined),
+                label: const Text('Edit dates / cancel'),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<bool> _confirmAction(String title, String message) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Go back'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
   Future<void> _approveReservation(String id) async {
     if (_busy || id.isEmpty) return;
+    if (!await _confirmAction(
+      'Approve reservation?',
+      'This holds or activates the stay and may deduct platform credits from your hotel wallet.',
+    )) {
+      return;
+    }
+    if (!mounted) return;
     if (!await guardHotelCreditsBeforeApproval(
       context,
       currentCredits: widget.currentCredits,
@@ -450,6 +549,12 @@ class _BookingsSectionState extends State<BookingsSection>
 
   Future<void> _rejectReservation(String id) async {
     if (_busy || id.isEmpty) return;
+    if (!await _confirmAction(
+      'Reject reservation?',
+      'The guest will be notified that this request was declined.',
+    )) {
+      return;
+    }
     setState(() => _busy = true);
     try {
       await portalDio().post('/admin/reservations/$id/reject');
@@ -604,21 +709,8 @@ class _BookingsSectionState extends State<BookingsSection>
     );
   }
 
-  String _reservationStatusLabel(String status) {
-    switch (status.toLowerCase().trim()) {
-      case 'pending_approval':
-      case 'pending':
-        return 'Pending approval';
-      case 'approved':
-      case 'reserved':
-        return 'Reserved';
-      case 'booked':
-        return 'Booked';
-      default:
-        if (status.isEmpty) return '—';
-        return status[0].toUpperCase() + status.substring(1).replaceAll('_', ' ');
-    }
-  }
+  String _reservationStatusLabel(String status) =>
+      AdminDashboardModels.reservationStatusLabel(status);
 
   @override
   Widget build(BuildContext context) {
@@ -868,62 +960,66 @@ class _BookingsSectionState extends State<BookingsSection>
     final status = (r['status'] ?? '').toString();
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text((r['guest_name'] ?? 'Guest').toString(),
-                style: Theme.of(context).textTheme.titleSmall),
-            Text(
-              AdminDashboardModels.formatDateRange(
-                r['check_in_date'],
-                r['check_out_date'],
+      child: InkWell(
+        onTap: () => _showReservationDetails(r),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text((r['guest_name'] ?? 'Guest').toString(),
+                  style: Theme.of(context).textTheme.titleSmall),
+              Text(
+                AdminDashboardModels.formatDateRange(
+                  r['check_in_date'],
+                  r['check_out_date'],
+                ),
               ),
-            ),
-            Text('Status: ${_reservationStatusLabel(status)} · ${r['guest_phone'] ?? ''}'),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                if (pending) ...[
-                  FilledButton(
-                    onPressed: _busy ? null : () => _approveReservation(id),
-                    child: const Text('Approve'),
-                  ),
-                  OutlinedButton(
-                    onPressed: _busy ? null : () => _rejectReservation(id),
-                    child: const Text('Reject'),
+              Text('Status: ${_reservationStatusLabel(status)} · ${r['guest_phone'] ?? ''}'),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [
+                  if (pending) ...[
+                    FilledButton(
+                      onPressed: _busy ? null : () => _approveReservation(id),
+                      child: const Text('Approve'),
+                    ),
+                    OutlinedButton(
+                      onPressed: _busy ? null : () => _rejectReservation(id),
+                      child: const Text('Reject'),
+                    ),
+                  ],
+                  if (!pending)
+                    OutlinedButton.icon(
+                      onPressed: _busy
+                          ? null
+                          : () async {
+                              final ok = await showAdminManageReservationDialog(
+                                context: context,
+                                reservation: r,
+                              );
+                              if (ok && mounted) await widget.onChanged();
+                            },
+                      icon: const Icon(Icons.edit_calendar_outlined, size: 18),
+                      label: const Text('Edit dates / cancel'),
+                    ),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).push<void>(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const AdminChatHubScreen(),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.message_outlined, size: 18),
+                    label: const Text('Message'),
                   ),
                 ],
-                if (!pending)
-                  OutlinedButton.icon(
-                    onPressed: _busy
-                        ? null
-                        : () async {
-                            final ok = await showAdminManageReservationDialog(
-                              context: context,
-                              reservation: r,
-                            );
-                            if (ok && mounted) await widget.onChanged();
-                          },
-                    icon: const Icon(Icons.edit_calendar_outlined, size: 18),
-                    label: const Text('Edit dates / cancel'),
-                  ),
-                OutlinedButton.icon(
-                  onPressed: () {
-                    Navigator.of(context).push<void>(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const AdminChatHubScreen(),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.message_outlined, size: 18),
-                  label: const Text('Message'),
-                ),
-              ],
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -997,6 +1093,10 @@ class _BookingsSectionState extends State<BookingsSection>
                   if (isRecord) {
                     _showBookingDetails(
                       e['booking'] as Map<String, dynamic>,
+                    );
+                  } else {
+                    _showReservationDetails(
+                      e['reservation'] as Map<String, dynamic>,
                     );
                   }
                 },

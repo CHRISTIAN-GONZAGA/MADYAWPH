@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'widgets/admin_opaque_scaffold.dart';
 import 'widgets/admin_hotel_totals_room_panel.dart';
+import 'widgets/admin_room_navigation.dart';
 import 'widgets/admin_summary_room_tile.dart';
 
 /// Full-screen room grid from Hotel totals; tap a tile for room details.
@@ -14,6 +15,7 @@ class AdminRoomSummaryDetailScreen extends StatelessWidget {
     this.subtitle,
     this.onClose,
     this.onRoomTap,
+    this.onRefresh,
   });
 
   final String title;
@@ -22,6 +24,7 @@ class AdminRoomSummaryDetailScreen extends StatelessWidget {
   final String? subtitle;
   final VoidCallback? onClose;
   final void Function(Map<String, dynamic> room)? onRoomTap;
+  final Future<void> Function()? onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +61,7 @@ class AdminRoomSummaryDetailScreen extends StatelessWidget {
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                   child: Text(
                     subtitle ??
-                        '${rooms.length} room(s) · tap a tile for details',
+                        '${rooms.length} room(s) · tap to book or manage',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: scheme.onSurfaceVariant,
                         ),
@@ -79,12 +82,18 @@ class AdminRoomSummaryDetailScreen extends StatelessWidget {
                       return AdminSummaryRoomGridTile(
                         room: room,
                         showGuest: showGuest,
-                        onTap: () {
+                        onTap: () async {
                           if (onRoomTap != null) {
                             onRoomTap!(room);
                             return;
                           }
-                          openHotelTotalsRoomDetail(context, room: room);
+                          await AdminRoomNavigation.handleRoomTap(
+                            context,
+                            room: room,
+                            onSuccess: () async {
+                              await onRefresh?.call();
+                            },
+                          );
                         },
                       );
                     },

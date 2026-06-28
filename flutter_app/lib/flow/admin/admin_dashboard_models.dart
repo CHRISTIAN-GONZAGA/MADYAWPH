@@ -160,6 +160,26 @@ class AdminDashboardModels {
     }
   }
 
+  static String reservationStatusLabel(String status) {
+    switch (status.toLowerCase().trim()) {
+      case 'pending_approval':
+      case 'pending':
+        return 'Pending approval';
+      case 'approved':
+      case 'reserved':
+        return 'Reserved';
+      case 'booked':
+        return 'Booked';
+      case 'cancelled':
+        return 'Cancelled';
+      case 'rejected':
+        return 'Rejected';
+      default:
+        if (status.isEmpty) return '—';
+        return status[0].toUpperCase() + status.substring(1).replaceAll('_', ' ');
+    }
+  }
+
   static Map<String, dynamic>? roomForBooking(
     Map<String, dynamic> booking,
     List<Map<String, dynamic>> rooms,

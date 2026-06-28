@@ -249,7 +249,7 @@ class RoomSummarySection extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          'Tap any stat to view the room list',
+          'Tap any stat to view rooms, then book or manage',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: scheme.onSurfaceVariant,
               ),

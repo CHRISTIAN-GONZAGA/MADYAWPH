@@ -45,7 +45,7 @@ void main() {
 
     expect(find.text('Occupied rooms'), findsOneWidget);
     expect(find.text('101'), findsOneWidget);
-    expect(find.textContaining('tap a tile'), findsOneWidget);
+    expect(find.textContaining('tap to book or manage'), findsOneWidget);
   });
 
   testWidgets('hotel totals panel lays out on phone-sized screen', (tester) async {
@@ -85,7 +85,7 @@ void main() {
 
     expect(find.text('Occupied rooms'), findsOneWidget);
     expect(find.text('101'), findsOneWidget);
-    expect(find.textContaining('tap a tile'), findsOneWidget);
+    expect(find.textContaining('tap to book or manage'), findsOneWidget);
   });
 
   testWidgets('hotel totals panel shows room detail body with app bar',

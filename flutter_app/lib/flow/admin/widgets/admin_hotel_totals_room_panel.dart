@@ -6,6 +6,8 @@ import '../admin_room_detail_screen.dart';
 import 'admin_room_detail_navigation.dart';
 import 'admin_summary_room_tile.dart';
 import 'admin_floor_picker_grid.dart';
+import 'admin_room_navigation.dart';
+import '../../../navigation_keys.dart';
 
 class _RoomListPayload {
   const _RoomListPayload({
@@ -199,7 +201,30 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
   }
 
   void _openRoomDetail(String roomId) {
+    final room = _roomSnapshotForDetail(roomId);
+    if (room != null) {
+      _onRoomTileTap(room);
+      return;
+    }
     openRoomDetailFromList(roomId: roomId);
+  }
+
+  Future<void> _onRoomTileTap(Map<String, dynamic> room) async {
+    final navContext = adminDashboardNavigatorKey.currentContext ?? context;
+    if (!navContext.mounted) return;
+    await AdminRoomNavigation.handleRoomTap(
+      navContext,
+      room: room,
+      onSuccess: () async {
+        await widget.onRefresh?.call();
+      },
+      onManageRoom: (ctx, selected) async {
+        openRoomDetailFromList(
+          roomId: AdminDashboardModels.roomIdOf(selected),
+          roomSnapshot: selected,
+        );
+      },
+    );
   }
 
   void _backFromDetail() {
@@ -322,7 +347,7 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
       subtitle: list.subtitle,
       onBack: _handleBack,
       onClosePanel: _closePanel,
-      onRoomTap: _openRoomDetail,
+      onRoomTap: (room) => _onRoomTileTap(room),
     );
   }
 
@@ -414,7 +439,7 @@ class _HotelTotalsListPage extends StatelessWidget {
   final String? subtitle;
   final VoidCallback onClosePanel;
   final VoidCallback onBack;
-  final void Function(String roomId) onRoomTap;
+  final void Function(Map<String, dynamic> room) onRoomTap;
 
   @override
   Widget build(BuildContext context) {
@@ -512,7 +537,7 @@ class _HotelTotalsRoomGrid extends StatelessWidget {
   final List<Map<String, dynamic>> rooms;
   final bool showGuest;
   final String? subtitle;
-  final void Function(String roomId) onRoomTap;
+  final void Function(Map<String, dynamic> room) onRoomTap;
 
   @override
   Widget build(BuildContext context) {
@@ -526,7 +551,7 @@ class _HotelTotalsRoomGrid extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: Text(
-            subtitle ?? '${sorted.length} room(s) · tap a tile for details',
+            subtitle ?? '${sorted.length} room(s) · tap to book or manage',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),
@@ -547,7 +572,7 @@ class _HotelTotalsRoomGrid extends StatelessWidget {
               return AdminSummaryRoomGridTile(
                 room: room,
                 showGuest: showGuest,
-                onTap: () => onRoomTap(AdminDashboardModels.roomIdOf(room)),
+                onTap: () => onRoomTap(room),
               );
             },
           ),

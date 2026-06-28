@@ -263,7 +263,7 @@ Future<bool> showAdminManageReservationDialog({
                         fontWeight: FontWeight.w700,
                       ),
                 ),
-                Text('Status: $status'),
+                Text('Status: ${AdminDashboardModels.reservationStatusLabel(status)}'),
                 const SizedBox(height: 12),
                 TextField(
                   controller: checkInCtrl,
