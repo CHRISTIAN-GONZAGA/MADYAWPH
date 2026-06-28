@@ -1290,6 +1290,8 @@ Route::put('/tasks/{task}/status', [TaskController::class, 'updateStatus'])->mid
 Route::get('/tasks/assigned-to-me', [TaskController::class, 'assignedToMe'])->middleware('role:staff');
 
 // Reports
+Route::get('/reports/shift-summary', [ReportController::class, 'shiftSummary'])->middleware('role:admin,frontdesk');
+Route::get('/reports/shift-summary/pdf', [ReportController::class, 'shiftSummaryPdf'])->middleware('role:admin,frontdesk');
 Route::get('/reports/sales', [ReportController::class, 'sales'])->middleware('role:admin,frontdesk');
 Route::get('/reports/sales/timeseries', [ReportController::class, 'salesTimeseries'])->middleware('role:admin,frontdesk');
 Route::get('/reports/paid-transactions', [ReportController::class, 'paidTransactions'])->middleware('role:admin,frontdesk');
@@ -1757,10 +1759,26 @@ Route::post('/admin/portal-users', function (Request $request) {
 })->middleware('role:admin,super_admin')->name('api.v1.admin.portal-users.store');
 
 Route::get('/admin/portal-users', function (Request $request) {
-    $hotelId = (string) $request->user()->hotel_id;
-    $users = User::withoutGlobalScopes()
-        ->where('hotel_id', $hotelId)
-        ->whereIn('role', [UserRole::ADMIN, UserRole::SUPER_ADMIN, 'admin', 'super_admin'])
+    $actor = $request->user();
+    $actorRole = $actor->roleValue();
+    $hotelId = (string) $actor->hotel_id;
+
+    $query = User::withoutGlobalScopes()->where('hotel_id', $hotelId);
+
+    if ($actorRole === UserRole::ADMIN->value) {
+        $query->where('role', UserRole::FRONTDESK);
+    } else {
+        $query->whereIn('role', [
+            UserRole::ADMIN,
+            UserRole::SUPER_ADMIN,
+            UserRole::FRONTDESK,
+            'admin',
+            'super_admin',
+            'frontdesk',
+        ]);
+    }
+
+    $users = $query
         ->orderBy('role')
         ->orderBy('name')
         ->get()
@@ -1772,13 +1790,11 @@ Route::get('/admin/portal-users', function (Request $request) {
         ]);
 
     return response()->json(['data' => $users]);
-})->middleware('role:super_admin')->name('api.v1.admin.portal-users');
+})->middleware('role:admin,super_admin')->name('api.v1.admin.portal-users');
 
 Route::delete('/admin/portal-users/{target}', function (Request $request, string $target) {
     $actor = $request->user();
-    if ($actor->roleValue() !== 'super_admin') {
-        return response()->json(['message' => 'Only the super admin can remove portal accounts.'], 403);
-    }
+    $actorRole = $actor->roleValue();
     $hotelId = (string) $actor->hotel_id;
     $victim = User::withoutGlobalScopes()
         ->where('hotel_id', $hotelId)
@@ -1799,9 +1815,18 @@ Route::delete('/admin/portal-users/{target}', function (Request $request, string
     if ($victim->roleValue() === 'owner') {
         return response()->json(['message' => 'Cannot delete owner accounts via portal user management.'], 422);
     }
-    if ($victim->roleValue() !== 'admin') {
-        return response()->json(['message' => 'Only regular administrator accounts can be removed here.'], 422);
+
+    $victimRole = $victim->roleValue();
+    if ($actorRole === UserRole::ADMIN->value) {
+        if ($victimRole !== UserRole::FRONTDESK->value) {
+            return response()->json(['message' => 'Hotel admins can only remove front desk accounts.'], 403);
+        }
+    } elseif ($actorRole !== UserRole::SUPER_ADMIN->value) {
+        return response()->json(['message' => 'Only hotel admin or super admin can remove portal accounts.'], 403);
+    } elseif (! in_array($victimRole, [UserRole::ADMIN->value, UserRole::FRONTDESK->value], true)) {
+        return response()->json(['message' => 'Only administrator or front desk accounts can be removed here.'], 422);
     }
+
     $morph = (new User)->getMorphClass();
     PersonalAccessToken::query()
         ->where('tokenable_type', $morph)
@@ -1812,11 +1837,11 @@ Route::delete('/admin/portal-users/{target}', function (Request $request, string
         $hotelId,
         $actor,
         "Deleted portal user {$victim->name}",
-        ['deleted_user_id' => (string) $victim->id]
+        ['deleted_user_id' => (string) $victim->id, 'role' => $victimRole]
     );
 
     return response()->json(['ok' => true]);
-})->middleware('role:super_admin')->name('api.v1.admin.portal-users.delete');
+})->middleware('role:admin,super_admin')->name('api.v1.admin.portal-users.delete');
 
 Route::put('/staff/profile', function (Request $request) {
     $validated = $request->validate([

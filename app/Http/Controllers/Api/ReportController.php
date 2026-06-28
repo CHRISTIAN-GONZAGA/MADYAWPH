@@ -940,4 +940,129 @@ class ReportController extends Controller
             ];
         }
     }
+
+    /**
+     * Revenue / profit summary for a front-desk shift or custom period (bookings + amenities).
+     */
+    public function shiftSummary(Request $request)
+    {
+        $validated = $request->validate([
+            'time_in' => ['required', 'date'],
+            'time_out' => ['required', 'date', 'after:time_in'],
+            'staff_name' => ['nullable', 'string', 'max:160'],
+        ]);
+
+        $from = Carbon::parse($validated['time_in']);
+        $to = Carbon::parse($validated['time_out']);
+        $staffName = trim((string) ($validated['staff_name'] ?? ''));
+
+        return response()->json(
+            $this->buildShiftReportPayload($from, $to, $staffName !== '' ? $staffName : null)
+        );
+    }
+
+    public function shiftSummaryPdf(Request $request)
+    {
+        $validated = $request->validate([
+            'time_in' => ['required', 'date'],
+            'time_out' => ['required', 'date', 'after:time_in'],
+            'staff_name' => ['nullable', 'string', 'max:160'],
+            'title' => ['nullable', 'string', 'max:200'],
+        ]);
+
+        $from = Carbon::parse($validated['time_in']);
+        $to = Carbon::parse($validated['time_out']);
+        $staffName = trim((string) ($validated['staff_name'] ?? ''));
+        $title = trim((string) ($validated['title'] ?? 'Shift revenue summary'));
+        if ($title === '') {
+            $title = 'Shift revenue summary';
+        }
+
+        $payload = $this->buildShiftReportPayload(
+            $from,
+            $to,
+            $staffName !== '' ? $staffName : null
+        );
+        $payload['title'] = $title;
+
+        $pdf = Pdf::loadView('pdf.shift-summary', $payload);
+
+        return $pdf->download('shift-summary.pdf');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildShiftReportPayload(Carbon $from, Carbon $to, ?string $staffName = null): array
+    {
+        $summary = $this->safeFinancialSummary($from, $to);
+        $bookings = $this->paidBookingsInRange($from, $to);
+        $revenueByBooking = $this->recognizedRevenueByBooking($bookings);
+
+        $bookingRows = $bookings
+            ->map(function ($booking) use ($revenueByBooking) {
+                $bookingId = (string) $booking->id;
+                $amount = (float) ($revenueByBooking[$bookingId] ?? (float) ($booking->total_amount ?? 0));
+                $paidAt = $this->paymentDateForBooking($booking);
+
+                return [
+                    'category' => 'Booking',
+                    'reference' => (string) ($booking->booking_reference ?? $bookingId),
+                    'guest_name' => (string) ($booking->guest_name ?? ''),
+                    'room_number' => $this->roomNumberForBooking($booking),
+                    'description' => 'Room stay',
+                    'payment_method' => $this->paymentMethodLabel($booking),
+                    'payment_channel' => $this->paymentChannel($booking),
+                    'amount' => round($amount, 2),
+                    'paid_at' => $paidAt?->toIso8601String(),
+                ];
+            })
+            ->sortByDesc(fn ($row) => $row['paid_at'] ?? '')
+            ->values()
+            ->all();
+
+        $amenityCharges = BillingCharge::query()
+            ->where('type', 'amenity')
+            ->whereBetween('created_at', [$from, $to])
+            ->orderByDesc('created_at')
+            ->get();
+
+        $amenityRows = $amenityCharges
+            ->map(function ($charge) {
+                $amount = (float) ($charge->amount ?? 0);
+                $createdAt = SafeModelAttributes::carbonFromModel($charge, 'created_at');
+
+                return [
+                    'category' => 'Amenity',
+                    'reference' => (string) ($charge->id ?? ''),
+                    'guest_name' => '',
+                    'room_number' => $this->roomNumberByRoomId((string) ($charge->room_id ?? '')),
+                    'description' => (string) ($charge->label ?? 'Amenity'),
+                    'payment_method' => '',
+                    'payment_channel' => 'amenity',
+                    'amount' => round($amount, 2),
+                    'paid_at' => $createdAt?->toIso8601String(),
+                ];
+            })
+            ->values()
+            ->all();
+
+        $allRows = collect($bookingRows)
+            ->merge($amenityRows)
+            ->sortByDesc(fn ($row) => $row['paid_at'] ?? '')
+            ->values()
+            ->all();
+
+        return [
+            'shift' => [
+                'time_in' => $from->toIso8601String(),
+                'time_out' => $to->toIso8601String(),
+                'staff_name' => $staffName ?? '',
+            ],
+            'summary' => $summary,
+            'booking_transactions' => $bookingRows,
+            'amenity_transactions' => $amenityRows,
+            'transactions' => $allRows,
+        ];
+    }
 }

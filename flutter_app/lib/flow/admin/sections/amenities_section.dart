@@ -228,7 +228,7 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
     }
     final items = _filteredMenu;
     if (items.isEmpty) {
-      return const Center(child: Text('No products. Tap Add to create one.'));
+      return const Center(child: Text('No products in this category.'));
     }
     return GridView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -245,7 +245,7 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
         final active = m['is_active'] != false;
         return Card(
           child: InkWell(
-            onTap: () => _editItem(m),
+            onTap: widget.canManageProducts ? () => _editItem(m) : null,
             child: Padding(
               padding: const EdgeInsets.all(10),
               child: Column(
@@ -261,19 +261,23 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      PopupMenuButton<String>(
-                        onSelected: (v) {
-                          if (v == 'edit') {
-                            _editItem(m);
-                          } else if (v == 'delete') {
-                            _deleteItem(m);
-                          }
-                        },
-                        itemBuilder: (_) => const [
-                          PopupMenuItem(value: 'edit', child: Text('Edit')),
-                          PopupMenuItem(value: 'delete', child: Text('Delete')),
-                        ],
-                      ),
+                      if (widget.canManageProducts)
+                        PopupMenuButton<String>(
+                          onSelected: (v) {
+                            if (v == 'edit') {
+                              _editItem(m);
+                            } else if (v == 'delete') {
+                              _deleteItem(m);
+                            }
+                          },
+                          itemBuilder: (_) => const [
+                            PopupMenuItem(value: 'edit', child: Text('Edit')),
+                            PopupMenuItem(
+                              value: 'delete',
+                              child: Text('Delete'),
+                            ),
+                          ],
+                        ),
                     ],
                   ),
                   Text(

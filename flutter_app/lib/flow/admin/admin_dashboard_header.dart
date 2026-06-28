@@ -111,6 +111,9 @@ class AdminDashboardHeader extends StatelessWidget {
     this.isSuperAdmin = false,
     this.isFrontDesk = false,
     this.creditsLocked = false,
+    this.canTimeOut = false,
+    this.timeOutLabel = 'Time out',
+    this.onTimeOut,
   });
 
   final String hotelName;
@@ -122,6 +125,9 @@ class AdminDashboardHeader extends StatelessWidget {
   final VoidCallback onRefresh;
   final VoidCallback? onSignOut;
   final bool creditsLocked;
+  final bool canTimeOut;
+  final String timeOutLabel;
+  final VoidCallback? onTimeOut;
 
   String _displayHotelName(String raw) {
     final trimmed = raw.trim();
@@ -197,6 +203,20 @@ class AdminDashboardHeader extends StatelessWidget {
                 ),
               ),
               const AdminLiveClock(align: TextAlign.end, compact: true),
+              if (isFrontDesk && onTimeOut != null) ...[
+                const SizedBox(width: 4),
+                FilledButton.tonal(
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                  ),
+                  onPressed: canTimeOut ? onTimeOut : null,
+                  child: Text(
+                    timeOutLabel,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ],
               IconButton(
                 visualDensity: VisualDensity.compact,
                 tooltip: creditsLocked

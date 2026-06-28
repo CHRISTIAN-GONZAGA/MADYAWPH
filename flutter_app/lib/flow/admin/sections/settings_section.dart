@@ -11,6 +11,7 @@ import '../../admin_tasks.dart';
 import '../admin_guest_portal_qr_screen.dart';
 import '../admin_hotel_logo_screen.dart';
 import '../admin_online_payment_screen.dart';
+import '../admin_portal_users_screen.dart';
 
 class SettingsSection extends StatelessWidget {
   const SettingsSection({
@@ -25,11 +26,13 @@ class SettingsSection extends StatelessWidget {
     required this.onRefreshAfterNav,
     this.creditsLocked = false,
     this.isFrontDesk = false,
+    this.isSuperAdmin = false,
   });
 
   final String creditBalance;
   final bool creditsLocked;
   final bool isFrontDesk;
+  final bool isSuperAdmin;
   final VoidCallback onRecharge;
   final VoidCallback onSurgePricing;
   final Future<void> Function() onThemeReset;
@@ -184,7 +187,7 @@ class SettingsSection extends StatelessWidget {
               _SettingsTile(
                 icon: Icons.groups_outlined,
                 title: 'Staff management',
-                subtitle: 'Add, edit, roles, suspend',
+                subtitle: 'Add maintenance, reception, and other staff logins',
                 enabled: !creditsLocked,
                 onTap: () async {
                   await Navigator.of(context).push<void>(
@@ -193,6 +196,23 @@ class SettingsSection extends StatelessWidget {
                     ),
                   );
                   await onRefreshAfterNav();
+                },
+              ),
+              _SettingsTile(
+                icon: Icons.badge_outlined,
+                title: isSuperAdmin ? 'Portal accounts' : 'Front desk accounts',
+                subtitle: isSuperAdmin
+                    ? 'Create administrators and front desk logins'
+                    : 'Create and remove front desk sign-in accounts',
+                enabled: !creditsLocked,
+                onTap: () {
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => AdminPortalUsersScreen(
+                        canManageAdmins: isSuperAdmin,
+                      ),
+                    ),
+                  );
                 },
               ),
               _SettingsTile(

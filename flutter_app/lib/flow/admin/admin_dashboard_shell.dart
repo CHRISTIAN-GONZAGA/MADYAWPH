@@ -18,6 +18,9 @@ import 'sections/room_summary_section.dart';
 import 'sections/resellers_section.dart';
 import 'sections/settings_section.dart';
 import 'sections/super_admin_control_section.dart';
+import 'widgets/front_desk_shift.dart';
+import 'widgets/front_desk_shift_setup_dialog.dart';
+import 'widgets/front_desk_shift_summary_screen.dart';
 
 class AdminDashboardShell extends StatefulWidget {
   const AdminDashboardShell({
@@ -62,6 +65,9 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
   String _bookingListFilter = 'all';
   Map<String, dynamic>? _inbox;
   Timer? _chatPoll;
+  Timer? _shiftPoll;
+  FrontDeskShift? _shift;
+  bool _shiftPromptShown = false;
 
   List<AdminNavItem> _navItemsFor(Map<String, dynamic> d) {
     final reservations = d['reservations'] as List<dynamic>? ?? const [];
@@ -137,6 +143,11 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     super.initState();
     _pollInbox();
     _chatPoll = Timer.periodic(const Duration(seconds: 10), (_) => _pollInbox());
+    _shiftPoll = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted && widget.isFrontDesk && _shift != null) {
+        setState(() {});
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.onBindBackHandler?.call(_handleInnerBack);
       if (!mounted) return;
@@ -146,7 +157,80 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
       if (HotelCreditsPolicy.isDepleted(balance) && _settingsTabIndex(widget.data) >= 0) {
         setState(() => _tab = _settingsTabIndex(widget.data));
       }
+      if (widget.isFrontDesk) {
+        _initFrontDeskShift();
+      }
     });
+  }
+
+  @override
+  void dispose() {
+    widget.onBindBackHandler?.call(() => false);
+    _chatPoll?.cancel();
+    _shiftPoll?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _initFrontDeskShift() async {
+    final auth = widget.data['auth'] as Map<String, dynamic>?;
+    final user = auth?['user'] as Map<String, dynamic>?;
+    final userId = (user?['id'] ?? user?['_id'] ?? '').toString();
+    final hotelId = (user?['hotel_id'] ?? user?['hotelId'] ?? '').toString();
+    final staffName =
+        (user?['name'] ?? user?['username'] ?? 'Front desk').toString();
+    if (userId.isEmpty || hotelId.isEmpty) return;
+
+    var shift = await FrontDeskShiftStorage.load(
+      hotelId: hotelId,
+      userId: userId,
+    );
+    if (!mounted) return;
+
+    if (shift == null && !_shiftPromptShown) {
+      _shiftPromptShown = true;
+      final created = await showFrontDeskShiftSetupDialog(
+        context: context,
+        userId: userId,
+        hotelId: hotelId,
+        staffName: staffName,
+      );
+      if (created != null) {
+        await FrontDeskShiftStorage.save(created);
+        shift = created;
+      }
+    }
+
+    if (mounted) {
+      setState(() => _shift = shift);
+    }
+  }
+
+  String _timeOutButtonLabel() {
+    final shift = _shift;
+    if (shift == null) return 'Time out';
+    if (shift.canTimeOut) return 'Time out';
+    final remaining = shift.timeUntilTimeOut;
+    final h = remaining.inHours;
+    final m = remaining.inMinutes.remainder(60);
+    return '${h}h ${m.toString().padLeft(2, '0')}m';
+  }
+
+  Future<void> _handleTimeOut() async {
+    final shift = _shift;
+    if (shift == null || !shift.canTimeOut) return;
+    final endedAt = DateTime.now();
+    if (!mounted) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => FrontDeskShiftSummaryScreen(
+          shift: shift,
+          endedAt: endedAt,
+          logoutOnFinish: true,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _shift = null);
   }
 
   @override
@@ -187,13 +271,6 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         setState(() => _tab = _settingsTabIndex(newData));
       });
     }
-  }
-
-  @override
-  void dispose() {
-    widget.onBindBackHandler?.call(() => false);
-    _chatPoll?.cancel();
-    super.dispose();
   }
 
   Future<void> _pollInbox() async {
@@ -254,6 +331,11 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
                   isSuperAdmin: widget.isSuperAdmin,
                   isFrontDesk: widget.isFrontDesk,
                   creditsLocked: creditsLocked,
+                  canTimeOut: _shift?.canTimeOut ?? false,
+                  timeOutLabel: _timeOutButtonLabel(),
+                  onTimeOut: widget.isFrontDesk && _shift != null
+                      ? _handleTimeOut
+                      : null,
                   chatBadge: badge,
                   onOpenChat: () async {
                     await Navigator.of(context).push<void>(
@@ -459,6 +541,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           creditBalance: balance,
           creditsLocked: creditsLocked,
           isFrontDesk: widget.isFrontDesk,
+          isSuperAdmin: widget.isSuperAdmin,
           onRecharge: widget.onRecharge,
           onSurgePricing: widget.onSurgePricing,
           onThemeReset: widget.onThemeReset,

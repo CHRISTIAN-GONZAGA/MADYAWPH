@@ -80,8 +80,10 @@ class TestHotelPropertySeeder extends Seeder
         $this->ensurePortalUser($hotelId, 'testhotel', 'super@testhotel.local', UserRole::SUPER_ADMIN);
         $this->ensurePortalUser($hotelId, 'testowner', 'owner@testhotel.local', UserRole::OWNER);
         $this->ensurePortalUser($hotelId, 'teststaff', 'staff@testhotel.local', UserRole::STAFF);
+        $this->ensurePortalUser($hotelId, 'testfrontdesk', 'frontdesk@testhotel.local', UserRole::FRONTDESK);
 
         $this->command?->info('Test hotel ready: '.self::GATE_USERNAME.' / '.self::GATE_PASSWORD);
+        $this->command?->info('Front desk demo: testfrontdesk / '.self::GATE_PASSWORD);
     }
 
     private function ensurePortalUser(

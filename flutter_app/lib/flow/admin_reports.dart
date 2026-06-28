@@ -9,6 +9,7 @@ import '../widgets/app_state_views.dart';
 import '../widgets/admin_month_calendar.dart';
 import 'admin/widgets/admin_dev_error_panel.dart';
 import 'admin/widgets/admin_reports_ui.dart';
+import 'admin/widgets/hotel_period_report_screen.dart';
 
 /// Revenue and operations charts with daily / weekly / monthly / annual granularity.
 class AdminReportsScreen extends StatefulWidget {
@@ -238,16 +239,47 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   void _openFinancePeriod(
     BuildContext context, {
     required String buttonLabel,
-    required String periodLabel,
-    required Map<String, dynamic>? data,
+    required String periodKey,
   }) {
-    final printBody = _formatFinancePeriodPrint(periodLabel, data);
-    _openPrintableReport(
-      context,
+    final range = _rangeForPeriod(periodKey, _selectedDay);
+    openHotelPeriodReport(
+      context: context,
+      timeIn: range.start,
+      timeOut: range.end,
       title: '$buttonLabel revenue',
-      printBody: printBody,
-      child: _PeriodFinanceRow(label: periodLabel, data: data),
+      subtitle: 'Hotel-wide report (not tied to front desk shifts)',
     );
+  }
+
+  ({DateTime start, DateTime end}) _rangeForPeriod(
+    String periodKey,
+    DateTime anchor,
+  ) {
+    switch (periodKey) {
+      case 'weekly':
+        final start = anchor.subtract(Duration(days: anchor.weekday - 1));
+        final end = start.add(const Duration(days: 6));
+        return (
+          start: DateTime(start.year, start.month, start.day),
+          end: DateTime(end.year, end.month, end.day, 23, 59, 59),
+        );
+      case 'monthly':
+        return (
+          start: DateTime(anchor.year, anchor.month, 1),
+          end: DateTime(anchor.year, anchor.month + 1, 0, 23, 59, 59),
+        );
+      case 'annual':
+        return (
+          start: DateTime(anchor.year, 1, 1),
+          end: DateTime(anchor.year, 12, 31, 23, 59, 59),
+        );
+      case 'daily':
+      default:
+        return (
+          start: DateTime(anchor.year, anchor.month, anchor.day),
+          end: DateTime(anchor.year, anchor.month, anchor.day, 23, 59, 59),
+        );
+    }
   }
 
   void _openTimeseriesReport(
@@ -334,42 +366,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         ),
       ),
     );
-  }
-
-  static String _formatFinancePeriodPrint(
-    String title,
-    Map<String, dynamic>? data,
-  ) {
-    if (data == null) return '$title\n\nNo data for this period.';
-    final revenue = data['gross_revenue'] ?? data['revenue'] ?? 0;
-    final refunds = data['refunds'] ?? 0;
-    final reseller = data['reseller_commissions_paid'] ?? 0;
-    final expenses = data['expenses'] ?? data['refund_expense'] ?? 0;
-    final net = data['profit'] ?? data['net_revenue'] ?? revenue;
-    final grossNet =
-        data['profit_before_reseller_payouts'] ?? data['net_revenue'] ?? revenue;
-    final bookings = data['bookings'] ?? 0;
-    final amenity = data['amenity_revenue'] ?? 0;
-    final room = data['room_revenue'] ?? 0;
-    final transfers = data['transfer_adjustments'] ?? 0;
-
-    return '''
-$title
-
-Gross revenue: ₱${_fmtNum(revenue)}
-Room revenue: ₱${_fmtNum(room)}
-Amenity revenue: ₱${_fmtNum(amenity)}
-Transfer adjustments: ₱${_fmtNum(transfers)}
-
-Refunds: ₱${_fmtNum(refunds)}
-Reseller payouts: ₱${_fmtNum(reseller)}
-Total expenses: ₱${_fmtNum(expenses)}
-
-Net before resellers: ₱${_fmtNum(grossNet)}
-Net profit: ₱${_fmtNum(net)}
-
-$bookings paid booking(s)
-''';
   }
 
   static String _formatTimeseriesPrint(
@@ -561,10 +557,7 @@ ${subtitleLabel(point)}
                         onTap: () => _openFinancePeriod(
                           context,
                           buttonLabel: 'Daily',
-                          periodLabel: isToday
-                              ? 'Daily (today — ${_fmtDay(_selectedDay)})'
-                              : 'Daily (${_fmtDay(_selectedDay)})',
-                          data: overview['daily'] as Map<String, dynamic>?,
+                          periodKey: 'daily',
                         ),
                       ),
                     ),
@@ -578,8 +571,7 @@ ${subtitleLabel(point)}
                         onTap: () => _openFinancePeriod(
                           context,
                           buttonLabel: 'Weekly',
-                          periodLabel: 'This week',
-                          data: overview['weekly'] as Map<String, dynamic>?,
+                          periodKey: 'weekly',
                         ),
                       ),
                     ),
@@ -593,8 +585,7 @@ ${subtitleLabel(point)}
                         onTap: () => _openFinancePeriod(
                           context,
                           buttonLabel: 'Monthly',
-                          periodLabel: 'This month',
-                          data: overview['monthly'] as Map<String, dynamic>?,
+                          periodKey: 'monthly',
                         ),
                       ),
                     ),
@@ -608,8 +599,7 @@ ${subtitleLabel(point)}
                         onTap: () => _openFinancePeriod(
                           context,
                           buttonLabel: 'Annual',
-                          periodLabel: 'This year',
-                          data: overview['annual'] as Map<String, dynamic>?,
+                          periodKey: 'annual',
                         ),
                       ),
                     ),

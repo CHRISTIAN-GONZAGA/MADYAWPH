@@ -4,6 +4,7 @@ import '../../../auth_storage.dart';
 import '../../../dio_client.dart';
 import '../../../widgets/app_input.dart';
 import '../../../widgets/chat_attachment.dart';
+import '../admin_portal_users_screen.dart';
 
 /// Super-admin control panel: manage lower-level admin accounts.
 class SuperAdminControlSection extends StatefulWidget {
@@ -107,53 +108,79 @@ class _SuperAdminControlSectionState extends State<SuperAdminControlSection> {
     final emailCtrl = TextEditingController();
     final passCtrl = TextEditingController();
     final confirmCtrl = TextEditingController();
+    var role = 'admin';
 
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Add administrator'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Username (login name)',
-                  border: OutlineInputBorder(),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Add portal account'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  value: role,
+                  decoration: const InputDecoration(
+                    labelText: 'Account type',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'admin',
+                      child: Text('Administrator'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'frontdesk',
+                      child: Text('Front desk'),
+                    ),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) setLocal(() => role = v);
+                  },
                 ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: emailCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Email (optional)',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Username (login name)',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              AppPasswordField(
-                controller: passCtrl,
-                labelText: 'Password',
-              ),
-              const SizedBox(height: 10),
-              AppPasswordField(
-                controller: confirmCtrl,
-                labelText: 'Confirm password',
-              ),
-            ],
+                const SizedBox(height: 10),
+                TextField(
+                  controller: emailCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Email (optional)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                AppInput(
+                  controller: passCtrl,
+                  label: 'Password',
+                  obscureText: true,
+                ),
+                const SizedBox(height: 10),
+                AppInput(
+                  controller: confirmCtrl,
+                  label: 'Confirm password',
+                  obscureText: true,
+                ),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Create'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Create'),
-          ),
-        ],
       ),
     );
     if (ok != true) return;
@@ -171,10 +198,11 @@ class _SuperAdminControlSectionState extends State<SuperAdminControlSection> {
         'name': nameCtrl.text.trim(),
         if (emailCtrl.text.trim().isNotEmpty) 'email': emailCtrl.text.trim(),
         'password': passCtrl.text,
+        'role': role,
       });
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Administrator account created.')),
+        SnackBar(content: Text('${role == 'frontdesk' ? 'Front desk' : 'Administrator'} account created.')),
       );
       await _load();
     } on DioException catch (e) {
@@ -249,7 +277,7 @@ class _SuperAdminControlSectionState extends State<SuperAdminControlSection> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Manage lower-level administrators for this hotel. Staff accounts stay under Staff management.',
+          'Manage administrators and front desk portal accounts. Operational staff (maintenance, etc.) stay under Setup → Staff management.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 16),
@@ -341,7 +369,7 @@ class _SuperAdminControlSectionState extends State<SuperAdminControlSection> {
           children: [
             Expanded(
               child: Text(
-                'Portal administrators (${admins.length})',
+                'Portal accounts (${admins.length})',
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -350,7 +378,19 @@ class _SuperAdminControlSectionState extends State<SuperAdminControlSection> {
             FilledButton.icon(
               onPressed: _busy ? null : _addAdmin,
               icon: const Icon(Icons.person_add_alt_1, size: 18),
-              label: const Text('Add admin'),
+              label: const Text('Add account'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).push<void>(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AdminPortalUsersScreen(
+                      canManageAdmins: true,
+                    ),
+                  ),
+                ).then((_) => _load());
+              },
+              child: const Text('Manage all'),
             ),
           ],
         ),
@@ -396,9 +436,9 @@ class _SuperAdminControlSectionState extends State<SuperAdminControlSection> {
                         label: const Text('You'),
                         backgroundColor: scheme.tertiaryContainer,
                       )
-                    : role == 'admin'
+                    : (role == 'admin' || role == 'frontdesk')
                         ? IconButton(
-                            tooltip: 'Remove admin',
+                            tooltip: 'Remove account',
                             onPressed:
                                 _busy ? null : () => _deleteAdmin(id, name),
                             icon: const Icon(Icons.delete_outline),
