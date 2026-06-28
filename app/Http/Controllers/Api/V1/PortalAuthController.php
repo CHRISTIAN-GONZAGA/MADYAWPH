@@ -331,7 +331,7 @@ class PortalAuthController extends Controller
     public function portalLogin(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'role' => ['required', 'in:admin,staff,super_admin,owner'],
+            'role' => ['required', 'in:admin,frontdesk,staff,super_admin,owner'],
             'username' => ['required_without:email', 'string', 'max:255'],
             'email' => ['required_without:username', 'email', 'max:255'],
             'password' => ['required', 'string'],
@@ -358,7 +358,7 @@ class PortalAuthController extends Controller
                 UserRole::SUPER_ADMIN->value,
             ], true));
         if (! $roleMatches) {
-            return response()->json(['message' => 'Use the role that matches this account (admin, owner, super admin, or staff).'], 422);
+            return response()->json(['message' => 'Use the role that matches this account (admin, front desk, owner, super admin, or staff).'], 422);
         }
 
         $userHotelId = $this->normalizeHotelId($user->hotel_id);

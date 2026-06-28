@@ -50,22 +50,26 @@ class AdminDashboardApiController extends Controller
             $autoCheckoutService->processOverdueRooms($hotelId);
             $rooms = Room::query()->get();
         $bookingBase = Booking::withoutGlobalScopes()->where('hotel_id', $hotelId);
+        $awaitingCheckInRoomIds = Room::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where('status', RoomStatus::BOOKED->value)
+            ->pluck('id')
+            ->map(fn ($id) => (string) $id)
+            ->values()
+            ->all();
         $localTotal = BookingTypeResolver::applyFilter(
             Booking::withoutGlobalScopes()->where('hotel_id', $hotelId)
                 ->whereNotIn('status', [
                     BookingStatus::COMPLETED->value,
                     BookingStatus::CANCELLED->value,
-                ]),
+                ])
+                ->whereIn('room_id', $awaitingCheckInRoomIds),
             'local'
         )->count();
-        $onlineTotal = BookingTypeResolver::applyFilter(
-            Booking::withoutGlobalScopes()->where('hotel_id', $hotelId)
-                ->whereNotIn('status', [
-                    BookingStatus::COMPLETED->value,
-                    BookingStatus::CANCELLED->value,
-                ]),
-            'online'
-        )->count();
+        $onlineTotal = ExternalReservation::query()
+            ->where('hotel_id', $hotelId)
+            ->whereIn('status', ['pending_approval', 'pending'])
+            ->count();
         $recentBookings = (clone $bookingBase)
             ->where('status', BookingStatus::RESERVED->value)
             ->count();

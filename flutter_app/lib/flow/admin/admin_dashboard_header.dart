@@ -109,12 +109,14 @@ class AdminDashboardHeader extends StatelessWidget {
     required this.onRefresh,
     this.onSignOut,
     this.isSuperAdmin = false,
+    this.isFrontDesk = false,
     this.creditsLocked = false,
   });
 
   final String hotelName;
   final String adminName;
   final bool isSuperAdmin;
+  final bool isFrontDesk;
   final AdminChatBadgeInfo chatBadge;
   final VoidCallback onOpenChat;
   final VoidCallback onRefresh;
@@ -177,7 +179,9 @@ class AdminDashboardHeader extends StatelessWidget {
                       child: Text(
                         isSuperAdmin
                             ? 'Super admin · $adminName'
-                            : 'Admin · $adminName',
+                            : isFrontDesk
+                                ? 'Front desk · $adminName'
+                                : 'Admin · $adminName',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         softWrap: true,

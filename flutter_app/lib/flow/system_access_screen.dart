@@ -37,7 +37,8 @@ class _SystemAccessScreenState extends State<SystemAccessScreen> {
   String? _error;
 
   static const _roles = <String, String>{
-    'admin': 'admin_frontdesk',
+    'admin': 'hotel_admin',
+    'frontdesk': 'front_desk',
     'super_admin': 'super_admin',
     'staff': 'staff',
     'owner': 'hotel_owner',
@@ -87,6 +88,8 @@ class _SystemAccessScreenState extends State<SystemAccessScreen> {
     switch (expectedRole) {
       case 'admin':
         return savedRole == 'admin' || savedRole == 'super_admin';
+      case 'frontdesk':
+        return savedRole == 'frontdesk';
       case 'super_admin':
         return savedRole == 'super_admin';
       case 'staff':
@@ -136,6 +139,11 @@ class _SystemAccessScreenState extends State<SystemAccessScreen> {
       case 'admin':
         await _openDashboard(
           AdminDashboardScreen(isSuperAdmin: savedRole == 'super_admin'),
+        );
+        return true;
+      case 'frontdesk':
+        await _openDashboard(
+          const AdminDashboardScreen(isFrontDesk: true),
         );
         return true;
       case 'super_admin':
@@ -231,6 +239,10 @@ class _SystemAccessScreenState extends State<SystemAccessScreen> {
         case 'admin':
           await _openDashboard(
             AdminDashboardScreen(isSuperAdmin: serverRole == 'super_admin'),
+          );
+        case 'frontdesk':
+          await _openDashboard(
+            const AdminDashboardScreen(isFrontDesk: true),
           );
         case 'super_admin':
           await _openDashboard(

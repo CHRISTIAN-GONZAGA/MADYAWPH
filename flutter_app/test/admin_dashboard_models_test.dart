@@ -252,5 +252,29 @@ void main() {
         ['101', '102'],
       );
     });
+
+    test('bookingRecordStatusLabel uses checked in when room is occupied', () {
+      expect(
+        AdminDashboardModels.bookingRecordStatusLabel(
+          {'status': 'booked', 'room_status': 'checked_in'},
+        ),
+        'Checked in',
+      );
+      expect(
+        AdminDashboardModels.bookingRecordStatusLabel(
+          {'status': 'booked'},
+          room: {'status': 'checked_in'},
+        ),
+        'Checked in',
+      );
+      expect(
+        AdminDashboardModels.bookingRecordStatusLabel({'status': 'booked'}),
+        'Booked',
+      );
+      expect(
+        AdminDashboardModels.bookingRecordStatusLabel({'status': 'reserved'}),
+        'Reserved',
+      );
+    });
   });
 }

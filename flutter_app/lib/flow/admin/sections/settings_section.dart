@@ -24,10 +24,12 @@ class SettingsSection extends StatelessWidget {
     required this.onOpenAccountSettings,
     required this.onRefreshAfterNav,
     this.creditsLocked = false,
+    this.isFrontDesk = false,
   });
 
   final String creditBalance;
   final bool creditsLocked;
+  final bool isFrontDesk;
   final VoidCallback onRecharge;
   final VoidCallback onSurgePricing;
   final Future<void> Function() onThemeReset;
@@ -35,6 +37,8 @@ class SettingsSection extends StatelessWidget {
   final VoidCallback onOpenActivityLogs;
   final VoidCallback onOpenAccountSettings;
   final Future<void> Function() onRefreshAfterNav;
+
+  bool get _opsEnabled => isFrontDesk || !creditsLocked;
 
   @override
   Widget build(BuildContext context) {
@@ -50,10 +54,10 @@ class SettingsSection extends StatelessWidget {
             title: Text(context.tr('change_language')),
             subtitle: Text(AppLocales.label(appLocaleNotifier.value)),
             trailing: const Icon(Icons.chevron_right),
-            enabled: !creditsLocked,
-            onTap: creditsLocked
-                ? null
-                : () => LanguagePickerButton.showPicker(context),
+            enabled: _opsEnabled,
+            onTap: _opsEnabled
+                ? () => LanguagePickerButton.showPicker(context)
+                : null,
           ),
         ),
         if (creditsLocked) ...[
@@ -63,7 +67,9 @@ class SettingsSection extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.all(14),
               child: Text(
-                'Credits are depleted. Only recharge is available until your balance is above ₱0.',
+                isFrontDesk
+                    ? 'Credits are depleted. Operational tabs are locked. You can still open reports and change your password here.'
+                    : 'Credits are depleted. Only recharge is available until your balance is above ₱0.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: Theme.of(context).colorScheme.onErrorContainer,
                       fontWeight: FontWeight.w600,
@@ -80,7 +86,7 @@ class SettingsSection extends StatelessWidget {
               icon: Icons.forum_outlined,
               title: 'Chatroom',
               subtitle: 'Guest and staff inboxes',
-              enabled: !creditsLocked,
+              enabled: _opsEnabled,
               onTap: () async {
                 await Navigator.of(context).push<void>(
                   MaterialPageRoute<void>(
@@ -92,166 +98,173 @@ class SettingsSection extends StatelessWidget {
             ),
           ],
         ),
+        if (!isFrontDesk) ...[
+          _SettingsGroup(
+            title: 'Room settings',
+            tiles: [
+              _SettingsTile(
+                icon: Icons.hotel_outlined,
+                title: 'Rooms & status',
+                subtitle: 'Edit room photo, rates, status, and setup',
+                enabled: !creditsLocked,
+                onTap: () async {
+                  await Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const AdminRoomsScreen(),
+                    ),
+                  );
+                  await onRefreshAfterNav();
+                },
+              ),
+              _SettingsTile(
+                icon: Icons.category_outlined,
+                title: 'Room categories',
+                subtitle: 'Categories, pricing, gallery images',
+                enabled: !creditsLocked,
+                onTap: () async {
+                  await Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const AdminCategoriesScreen(),
+                    ),
+                  );
+                  await onRefreshAfterNav();
+                },
+              ),
+              _SettingsTile(
+                icon: Icons.trending_up_outlined,
+                title: 'Dynamic / surge pricing',
+                subtitle: 'Weekend, peak, emergency surge toggles',
+                enabled: !creditsLocked,
+                onTap: onSurgePricing,
+              ),
+              _SettingsTile(
+                icon: Icons.image_outlined,
+                title: 'Hotel logo',
+                subtitle: 'Shown when guests search and browse your property',
+                enabled: !creditsLocked,
+                onTap: () {
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const AdminHotelLogoScreen(),
+                    ),
+                  );
+                },
+              ),
+              _SettingsTile(
+                icon: Icons.qr_code_2_outlined,
+                title: 'Guest portal QR',
+                subtitle: 'QR for in-house guests to sign in from the app',
+                enabled: !creditsLocked,
+                onTap: () {
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const AdminGuestPortalQrScreen(),
+                    ),
+                  );
+                },
+              ),
+              _SettingsTile(
+                icon: Icons.qr_code_scanner_outlined,
+                title: 'Online payment (QR Ph)',
+                subtitle: 'Upload QR for guest online payments & verify refs',
+                enabled: !creditsLocked,
+                onTap: () {
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const AdminOnlinePaymentScreen(),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+          _SettingsGroup(
+            title: 'Staff & tasks',
+            tiles: [
+              _SettingsTile(
+                icon: Icons.groups_outlined,
+                title: 'Staff management',
+                subtitle: 'Add, edit, roles, suspend',
+                enabled: !creditsLocked,
+                onTap: () async {
+                  await Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const AdminStaffScreen(),
+                    ),
+                  );
+                  await onRefreshAfterNav();
+                },
+              ),
+              _SettingsTile(
+                icon: Icons.assignment_outlined,
+                title: 'Assign tasks',
+                subtitle: 'Delegate work to maintenance, reception, and staff',
+                enabled: !creditsLocked,
+                onTap: () async {
+                  await Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const AdminTasksScreen(),
+                    ),
+                  );
+                  await onRefreshAfterNav();
+                },
+              ),
+            ],
+          ),
+        ],
         _SettingsGroup(
-          title: 'Room settings',
+          title: isFrontDesk ? 'Reports & account' : 'System & reports',
           tiles: [
-            _SettingsTile(
-              icon: Icons.hotel_outlined,
-              title: 'Rooms & status',
-              subtitle: 'Edit room photo, rates, status, and setup',
-              enabled: !creditsLocked,
-              onTap: () async {
-                await Navigator.of(context).push<void>(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const AdminRoomsScreen(),
-                  ),
-                );
-                await onRefreshAfterNav();
-              },
-            ),
-            _SettingsTile(
-              icon: Icons.category_outlined,
-              title: 'Room categories',
-              subtitle: 'Categories, pricing, gallery images',
-              enabled: !creditsLocked,
-              onTap: () async {
-                await Navigator.of(context).push<void>(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const AdminCategoriesScreen(),
-                  ),
-                );
-                await onRefreshAfterNav();
-              },
-            ),
-            _SettingsTile(
-              icon: Icons.trending_up_outlined,
-              title: 'Dynamic / surge pricing',
-              subtitle: 'Weekend, peak, emergency surge toggles',
-              enabled: !creditsLocked,
-              onTap: onSurgePricing,
-            ),
-            _SettingsTile(
-              icon: Icons.image_outlined,
-              title: 'Hotel logo',
-              subtitle: 'Shown when guests search and browse your property',
-              enabled: !creditsLocked,
-              onTap: () {
-                Navigator.of(context).push<void>(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const AdminHotelLogoScreen(),
-                  ),
-                );
-              },
-            ),
-            _SettingsTile(
-              icon: Icons.qr_code_2_outlined,
-              title: 'Guest portal QR',
-              subtitle: 'QR for in-house guests to sign in from the app',
-              enabled: !creditsLocked,
-              onTap: () {
-                Navigator.of(context).push<void>(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const AdminGuestPortalQrScreen(),
-                  ),
-                );
-              },
-            ),
-            _SettingsTile(
-              icon: Icons.qr_code_scanner_outlined,
-              title: 'Online payment (QR Ph)',
-              subtitle: 'Upload QR for guest online payments & verify refs',
-              enabled: !creditsLocked,
-              onTap: () {
-                Navigator.of(context).push<void>(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const AdminOnlinePaymentScreen(),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-        _SettingsGroup(
-          title: 'Staff & tasks',
-          tiles: [
-            _SettingsTile(
-              icon: Icons.groups_outlined,
-              title: 'Staff management',
-              subtitle: 'Add, edit, roles, suspend',
-              enabled: !creditsLocked,
-              onTap: () async {
-                await Navigator.of(context).push<void>(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const AdminStaffScreen(),
-                  ),
-                );
-                await onRefreshAfterNav();
-              },
-            ),
-            _SettingsTile(
-              icon: Icons.assignment_outlined,
-              title: 'Assign tasks',
-              subtitle: 'Delegate work to maintenance, reception, and staff',
-              enabled: !creditsLocked,
-              onTap: () async {
-                await Navigator.of(context).push<void>(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const AdminTasksScreen(),
-                  ),
-                );
-                await onRefreshAfterNav();
-              },
-            ),
-          ],
-        ),
-        _SettingsGroup(
-          title: 'System & reports',
-          tiles: [
-            _SettingsTile(
-              icon: Icons.account_balance_wallet_outlined,
-              title: 'Credits: $creditBalance',
-              subtitle: 'Recharge via GCash or PayMaya',
-              onTap: onRecharge,
-            ),
+            if (!isFrontDesk)
+              _SettingsTile(
+                icon: Icons.account_balance_wallet_outlined,
+                title: 'Credits: $creditBalance',
+                subtitle: 'Recharge via GCash or PayMaya',
+                onTap: onRecharge,
+              ),
             _SettingsTile(
               icon: Icons.insights_outlined,
               title: 'Analytics & reports',
               subtitle: 'Daily, weekly, monthly, annual revenue',
-              enabled: !creditsLocked,
+              enabled: isFrontDesk || !creditsLocked,
               onTap: () {
                 Navigator.of(context).push<void>(
                   MaterialPageRoute<void>(
-                    builder: (_) => const AdminReportsScreen(),
+                    builder: (_) => AdminReportsScreen(isFrontDesk: isFrontDesk),
                   ),
                 );
               },
             ),
-            _SettingsTile(
-              icon: Icons.receipt_long_outlined,
-              title: 'Checkout reminders',
-              subtitle: 'Process due billing reminders',
-              enabled: !creditsLocked,
-              onTap: () => onProcessReminders(),
-            ),
+            if (!isFrontDesk) ...[
+              _SettingsTile(
+                icon: Icons.receipt_long_outlined,
+                title: 'Checkout reminders',
+                subtitle: 'Process due billing reminders',
+                enabled: !creditsLocked,
+                onTap: () => onProcessReminders(),
+              ),
+              _SettingsTile(
+                icon: Icons.list_alt_outlined,
+                title: 'Activity logs & audit',
+                subtitle: 'System activity tracking',
+                enabled: !creditsLocked,
+                onTap: onOpenActivityLogs,
+              ),
+            ],
             _SettingsTile(
               icon: Icons.palette_outlined,
               title: 'Theme customization',
               subtitle: 'Reset personal admin theme',
-              enabled: !creditsLocked,
+              enabled: _opsEnabled,
               onTap: () => onThemeReset(),
-            ),
-            _SettingsTile(
-              icon: Icons.list_alt_outlined,
-              title: 'Activity logs & audit',
-              subtitle: 'System activity tracking',
-              enabled: !creditsLocked,
-              onTap: onOpenActivityLogs,
             ),
             _SettingsTile(
               icon: Icons.lock_outline,
               title: 'Account settings',
-              subtitle: 'Admin password and portal admins',
-              enabled: !creditsLocked,
+              subtitle: isFrontDesk
+                  ? 'Change your password'
+                  : 'Admin password and portal admins',
+              enabled: isFrontDesk || !creditsLocked,
               onTap: onOpenAccountSettings,
             ),
           ],

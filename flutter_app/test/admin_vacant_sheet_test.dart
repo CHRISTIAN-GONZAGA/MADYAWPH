@@ -60,6 +60,9 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Room 101'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Book this room'));
     await tester.pump();
     await advanceWalkInThroughCalendar(tester);
 

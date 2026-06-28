@@ -41,7 +41,6 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   bool _busy = false;
   bool _changingStatus = false;
   bool _checkingOut = false;
-  bool _updatingPayment = false;
   bool _issuingRefund = false;
   bool _extendingStay = false;
   late final String _roomId;
@@ -390,43 +389,241 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     final room = _asMap(_data?['room']);
     final booking = _asMap(_data?['active_booking']);
     final roomId = (room?['id'] ?? _roomId).toString();
-    final guest = (room?['current_guest_name'] ?? booking?['guest_name'] ?? 'Guest').toString();
-    final paid = (booking?['payment_status'] ?? '').toString() == 'paid';
+    final bookingId = (booking?['id'] ?? '').toString();
+    final guest =
+        (room?['current_guest_name'] ?? booking?['guest_name'] ?? 'Guest')
+            .toString();
 
-    if (!paid) {
+    if (bookingId.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Mark payment as paid before checking out this guest.'),
-        ),
+        const SnackBar(content: Text('No active booking for this room.')),
       );
       return;
     }
 
-    final ok = await showDialog<bool>(
+    Map<String, dynamic>? billSummary;
+    try {
+      final billRes = await portalDio().get<Map<String, dynamic>>(
+        '/admin/bookings/$bookingId/bill-summary',
+      );
+      billSummary = billRes.data;
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      return;
+    }
+
+    final current = (booking?['payment_status'] ?? 'unpaid').toString();
+    final currentMethodRaw = (booking?['payment_method'] ?? '').toString().trim();
+    String method = (() {
+      final lower = currentMethodRaw.toLowerCase();
+      if (lower == 'gcash' || lower == 'g-cash') return 'GCash';
+      if (lower == 'paymaya' || lower == 'maya' || lower == 'pay maya') {
+        return 'PayMaya';
+      }
+      if (lower == 'credit card' || lower == 'credit_card' || lower == 'card') {
+        return 'Credit Card';
+      }
+      return 'Cash';
+    })();
+    String status = current;
+    var paymentReady = current == 'paid';
+    final billTotalRaw = billSummary?['total_due'];
+    final totalDue = billTotalRaw != null
+        ? parseJsonDouble(billTotalRaw)
+        : parseJsonDouble(booking?['total_amount']);
+    final lines = (billSummary?['lines'] as List?) ?? const [];
+    final refCtrl =
+        TextEditingController(text: (booking?['payment_reference'] ?? '').toString());
+    final tenderCtrl = TextEditingController(
+      text: totalDue > 0 ? totalDue.toStringAsFixed(0) : '',
+    );
+
+    if (!mounted) return;
+    final shouldCheckout = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Check out guest'),
-        content: Text(
-          'Check out $guest from this room?\n\n'
-          '• Guest details will be cleared from room management\n'
-          '• Room will move to maintenance for cleaning\n'
-          '• Stay will appear in Guest list history\n'
-          '• Chat history for this room will be cleared',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Check out'),
-          ),
-        ],
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setLocal) {
+          final tendered = double.tryParse(tenderCtrl.text.trim()) ?? 0;
+          final change = status == 'paid' && tendered > 0
+              ? (tendered - totalDue).clamp(0, double.infinity)
+              : 0.0;
+          final canCheckout = paymentReady && status == 'paid';
+
+          return AlertDialog(
+            title: const Text('Check out guest'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Guest: $guest',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Amount due: ${formatPeso(totalDue)}',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  if (lines.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    ...lines.whereType<Map>().map(
+                      (line) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          children: [
+                            Expanded(child: Text('${line['label']}')),
+                            Text(formatBillLineAmount(line)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                  const Divider(height: 24),
+                  DropdownButtonFormField<String>(
+                    initialValue: status,
+                    items: const [
+                      DropdownMenuItem(value: 'unpaid', child: Text('Unpaid')),
+                      DropdownMenuItem(value: 'paid', child: Text('Paid')),
+                    ],
+                    onChanged: (v) => setLocal(() {
+                      status = v ?? status;
+                      if (status != 'paid') {
+                        paymentReady = false;
+                      }
+                    }),
+                    decoration: const InputDecoration(
+                      labelText: 'Payment status',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    initialValue: method,
+                    items: const [
+                      DropdownMenuItem(value: 'Cash', child: Text('Cash')),
+                      DropdownMenuItem(value: 'GCash', child: Text('GCash')),
+                      DropdownMenuItem(value: 'PayMaya', child: Text('PayMaya')),
+                      DropdownMenuItem(
+                        value: 'Credit Card',
+                        child: Text('Credit Card'),
+                      ),
+                    ],
+                    onChanged: (v) => setLocal(() => method = v ?? method),
+                    decoration: const InputDecoration(
+                      labelText: 'Payment method',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: tenderCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Amount given by guest',
+                      border: OutlineInputBorder(),
+                      prefixText: '₱ ',
+                    ),
+                    onChanged: (_) => setLocal(() {}),
+                  ),
+                  if (status == 'paid' && tendered > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        'Change: ${formatPeso(change)}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: refCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Payment reference (optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  if (!canCheckout) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      paymentReady
+                          ? 'Set payment status to Paid to continue.'
+                          : 'Record payment as Paid before checking out.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancel'),
+              ),
+              if (!paymentReady)
+                FilledButton.tonal(
+                  onPressed: status != 'paid'
+                      ? null
+                      : () async {
+                          try {
+                            final res = await portalDio().post<Map<String, dynamic>>(
+                              '/admin/bookings/$bookingId/payment-status',
+                              data: {
+                                'payment_status': status,
+                                'payment_reference': refCtrl.text.trim(),
+                                'payment_method': method,
+                                'amount_tendered': tendered > 0 ? tendered : null,
+                              },
+                            );
+                            if (!context.mounted) return;
+                            final changeDue =
+                                parseJsonDouble(res.data?['change_due']);
+                            setLocal(() => paymentReady = true);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  changeDue > 0
+                                      ? 'Payment recorded. Change due: ${formatPeso(changeDue)}'
+                                      : 'Payment recorded.',
+                                ),
+                              ),
+                            );
+                          } on DioException catch (e) {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(dioErrorMessage(e))),
+                            );
+                          }
+                        },
+                  child: const Text('Save payment'),
+                ),
+              FilledButton(
+                onPressed: canCheckout
+                    ? () => Navigator.of(dialogContext).pop(true)
+                    : null,
+                child: const Text('Check out guest'),
+              ),
+            ],
+          );
+        },
       ),
     );
-    if (ok != true || _checkingOut) return;
+
+    refCtrl.dispose();
+    tenderCtrl.dispose();
+    if (shouldCheckout != true || _checkingOut) return;
 
     setState(() => _checkingOut = true);
     try {
@@ -684,196 +881,6 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
-    }
-  }
-
-  Future<void> _updatePaymentStatus() async {
-    final booking = _asMap(_data?['active_booking']);
-    final bookingId = (booking?['id'] ?? '').toString();
-    if (bookingId.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No active booking for this room.')),
-      );
-      return;
-    }
-    Map<String, dynamic>? billSummary;
-    try {
-      final billRes = await portalDio().get<Map<String, dynamic>>(
-        '/admin/bookings/$bookingId/bill-summary',
-      );
-      billSummary = billRes.data;
-    } on DioException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
-      return;
-    }
-    final current = (booking?['payment_status'] ?? 'unpaid').toString();
-    final currentMethodRaw = (booking?['payment_method'] ?? '').toString().trim();
-    String method = (() {
-      final lower = currentMethodRaw.toLowerCase();
-      if (lower == 'gcash' || lower == 'g-cash') return 'GCash';
-      if (lower == 'paymaya' || lower == 'maya' || lower == 'pay maya') {
-        return 'PayMaya';
-      }
-      if (lower == 'credit card' || lower == 'credit_card' || lower == 'card') {
-        return 'Credit Card';
-      }
-      return 'Cash';
-    })();
-    String next = current;
-    final billTotalRaw = billSummary?['total_due'];
-    final totalDue = billTotalRaw != null
-        ? parseJsonDouble(billTotalRaw)
-        : parseJsonDouble(booking?['total_amount']);
-    final lines = (billSummary?['lines'] as List?) ?? const [];
-    final refCtrl =
-        TextEditingController(text: (booking?['payment_reference'] ?? '').toString());
-    final tenderCtrl = TextEditingController(
-      text: totalDue > 0 ? totalDue.toStringAsFixed(0) : '',
-    );
-    if (!mounted) return;
-    final payload = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setLocal) {
-          final tendered = double.tryParse(tenderCtrl.text.trim()) ?? 0;
-          final change = next == 'paid' && tendered > 0
-              ? (tendered - totalDue).clamp(0, double.infinity)
-              : 0.0;
-          return AlertDialog(
-            title: const Text('Record payment'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Total bill: ${formatPeso(totalDue)}',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                  ),
-                  if (lines.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    ...lines.whereType<Map>().map(
-                      (line) => Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Row(
-                          children: [
-                            Expanded(child: Text('${line['label']}')),
-                            Text(formatBillLineAmount(line)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                  const Divider(),
-                  DropdownButtonFormField<String>(
-                    initialValue: current,
-                    items: const [
-                      DropdownMenuItem(value: 'unpaid', child: Text('Unpaid')),
-                      DropdownMenuItem(value: 'paid', child: Text('Paid')),
-                    ],
-                    onChanged: (v) => setLocal(() => next = v ?? current),
-                    decoration: const InputDecoration(
-                      labelText: 'Status',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: tenderCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(
-                      labelText: 'Amount given by guest',
-                      border: OutlineInputBorder(),
-                      prefixText: '₱ ',
-                    ),
-                    onChanged: (_) => setLocal(() {}),
-                  ),
-                  if (next == 'paid' && tendered > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        'Change: ${formatPeso(change)}',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: refCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Payment reference (optional)',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  DropdownButtonFormField<String>(
-                    initialValue: method,
-                    items: const [
-                      DropdownMenuItem(value: 'Cash', child: Text('Cash')),
-                      DropdownMenuItem(value: 'GCash', child: Text('GCash')),
-                      DropdownMenuItem(value: 'PayMaya', child: Text('PayMaya')),
-                      DropdownMenuItem(
-                        value: 'Credit Card',
-                        child: Text('Credit Card'),
-                      ),
-                    ],
-                    onChanged: (v) => setLocal(() => method = v ?? method),
-                    decoration: const InputDecoration(
-                      labelText: 'Payment method',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop({
-                  'payment_status': next,
-                  'payment_reference': refCtrl.text.trim(),
-                  'payment_method': method,
-                  'amount_tendered': tendered > 0 ? tendered : null,
-                }),
-                child: const Text('Pay'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-    refCtrl.dispose();
-    tenderCtrl.dispose();
-    if (payload == null || _updatingPayment) return;
-    setState(() => _updatingPayment = true);
-    try {
-      final res = await portalDio().post<Map<String, dynamic>>(
-        '/admin/bookings/$bookingId/payment-status',
-        data: payload,
-      );
-      if (!mounted) return;
-      final changeDue = parseJsonDouble(res.data?['change_due']);
-      final msg = changeDue > 0
-          ? 'Payment recorded. Change due: ${formatPeso(changeDue)}'
-          : 'Payment recorded.';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-      await _load();
-    } on DioException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
-    } finally {
-      if (mounted) setState(() => _updatingPayment = false);
     }
   }
 
@@ -1229,32 +1236,17 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _updatingPayment ? null : _updatePaymentStatus,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: accent,
-                    side: BorderSide(color: accent),
-                  ),
-                  icon: const Icon(Icons.payments_outlined),
-                  label: const Text('Payment'),
-                ),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _issuingRefund ? null : _issueRefund,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: accent,
+                side: BorderSide(color: accent),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _issuingRefund ? null : _issueRefund,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: accent,
-                    side: BorderSide(color: accent),
-                  ),
-                  icon: const Icon(Icons.replay_outlined),
-                  label: const Text('Refund'),
-                ),
-              ),
-            ],
+              icon: const Icon(Icons.replay_outlined),
+              label: const Text('Refund'),
+            ),
           ),
           if ((status == 'checked_in' || status == 'booked') &&
               booking != null &&

@@ -130,6 +130,50 @@ class AdminDashboardModels {
     return id;
   }
 
+  /// Display label for booking records in the Book tab (uses room status when checked in).
+  static String bookingRecordStatusLabel(
+    Map<String, dynamic> booking, {
+    Map<String, dynamic>? room,
+  }) {
+    final roomStatus = room != null
+        ? statusOf(room)
+        : (booking['room_status'] ?? '').toString().toLowerCase().trim();
+    if (roomStatus == 'checked_in') {
+      return 'Checked in';
+    }
+
+    final status = (booking['status'] ?? '').toString().toLowerCase().trim();
+    switch (status) {
+      case 'booked':
+        return 'Booked';
+      case 'reserved':
+        return 'Reserved';
+      case 'confirmed':
+        return 'Booked';
+      case 'completed':
+        return 'Completed';
+      case 'cancelled':
+        return 'Cancelled';
+      default:
+        if (status.isEmpty) return '—';
+        return status[0].toUpperCase() + status.substring(1).replaceAll('_', ' ');
+    }
+  }
+
+  static Map<String, dynamic>? roomForBooking(
+    Map<String, dynamic> booking,
+    List<Map<String, dynamic>> rooms,
+  ) {
+    final roomId = normalizeRoomIdString(booking['room_id']);
+    if (roomId.isEmpty) return null;
+    for (final room in rooms) {
+      if (normalizeRoomIdString(roomIdOf(room)) == roomId) {
+        return room;
+      }
+    }
+    return null;
+  }
+
   /// Display label: checked_in → Occupied (API value unchanged).
   static String roomStatusLabel(String status) {
     switch (status.toLowerCase().trim()) {

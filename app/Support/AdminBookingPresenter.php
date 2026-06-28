@@ -46,6 +46,9 @@ final class AdminBookingPresenter
             'room_display_name' => $room ? (string) ($room->display_name ?? '') : '',
             'room_type' => $room ? (string) ($room->room_type?->value ?? $room->room_type) : '',
             'category_name' => $room ? (string) ($room->category_name ?? '') : '',
+            'room_status' => $room
+                ? ($room->status instanceof \BackedEnum ? $room->status->value : (string) ($room->status ?? ''))
+                : '',
             'status' => $booking->status instanceof \BackedEnum ? $booking->status->value : (string) $booking->status,
             'payment_status' => (string) ($booking->payment_status ?? ''),
             'total_amount' => (float) $booking->total_amount,

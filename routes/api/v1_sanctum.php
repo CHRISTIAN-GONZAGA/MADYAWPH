@@ -87,7 +87,7 @@ Route::get('/auth/session', function (Request $request) {
     ]);
 })->name('api.v1.auth.session');
 
-Route::middleware('role:admin')->group(function (): void {
+Route::middleware('role:admin,frontdesk')->group(function (): void {
     Route::get('/admin/dashboard', AdminDashboardApiController::class)->name('api.v1.admin.dashboard');
 
     Route::get('/admin/bookings/{id}/room-password', function (Request $request, string $id) {
@@ -116,7 +116,7 @@ Route::middleware('role:admin')->group(function (): void {
         $built = app(StayReceiptService::class)->build($booking);
 
         return $built['pdf']->download($built['filename']);
-    })->middleware('role:admin,staff')->name('api.v1.admin.booking.receipt');
+    })->middleware('role:admin,staff,frontdesk')->name('api.v1.admin.booking.receipt');
 
     Route::get('/admin/bookings/{booking}/receipt-summary', function (Request $request, Booking $booking) {
         if ((string) $booking->hotel_id !== (string) $request->user()->hotel_id) {
@@ -126,7 +126,7 @@ Route::middleware('role:admin')->group(function (): void {
         return response()->json([
             'receipt' => app(StayReceiptService::class)->summaryFor($booking),
         ]);
-    })->middleware('role:admin,staff')->name('api.v1.admin.booking.receipt-summary');
+    })->middleware('role:admin,staff,frontdesk')->name('api.v1.admin.booking.receipt-summary');
 
     Route::post('/admin/credits/recharge', function (Request $request) {
         $gateway = app(PaymentGatewayService::class);
@@ -189,7 +189,7 @@ Route::middleware('role:admin')->group(function (): void {
             'balance' => $newBalance,
             'transactionId' => $paymentResult['transaction_id'] ?? null,
         ]);
-    })->name('api.v1.admin.credits.recharge');
+    })->middleware('role:admin')->name('api.v1.admin.credits.recharge');
 
     Route::post('/admin/credits/recharge-request', function (Request $request) {
         $validated = $request->validate([
@@ -269,7 +269,7 @@ Route::middleware('role:admin')->group(function (): void {
             'ok' => true,
             'customMarkupPercentage' => (float) $credit->custom_markup_percentage,
         ]);
-    })->name('api.v1.admin.credits.markup');
+    })->middleware('role:admin')->name('api.v1.admin.credits.markup');
 
     Route::post('/admin/password/send-code', function (Request $request) {
         $hotel = Hotel::withoutGlobalScopes()->find((string) $request->user()->hotel_id);
@@ -354,7 +354,7 @@ Route::middleware('role:admin')->group(function (): void {
         ]);
 
         return response()->json($item, 201);
-    })->name('api.v1.admin.amenity.menu.store');
+    })->middleware('role:admin')->name('api.v1.admin.amenity.menu.store');
 
     Route::put('/admin/amenity-menu/{id}', function (Request $request, string $id) {
         $validated = $request->validate([
@@ -369,7 +369,7 @@ Route::middleware('role:admin')->group(function (): void {
         $item->update($validated);
 
         return response()->json($item->fresh());
-    })->name('api.v1.admin.amenity.menu.update');
+    })->middleware('role:admin')->name('api.v1.admin.amenity.menu.update');
 
     Route::delete('/admin/amenity-menu/{id}', function (Request $request, string $id) {
         AmenityMenuItem::withoutGlobalScopes()
@@ -378,7 +378,7 @@ Route::middleware('role:admin')->group(function (): void {
             ->delete();
 
         return response()->json(['ok' => true]);
-    })->name('api.v1.admin.amenity.menu.delete');
+    })->middleware('role:admin')->name('api.v1.admin.amenity.menu.delete');
 
     Route::patch('/admin/rooms/{id}/status', function (Request $request, string $id, RoomCheckoutService $roomCheckoutService) {
         $validated = $request->validate([
@@ -652,7 +652,7 @@ Route::middleware('role:admin')->group(function (): void {
             'ok' => true,
             'booking' => AdminBookingPresenter::present($updated, $room),
         ]);
-    })->middleware('role:admin')->name('api.v1.admin.bookings.reschedule');
+    })->middleware('role:admin,frontdesk')->name('api.v1.admin.bookings.reschedule');
 
     Route::post('/admin/bookings/{booking}/cancel', function (
         Request $request,
@@ -670,7 +670,7 @@ Route::middleware('role:admin')->group(function (): void {
             'ok' => true,
             'booking' => AdminBookingPresenter::present($updated, $room),
         ]);
-    })->middleware('role:admin')->name('api.v1.admin.bookings.cancel');
+    })->middleware('role:admin,frontdesk')->name('api.v1.admin.bookings.cancel');
 
     Route::post('/admin/theme', function (Request $request) {
         $validated = $request->validate([
@@ -690,7 +690,7 @@ Route::middleware('role:admin')->group(function (): void {
         }
 
         return response()->json(['ok' => true]);
-    })->name('api.v1.admin.theme.update');
+    })->middleware('role:admin')->name('api.v1.admin.theme.update');
 
     Route::delete('/admin/theme/reset', function (Request $request) {
         UserSetting::withoutGlobalScopes()
@@ -699,7 +699,7 @@ Route::middleware('role:admin')->group(function (): void {
             ->delete();
 
         return response()->json(['ok' => true]);
-    })->name('api.v1.admin.theme.reset');
+    })->middleware('role:admin')->name('api.v1.admin.theme.reset');
 
     Route::post('/admin/chat/reply', [AdminChatController::class, 'reply'])
         ->name('api.v1.admin.chat.reply');
@@ -711,7 +711,7 @@ Route::middleware('role:admin')->group(function (): void {
         }
 
         return response()->json(app(BookingPaymentService::class)->billSummary($booking));
-    })->middleware('role:admin,staff')->name('api.v1.admin.bookings.bill-summary');
+    })->middleware('role:admin,frontdesk,staff')->name('api.v1.admin.bookings.bill-summary');
 
     Route::post('/admin/bookings/{booking}/payment-status', function (Request $request, Booking $booking) {
         $validated = $request->validate([
@@ -923,7 +923,7 @@ Route::middleware('role:staff')->group(function (): void {
  */
 
 // Rooms (hotel staff only — blocks platform central_admin tokens)
-Route::middleware(['hotel.staff', 'role:admin,staff'])->group(function (): void {
+Route::middleware(['hotel.staff', 'role:admin,staff,frontdesk'])->group(function (): void {
     Route::get('/rooms', [RoomController::class, 'index']);
     Route::get('/rooms/available', [RoomController::class, 'available']);
     Route::get('/rooms/{room}', [RoomController::class, 'show']);
@@ -935,13 +935,13 @@ Route::middleware(['hotel.staff', 'role:admin,staff'])->group(function (): void 
 });
 
 // Room categories
-Route::get('/room-categories', [RoomCategoryController::class, 'index'])->middleware('role:admin,staff');
+Route::get('/room-categories', [RoomCategoryController::class, 'index'])->middleware('role:admin,staff,frontdesk');
 Route::post('/room-categories', [RoomCategoryController::class, 'store'])->middleware('role:admin');
 Route::put('/room-categories/{roomCategory}', [RoomCategoryController::class, 'update'])->middleware('role:admin');
 Route::delete('/room-categories/{roomCategory}', [RoomCategoryController::class, 'destroy'])->middleware('role:admin');
 
 // Bookings
-Route::get('/bookings', [BookingController::class, 'index'])->middleware('role:admin,staff');
+Route::get('/bookings', [BookingController::class, 'index'])->middleware('role:admin,staff,frontdesk');
 Route::put('/bookings/{booking}/cancel', [BookingController::class, 'cancel'])->middleware('role:admin,staff');
 Route::put('/bookings/{booking}/complete', [BookingController::class, 'complete'])->middleware('role:admin,staff');
 
@@ -982,7 +982,7 @@ Route::post('/billing/charges', function (Request $request, FinancialComputation
     app(\App\Services\BookingPaymentService::class)->syncBookingTotalFromCharges($booking->fresh());
 
     return response()->json($charge, 201);
-})->middleware('role:admin,staff');
+})->middleware('role:admin,staff,frontdesk');
 
 Route::get('/billing/booking/{bookingId}', function (Request $request, string $bookingId, FinancialComputationService $financialComputationService) {
     $hotelId = (string) $request->user()->hotel_id;
@@ -995,7 +995,7 @@ Route::get('/billing/booking/{bookingId}', function (Request $request, string $b
         'charges' => $charges,
         'subtotal' => $financialComputationService->computeTotal($subtotal),
     ]);
-})->middleware('role:admin,staff');
+})->middleware('role:admin,staff,frontdesk');
 
 // External reservations
 Route::post('/reservations/external', function (Request $request) {
@@ -1015,7 +1015,7 @@ Route::post('/reservations/external', function (Request $request) {
     ]);
 
     return response()->json($reservation, 201);
-})->middleware('role:admin,staff');
+})->middleware('role:admin,staff,frontdesk');
 
 Route::put('/reservations/{reservation}/assign-room', function (Request $request, ExternalReservation $reservation, BookingService $bookingService) {
     $validated = $request->validate([
@@ -1048,7 +1048,7 @@ Route::put('/reservations/{reservation}/assign-room', function (Request $request
     ]);
 
     return response()->json(['reservation' => $reservation->fresh(), 'booking' => $booking]);
-})->middleware('role:admin,staff');
+})->middleware('role:admin,staff,frontdesk');
 
 // Checkout reminders
 Route::post('/checkouts/{booking}/schedule-reminders', function (Request $request, Booking $booking) {
@@ -1077,7 +1077,7 @@ Route::post('/checkouts/{booking}/schedule-reminders', function (Request $reques
     }
 
     return response()->json(['reminders' => $created], 201);
-})->middleware('role:admin,staff');
+})->middleware('role:admin,staff,frontdesk');
 
 Route::post('/checkouts/process-reminders', function (Request $request, SmsService $smsService, ActivityLogService $activityLogService) {
     $hotelId = (string) $request->user()->hotel_id;
@@ -1119,7 +1119,7 @@ Route::post('/checkouts/process-reminders', function (Request $request, SmsServi
     }
 
     return response()->json(['ok' => true, 'processed' => $processed]);
-})->middleware('role:admin,staff');
+})->middleware('role:admin,staff,frontdesk');
 
 // Reviews
 Route::post('/reviews', function (Request $request) {
@@ -1143,7 +1143,7 @@ Route::post('/reviews', function (Request $request) {
     ]);
 
     return response()->json($review, 201);
-})->middleware('role:admin,staff');
+})->middleware('role:admin,staff,frontdesk');
 
 // Room transfers (keep parity with legacy)
 Route::get('/room-transfers/preview', function (Request $request, FinancialComputationService $financialComputationService) {
@@ -1173,7 +1173,7 @@ Route::get('/room-transfers/preview', function (Request $request, FinancialCompu
         'new_total' => $newTotal,
         'requires_approval' => abs($priceAdjustment) > 0,
     ]);
-})->middleware('role:admin,staff');
+})->middleware('role:admin,staff,frontdesk');
 
 Route::post('/room-transfers', function (Request $request, FinancialComputationService $financialComputationService, ActivityLogService $activityLogService, RoomStatusNotificationService $roomStatusNotificationService) {
     $validated = $request->validate([
@@ -1265,7 +1265,7 @@ Route::post('/room-transfers', function (Request $request, FinancialComputationS
     $activityLogService->log((string) $request->user()->hotel_id, $request->user(), "Transferred booking {$booking->booking_reference}", ['transfer_id' => (string) $transfer->id]);
 
     return response()->json(['transfer' => $transfer, 'booking' => $booking->fresh()]);
-})->middleware('role:admin,staff');
+})->middleware('role:admin,staff,frontdesk');
 
 // Chat message read state
 Route::post('/chat/messages/{message}/read', function (Request $request, GuestMessage $message) {
@@ -1275,7 +1275,7 @@ Route::post('/chat/messages/{message}/read', function (Request $request, GuestMe
     $message->update(['is_read' => true, 'read_at' => now()]);
 
     return response()->json(['ok' => true]);
-})->middleware('role:admin,staff');
+})->middleware('role:admin,staff,frontdesk');
 
 // Staff management
 Route::get('/staff', [StaffController::class, 'index'])->middleware('role:admin');
@@ -1290,20 +1290,20 @@ Route::put('/tasks/{task}/status', [TaskController::class, 'updateStatus'])->mid
 Route::get('/tasks/assigned-to-me', [TaskController::class, 'assignedToMe'])->middleware('role:staff');
 
 // Reports
-Route::get('/reports/sales', [ReportController::class, 'sales'])->middleware('role:admin');
-Route::get('/reports/sales/timeseries', [ReportController::class, 'salesTimeseries'])->middleware('role:admin');
-Route::get('/reports/paid-transactions', [ReportController::class, 'paidTransactions'])->middleware('role:admin');
-Route::get('/reports/amenity-sales/timeseries', [ReportController::class, 'amenitySalesTimeseries'])->middleware('role:admin');
-Route::get('/reports/amenity-sales/overview', [ReportController::class, 'amenityProfitOverview'])->middleware('role:admin');
-Route::get('/reports/profit-overview', [ReportController::class, 'profitOverview'])->middleware('role:admin');
-Route::get('/reports/reseller-payments/timeseries', [ReportController::class, 'resellerPaymentsTimeseries'])->middleware('role:admin');
-Route::get('/reports/sales-csv', [ReportController::class, 'salesCsv'])->middleware('role:admin');
-Route::get('/reports/sales-pdf', [ReportController::class, 'salesPdf'])->middleware('role:admin');
-Route::get('/reports/staff-performance', [ReportController::class, 'staffPerformance'])->middleware('role:admin');
-Route::get('/reports/room-occupancy', [ReportController::class, 'roomOccupancy'])->middleware('role:admin,staff');
-Route::get('/reports/activity/timeline', [ReportController::class, 'activityTimeline'])->middleware('role:admin,staff');
-Route::get('/reports/transfers', [ReportController::class, 'transferSummary'])->middleware('role:admin,staff');
-Route::get('/reports/tasks/performance', [ReportController::class, 'taskPerformance'])->middleware('role:admin,staff');
+Route::get('/reports/sales', [ReportController::class, 'sales'])->middleware('role:admin,frontdesk');
+Route::get('/reports/sales/timeseries', [ReportController::class, 'salesTimeseries'])->middleware('role:admin,frontdesk');
+Route::get('/reports/paid-transactions', [ReportController::class, 'paidTransactions'])->middleware('role:admin,frontdesk');
+Route::get('/reports/amenity-sales/timeseries', [ReportController::class, 'amenitySalesTimeseries'])->middleware('role:admin,frontdesk');
+Route::get('/reports/amenity-sales/overview', [ReportController::class, 'amenityProfitOverview'])->middleware('role:admin,frontdesk');
+Route::get('/reports/profit-overview', [ReportController::class, 'profitOverview'])->middleware('role:admin,frontdesk');
+Route::get('/reports/reseller-payments/timeseries', [ReportController::class, 'resellerPaymentsTimeseries'])->middleware('role:admin,frontdesk');
+Route::get('/reports/sales-csv', [ReportController::class, 'salesCsv'])->middleware('role:admin,frontdesk');
+Route::get('/reports/sales-pdf', [ReportController::class, 'salesPdf'])->middleware('role:admin,frontdesk');
+Route::get('/reports/staff-performance', [ReportController::class, 'staffPerformance'])->middleware('role:admin,frontdesk');
+Route::get('/reports/room-occupancy', [ReportController::class, 'roomOccupancy'])->middleware('role:admin,staff,frontdesk');
+Route::get('/reports/activity/timeline', [ReportController::class, 'activityTimeline'])->middleware('role:admin,staff,frontdesk');
+Route::get('/reports/transfers', [ReportController::class, 'transferSummary'])->middleware('role:admin,staff,frontdesk');
+Route::get('/reports/tasks/performance', [ReportController::class, 'taskPerformance'])->middleware('role:admin,staff,frontdesk');
 
 // Resellers
 Route::get('/admin/resellers', [ResellerController::class, 'index'])->middleware('role:admin');
@@ -1339,7 +1339,7 @@ Route::get('/admin/guest-history', function (Request $request) {
         });
 
     return response()->json(['data' => $rows]);
-})->middleware('role:admin');
+})->middleware('role:admin,frontdesk');
 
 Route::post('/admin/reservations/{id}/approve', function (Request $request, string $id) {
     $hotelId = (string) $request->user()->hotel_id;
@@ -1416,7 +1416,7 @@ Route::post('/admin/reservations/{id}/approve', function (Request $request, stri
         'activated' => $booking !== null,
         'wallet' => $walletFee,
     ]);
-})->middleware('role:admin')->name('api.v1.admin.reservations.approve');
+})->middleware('role:admin,frontdesk')->name('api.v1.admin.reservations.approve');
 
 Route::post('/admin/reservations/{id}/reject', function (Request $request, string $id) {
     $hotelId = (string) $request->user()->hotel_id;
@@ -1466,7 +1466,7 @@ Route::post('/admin/reservations/{id}/reject', function (Request $request, strin
     );
 
     return response()->json(['ok' => true, 'reservation' => $res->fresh()]);
-})->middleware('role:admin')->name('api.v1.admin.reservations.reject');
+})->middleware('role:admin,frontdesk')->name('api.v1.admin.reservations.reject');
 
 Route::patch('/admin/reservations/{id}', function (
     Request $request,
@@ -1486,7 +1486,7 @@ Route::patch('/admin/reservations/{id}', function (
     $updated = $reservationService->reschedule($res, $validated, $request->user());
 
     return response()->json(['ok' => true, 'reservation' => $updated]);
-})->middleware('role:admin')->name('api.v1.admin.reservations.reschedule');
+})->middleware('role:admin,frontdesk')->name('api.v1.admin.reservations.reschedule');
 
 Route::post('/admin/reservations/{id}/cancel', function (
     Request $request,
@@ -1501,7 +1501,7 @@ Route::post('/admin/reservations/{id}/cancel', function (
     $updated = $reservationService->cancel($res, $request->user());
 
     return response()->json(['ok' => true, 'reservation' => $updated]);
-})->middleware('role:admin')->name('api.v1.admin.reservations.cancel');
+})->middleware('role:admin,frontdesk')->name('api.v1.admin.reservations.cancel');
 
 Route::put('/admin/profile', function (Request $request) {
     $validated = $request->validate([
@@ -1520,7 +1520,7 @@ Route::put('/admin/profile', function (Request $request) {
     $user->save();
 
     return response()->json(['ok' => true, 'user' => $user->fresh()]);
-})->middleware('role:admin')->name('api.v1.admin.profile');
+})->middleware('role:admin,frontdesk')->name('api.v1.admin.profile');
 
 Route::get('/admin/hotel/picker-banner', function (Request $request) {
     $hotel = Hotel::withoutGlobalScopes()->findOrFail((string) $request->user()->hotel_id);
@@ -1706,44 +1706,55 @@ Route::get('/admin/payment-references/search', function (Request $request) {
 
 Route::post('/admin/portal-users', function (Request $request) {
     $actor = $request->user();
-    if ($actor->roleValue() !== 'super_admin') {
-        return response()->json(['message' => 'Only the super admin can create admin accounts.'], 403);
-    }
+    $actorRole = $actor->roleValue();
     $validated = $request->validate([
         'name' => ['required', 'string', 'max:255'],
         'email' => ['nullable', 'email', 'max:255'],
         'password' => ['required', 'string', 'min:6'],
+        'role' => ['nullable', 'in:admin,frontdesk'],
     ]);
+    $targetRole = (string) ($validated['role'] ?? UserRole::ADMIN->value);
+    if ($actorRole === UserRole::ADMIN->value) {
+        if ($targetRole !== UserRole::FRONTDESK->value) {
+            return response()->json(['message' => 'Hotel admins can only create front desk accounts.'], 403);
+        }
+    } elseif ($actorRole !== UserRole::SUPER_ADMIN->value) {
+        return response()->json(['message' => 'Only hotel admin or super admin can create portal accounts.'], 403);
+    }
     $hotelId = (string) $actor->hotel_id;
     $name = $validated['name'];
     $email = $validated['email'] ?? $name.'@hotel.local';
     if (User::withoutGlobalScopes()->where('hotel_id', $hotelId)->where('name', $name)->exists()) {
         return response()->json(['message' => 'An account with this username already exists.'], 422);
     }
-    $admin = User::withoutGlobalScopes()->create([
+    $created = User::withoutGlobalScopes()->create([
         'hotel_id' => $hotelId,
         'name' => $name,
         'email' => $email,
         'password' => Hash::make($validated['password']),
-        'role' => UserRole::ADMIN,
+        'role' => $targetRole === UserRole::FRONTDESK->value
+            ? UserRole::FRONTDESK
+            : UserRole::ADMIN,
     ]);
     app(ActivityLogService::class)->log(
         $hotelId,
         $actor,
-        "Created administrator account {$name}",
-        ['user_id' => (string) $admin->id]
+        $targetRole === UserRole::FRONTDESK->value
+            ? "Created front desk account {$name}"
+            : "Created administrator account {$name}",
+        ['user_id' => (string) $created->id, 'role' => $created->roleValue()]
     );
 
     return response()->json([
         'ok' => true,
         'user' => [
-            'id' => (string) $admin->id,
-            'name' => (string) $admin->name,
-            'email' => (string) $admin->email,
-            'role' => $admin->roleValue(),
+            'id' => (string) $created->id,
+            'name' => (string) $created->name,
+            'email' => (string) $created->email,
+            'role' => $created->roleValue(),
         ],
     ], 201);
-})->middleware('role:super_admin')->name('api.v1.admin.portal-users.store');
+})->middleware('role:admin,super_admin')->name('api.v1.admin.portal-users.store');
 
 Route::get('/admin/portal-users', function (Request $request) {
     $hotelId = (string) $request->user()->hotel_id;
@@ -1867,7 +1878,7 @@ Route::get('/admin/rooms', function (Request $request) {
         });
 
     return response()->json(['data' => $rooms]);
-})->middleware('role:admin');
+})->middleware('role:admin,frontdesk');
 
 Route::get('/admin/rooms/{id}', function (Request $request, string $id, RoomCheckoutService $roomCheckoutService) {
     $hotelId = (string) $request->user()->hotel_id;
@@ -1926,7 +1937,7 @@ Route::get('/admin/rooms/{id}', function (Request $request, string $id, RoomChec
         'pending_reservation' => $stayFlags['pending_reservation'],
         'extension_options' => $extensionOptions,
     ]);
-})->middleware('role:admin');
+})->middleware('role:admin,frontdesk');
 
 Route::post('/admin/bookings/{booking}/extend-stay', function (Request $request, Booking $booking, StayExtensionService $stayExtensionService) {
     $hotelId = (string) $request->user()->hotel_id;
@@ -1954,7 +1965,7 @@ Route::post('/admin/bookings/{booking}/extend-stay', function (Request $request,
     );
 
     return response()->json($result);
-})->middleware('role:admin');
+})->middleware('role:admin,frontdesk');
 
 Route::get('/admin/pricing/surge', function (Request $request) {
     $hotelId = (string) $request->user()->hotel_id;
@@ -1995,10 +2006,10 @@ Route::patch('/admin/pricing/surge', function (Request $request) {
     ]);
 
     return response()->json(['ok' => true]);
-})->middleware('role:admin');
+})->middleware('role:admin,frontdesk');
 
-Route::get('/admin/chat/inbox', [AdminChatController::class, 'inbox'])->middleware('role:admin');
-Route::get('/admin/chat/rooms/{roomId}', [AdminChatController::class, 'room'])->middleware('role:admin');
+Route::get('/admin/chat/inbox', [AdminChatController::class, 'inbox'])->middleware('role:admin,frontdesk');
+Route::get('/admin/chat/rooms/{roomId}', [AdminChatController::class, 'room'])->middleware('role:admin,frontdesk');
 
 // Platform central admin (developers) — separate from hotel admins.
 Route::middleware('role:central_admin')->prefix('platform')->group(function () {

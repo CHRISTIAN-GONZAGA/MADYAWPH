@@ -84,7 +84,10 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Room 101'));
-      await tester.pump();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Book this room'));
+      await tester.pumpAndSettle();
       await advanceWalkInThroughCalendar(tester);
 
       expect(find.text('Complete your booking'), findsOneWidget);

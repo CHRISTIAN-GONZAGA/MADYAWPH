@@ -76,10 +76,12 @@ class HotelCreditsReminderBanner extends StatelessWidget {
     super.key,
     required this.balance,
     required this.onTopUp,
+    this.frontDeskMode = false,
   });
 
   final double balance;
-  final VoidCallback onTopUp;
+  final VoidCallback? onTopUp;
+  final bool frontDeskMode;
 
   @override
   Widget build(BuildContext context) {
@@ -100,9 +102,11 @@ class HotelCreditsReminderBanner extends StatelessWidget {
         : Icons.warning_amber_rounded;
 
     final message = depleted
-        ? 'Credit balance is ₱0.00. Top up credits to use the app — only recharge and sign out are available.'
+        ? frontDeskMode
+            ? 'Credit balance is ₱0.00. Contact your hotel administrator to top up credits.'
+            : 'Credit balance is ₱0.00. Top up credits to use the app — only recharge and sign out are available.'
         : 'Low credit balance: ₱${_format(balance)}. '
-            'Top up to at least ₱${_format(threshold)} to avoid interrupted bookings and fees.';
+            '${frontDeskMode ? 'Ask your hotel administrator to top up.' : 'Top up to at least ₱${_format(threshold)} to avoid interrupted bookings and fees.'}';
 
     return Material(
       color: bg,
@@ -123,15 +127,17 @@ class HotelCreditsReminderBanner extends StatelessWidget {
                     ),
               ),
             ),
-            const SizedBox(width: 8),
-            FilledButton.tonal(
-              onPressed: onTopUp,
-              style: FilledButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            if (onTopUp != null) ...[
+              const SizedBox(width: 8),
+              FilledButton.tonal(
+                onPressed: onTopUp,
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+                child: const Text('Top up'),
               ),
-              child: const Text('Top up'),
-            ),
+            ],
           ],
         ),
       ),

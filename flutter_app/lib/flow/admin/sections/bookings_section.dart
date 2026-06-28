@@ -325,7 +325,7 @@ class _BookingsSectionState extends State<BookingsSection>
           'title':
               '${b['guest_name']} · Room ${b['room_number'] ?? '—'}',
           'subtitle':
-              '${AdminDashboardModels.formatBookingDuration(b)} · ${b['status']}',
+              '${AdminDashboardModels.formatBookingDuration(b)} · ${_bookingStatusLabel(b)}',
         });
       }
     }
@@ -334,7 +334,7 @@ class _BookingsSectionState extends State<BookingsSection>
           _onDay(day, res['check_out_date']?.toString())) {
         out.add({
           'type': 'reservation',
-          'title': '${res['guest_name']} · ${res['status']}',
+          'title': '${res['guest_name']} · ${_reservationStatusLabel((res['status'] ?? '').toString())}',
           'subtitle':
               AdminDashboardModels.formatDateRange(
                 res['check_in_date'],
@@ -375,7 +375,7 @@ class _BookingsSectionState extends State<BookingsSection>
                   : '—',
             ),
             _detailRow('Type', '${b['booking_type'] ?? 'local'}'),
-            _detailRow('Status', '${b['status']} / ${b['payment_status'] ?? ''}'),
+            _detailRow('Status', '${_bookingStatusLabel(b)} / ${b['payment_status'] ?? ''}'),
             _detailRow('Total', '₱${(b['total_amount'] as num?) ?? 0}'),
             _detailRow('Booked on', '${b['date_booked'] ?? b['created_at'] ?? '—'}'),
             const SizedBox(height: 12),
@@ -597,6 +597,29 @@ class _BookingsSectionState extends State<BookingsSection>
     }
   }
 
+  String _bookingStatusLabel(Map<String, dynamic> b) {
+    return AdminDashboardModels.bookingRecordStatusLabel(
+      b,
+      room: AdminDashboardModels.roomForBooking(b, widget.rooms),
+    );
+  }
+
+  String _reservationStatusLabel(String status) {
+    switch (status.toLowerCase().trim()) {
+      case 'pending_approval':
+      case 'pending':
+        return 'Pending approval';
+      case 'approved':
+      case 'reserved':
+        return 'Reserved';
+      case 'booked':
+        return 'Booked';
+      default:
+        if (status.isEmpty) return '—';
+        return status[0].toUpperCase() + status.substring(1).replaceAll('_', ' ');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -655,7 +678,7 @@ class _BookingsSectionState extends State<BookingsSection>
               : Theme.of(context).colorScheme.primary,
         ),
         title: Text((b['guest_name'] ?? 'Guest').toString()),
-        subtitle: Text('$ref · ${(b['status'] ?? '').toString()}'),
+        subtitle: Text('$ref · ${_bookingStatusLabel(b)}'),
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -675,7 +698,7 @@ class _BookingsSectionState extends State<BookingsSection>
                 ),
                 _detailRow('Rooms', '${b['rooms_booked'] ?? 1}'),
                 _detailRow('Room', roomLabel.isEmpty ? '—' : roomLabel),
-                _detailRow('Status', '${b['status'] ?? ''} / ${b['payment_status'] ?? ''}'),
+                _detailRow('Status', '${_bookingStatusLabel(b)} / ${b['payment_status'] ?? ''}'),
                 _detailRow('Date booked', '${b['date_booked'] ?? b['created_at'] ?? '—'}'),
                 _detailRow(
                   'Total',
@@ -762,8 +785,13 @@ class _BookingsSectionState extends State<BookingsSection>
         else
           ...records.map(_bookingRecordCard),
         const SizedBox(height: 20),
-        Text('Check-in queue (booked)',
+        Text('Check-in queue',
             style: Theme.of(context).textTheme.titleSmall),
+        const SizedBox(height: 4),
+        Text(
+          'Rooms marked booked or reserved — tap Check in when the guest arrives.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
         const SizedBox(height: 8),
         if (_bookedRooms.isEmpty)
           const Text('No rooms awaiting check-in.')
@@ -853,7 +881,7 @@ class _BookingsSectionState extends State<BookingsSection>
                 r['check_out_date'],
               ),
             ),
-            Text('Status: $status · ${r['guest_phone'] ?? ''}'),
+            Text('Status: ${_reservationStatusLabel(status)} · ${r['guest_phone'] ?? ''}'),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -904,7 +932,7 @@ class _BookingsSectionState extends State<BookingsSection>
   Widget _calendarView() {
     final events = _eventsOnDay(_selectedDay);
     final monthBookings = _calendarStays.length;
-    final bookedRooms = AdminDashboardModels.activeStayRoomCount(widget.rooms);
+    final awaitingCheckIn = AdminDashboardModels.bookedRoomCount(widget.rooms);
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
@@ -925,7 +953,7 @@ class _BookingsSectionState extends State<BookingsSection>
                             ),
                       ),
                       Text(
-                        'Rooms currently booked/occupied: $bookedRooms',
+                        'Rooms awaiting check-in: $awaitingCheckIn',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],

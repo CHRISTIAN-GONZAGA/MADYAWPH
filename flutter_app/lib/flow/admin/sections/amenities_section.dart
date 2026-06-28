@@ -11,11 +11,13 @@ class AmenitiesSection extends StatefulWidget {
     required this.claims,
     required this.onAddProduct,
     required this.onRefresh,
+    this.canManageProducts = true,
   });
 
   final List<dynamic> claims;
   final Future<void> Function() onAddProduct;
   final Future<void> Function() onRefresh;
+  final bool canManageProducts;
 
   @override
   State<AmenitiesSection> createState() => _AmenitiesSectionState();
@@ -516,15 +518,16 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
-              FilledButton.icon(
-                onPressed: () async {
-                  await widget.onAddProduct();
-                  await _loadMenu();
-                  await widget.onRefresh();
-                },
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('Add product'),
-              ),
+              if (widget.canManageProducts)
+                FilledButton.icon(
+                  onPressed: () async {
+                    await widget.onAddProduct();
+                    await _loadMenu();
+                    await widget.onRefresh();
+                  },
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Add product'),
+                ),
             ],
           ),
         );

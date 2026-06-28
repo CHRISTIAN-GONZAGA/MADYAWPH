@@ -12,8 +12,7 @@ class FlexibleUserRoleCast implements CastsAttributes
     /** @var array<string, string> */
     private const LEGACY_ALIASES = [
         'administrator' => 'admin',
-        'front_desk' => 'admin',
-        'frontdesk' => 'admin',
+        'front_desk' => 'frontdesk',
         'superadmin' => 'super_admin',
         'super admin' => 'super_admin',
         'hotel_owner' => 'owner',

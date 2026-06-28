@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import '../../../auth_storage.dart';
 import '../../../navigation_keys.dart';
 import '../admin_dashboard_models.dart';
 import 'admin_room_detail_navigation.dart';
@@ -11,22 +12,24 @@ import 'admin_walk_in_customer_booking.dart';
 
 /// How a room tile should open from the admin dashboard.
 enum AdminRoomOpenMode {
-  /// Vacant/available rooms open walk-in booking; others open room details.
-  walkInOrDetail,
+  /// Prompt to book (walk-in) or manage the room.
+  bookOrManage,
 
   /// Always open the room management dashboard (fees, checkout, transfer, status).
   manageOnly,
 }
 
+enum _AdminRoomAction { book, manage }
+
 /// Centralized navigation for admin room tiles, sheets, walk-in, and manage-rooms.
 abstract final class AdminRoomNavigation {
-  /// Tap on room board tile — book if vacant, otherwise open room details.
+  /// Tap on room tile — choose book or manage, unless [mode] is [AdminRoomOpenMode.manageOnly].
   static Future<void> handleRoomTap(
     BuildContext context, {
     required Map<String, dynamic> room,
     required Future<void> Function() onSuccess,
     BuildContext? sheetContext,
-    AdminRoomOpenMode mode = AdminRoomOpenMode.walkInOrDetail,
+    AdminRoomOpenMode mode = AdminRoomOpenMode.bookOrManage,
   }) {
     return openRoom(
       context,
@@ -70,7 +73,7 @@ abstract final class AdminRoomNavigation {
     required Map<String, dynamic> room,
     required Future<void> Function() onSuccess,
     BuildContext? sheetContext,
-    AdminRoomOpenMode mode = AdminRoomOpenMode.walkInOrDetail,
+    AdminRoomOpenMode mode = AdminRoomOpenMode.bookOrManage,
   }) async {
     if (mode == AdminRoomOpenMode.manageOnly) {
       await openSummaryRoomDetail(
@@ -97,7 +100,6 @@ abstract final class AdminRoomNavigation {
         navContext,
         room: room,
         onSuccess: onSuccess,
-        mode: mode,
       );
     }
 
@@ -113,24 +115,80 @@ abstract final class AdminRoomNavigation {
     BuildContext context, {
     required Map<String, dynamic> room,
     required Future<void> Function() onSuccess,
-    required AdminRoomOpenMode mode,
   }) async {
-    if (AdminDashboardModels.isWalkInBookable(room)) {
-      final roomId = AdminDashboardModels.roomIdOf(room);
-      if (roomId.isEmpty) {
-        _missingRoomId(context);
-        return;
-      }
-      await openWalkInBooking(
-        context,
-        room: room,
-        onSuccess: onSuccess,
+    final roomNo = (room['room_number'] ?? 'Room').toString();
+    final action = await showModalBottomSheet<_AdminRoomAction>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Room $roomNo',
+                style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Choose what you want to do with this room.',
+                style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(ctx, _AdminRoomAction.book),
+                icon: const Icon(Icons.event_available_outlined),
+                label: const Text('Book this room'),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.pop(ctx, _AdminRoomAction.manage),
+                icon: const Icon(Icons.meeting_room_outlined),
+                label: const Text('Manage this room'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (!context.mounted || action == null) return;
+
+    if (action == _AdminRoomAction.manage) {
+      await AdminSummaryRoomActions.openRoomDetail(context, room);
+      await onSuccess();
+      return;
+    }
+
+    if (!AdminDashboardModels.isWalkInBookable(room)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Room $roomNo cannot be booked right now '
+            '(${AdminDashboardModels.displayStatusForRoom(room)}).',
+          ),
+        ),
       );
       return;
     }
 
-    await AdminSummaryRoomActions.openRoomDetail(context, room);
-    await onSuccess();
+    final roomId = AdminDashboardModels.roomIdOf(room);
+    if (roomId.isEmpty) {
+      _missingRoomId(context);
+      return;
+    }
+
+    await openWalkInBooking(
+      context,
+      room: room,
+      onSuccess: onSuccess,
+    );
   }
 
   static Future<bool> openWalkInBooking(
@@ -138,9 +196,11 @@ abstract final class AdminRoomNavigation {
     required Map<String, dynamic> room,
     required Future<void> Function() onSuccess,
   }) async {
+    final hotelId = (await AuthStorage.hotelId()) ?? '';
     final booked = await showAdminWalkInBookingDialog(
       context: context,
       room: room,
+      hotelId: hotelId,
     );
     if (booked) {
       await onSuccess();
@@ -148,7 +208,7 @@ abstract final class AdminRoomNavigation {
     return booked;
   }
 
-  /// Opens room details on the root navigator (Bookings, Checkout, Manage rooms).
+  /// Opens room details on the root navigator (Bookings, Checkout).
   static Future<void> openDetailById(
     String roomId, {
     BuildContext? snackContext,

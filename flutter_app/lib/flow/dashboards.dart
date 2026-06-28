@@ -44,10 +44,17 @@ bool customerStayUsesReservationApi({
 }
 
 class AdminDashboardScreen extends StatefulWidget {
-  const AdminDashboardScreen({super.key, this.isSuperAdmin = false});
+  const AdminDashboardScreen({
+    super.key,
+    this.isSuperAdmin = false,
+    this.isFrontDesk = false,
+  });
 
   /// When true, shows the same dashboard plus the admin control panel tab.
   final bool isSuperAdmin;
+
+  /// Front desk staff — operational tabs only (no setup / resellers).
+  final bool isFrontDesk;
 
   @override
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
@@ -496,10 +503,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       );
     }
     var isSuper = widget.isSuperAdmin;
+    var isFrontDesk = widget.isFrontDesk;
     final auth = _data!['auth'] as Map<String, dynamic>?;
     final user = auth?['user'] as Map<String, dynamic>?;
-    if ((user?['role'] ?? '').toString() == 'super_admin') {
+    final userRole = (user?['role'] ?? '').toString();
+    if (userRole == 'super_admin') {
       isSuper = true;
+    }
+    if (userRole == 'frontdesk') {
+      isFrontDesk = true;
     }
 
     return Column(
@@ -514,6 +526,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                 builder: (_) => AdminDashboardShell(
                   data: _data!,
                   isSuperAdmin: isSuper,
+                  isFrontDesk: isFrontDesk,
                   onBindBackHandler: (handler) {
                     _shellBackHandler = handler;
                   },

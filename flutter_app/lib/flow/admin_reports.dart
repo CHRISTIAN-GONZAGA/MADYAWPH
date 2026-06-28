@@ -11,9 +11,14 @@ import 'admin/widgets/admin_dev_error_panel.dart';
 
 /// Revenue and operations charts with daily / weekly / monthly / annual granularity.
 class AdminReportsScreen extends StatefulWidget {
-  const AdminReportsScreen({super.key, this.embedded = false});
+  const AdminReportsScreen({
+    super.key,
+    this.embedded = false,
+    this.isFrontDesk = false,
+  });
 
   final bool embedded;
+  final bool isFrontDesk;
 
   @override
   State<AdminReportsScreen> createState() => _AdminReportsScreenState();
@@ -202,6 +207,206 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     }
   }
 
+  void _copyReportForPrint(BuildContext context, String body) {
+    Clipboard.setData(ClipboardData(text: body));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Report copied. Paste into any app to print or share.'),
+      ),
+    );
+  }
+
+  void _openPrintableReport(
+    BuildContext context, {
+    required String title,
+    required String printBody,
+    required Widget child,
+  }) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (ctx) => _ReportPrintableScreen(
+          title: title,
+          printBody: printBody,
+          onPrint: () => _copyReportForPrint(ctx, printBody),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  void _openFinancePeriod(
+    BuildContext context, {
+    required String buttonLabel,
+    required String periodLabel,
+    required Map<String, dynamic>? data,
+  }) {
+    final printBody = _formatFinancePeriodPrint(periodLabel, data);
+    _openPrintableReport(
+      context,
+      title: '$buttonLabel revenue',
+      printBody: printBody,
+      child: _PeriodFinanceRow(label: periodLabel, data: data),
+    );
+  }
+
+  void _openTimeseriesReport(
+    BuildContext context, {
+    required String title,
+    required List<dynamic> points,
+    required String emptyLabel,
+    required String Function(Map<String, dynamic> point) valueLabel,
+    required String Function(Map<String, dynamic> point) subtitleLabel,
+  }) {
+    final printBody = _formatTimeseriesPrint(
+      title,
+      points,
+      valueLabel: valueLabel,
+      subtitleLabel: subtitleLabel,
+      emptyLabel: emptyLabel,
+    );
+    _openPrintableReport(
+      context,
+      title: title,
+      printBody: printBody,
+      child: _ReportTimeseriesList(
+        points: points,
+        emptyLabel: emptyLabel,
+        valueLabel: valueLabel,
+        subtitleLabel: subtitleLabel,
+        onRowTap: (point) {
+          final label = (point['period_label'] ?? 'Period').toString();
+          _openPrintableReport(
+            context,
+            title: label,
+            printBody: _formatTimeseriesPointPrint(
+              title,
+              point,
+              valueLabel: valueLabel,
+              subtitleLabel: subtitleLabel,
+            ),
+            child: _TimeseriesPointDetail(
+              label: label,
+              value: valueLabel(point),
+              subtitle: subtitleLabel(point),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _openKpiDetail(
+    BuildContext context, {
+    required String label,
+    required String value,
+    String? detail,
+  }) {
+    final body = StringBuffer()
+      ..writeln(label)
+      ..writeln()
+      ..writeln(value);
+    if (detail != null && detail.isNotEmpty) {
+      body
+        ..writeln()
+        ..writeln(detail);
+    }
+    _openPrintableReport(
+      context,
+      title: label,
+      printBody: body.toString(),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              value,
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            if (detail != null && detail.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(detail),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _formatFinancePeriodPrint(
+    String title,
+    Map<String, dynamic>? data,
+  ) {
+    if (data == null) return '$title\n\nNo data for this period.';
+    final revenue = data['gross_revenue'] ?? data['revenue'] ?? 0;
+    final refunds = data['refunds'] ?? 0;
+    final reseller = data['reseller_commissions_paid'] ?? 0;
+    final expenses = data['expenses'] ?? data['refund_expense'] ?? 0;
+    final net = data['profit'] ?? data['net_revenue'] ?? revenue;
+    final grossNet =
+        data['profit_before_reseller_payouts'] ?? data['net_revenue'] ?? revenue;
+    final bookings = data['bookings'] ?? 0;
+    final amenity = data['amenity_revenue'] ?? 0;
+    final room = data['room_revenue'] ?? 0;
+    final transfers = data['transfer_adjustments'] ?? 0;
+
+    return '''
+$title
+
+Gross revenue: ₱${_fmtNum(revenue)}
+Room revenue: ₱${_fmtNum(room)}
+Amenity revenue: ₱${_fmtNum(amenity)}
+Transfer adjustments: ₱${_fmtNum(transfers)}
+
+Refunds: ₱${_fmtNum(refunds)}
+Reseller payouts: ₱${_fmtNum(reseller)}
+Total expenses: ₱${_fmtNum(expenses)}
+
+Net before resellers: ₱${_fmtNum(grossNet)}
+Net profit: ₱${_fmtNum(net)}
+
+$bookings paid booking(s)
+''';
+  }
+
+  static String _formatTimeseriesPrint(
+    String title,
+    List<dynamic> points, {
+    required String Function(Map<String, dynamic> point) valueLabel,
+    required String Function(Map<String, dynamic> point) subtitleLabel,
+    required String emptyLabel,
+  }) {
+    final buf = StringBuffer()..writeln(title)..writeln();
+    if (points.isEmpty) {
+      buf.writeln(emptyLabel);
+      return buf.toString();
+    }
+    for (final raw in points) {
+      if (raw is! Map) continue;
+      final point = Map<String, dynamic>.from(raw);
+      final label = (point['period_label'] ?? 'Period').toString();
+      buf.writeln('$label: ${valueLabel(point)} (${subtitleLabel(point)})');
+    }
+    return buf.toString();
+  }
+
+  static String _formatTimeseriesPointPrint(
+    String sectionTitle,
+    Map<String, dynamic> point, {
+    required String Function(Map<String, dynamic> point) valueLabel,
+    required String Function(Map<String, dynamic> point) subtitleLabel,
+  }) {
+    final label = (point['period_label'] ?? 'Period').toString();
+    return '''
+$sectionTitle — $label
+
+${valueLabel(point)}
+${subtitleLabel(point)}
+''';
+  }
+
   @override
   Widget build(BuildContext context) {
     final body = _buildBody();
@@ -385,24 +590,53 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                       ),
                 ),
                 const SizedBox(height: 12),
-                _PeriodFinanceRow(
-                  label: 'Daily (selected date)',
-                  data: overview['daily'] as Map<String, dynamic>?,
-                ),
-                const Divider(height: 20),
-                _PeriodFinanceRow(
-                  label: 'This week',
-                  data: overview['weekly'] as Map<String, dynamic>?,
-                ),
-                const Divider(height: 20),
-                _PeriodFinanceRow(
-                  label: 'This month',
-                  data: overview['monthly'] as Map<String, dynamic>?,
-                ),
-                const Divider(height: 20),
-                _PeriodFinanceRow(
-                  label: 'This year',
-                  data: overview['annual'] as Map<String, dynamic>?,
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _ReportPeriodButton(
+                      label: 'Daily',
+                      subtitle: _fmtDay(_selectedDay),
+                      onTap: () => _openFinancePeriod(
+                        context,
+                        buttonLabel: 'Daily',
+                        periodLabel: isToday
+                            ? 'Daily (today — ${_fmtDay(_selectedDay)})'
+                            : 'Daily (${_fmtDay(_selectedDay)})',
+                        data: overview['daily'] as Map<String, dynamic>?,
+                      ),
+                    ),
+                    _ReportPeriodButton(
+                      label: 'Weekly',
+                      subtitle: 'This week',
+                      onTap: () => _openFinancePeriod(
+                        context,
+                        buttonLabel: 'Weekly',
+                        periodLabel: 'This week',
+                        data: overview['weekly'] as Map<String, dynamic>?,
+                      ),
+                    ),
+                    _ReportPeriodButton(
+                      label: 'Monthly',
+                      subtitle: 'This month',
+                      onTap: () => _openFinancePeriod(
+                        context,
+                        buttonLabel: 'Monthly',
+                        periodLabel: 'This month',
+                        data: overview['monthly'] as Map<String, dynamic>?,
+                      ),
+                    ),
+                    _ReportPeriodButton(
+                      label: 'Annual',
+                      subtitle: 'This year',
+                      onTap: () => _openFinancePeriod(
+                        context,
+                        buttonLabel: 'Annual',
+                        periodLabel: 'This year',
+                        data: overview['annual'] as Map<String, dynamic>?,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -467,6 +701,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 ),
                 const SizedBox(height: 16),
                 const Divider(),
+                if (!widget.isFrontDesk) ...[
                 const SizedBox(height: 12),
                 Text(
                   'Record reseller payout',
@@ -485,6 +720,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 _ResellerCommissionRecordForm(
                   onRecorded: () => _load(silent: true),
                 ),
+                ],
                 if (monthDaysWithPayouts.isNotEmpty) ...[
                   const SizedBox(height: 16),
                   const Divider(),
@@ -557,59 +793,111 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 value:
                     '₱${_fmtNum(salesSummary['net_revenue'] ?? salesSummary['sales'] ?? salesSummary['gross_sales'] ?? 0)}',
                 icon: Icons.payments_outlined,
+                onTap: () => _openKpiDetail(
+                  context,
+                  label: 'Net revenue',
+                  value:
+                      '₱${_fmtNum(salesSummary['net_revenue'] ?? salesSummary['sales'] ?? salesSummary['gross_sales'] ?? 0)}',
+                  detail:
+                      'Report range: ${reportFrom.isEmpty ? '—' : reportFrom} to ${reportTo.isEmpty ? '—' : reportTo}',
+                ),
               ),
               _KpiCard(
                 label: 'Refunds',
                 value: '₱${_fmtNum(salesSummary['refunds'] ?? 0)}',
                 icon: Icons.money_off_outlined,
+                onTap: () => _openKpiDetail(
+                  context,
+                  label: 'Refunds',
+                  value: '₱${_fmtNum(salesSummary['refunds'] ?? 0)}',
+                ),
               ),
               _KpiCard(
                 label: 'Bookings',
                 value: '${salesSummary['bookings'] ?? 0}',
                 icon: Icons.book_online_outlined,
+                onTap: () => _openKpiDetail(
+                  context,
+                  label: 'Bookings',
+                  value: '${salesSummary['bookings'] ?? 0}',
+                ),
               ),
               _KpiCard(
                 label: 'Room transfers',
                 value: '${transferSummary['count'] ?? 0}',
                 icon: Icons.swap_horiz_outlined,
+                onTap: () => _openKpiDetail(
+                  context,
+                  label: 'Room transfers',
+                  value: '${transferSummary['count'] ?? 0}',
+                ),
               ),
               _KpiCard(
                 label: 'Task completion',
                 value: '${taskSummary['completion_rate'] ?? 0}%',
                 icon: Icons.task_alt_outlined,
+                onTap: () => _openKpiDetail(
+                  context,
+                  label: 'Task completion',
+                  value: '${taskSummary['completion_rate'] ?? 0}%',
+                ),
               ),
             ],
           ),
           const SizedBox(height: 16),
-          AppSectionCard(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Occupancy',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
+          _ClickableReportCard(
+            title: 'Occupancy',
+            subtitle:
+                'Booked ${_occupancy?['booked_rooms'] ?? 0} / ${_occupancy?['total_rooms'] ?? 0} rooms · ${_occupancy?['occupancy_rate'] ?? 0}% occupancy',
+            onTap: () {
+              final occ = _occupancy ?? const {};
+              final body = '''
+Occupancy
+
+Booked rooms: ${occ['booked_rooms'] ?? 0} / ${occ['total_rooms'] ?? 0}
+Occupancy rate: ${occ['occupancy_rate'] ?? 0}%
+''';
+              _openPrintableReport(
+                context,
+                title: 'Occupancy',
+                printBody: body,
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Booked ${occ['booked_rooms'] ?? 0} / ${occ['total_rooms'] ?? 0} rooms',
+                        style: Theme.of(context).textTheme.titleMedium,
                       ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Booked ${_occupancy?['booked_rooms'] ?? 0} / ${_occupancy?['total_rooms'] ?? 0} rooms',
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${_occupancy?['occupancy_rate'] ?? 0}% occupancy',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: scheme.primary,
-                        fontWeight: FontWeight.w600,
+                      const SizedBox(height: 8),
+                      Text(
+                        '${occ['occupancy_rate'] ?? 0}% occupancy',
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                              color: scheme.primary,
+                              fontWeight: FontWeight.w800,
+                            ),
                       ),
+                    ],
+                  ),
                 ),
-              ],
-            ),
+              );
+            },
           ),
           const SizedBox(height: 20),
-          _SectionTitle('Revenue by period'),
+          _ClickableSectionHeader(
+            title: 'Revenue by period',
+            onTap: () => _openTimeseriesReport(
+              context,
+              title: 'Revenue by period',
+              points: salesPoints,
+              emptyLabel: 'No booking revenue in range.',
+              valueLabel: (point) =>
+                  '₱${_fmtNum(_parseAmount(point['gross_sales'] ?? point['net_revenue'] ?? 0))}',
+              subtitleLabel: (point) =>
+                  '${_parseInt(point['booking_count'])} booking(s)',
+            ),
+          ),
           const SizedBox(height: 10),
           _ReportTimeseriesList(
             points: salesPoints,
@@ -618,9 +906,41 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 '₱${_fmtNum(_parseAmount(point['gross_sales'] ?? point['net_revenue'] ?? 0))}',
             subtitleLabel: (point) =>
                 '${_parseInt(point['booking_count'])} booking(s)',
+            onRowTap: (point) {
+              final label = (point['period_label'] ?? 'Period').toString();
+              _openPrintableReport(
+                context,
+                title: label,
+                printBody: _formatTimeseriesPointPrint(
+                  'Revenue by period',
+                  point,
+                  valueLabel: (p) =>
+                      '₱${_fmtNum(_parseAmount(p['gross_sales'] ?? p['net_revenue'] ?? 0))}',
+                  subtitleLabel: (p) =>
+                      '${_parseInt(p['booking_count'])} booking(s)',
+                ),
+                child: _TimeseriesPointDetail(
+                  label: label,
+                  value:
+                      '₱${_fmtNum(_parseAmount(point['gross_sales'] ?? point['net_revenue'] ?? 0))}',
+                  subtitle: '${_parseInt(point['booking_count'])} booking(s)',
+                ),
+              );
+            },
           ),
           const SizedBox(height: 20),
-          _SectionTitle('Bookings count'),
+          _ClickableSectionHeader(
+            title: 'Bookings count',
+            onTap: () => _openTimeseriesReport(
+              context,
+              title: 'Bookings count',
+              points: salesPoints,
+              emptyLabel: 'No bookings in range.',
+              valueLabel: (point) => '${_parseInt(point['booking_count'])}',
+              subtitleLabel: (point) =>
+                  '₱${_fmtNum(_parseAmount(point['gross_sales'] ?? 0))} gross',
+            ),
+          ),
           const SizedBox(height: 10),
           _ReportTimeseriesList(
             points: salesPoints,
@@ -628,15 +948,63 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
             valueLabel: (point) => '${_parseInt(point['booking_count'])}',
             subtitleLabel: (point) =>
                 '₱${_fmtNum(_parseAmount(point['gross_sales'] ?? 0))} gross',
+            onRowTap: (point) {
+              final label = (point['period_label'] ?? 'Period').toString();
+              _openPrintableReport(
+                context,
+                title: label,
+                printBody: _formatTimeseriesPointPrint(
+                  'Bookings count',
+                  point,
+                  valueLabel: (p) => '${_parseInt(p['booking_count'])}',
+                  subtitleLabel: (p) =>
+                      '₱${_fmtNum(_parseAmount(p['gross_sales'] ?? 0))} gross',
+                ),
+                child: _TimeseriesPointDetail(
+                  label: label,
+                  value: '${_parseInt(point['booking_count'])}',
+                  subtitle:
+                      '₱${_fmtNum(_parseAmount(point['gross_sales'] ?? 0))} gross',
+                ),
+              );
+            },
           ),
           const SizedBox(height: 20),
-          _SectionTitle('Activity volume'),
+          _ClickableSectionHeader(
+            title: 'Activity volume',
+            onTap: () => _openTimeseriesReport(
+              context,
+              title: 'Activity volume',
+              points: timelinePoints,
+              emptyLabel: 'No activity logs in range.',
+              valueLabel: (point) => '${_parseInt(point['total_events'])}',
+              subtitleLabel: (_) => 'events',
+            ),
+          ),
           const SizedBox(height: 10),
           _ReportTimeseriesList(
             points: timelinePoints,
             emptyLabel: 'No activity logs in range.',
             valueLabel: (point) => '${_parseInt(point['total_events'])}',
             subtitleLabel: (_) => 'events',
+            onRowTap: (point) {
+              final label = (point['period_label'] ?? 'Period').toString();
+              _openPrintableReport(
+                context,
+                title: label,
+                printBody: _formatTimeseriesPointPrint(
+                  'Activity volume',
+                  point,
+                  valueLabel: (p) => '${_parseInt(p['total_events'])}',
+                  subtitleLabel: (_) => 'events',
+                ),
+                child: _TimeseriesPointDetail(
+                  label: label,
+                  value: '${_parseInt(point['total_events'])}',
+                  subtitle: 'events',
+                ),
+              );
+            },
           ),
           const SizedBox(height: 20),
           _PaidTransactionsPanel(
@@ -644,6 +1012,12 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
             granularity: _granularity,
             from: reportFrom,
             to: reportTo,
+            onOpenFull: (ctx, printBody, child) => _openPrintableReport(
+              ctx,
+              title: 'Paid transactions',
+              printBody: printBody,
+              child: child,
+            ),
           ),
         ],
       ),
@@ -792,12 +1166,14 @@ class _ReportTimeseriesList extends StatelessWidget {
     required this.emptyLabel,
     required this.valueLabel,
     required this.subtitleLabel,
+    this.onRowTap,
   });
 
   final List<dynamic> points;
   final String emptyLabel;
   final String Function(Map<String, dynamic> point) valueLabel;
   final String Function(Map<String, dynamic> point) subtitleLabel;
+  final void Function(Map<String, dynamic> point)? onRowTap;
 
   @override
   Widget build(BuildContext context) {
@@ -835,13 +1211,23 @@ class _ReportTimeseriesList extends StatelessWidget {
                     ),
               ),
               subtitle: Text(subtitleLabel(rows[i])),
-              trailing: Text(
-                valueLabel(rows[i]),
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: scheme.primary,
-                    ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    valueLabel(rows[i]),
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: scheme.primary,
+                        ),
+                  ),
+                  if (onRowTap != null) ...[
+                    const SizedBox(width: 4),
+                    Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+                  ],
+                ],
               ),
+              onTap: onRowTap == null ? null : () => onRowTap!(rows[i]),
             ),
           ],
         ],
@@ -850,18 +1236,183 @@ class _ReportTimeseriesList extends StatelessWidget {
   }
 }
 
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.text);
+class _ClickableSectionHeader extends StatelessWidget {
+  const _ClickableSectionHeader({
+    required this.title,
+    required this.onTap,
+  });
 
-  final String text;
+  final String title;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w800,
+    return Card(
+      margin: EdgeInsets.zero,
+      child: ListTile(
+        title: Text(
+          title,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+        ),
+        subtitle: const Text('Tap to open full report and print'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: onTap,
+      ),
+    );
+  }
+}
+
+class _ClickableReportCard extends StatelessWidget {
+  const _ClickableReportCard({
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        title: Text(
+          title,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+        ),
+        subtitle: Text(subtitle),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: onTap,
+      ),
+    );
+  }
+}
+
+class _ReportPeriodButton extends StatelessWidget {
+  const _ReportPeriodButton({
+    required this.label,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final String label;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: 150,
+      child: OutlinedButton(
+        onPressed: onTap,
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          alignment: Alignment.centerLeft,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: scheme.primary,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReportPrintableScreen extends StatelessWidget {
+  const _ReportPrintableScreen({
+    required this.title,
+    required this.printBody,
+    required this.onPrint,
+    required this.child,
+  });
+
+  final String title;
+  final String printBody;
+  final VoidCallback onPrint;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppScaffold(
+      appBar: AppBar(
+        title: Text(title),
+        actions: [
+          IconButton(
+            onPressed: onPrint,
+            icon: const Icon(Icons.print_outlined),
+            tooltip: 'Copy for print',
           ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          child,
+          const SizedBox(height: 24),
+          OutlinedButton.icon(
+            onPressed: onPrint,
+            icon: const Icon(Icons.print_outlined),
+            label: const Text('Copy report for printing'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TimeseriesPointDetail extends StatelessWidget {
+  const _TimeseriesPointDetail({
+    required this.label,
+    required this.value,
+    required this.subtitle,
+  });
+
+  final String label;
+  final String value;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          value,
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+        ),
+        const SizedBox(height: 8),
+        Text(subtitle),
+      ],
     );
   }
 }
@@ -897,11 +1448,17 @@ class _PaidTransactionsPanel extends StatefulWidget {
     required this.granularity,
     required this.from,
     required this.to,
+    this.onOpenFull,
   });
 
   final String granularity;
   final String from;
   final String to;
+  final void Function(
+    BuildContext context,
+    String printBody,
+    Widget child,
+  )? onOpenFull;
 
   @override
   State<_PaidTransactionsPanel> createState() => _PaidTransactionsPanelState();
@@ -975,92 +1532,123 @@ class _PaidTransactionsPanelState extends State<_PaidTransactionsPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final listChild = _loading
+        ? const Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        : _error != null
+            ? Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(_error!, textAlign: TextAlign.center),
+                    const SizedBox(height: 8),
+                    OutlinedButton(
+                      onPressed: _load,
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              )
+            : _rows.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('No paid transactions in selected range.'),
+                  )
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ..._rows.map((txn) => _TransactionTile(txn: txn)),
+                      if (_lastPage > 1) ...[
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            IconButton(
+                              tooltip: 'Previous page',
+                              onPressed: _page > 1
+                                  ? () {
+                                      setState(() => _page -= 1);
+                                      _load();
+                                    }
+                                  : null,
+                              icon: const Icon(Icons.chevron_left),
+                            ),
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 12),
+                              child: Text(
+                                'Page $_page of $_lastPage',
+                                style: Theme.of(context).textTheme.labelLarge,
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Next page',
+                              onPressed: _page < _lastPage
+                                  ? () {
+                                      setState(() => _page += 1);
+                                      _load();
+                                    }
+                                  : null,
+                              icon: const Icon(Icons.chevron_right),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  );
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _SectionTitle('Paid transactions'),
-        const SizedBox(height: 6),
-        Text(
-          _total > 0 ? '$_total transaction(s) in selected period' : 'No transactions',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
+        Card(
+          margin: EdgeInsets.zero,
+          child: ListTile(
+            title: Text(
+              'Paid transactions',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            subtitle: Text(
+              _total > 0
+                  ? '$_total transaction(s) · tap to open and print'
+                  : 'No transactions in selected period',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: widget.onOpenFull == null
+                ? null
+                : () {
+                    final buf = StringBuffer()
+                      ..writeln('Paid transactions')
+                      ..writeln();
+                    if (_rows.isEmpty) {
+                      buf.writeln('No paid transactions in selected range.');
+                    } else {
+                      for (final txn in _rows) {
+                        final line = (txn['line'] ?? 'Transaction').toString();
+                        final amount = ((txn['amount'] as num?)?.toDouble() ?? 0)
+                            .toStringAsFixed(2);
+                        buf.writeln('$line — ₱$amount');
+                      }
+                      if (_lastPage > 1) {
+                        buf.writeln();
+                        buf.writeln('Page $_page of $_lastPage ($_total total)');
+                      }
+                    }
+                    widget.onOpenFull!(
+                      context,
+                      buf.toString(),
+                      listChild,
+                    );
+                  },
+          ),
         ),
         const SizedBox(height: 10),
-        AppSectionCard(
-          child: _loading
-              ? const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              : _error != null
-                  ? Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(_error!, textAlign: TextAlign.center),
-                          const SizedBox(height: 8),
-                          OutlinedButton(
-                            onPressed: _load,
-                            child: const Text('Retry'),
-                          ),
-                        ],
-                      ),
-                    )
-                  : _rows.isEmpty
-                      ? const Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Text('No paid transactions in selected range.'),
-                        )
-                      : Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            ..._rows.map((txn) => _TransactionTile(txn: txn)),
-                            if (_lastPage > 1) ...[
-                              const SizedBox(height: 12),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  IconButton(
-                                    tooltip: 'Previous page',
-                                    onPressed: _page > 1
-                                        ? () {
-                                            setState(() => _page -= 1);
-                                            _load();
-                                          }
-                                        : null,
-                                    icon: const Icon(Icons.chevron_left),
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 12),
-                                    child: Text(
-                                      'Page $_page of $_lastPage',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .labelLarge,
-                                    ),
-                                  ),
-                                  IconButton(
-                                    tooltip: 'Next page',
-                                    onPressed: _page < _lastPage
-                                        ? () {
-                                            setState(() => _page += 1);
-                                            _load();
-                                          }
-                                        : null,
-                                    icon: const Icon(Icons.chevron_right),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ],
-                        ),
-        ),
+        AppSectionCard(child: listChild),
       ],
     );
   }
@@ -1522,36 +2110,53 @@ class _KpiCard extends StatelessWidget {
     required this.label,
     required this.value,
     required this.icon,
+    this.onTap,
   });
 
   final String label;
   final String value;
   final IconData icon;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return AppSectionCard(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: scheme.primary, size: 22),
-          const SizedBox(height: 10),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, color: scheme.primary, size: 22),
+                  if (onTap != null) ...[
+                    const Spacer(),
+                    Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                value,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-          ),
-        ],
+        ),
       ),
     );
   }

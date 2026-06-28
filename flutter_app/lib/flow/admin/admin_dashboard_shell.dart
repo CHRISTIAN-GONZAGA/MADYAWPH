@@ -14,7 +14,6 @@ import 'sections/amenities_section.dart';
 import 'sections/bookings_section.dart';
 import 'sections/checkout_section.dart';
 import 'sections/guest_portfolio_section.dart';
-import 'sections/admin_booking_section.dart';
 import 'sections/room_summary_section.dart';
 import 'sections/resellers_section.dart';
 import 'sections/settings_section.dart';
@@ -28,6 +27,7 @@ class AdminDashboardShell extends StatefulWidget {
     required this.onSignOut,
     required this.busyAction,
     required this.isSuperAdmin,
+    this.isFrontDesk = false,
     required this.onRecharge,
     required this.onSurgePricing,
     required this.onThemeReset,
@@ -43,6 +43,7 @@ class AdminDashboardShell extends StatefulWidget {
   final VoidCallback onSignOut;
   final bool busyAction;
   final bool isSuperAdmin;
+  final bool isFrontDesk;
   final VoidCallback onRecharge;
   final VoidCallback onSurgePricing;
   final Future<void> Function() onThemeReset;
@@ -94,11 +95,6 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         badgeCount: pendingRes,
         badgeColor: const Color(0xFF6A1B9A),
       ),
-      const AdminNavItem(
-        label: 'Walk-in',
-        shortLabel: 'Walk-in',
-        icon: Icons.meeting_room_outlined,
-      ),
       AdminNavItem(
         label: 'Amenities',
         shortLabel: 'Store',
@@ -106,17 +102,24 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         badgeCount: pendingClaims,
         badgeColor: const Color(0xFF2E7D32),
       ),
-      const AdminNavItem(
-        label: 'Resellers',
-        shortLabel: 'QR',
-        icon: Icons.qr_code_scanner_outlined,
-      ),
+    ];
+    items.add(
       const AdminNavItem(
         label: 'Settings',
         shortLabel: 'Setup',
         icon: Icons.settings_outlined,
       ),
-    ];
+    );
+    if (!widget.isFrontDesk) {
+      items.insert(
+        items.length - 1,
+        const AdminNavItem(
+          label: 'Resellers',
+          shortLabel: 'QR',
+          icon: Icons.qr_code_scanner_outlined,
+        ),
+      );
+    }
     if (widget.isSuperAdmin) {
       items.add(
         const AdminNavItem(
@@ -140,7 +143,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
       final credits = widget.data['credits'] as Map<String, dynamic>?;
       final balance =
           (credits?['currentCredits'] as num?)?.toDouble() ?? 0;
-      if (HotelCreditsPolicy.isDepleted(balance)) {
+      if (HotelCreditsPolicy.isDepleted(balance) && _settingsTabIndex(widget.data) >= 0) {
         setState(() => _tab = _settingsTabIndex(widget.data));
       }
     });
@@ -160,7 +163,10 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     }
   }
 
-  int _settingsTabIndex(Map<String, dynamic> d) => 7;
+  int _settingsTabIndex(Map<String, dynamic> d) {
+    if (widget.isFrontDesk) return 5;
+    return widget.isSuperAdmin ? 7 : 6;
+  }
 
   void _maybeRedirectToCreditsTab(
     Map<String, dynamic> oldData,
@@ -174,6 +180,8 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         (newCredits?['currentCredits'] as num?)?.toDouble() ?? 0;
     if (!HotelCreditsPolicy.isDepleted(oldBalance) &&
         HotelCreditsPolicy.isDepleted(newBalance)) {
+      final settingsTab = _settingsTabIndex(newData);
+      if (settingsTab < 0) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         setState(() => _tab = _settingsTabIndex(newData));
@@ -219,7 +227,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     final user = auth?['user'] as Map<String, dynamic>?;
     final hotelName =
         (user?['hotelName'] ?? user?['hotel_name'] ?? 'Hotel').toString();
-    final adminName = (user?['name'] ?? user?['username'] ?? 'Admin').toString();
+    final adminName = (user?['name'] ?? user?['username'] ?? (widget.isFrontDesk ? 'Front desk' : 'Admin')).toString();
     final credits = d['credits'] as Map<String, dynamic>?;
     final creditAmount = (credits?['currentCredits'] as num?)?.toDouble() ?? 0;
     final balance =
@@ -244,6 +252,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
                   hotelName: hotelName,
                   adminName: adminName,
                   isSuperAdmin: widget.isSuperAdmin,
+                  isFrontDesk: widget.isFrontDesk,
                   creditsLocked: creditsLocked,
                   chatBadge: badge,
                   onOpenChat: () async {
@@ -263,7 +272,8 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
                 ),
                 HotelCreditsReminderBanner(
                   balance: creditAmount,
-                  onTopUp: widget.onRecharge,
+                  onTopUp: widget.isFrontDesk ? null : widget.onRecharge,
+                  frontDeskMode: widget.isFrontDesk,
                 ),
                 if (widget.busyAction)
                   const LinearProgressIndicator(minHeight: 2),
@@ -272,7 +282,9 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
                     balance: creditAmount,
                     onTopUp: widget.onRecharge,
                     child: RefreshIndicator(
-                      onRefresh: creditsLocked && safeTab != settingsTab
+                      onRefresh: creditsLocked &&
+                              settingsTab >= 0 &&
+                              safeTab != settingsTab
                           ? () async {}
                           : () async {
                               await widget.onRefresh();
@@ -294,20 +306,30 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
                 AdminCurvedNavBar(
                   items: navItems,
                   currentIndex: safeTab,
-                  canSelectTab: creditsLocked
+                  canSelectTab: creditsLocked && settingsTab >= 0
                       ? (i) => i == settingsTab
                       : null,
                   onBlockedTabTap: creditsLocked
-                      ? () => AdminCreditsGate.showActionsBlockedMessage(
-                            context,
-                          )
+                      ? () {
+                          if (widget.isFrontDesk) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Credits are depleted. Contact your hotel administrator.',
+                                ),
+                              ),
+                            );
+                            return;
+                          }
+                          AdminCreditsGate.showActionsBlockedMessage(context);
+                        }
                       : null,
                   onTap: (i) => setState(() => _tab = i),
                 ),
               ],
             ),
           ),
-          if (!creditsLocked) const ThemeFab(),
+          if (!creditsLocked && !widget.isFrontDesk) const ThemeFab(),
         ],
       ),
     );
@@ -349,7 +371,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     );
 
     Widget wrapTab(Widget section, int index) {
-      if (!creditsLocked || index == settingsTab) {
+      if (!creditsLocked || index == settingsTab || settingsTab < 0) {
         return section;
       }
       return CreditsLockedOverlay(
@@ -358,11 +380,6 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         child: section,
       );
     }
-
-    final auth = d['auth'] as Map<String, dynamic>?;
-    final portalUser = auth?['user'] as Map<String, dynamic>?;
-    final hotelId =
-        (portalUser?['hotel_id'] ?? portalUser?['hotelId'] ?? '').toString();
 
     final sections = <Widget>[
       wrapTab(
@@ -399,22 +416,19 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           bookingFilter: _bookingListFilter,
           onChanged: widget.onRefresh,
           currentCredits: creditAmount,
-          onTopUpCredits: widget.onRecharge,
+          onTopUpCredits: widget.isFrontDesk
+              ? () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Credits are depleted. Contact your hotel administrator.',
+                      ),
+                    ),
+                  );
+                }
+              : widget.onRecharge,
         ),
         3,
-      ),
-      wrapTab(
-        AdminBookingSection(
-          key: refreshKey,
-          hotelId: hotelId,
-          hotelName: hotelName,
-          onChanged: widget.onRefresh,
-          onBookingComplete: () async {
-            await widget.onRefresh();
-            _openBookingsTab('local');
-          },
-        ),
-        4,
       ),
       wrapTab(
         AmenitiesSection(
@@ -422,28 +436,40 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           claims: claims,
           onAddProduct: widget.onAmenityAddProduct,
           onRefresh: widget.onRefresh,
+          canManageProducts: !widget.isFrontDesk,
         ),
-        5,
-      ),
-      wrapTab(
-        ResellersSection(
-          key: refreshKey,
-          onRefresh: widget.onRefresh,
-        ),
-        6,
-      ),
-      SettingsSection(
-        creditBalance: balance,
-        creditsLocked: creditsLocked,
-        onRecharge: widget.onRecharge,
-        onSurgePricing: widget.onSurgePricing,
-        onThemeReset: widget.onThemeReset,
-        onProcessReminders: widget.onProcessReminders,
-        onOpenActivityLogs: widget.onOpenActivityLogs,
-        onOpenAccountSettings: widget.onOpenAccountSettings,
-        onRefreshAfterNav: widget.onRefresh,
+        4,
       ),
     ];
+
+    if (!widget.isFrontDesk) {
+      sections.add(
+        wrapTab(
+          ResellersSection(
+            key: refreshKey,
+            onRefresh: widget.onRefresh,
+          ),
+          sections.length,
+        ),
+      );
+    }
+    sections.add(
+      wrapTab(
+        SettingsSection(
+          creditBalance: balance,
+          creditsLocked: creditsLocked,
+          isFrontDesk: widget.isFrontDesk,
+          onRecharge: widget.onRecharge,
+          onSurgePricing: widget.onSurgePricing,
+          onThemeReset: widget.onThemeReset,
+          onProcessReminders: widget.onProcessReminders,
+          onOpenActivityLogs: widget.onOpenActivityLogs,
+          onOpenAccountSettings: widget.onOpenAccountSettings,
+          onRefreshAfterNav: widget.onRefresh,
+        ),
+        sections.length,
+      ),
+    );
 
     if (widget.isSuperAdmin) {
       sections.add(

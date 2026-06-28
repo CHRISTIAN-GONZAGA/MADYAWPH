@@ -84,7 +84,7 @@ class BookingOverviewCards extends StatelessWidget {
             Expanded(
               child: _BookingStatCard(
                 label: 'Local bookings',
-                subtitle: 'Walk-in / front desk',
+                subtitle: 'Walk-ins awaiting check-in',
                 count: localTotal,
                 icon: Icons.storefront_outlined,
                 color: scheme.primary,
@@ -95,7 +95,7 @@ class BookingOverviewCards extends StatelessWidget {
             Expanded(
               child: _BookingStatCard(
                 label: 'Online bookings',
-                subtitle: 'Customer portal / public app',
+                subtitle: 'Pending customer approval',
                 count: onlineTotal,
                 icon: Icons.language_outlined,
                 color: scheme.tertiary,
