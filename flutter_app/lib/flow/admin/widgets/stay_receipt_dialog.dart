@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -189,21 +190,15 @@ Future<void> _downloadReceiptPdf(
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Receipt saved: ${file.path}')),
-      );
+      showAppMessage(context, 'Receipt saved: ${file.path}');
     }
   } on DioException catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   } catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$e')),
-      );
+      showAppMessage(context, '$e');
     }
   }
 }

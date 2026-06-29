@@ -276,5 +276,42 @@ void main() {
         'Reserved',
       );
     });
+
+    test('canScheduleFutureBooking allows checked_in but not maintenance', () {
+      expect(
+        AdminDashboardModels.canScheduleFutureBooking({'status': 'checked_in'}),
+        isTrue,
+      );
+      expect(
+        AdminDashboardModels.canScheduleFutureBooking({'status': 'maintenance'}),
+        isFalse,
+      );
+    });
+
+    test('guestsInHotelNow sums checked-in party sizes', () {
+      final total = AdminDashboardModels.guestsInHotelNow([
+        {
+          'status': 'checked_in',
+          'latest_booking': {'adults': 2, 'children': 1},
+        },
+        {
+          'status': 'checked_in',
+          'latest_booking': {'adults': 1, 'children': 0},
+        },
+        {'status': 'available'},
+      ]);
+      expect(total, 4);
+    });
+
+    test('canQuickCheckIn for booked and reserved only', () {
+      expect(
+        AdminDashboardModels.canQuickCheckIn({'status': 'booked'}),
+        isTrue,
+      );
+      expect(
+        AdminDashboardModels.canQuickCheckIn({'status': 'checked_in'}),
+        isFalse,
+      );
+    });
   });
 }

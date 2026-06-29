@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -25,11 +26,7 @@ class ChatAttachment {
     final ext = _extensionOf(file.path);
     if (!_allowedRoomExtensions.contains(ext)) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Only JPG, JPEG, PNG, or WEBP images are allowed.'),
-          ),
-        );
+        showAppMessage(context, 'Only JPG, JPEG, PNG, or WEBP images are allowed.');
       }
       return null;
     }

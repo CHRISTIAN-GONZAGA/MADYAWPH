@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/services.dart';
 
 /// Detailed in-app guide shown from the choose-hotel screen.
@@ -335,9 +336,7 @@ Future<void> showHotelRegistrationCredentialsDialog(
           onPressed: () async {
             await Clipboard.setData(ClipboardData(text: buffer.toString()));
             if (ctx.mounted) {
-              ScaffoldMessenger.of(ctx).showSnackBar(
-                const SnackBar(content: Text('Credentials copied to clipboard')),
-              );
+              showAppMessage(ctx, 'Credentials copied to clipboard');
             }
           },
           child: const Text('Copy all'),

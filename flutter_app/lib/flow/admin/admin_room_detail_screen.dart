@@ -1,5 +1,6 @@
-﻿import 'package:dio/dio.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 import '../../dio_client.dart';
 import '../../utils/money_format.dart';
@@ -233,8 +234,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     final bookingId = booking?['id']?.toString() ?? '';
     final roomId = room?['id']?.toString() ?? _roomId;
     if (bookingId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No active booking for this room.')));
+      showAppMessage(context, 'No active booking for this room.');
       return;
     }
 
@@ -280,13 +280,10 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
 
     if (payload == null) return;
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
     final label = (payload['label'] ?? '').toString();
     final amount = parseJsonDouble(payload['amount']);
     if (label.isEmpty || amount <= 0) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Enter a reason and amount > 0.')),
-      );
+      showAppMessage(context, 'Enter a reason and amount > 0.');
       return;
     }
 
@@ -303,15 +300,11 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         'is_manual': true,
       });
       if (!mounted) return;
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Fee added.')),
-      );
+      showAppMessage(context, 'Fee added.');
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -322,16 +315,12 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     final booking = _asMap(_data?['active_booking']);
     final bookingId = (booking?['id'] ?? booking?['_id'] ?? '').toString();
     if (bookingId.isEmpty || room == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No active booking to extend.')),
-      );
+      showAppMessage(context, 'No active booking to extend.');
       return;
     }
 
     if (!HourlyBilling.isHourly(room)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Extend by nights is not available here yet.')),
-      );
+      showAppMessage(context, 'Extend by nights is not available here yet.');
       return;
     }
 
@@ -344,13 +333,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     );
     if (payload == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'No extension options available. Set “Price per extra hour” on the room category for hourly extensions.',
-          ),
-        ),
-      );
+      showAppMessage(context, 'No extension options available. Set “Price per extra hour” on the room category for hourly extensions.',);
       return;
     }
     if (!mounted) return;
@@ -367,19 +350,14 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       final checkout = res.data?['new_checkout_date'];
       final checkoutTime = res.data?['new_checkout_time'];
       final when = checkoutTime != null ? '$checkout $checkoutTime' : checkout;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Stay extended. New checkout: $when. Fee: ${formatPeso(fee)}',
-          ),
-        ),
+      showAppMessage(
+        context,
+        'Stay extended. New checkout: $when. Fee: ${formatPeso(fee)}',
       );
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _extendingStay = false);
     }
@@ -396,9 +374,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
 
     if (bookingId.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No active booking for this room.')),
-      );
+      showAppMessage(context, 'No active booking for this room.');
       return;
     }
 
@@ -410,8 +386,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       billSummary = billRes.data;
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      showAppMessage(context, dioErrorMessage(e), isError: true);
       return;
     }
 
@@ -591,20 +566,15 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                             final changeDue =
                                 parseJsonDouble(res.data?['change_due']);
                             setLocal(() => paymentReady = true);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  changeDue > 0
-                                      ? 'Payment recorded. Change due: ${formatPeso(changeDue)}'
-                                      : 'Payment recorded.',
-                                ),
-                              ),
+                            showAppMessage(
+                              context,
+                              changeDue > 0
+                                  ? 'Payment recorded. Change due: ${formatPeso(changeDue)}'
+                                  : 'Payment recorded.',
                             );
                           } on DioException catch (e) {
                             if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text(dioErrorMessage(e))),
-                            );
+                            showAppMessage(context, dioErrorMessage(e), isError: true);
                           }
                         },
                   child: const Text('Save payment'),
@@ -633,12 +603,11 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       if (!mounted) return;
       final msg = (res.data?['message'] ?? 'Guest checked out.').toString();
       setState(_clearActiveStayFromState);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      showAppMessage(context, msg);
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _checkingOut = false);
     }
@@ -693,11 +662,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     if (chosen == null) return;
     if (chosen == 'checked_out' && hasStay && !paid) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Mark payment as paid before checking out this guest.'),
-        ),
-      );
+      showAppMessage(context, 'Mark payment as paid before checking out this guest.');
       return;
     }
     if (_changingStatus) return;
@@ -723,12 +688,11 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
           await showStayReceiptDialog(context, receipt: receipt);
         }
       }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      showAppMessage(context, msg);
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _changingStatus = false);
     }
@@ -762,8 +726,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     final fromRoomId = (room?['id'] ?? _roomId).toString();
     if (bookingId.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No active booking to transfer.')));
+      showAppMessage(context, 'No active booking to transfer.');
       return;
     }
     try {
@@ -826,8 +789,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         preview = previewRes.data;
       } on DioException catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+        showAppMessage(context, dioErrorMessage(e), isError: true);
         return;
       }
       var approveAdjustment = false;
@@ -874,13 +836,11 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         if (approveAdjustment) 'approve_price_adjustment': true,
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Room transferred successfully.')));
+      showAppMessage(context, 'Room transferred successfully.');
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   }
 
@@ -889,9 +849,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     final bookingId = (booking?['id'] ?? '').toString();
     if (bookingId.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No active booking for this room.')),
-      );
+      showAppMessage(context, 'No active booking for this room.');
       return;
     }
     final amountCtrl = TextEditingController();
@@ -941,14 +899,11 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     try {
       await portalDio().post('/admin/bookings/$bookingId/refund', data: payload);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Refund recorded and reports updated.')),
-      );
+      showAppMessage(context, 'Refund recorded and reports updated.');
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _issuingRefund = false);
     }

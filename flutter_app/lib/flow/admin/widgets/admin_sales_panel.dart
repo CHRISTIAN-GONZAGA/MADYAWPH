@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
@@ -68,8 +69,7 @@ class _AdminSalesPanelState extends State<AdminSalesPanel> {
     } on DioException catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   }
 

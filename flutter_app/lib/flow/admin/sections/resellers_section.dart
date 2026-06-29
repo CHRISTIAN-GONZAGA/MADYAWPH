@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -74,8 +75,7 @@ class _ResellersSectionState extends State<ResellersSection>
     } on DioException catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   }
 
@@ -87,15 +87,11 @@ class _ResellersSectionState extends State<ResellersSection>
     }
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter reseller name.')),
-      );
+      showAppMessage(context, 'Enter reseller name.');
       return;
     }
     if (_idFile == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Upload a government-issued ID or license.')),
-      );
+      showAppMessage(context, 'Upload a government-issued ID or license.');
       return;
     }
 
@@ -121,9 +117,7 @@ class _ResellersSectionState extends State<ResellersSection>
       );
       if (!mounted) return;
       final created = Map<String, dynamic>.from(res.data?['reseller'] as Map? ?? {});
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Reseller "${created['name']}" added.')),
-      );
+      showAppMessage(context, 'Reseller "${created['name']}" added.');
       _nameCtrl.clear();
       _phoneCtrl.clear();
       _emailCtrl.clear();
@@ -135,8 +129,7 @@ class _ResellersSectionState extends State<ResellersSection>
       }
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -198,8 +191,7 @@ class _ResellersSectionState extends State<ResellersSection>
       await _showCommissionDialog(reseller, hotelBalance);
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -300,12 +292,9 @@ class _ResellersSectionState extends State<ResellersSection>
         data: {'amount': amount, 'note': note},
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Partner commission ₱${amount.toStringAsFixed(2)} recorded for reports.',
-          ),
-        ),
+      showAppMessage(
+        context,
+        'Partner commission ₱${amount.toStringAsFixed(2)} recorded for reports.',
       );
       await _load();
       await widget.onRefresh();
@@ -314,8 +303,7 @@ class _ResellersSectionState extends State<ResellersSection>
       if (isHotelCreditsApprovalError(e)) {
         await handleHotelCreditsApprovalError(context, e);
       } else {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+        showAppMessage(context, dioErrorMessage(e), isError: true);
       }
     } finally {
       if (mounted) setState(() => _busy = false);

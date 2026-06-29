@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
@@ -13,9 +14,7 @@ Future<bool> showAdminManageBookingDialog({
 
   final status = (booking['status'] ?? '').toString().toLowerCase();
   if (status == 'cancelled' || status == 'completed') {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('This booking is already closed.')),
-    );
+    showAppMessage(context, 'This booking is already closed.');
     return false;
   }
 
@@ -140,9 +139,7 @@ Future<bool> showAdminManageBookingDialog({
                   if (ctx.mounted) Navigator.pop(ctx, true);
                 } on DioException catch (e) {
                   if (!ctx.mounted) return;
-                  ScaffoldMessenger.of(ctx).showSnackBar(
-                    SnackBar(content: Text(dioErrorMessage(e))),
-                  );
+                  showAppMessage(ctx, dioErrorMessage(e), isError: true);
                 }
               },
               child: Text(
@@ -167,9 +164,7 @@ Future<bool> showAdminManageBookingDialog({
                         if (ctx.mounted) Navigator.pop(ctx, true);
                       } on DioException catch (e) {
                         if (!ctx.mounted) return;
-                        ScaffoldMessenger.of(ctx).showSnackBar(
-                          SnackBar(content: Text(dioErrorMessage(e))),
-                        );
+                        showAppMessage(ctx, dioErrorMessage(e), isError: true);
                       }
                     },
               child: const Text('Save dates'),
@@ -194,9 +189,7 @@ Future<bool> showAdminManageReservationDialog({
 
   final status = (reservation['status'] ?? '').toString().toLowerCase();
   if (!['pending_approval', 'approved', 'reserved', 'booked'].contains(status)) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('This reservation cannot be edited.')),
-    );
+    showAppMessage(context, 'This reservation cannot be edited.');
     return false;
   }
 
@@ -320,9 +313,7 @@ Future<bool> showAdminManageReservationDialog({
                     if (ctx.mounted) Navigator.pop(ctx, true);
                   } on DioException catch (e) {
                     if (!ctx.mounted) return;
-                    ScaffoldMessenger.of(ctx).showSnackBar(
-                      SnackBar(content: Text(dioErrorMessage(e))),
-                    );
+                    showAppMessage(ctx, dioErrorMessage(e), isError: true);
                   }
                 },
                 child: Text(
@@ -347,9 +338,7 @@ Future<bool> showAdminManageReservationDialog({
                         if (ctx.mounted) Navigator.pop(ctx, true);
                       } on DioException catch (e) {
                         if (!ctx.mounted) return;
-                        ScaffoldMessenger.of(ctx).showSnackBar(
-                          SnackBar(content: Text(dioErrorMessage(e))),
-                        );
+                        showAppMessage(ctx, dioErrorMessage(e), isError: true);
                       }
                     },
               child: const Text('Save dates'),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Opens Xendit / PayMongo checkout URLs in the device browser.
@@ -34,9 +35,7 @@ class PaymentRedirect {
     final uri = Uri.tryParse(trimmed);
     if (uri == null || !uri.hasScheme) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Invalid payment link from server.')),
-        );
+        showAppMessage(context, 'Invalid payment link from server.');
       }
       return false;
     }
@@ -47,13 +46,7 @@ class PaymentRedirect {
     );
 
     if (!launched && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Could not open the payment page. Install a browser or try again.',
-          ),
-        ),
-      );
+      showAppMessage(context, 'Could not open the payment page. Install a browser or try again.',);
     }
 
     return launched;
@@ -68,12 +61,7 @@ class PaymentRedirect {
     if (url == null || url.isEmpty) return false;
 
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Redirecting to payment…'),
-          duration: Duration(seconds: 2),
-        ),
-      );
+      showAppMessage(context, 'Redirecting to payment…');
     }
 
     return openCheckout(context, url);

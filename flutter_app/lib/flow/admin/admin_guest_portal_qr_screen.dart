@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -83,14 +84,10 @@ class _AdminGuestPortalQrScreenState extends State<AdminGuestPortalQrScreen> {
         _payload = (res.data?['qr_payload'] ?? '').toString();
         _hotelName = (res.data?['hotel_name'] ?? _hotelName ?? '').toString();
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Guest portal QR updated.')),
-      );
+      showAppMessage(context, 'Guest portal QR updated.');
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _regenerating = false);
     }

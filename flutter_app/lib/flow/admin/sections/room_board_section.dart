@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/services.dart';
 
 import '../../../widgets/hotel_credits_policy.dart';
 import '../../../widgets/room_status_label.dart';
 import '../admin_dashboard_models.dart';
-import '../widgets/admin_walk_in_customer_booking.dart';
+import '../widgets/admin_room_navigation.dart';
 
 /// Visual room board grouped by category — walk-in tab only.
 class RoomBoardSection extends StatelessWidget {
@@ -49,39 +50,33 @@ class RoomBoardSection extends StatelessWidget {
       return;
     }
 
-    if (!AdminDashboardModels.isWalkInBookable(room)) {
-      final status = AdminDashboardModels.displayStatusForRoom(room);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            status == 'checked_in' || status == 'booked' || status == 'reserved'
-                ? 'Room ${room['room_number']} is occupied. Open it from Summary → room list.'
-                : 'Room ${room['room_number']} is not available for walk-in booking.',
-          ),
-        ),
-      );
+    if (!AdminDashboardModels.canScheduleFutureBooking(room)) {
+      showAppMessage(context, 'Room ${room['room_number']} is under maintenance.',);
       return;
     }
 
     final roomId = AdminDashboardModels.roomIdOf(room);
     if (roomId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Room ID missing. Pull to refresh the dashboard and try again.',
-          ),
-        ),
-      );
+      showAppMessage(context, 'Room ID missing. Pull to refresh the dashboard and try again.',);
       return;
     }
 
-    final booked = await showAdminWalkInBookingDialog(
-      context: context,
-      room: room,
-    );
-    if (booked) {
-      await onChanged();
+    if (AdminDashboardModels.isWalkInBookable(room)) {
+      final booked = await AdminRoomNavigation.openWalkInBooking(
+        context,
+        room: room,
+        onSuccess: onChanged,
+      );
+      if (booked) await onChanged();
+      return;
     }
+
+    await AdminRoomNavigation.handleRoomTap(
+      context,
+      room: room,
+      onSuccess: onChanged,
+      preferCheckIn: AdminDashboardModels.canQuickCheckIn(room),
+    );
   }
 
   @override
@@ -150,7 +145,7 @@ class RoomBoardSection extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         Text(
-          'Tap a gray available room to book a local walk-in guest.',
+          'Tap a gray available room to book a local walk-in guest. Occupied rooms can still be booked for future dates.',
           softWrap: true,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: scheme.onSurfaceVariant,
@@ -247,7 +242,7 @@ class RoomBoardSection extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      '${list.length} rooms · ${roomStatusLabel(statusOfCategory(list))}',
+                      '${list.length} rooms · ${statusOfCategory(list)}',
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                             color: scheme.onSurfaceVariant,
                           ),

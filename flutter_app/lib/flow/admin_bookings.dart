@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
 
 import '../dio_client.dart';
@@ -67,18 +68,14 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
     try {
       await portalDio().post<Map<String, dynamic>>('/admin/reservations/$id/approve');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Reservation approved. Room is held until check-in date.')),
-      );
+      showAppMessage(context, 'Reservation approved. Room is held until check-in date.');
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
       if (isHotelCreditsApprovalError(e)) {
         await handleHotelCreditsApprovalError(context, e);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(dioErrorMessage(e))),
-        );
+        showAppMessage(context, dioErrorMessage(e), isError: true);
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -91,15 +88,11 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
     try {
       await portalDio().post<Map<String, dynamic>>('/admin/reservations/$id/reject');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Reservation request rejected.')),
-      );
+      showAppMessage(context, 'Reservation request rejected.');
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }

@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
@@ -24,9 +25,7 @@ Future<WalkInStayDates?> showWalkInRoomStayCalendar({
 }) {
   final roomId = AdminDashboardModels.roomIdOf(room);
   if (roomId.isEmpty && prefetchedStays == null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Room ID missing. Refresh and try again.')),
-    );
+    showAppMessage(context, 'Room ID missing. Refresh and try again.');
     return Future.value(null);
   }
 

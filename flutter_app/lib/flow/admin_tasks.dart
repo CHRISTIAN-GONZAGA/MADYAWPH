@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
 
 import '../dio_client.dart';
@@ -86,10 +87,9 @@ class _AdminTasksScreenState extends State<AdminTasksScreen> {
 
   Future<void> _assignTask() async {
     if (_staff.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Add staff members first (Settings → Staff management).'),
-        ),
+      showAppMessage(
+        context,
+        'Add staff members first (Settings → Staff management).',
       );
       return;
     }
@@ -203,9 +203,7 @@ class _AdminTasksScreenState extends State<AdminTasksScreen> {
     final title = titleCtrl.text.trim();
     final description = descCtrl.text.trim();
     if (title.isEmpty || description.isEmpty || assigneeId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Title, description, and assignee are required.')),
-      );
+      showAppMessage(context, 'Title, description, and assignee are required.');
       return;
     }
 
@@ -219,15 +217,11 @@ class _AdminTasksScreenState extends State<AdminTasksScreen> {
         'deadline': deadline.toUtc().toIso8601String(),
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Task assigned.')),
-      );
+      showAppMessage(context, 'Task assigned.');
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }

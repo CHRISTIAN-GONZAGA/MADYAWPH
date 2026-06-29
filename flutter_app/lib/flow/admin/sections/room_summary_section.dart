@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/services.dart';
 
 import '../admin_dashboard_models.dart';
@@ -68,11 +69,10 @@ class RoomSummarySection extends StatelessWidget {
     required List<Map<String, dynamic>> list,
     String? subtitle,
     bool showGuest = true,
+    bool preferCheckIn = false,
   }) {
     if (list.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No rooms in "$title".')),
-      );
+      showAppMessage(context, 'No rooms in "$title".');
       return;
     }
     HapticFeedback.selectionClick();
@@ -82,6 +82,7 @@ class RoomSummarySection extends StatelessWidget {
       rooms: list,
       showGuest: showGuest,
       subtitle: subtitle,
+      preferCheckIn: preferCheckIn,
     );
   }
 
@@ -128,9 +129,7 @@ class RoomSummarySection extends StatelessWidget {
     final maint =
         useMaintenanceRooms ? _maintenanceRooms() : const <Map<String, dynamic>>[];
     if (items.isEmpty && maint.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No rooms in "$title".')),
-      );
+      showAppMessage(context, 'No rooms in "$title".');
       return;
     }
     if (maint.isNotEmpty) {
@@ -171,6 +170,7 @@ class RoomSummarySection extends StatelessWidget {
     final maintIssues = _issueRoomsFromTasks('maintenance');
     final occupiedRooms =
         rooms.where(AdminDashboardModels.isSummaryOccupied).toList();
+    final guestsInHotel = AdminDashboardModels.guestsInHotelNow(rooms);
     final vacantRooms = rooms.where(AdminDashboardModels.isWalkInBookable).toList();
     final maintenanceRooms = _maintenanceRooms();
 
@@ -286,11 +286,13 @@ class RoomSummarySection extends StatelessWidget {
                 list: AdminDashboardModels.categoryBookedReservedRooms(rooms),
                 subtitle: 'Check-in today or tomorrow',
                 showGuest: true,
+                preferCheckIn: true,
               ),
             ),
             _TotalStatCard(
               label: 'Occupied',
               value: '${totals['occupied']}',
+              badge: guestsInHotel > 0 ? '$guestsInHotel guests' : null,
               icon: Icons.person_pin_circle_outlined,
               color: Colors.green.shade700,
               onTap: () => _openRooms(
@@ -338,9 +340,7 @@ class RoomSummarySection extends StatelessWidget {
                   );
                   return;
                 }
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('No rooms in cleaning.')),
-                );
+                showAppMessage(context, 'No rooms in cleaning.');
               },
             ),
             _TotalStatCard(
@@ -507,6 +507,7 @@ class RoomSummarySection extends StatelessWidget {
                     list: reserved,
                     subtitle: 'Check-in today or tomorrow',
                     showGuest: true,
+                    preferCheckIn: true,
                   );
                 },
               ),
@@ -1165,10 +1166,12 @@ class _TotalStatCard extends StatelessWidget {
     required this.icon,
     required this.color,
     required this.onTap,
+    this.badge,
   });
 
   final String label;
   final String value;
+  final String? badge;
   final IconData icon;
   final Color color;
   final VoidCallback onTap;
@@ -1207,13 +1210,31 @@ class _TotalStatCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(
-                        value,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              color: color,
-                              fontWeight: FontWeight.w900,
-                              height: 1,
+                      Row(
+                        children: [
+                          Text(
+                            value,
+                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                  color: color,
+                                  fontWeight: FontWeight.w900,
+                                  height: 1,
+                                ),
+                          ),
+                          if (badge != null && badge!.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                badge!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                      color: scheme.onSurfaceVariant,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                              ),
                             ),
+                          ],
+                        ],
                       ),
                       const SizedBox(height: 2),
                       Text(

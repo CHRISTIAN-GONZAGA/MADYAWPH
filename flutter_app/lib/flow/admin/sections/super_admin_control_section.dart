@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
 import '../../../auth_storage.dart';
 import '../../../dio_client.dart';
@@ -68,17 +69,10 @@ class _SuperAdminControlSectionState extends State<SuperAdminControlSection> {
         _pickerBannerUrl =
             (res.data?['banner_url'] ?? '').toString().trim();
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Property banner updated. It will appear on the hotel picker.',
-          ),
-        ),
-      );
+      showAppMessage(context, 'Property banner updated. It will appear on the hotel picker.',);
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -98,8 +92,7 @@ class _SuperAdminControlSectionState extends State<SuperAdminControlSection> {
     } on DioException catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   }
 
@@ -186,9 +179,7 @@ class _SuperAdminControlSectionState extends State<SuperAdminControlSection> {
     if (ok != true) return;
     if (passCtrl.text != confirmCtrl.text) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Passwords do not match.')),
-      );
+      showAppMessage(context, 'Passwords do not match.');
       return;
     }
 
@@ -201,14 +192,11 @@ class _SuperAdminControlSectionState extends State<SuperAdminControlSection> {
         'role': role,
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${role == 'frontdesk' ? 'Front desk' : 'Administrator'} account created.')),
-      );
+      showAppMessage(context, '${role == 'frontdesk' ? 'Front desk' : 'Administrator'} account created.');
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -239,14 +227,11 @@ class _SuperAdminControlSectionState extends State<SuperAdminControlSection> {
     try {
       await portalDio().delete('/admin/portal-users/$id');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Administrator removed.')),
-      );
+      showAppMessage(context, 'Administrator removed.');
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -78,9 +79,7 @@ class AdminDevErrorPanel extends StatelessWidget {
               ? null
               : () {
                   Clipboard.setData(ClipboardData(text: body));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Error copied to clipboard.')),
-                  );
+                  showAppMessage(context, 'Error copied to clipboard.');
                 },
           icon: const Icon(Icons.copy_outlined),
           label: const Text('Copy error'),

@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
 
 import '../dio_client.dart';
@@ -162,15 +163,13 @@ class _TrackBookingScreenState extends State<TrackBookingScreen> {
         options: Options(responseType: ResponseType.bytes),
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text(
-                'PDF endpoint reachable. (Integrate viewer/download next)')),
+      showAppMessage(
+        context,
+        'PDF endpoint reachable. (Integrate viewer/download next)',
       );
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   }
 
@@ -286,8 +285,7 @@ class _OtpScreenState extends State<OtpScreen> {
     try {
       await publicDio().post('/otp/send', data: {'email': email});
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('OTP sent to your email.')));
+      showAppMessage(context, 'OTP sent to your email.');
     } on DioException catch (e) {
       setState(() => _error = dioErrorMessage(e));
     } finally {
@@ -308,9 +306,7 @@ class _OtpScreenState extends State<OtpScreen> {
           data: {'email': email, 'otp': otp});
       final ok = res.data?['ok'] == true;
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(ok ? 'OTP verified.' : 'OTP invalid.')),
-      );
+      showAppMessage(context, ok ? 'OTP verified.' : 'OTP invalid.');
     } on DioException catch (e) {
       setState(() => _error = dioErrorMessage(e));
     } finally {

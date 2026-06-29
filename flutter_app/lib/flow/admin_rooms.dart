@@ -1,5 +1,6 @@
-﻿import 'package:dio/dio.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 import '../dio_client.dart';
 import '../widgets/app_state_views.dart';
@@ -167,16 +168,12 @@ class _AdminRoomsScreenState extends State<AdminRoomsScreen> {
       );
       if (!mounted) return;
       if (saved) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Room updated.')),
-        );
+        showAppMessage(context, 'Room updated.');
         await _load();
       }
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -194,11 +191,7 @@ class _AdminRoomsScreenState extends State<AdminRoomsScreen> {
   Future<void> _addRoom({Map<String, dynamic>? preselectedCategory}) async {
     if (_categories.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Create a room category first, then add rooms.'),
-        ),
-      );
+      showAppMessage(context, 'Create a room category first, then add rooms.');
       return;
     }
 
@@ -262,16 +255,12 @@ class _AdminRoomsScreenState extends State<AdminRoomsScreen> {
       );
       if (!mounted) return;
       if (created) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Room created.')),
-        );
+        showAppMessage(context, 'Room created.');
         await _load();
       }
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }

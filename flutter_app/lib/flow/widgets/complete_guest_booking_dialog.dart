@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../dio_client.dart';
@@ -308,8 +309,9 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
   Future<void> _pickCheckOut() async {
     if (config.lockDates) return;
     if (_checkInDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('select_checkin_first'))),
+      showAppMessage(
+        context,
+        context.tr('select_checkin_first'),
       );
       return;
     }
@@ -418,7 +420,7 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
   }
 
   void _snack(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    showAppMessage(context, message);
   }
 
   @override

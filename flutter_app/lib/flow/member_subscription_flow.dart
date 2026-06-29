@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -64,13 +65,7 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
   void _showQrPhDialog() {
     final url = _memberQrUrl;
     if (url.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'QR Ph image is not available yet. Ask platform support or try again later.',
-          ),
-        ),
-      );
+      showAppMessage(context, 'QR Ph image is not available yet. Ask platform support or try again later.',);
       return;
     }
 
@@ -121,9 +116,7 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
         _emailCtrl.text.trim().isEmpty ||
         _phoneCtrl.text.trim().isEmpty ||
         _refCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please complete all fields.')),
-      );
+      showAppMessage(context, 'Please complete all fields.');
       return;
     }
     setState(() => _submitting = true);
@@ -146,9 +139,7 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
       );
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _submitting = false);
     }

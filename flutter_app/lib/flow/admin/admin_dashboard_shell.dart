@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -394,13 +395,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
                   onBlockedTabTap: creditsLocked
                       ? () {
                           if (widget.isFrontDesk) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Credits are depleted. Contact your hotel administrator.',
-                                ),
-                              ),
-                            );
+                            showAppMessage(context, 'Credits are depleted. Contact your hotel administrator.',);
                             return;
                           }
                           AdminCreditsGate.showActionsBlockedMessage(context);
@@ -500,13 +495,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           currentCredits: creditAmount,
           onTopUpCredits: widget.isFrontDesk
               ? () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Credits are depleted. Contact your hotel administrator.',
-                      ),
-                    ),
-                  );
+                  showAppMessage(context, 'Credits are depleted. Contact your hotel administrator.',);
                 }
               : widget.onRecharge,
         ),
@@ -516,6 +505,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         AmenitiesSection(
           key: refreshKey,
           claims: claims,
+          rooms: _rooms,
           onAddProduct: widget.onAmenityAddProduct,
           onRefresh: widget.onRefresh,
           canManageProducts: !widget.isFrontDesk,

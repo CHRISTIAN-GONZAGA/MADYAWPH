@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -111,9 +112,7 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
       if (mounted) setState(() => _revenue = res.data);
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   }
 
@@ -124,15 +123,11 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
         data: {'booking_confirm_fee_percent': percent},
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Booking fee percent updated.')),
-      );
+      showAppMessage(context, 'Booking fee percent updated.');
       await _loadAll();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   }
 
@@ -153,15 +148,11 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
         options: Options(contentType: 'multipart/form-data'),
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('QR image updated.')),
-      );
+      showAppMessage(context, 'QR image updated.');
       await _loadAll();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   }
 
@@ -172,9 +163,7 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
       await _loadAll();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   }
 
@@ -184,9 +173,7 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
       await _loadAll();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   }
 
@@ -197,9 +184,7 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
       await _loadAll();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   }
 
@@ -209,9 +194,7 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
       await _loadAll();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   }
 
@@ -271,19 +254,11 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
       );
       if (!mounted) return;
       final balance = res.data?['current_credits'];
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Granted ₱${payload['amount']}. New balance: ₱$balance',
-          ),
-        ),
-      );
+      showAppMessage(context, 'Granted ₱${payload['amount']}. New balance: ₱$balance',);
       await _loadAll();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   }
 
@@ -308,9 +283,7 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
       await _loadAll();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   }
 
@@ -1238,9 +1211,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
   Future<void> _saveFeePercent() async {
     final parsed = double.tryParse(_feePercentCtrl.text.trim());
     if (parsed == null || parsed < 0 || parsed > 100) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a fee between 0 and 100.')),
-      );
+      showAppMessage(context, 'Enter a fee between 0 and 100.');
       return;
     }
     setState(() => _savingFee = true);

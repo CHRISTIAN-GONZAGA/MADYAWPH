@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
@@ -169,9 +170,7 @@ class _AdminPortalUsersScreenState extends State<AdminPortalUsersScreen> {
     if (ok != true) return;
     if (passCtrl.text != confirmCtrl.text) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Passwords do not match.')),
-      );
+      showAppMessage(context, 'Passwords do not match.');
       return;
     }
 
@@ -184,15 +183,11 @@ class _AdminPortalUsersScreenState extends State<AdminPortalUsersScreen> {
         'role': role,
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Account created.')),
-      );
+      showAppMessage(context, 'Account created.');
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -228,15 +223,11 @@ class _AdminPortalUsersScreenState extends State<AdminPortalUsersScreen> {
     try {
       await portalDio().delete('/admin/portal-users/$id');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Account removed.')),
-      );
+      showAppMessage(context, 'Account removed.');
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }

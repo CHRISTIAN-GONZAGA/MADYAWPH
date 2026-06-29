@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -72,9 +73,7 @@ class _AppInstallShareDialogState extends State<_AppInstallShareDialog> {
     if (url == null || url.isEmpty) return;
     await Clipboard.setData(ClipboardData(text: url));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Install link copied.')),
-    );
+    showAppMessage(context, 'Install link copied.');
   }
 
   @override

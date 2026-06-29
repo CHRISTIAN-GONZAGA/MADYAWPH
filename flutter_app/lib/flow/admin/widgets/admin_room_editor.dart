@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -221,13 +222,7 @@ Future<bool> showAdminEditRoomDialog(
   final roomId = AdminDashboardModels.roomIdOf(room);
   if (roomId.isEmpty) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Cannot edit this room — id is missing. Refresh and try again.',
-          ),
-        ),
-      );
+      showAppMessage(context, 'Cannot edit this room — id is missing. Refresh and try again.',);
     }
     return false;
   }
@@ -438,11 +433,7 @@ Future<bool> showAdminCreateRoomDialog(
   final image = payload.remove('__image') as XFile?;
   if (image == null) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Room photo is required. Pick an image from the gallery.'),
-        ),
-      );
+      showAppMessage(context, 'Room photo is required. Pick an image from the gallery.');
     }
     return false;
   }
@@ -452,9 +443,7 @@ Future<bool> showAdminCreateRoomDialog(
     return true;
   } on DioException catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
     return false;
   }

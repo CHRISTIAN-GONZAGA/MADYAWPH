@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -162,18 +163,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 
       if (!mounted) return;
       final msg = payload?['message']?.toString() ?? '$label completed.';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      showAppMessage(context, msg);
       await _load(silent: true);
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$label failed: ${dioErrorMessage(e)}')),
-      );
+      showAppMessage(context, '$label failed: ${dioErrorMessage(e)}', isError: true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$label failed: $e')),
-      );
+      showAppMessage(context, '$label failed: $e');
     } finally {
       if (mounted) setState(() => _busyAction = false);
     }
@@ -243,14 +240,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       if (payload == null) return;
       await portalDio().patch('/admin/pricing/surge', data: payload);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Surge pricing updated.')),
-      );
+      showAppMessage(context, 'Surge pricing updated.');
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   }
 
@@ -994,7 +987,6 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     final auth = (_data?['auth'] as Map<String, dynamic>?)?['user']
         as Map<String, dynamic>?;
     nameCtrl.text = (auth?['name'] ?? '').toString();
-    final messenger = ScaffoldMessenger.of(context);
 
     final ok = await showDialog<bool>(
       context: context,
@@ -1041,9 +1033,7 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     if (ok != true) return;
     if (!mounted) return;
     if (newCtrl.text.isNotEmpty && newCtrl.text != confirmCtrl.text) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('New passwords do not match.')),
-      );
+      showAppMessage(context, 'New passwords do not match.');
       return;
     }
     try {
@@ -1054,14 +1044,10 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
         if (newCtrl.text.isNotEmpty) 'password_confirmation': confirmCtrl.text,
       });
       if (!mounted) return;
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Staff profile updated.')),
-      );
+      showAppMessage(context, 'Staff profile updated.');
     } on DioException catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   }
 
@@ -1259,15 +1245,11 @@ class _StaffAssignedTasksScreenState extends State<StaffAssignedTasksScreen> {
     try {
       await portalDio().put('/tasks/$taskId/status', data: {'status': status});
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Task updated to $status.')),
-      );
+      showAppMessage(context, 'Task updated to $status.');
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) {
         setState(() => _savingIds.remove(taskId));
@@ -1531,9 +1513,7 @@ class _StaffAdminMessagesScreenState extends State<StaffAdminMessagesScreen> {
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -1663,9 +1643,7 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollChatToEnd());
     } catch (_) {
       if (!silent && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not refresh messages.')),
-        );
+        showAppMessage(context, 'Could not refresh messages.');
       }
     }
   }
@@ -1716,9 +1694,7 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
       await _refreshChat(silent: true);
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   }
 
@@ -1752,14 +1728,10 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
         await _signOut();
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$e')),
-      );
+      showAppMessage(context, '$e');
     } finally {
       if (mounted) setState(() => _chatSending = false);
     }
@@ -1783,7 +1755,7 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
       final payload = await action();
       if (!mounted) return;
       final msg = payload?['message']?.toString() ?? '$label completed.';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      showAppMessage(context, msg);
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
@@ -1791,14 +1763,10 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
         await _signOut();
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$label failed: ${dioErrorMessage(e)}')),
-      );
+      showAppMessage(context, '$label failed: ${dioErrorMessage(e)}', isError: true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$label failed: $e')),
-      );
+      showAppMessage(context, '$label failed: $e');
     } finally {
       if (mounted) setState(() => _busyAction = false);
     }
@@ -1810,9 +1778,7 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
         .cast<Map<String, dynamic>>();
     if (items.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No amenity menu available yet.')),
-      );
+      showAppMessage(context, 'No amenity menu available yet.');
       return;
     }
     String selectedId = (items.first['id'] ?? '').toString();
@@ -1910,13 +1876,7 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
     if (payload == null) {
       if (!mounted) return;
       if (isHourly) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Extension is not available. Ask the front desk to set the category extra-hour rate.',
-            ),
-          ),
-        );
+        showAppMessage(context, 'Extension is not available. Ask the front desk to set the category extra-hour rate.',);
       }
       return;
     }
@@ -1943,8 +1903,7 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
     final room = _data?['roomInfo'] as Map<String, dynamic>?;
     final bookingId = room?['activeBookingId']?.toString() ?? '';
     if (bookingId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No active booking found.')));
+      showAppMessage(context, 'No active booking found.');
       return;
     }
     final commentCtrl = TextEditingController();
@@ -2401,22 +2360,16 @@ class _AdminAccountSettingsScreenState extends State<AdminAccountSettingsScreen>
   Future<void> _saveAdminProfile() async {
     if (_busy) return;
     if (_nameCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a username / display name.')),
-      );
+      showAppMessage(context, 'Enter a username / display name.');
       return;
     }
     final hasNew = _adminNewPass.text.isNotEmpty;
     if (hasNew && _adminNewPass.text != _adminNewPass2.text) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('New passwords do not match.')),
-      );
+      showAppMessage(context, 'New passwords do not match.');
       return;
     }
     if (hasNew && _adminCurrentPass.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter your current password to set a new one.')),
-      );
+      showAppMessage(context, 'Enter your current password to set a new one.');
       return;
     }
     setState(() => _busy = true);
@@ -2431,17 +2384,13 @@ class _AdminAccountSettingsScreenState extends State<AdminAccountSettingsScreen>
       }
       await portalDio().put<Map<String, dynamic>>('/admin/profile', data: data);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Admin profile updated.')),
-      );
+      showAppMessage(context, 'Admin profile updated.');
       _adminCurrentPass.clear();
       _adminNewPass.clear();
       _adminNewPass2.clear();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -3386,9 +3335,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
           Future<void> pickCheckOut() async {
             if (fromSearch) return;
             if (checkInDate == null) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(context.tr('select_checkin_first'))),
-              );
+              showAppMessage(context, context.tr('select_checkin_first'));
               return;
             }
             final picked = await showDatePicker(
@@ -3636,42 +3583,28 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                   final email = emailCtrl.text.trim();
                   final phone = phoneCtrl.text.trim();
                   if (name.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Enter your full name.')),
-                    );
+                    showAppMessage(context, 'Enter your full name.');
                     return;
                   }
                   if (email.isEmpty || !email.contains('@')) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Enter a valid email address.')),
-                    );
+                    showAppMessage(context, 'Enter a valid email address.');
                     return;
                   }
                   if (phone.length < 7) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Enter a valid phone number.')),
-                    );
+                    showAppMessage(context, 'Enter a valid phone number.');
                     return;
                   }
                   if (fromSearch && guestIdFile == null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Upload your government ID.')),
-                    );
+                    showAppMessage(context, 'Upload your government ID.');
                     return;
                   }
                   if (discountType != 'none' && discountIdFile == null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Upload a photo of your discount ID.'),
-                      ),
-                    );
+                    showAppMessage(context, 'Upload a photo of your discount ID.');
                     return;
                   }
                   if (checkInCtrl.text.trim().isEmpty ||
                       checkOutCtrl.text.trim().isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Select check-in and check-out.')),
-                    );
+                    showAppMessage(context, 'Select check-in and check-out.');
                     return;
                   }
                   Navigator.of(context).pop({
@@ -3712,25 +3645,15 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
           ),
         );
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Room ${room['room_number']} booked as a local walk-in.',
-            ),
-          ),
-        );
+        showAppMessage(context, 'Room ${room['room_number']} booked as a local walk-in.',);
         await widget.onBooked?.call();
         await _load();
       } on DioException catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(dioErrorMessage(e))),
-        );
+        showAppMessage(context, dioErrorMessage(e), isError: true);
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e')),
-        );
+        showAppMessage(context, '$e');
       } finally {
         if (mounted) setState(() => _booking = false);
       }
@@ -3817,20 +3740,16 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            reservation != null
-                ? 'Request sent (ref ${ref.isEmpty ? 'pending' : ref}). Awaiting hotel approval.'
-                : 'Booking submitted: ${ref.isEmpty ? 'Reference generated' : ref}',
-          ),
-        ),
+      showAppMessage(
+        context,
+        reservation != null
+            ? 'Request sent (ref ${ref.isEmpty ? 'pending' : ref}). Awaiting hotel approval.'
+            : 'Booking submitted: ${ref.isEmpty ? 'Reference generated' : ref}',
       );
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _booking = false);
     }

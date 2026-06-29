@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 import '../auth_storage.dart';
 import '../branding/madyaw_logo_widget.dart';
@@ -505,19 +506,9 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
       );
       if (!mounted) return;
       if (usedLegacy) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(context.tr('legacy_search_hint')),
-            duration: const Duration(seconds: 4),
-          ),
-        );
+        showAppMessage(context, context.tr('legacy_search_hint'));
       } else if (broadened) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(context.tr('broadened_search_hint')),
-            duration: const Duration(seconds: 4),
-          ),
-        );
+        showAppMessage(context, context.tr('broadened_search_hint'));
       }
       await Navigator.of(context).push<void>(
         PageRouteBuilder<void>(
@@ -533,27 +524,25 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
       );
     } on TimeoutException {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text(
-            'Search took too long. Check your connection, then try again.',
-          ),
-          action: SnackBarAction(label: 'Retry', onPressed: _search),
-        ),
+      showAppMessage(
+        context,
+        'Search took too long. Check your connection, then try again.',
+        isError: true,
+        actionLabel: 'Retry',
+        onAction: _search,
       );
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(dioErrorMessage(e)),
-          action: SnackBarAction(label: 'Retry', onPressed: _search),
-        ),
+      showAppMessage(
+        context,
+        dioErrorMessage(e),
+        isError: true,
+        actionLabel: 'Retry',
+        onAction: _search,
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$e')),
-      );
+      showAppMessage(context, '$e');
     } finally {
       if (mounted) setState(() => _searching = false);
     }

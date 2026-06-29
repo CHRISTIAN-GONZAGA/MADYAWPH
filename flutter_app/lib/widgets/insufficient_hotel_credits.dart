@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -132,12 +133,10 @@ Future<void> showHotelCreditsRechargeDialog(BuildContext context) async {
       }
     }
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    showAppMessage(context, msg);
   } on DioException catch (e) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(dioErrorMessage(e))),
-    );
+    showAppMessage(context, dioErrorMessage(e), isError: true);
   }
 }
 

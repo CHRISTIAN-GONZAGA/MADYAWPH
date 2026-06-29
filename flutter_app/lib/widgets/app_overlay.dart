@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../navigation_keys.dart';
+import 'app_notice.dart';
 
 /// Shows a dialog on the app root navigator so it appears above nested dashboards.
 Future<T?> showAppOverlayDialog<T>({
@@ -23,14 +24,11 @@ Future<T?> showAppOverlayDialog<T>({
   );
 }
 
+/// @deprecated Prefer [showAppMessage]. Shows a centered notice instead of a bottom snackbar.
 void showAppSnackBar(SnackBar snackBar, {BuildContext? context}) {
-  if (context != null && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(snackBar);
-    return;
-  }
-  final overlayContext = appNavigatorKey.currentContext;
-  if (overlayContext == null) return;
-  ScaffoldMessenger.of(overlayContext).showSnackBar(snackBar);
+  final message = messageFromSnackBar(snackBar);
+  if (message == null || message.trim().isEmpty) return;
+  showAppMessage(context, message.trim());
 }
 
 /// Pushes a full-screen route on the admin nested navigator (matches dashboard taps).

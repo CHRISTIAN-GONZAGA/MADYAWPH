@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -142,8 +143,9 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
 
         Future<void> pickCheckOut() async {
           if (checkInDate == null) {
-            ScaffoldMessenger.of(dialogContext).showSnackBar(
-              SnackBar(content: Text(dialogContext.tr('select_checkin_first'))),
+            showAppMessage(
+              dialogContext,
+              dialogContext.tr('select_checkin_first'),
             );
             return;
           }
@@ -360,49 +362,29 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                 final email = emailCtrl.text.trim();
                 final phone = phoneCtrl.text.trim();
                 if (name.isEmpty) {
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    const SnackBar(content: Text('Enter your full name.')),
-                  );
+                  showAppMessage(dialogContext, 'Enter your full name.');
                   return;
                 }
                 if (email.isNotEmpty && !email.contains('@')) {
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    const SnackBar(content: Text('Enter a valid email address.')),
-                  );
+                  showAppMessage(dialogContext, 'Enter a valid email address.');
                   return;
                 }
                 if (phone.isNotEmpty && phone.length < 7) {
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    const SnackBar(content: Text('Enter a valid phone number.')),
-                  );
+                  showAppMessage(dialogContext, 'Enter a valid phone number.');
                   return;
                 }
                 if (discountType != 'none' && discountIdFile == null) {
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    const SnackBar(
-                      content: Text('Upload a photo of your discount ID.'),
-                    ),
-                  );
+                  showAppMessage(dialogContext, 'Upload a photo of your discount ID.');
                   return;
                 }
                 if (bookingMode == 'other' &&
                     bookingModeOtherCtrl.text.trim().isEmpty) {
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Specify the booking mode or choose another option.',
-                      ),
-                    ),
-                  );
+                  showAppMessage(dialogContext, 'Specify the booking mode or choose another option.',);
                   return;
                 }
                 if (checkInCtrl.text.trim().isEmpty ||
                     checkOutCtrl.text.trim().isEmpty) {
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    const SnackBar(
-                      content: Text('Select check-in and check-out.'),
-                    ),
-                  );
+                  showAppMessage(dialogContext, 'Select check-in and check-out.');
                   return;
                 }
                 Navigator.of(dialogContext).pop({
@@ -482,27 +464,17 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
       ),
     );
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Room ${room['room_number']} booked. Open the Book tab to check the guest in when they arrive.',
-          ),
-        ),
-      );
+      showAppMessage(context, 'Room ${room['room_number']} booked. Open the Book tab to check the guest in when they arrive.',);
     }
     return true;
   } on DioException catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
     return false;
   } catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$e')),
-      );
+      showAppMessage(context, '$e');
     }
     return false;
   }

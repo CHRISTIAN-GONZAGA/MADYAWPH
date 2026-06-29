@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
@@ -41,9 +42,7 @@ class _ReservationSectionState extends State<ReservationSection> {
     try {
       await portalDio().post('/admin/reservations/$id/approve');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Reservation approved.')),
-      );
+      showAppMessage(context, 'Reservation approved.');
       await widget.onChanged();
     } on DioException catch (e) {
       if (!mounted) return;
@@ -54,8 +53,7 @@ class _ReservationSectionState extends State<ReservationSection> {
           onTopUp: widget.onTopUpCredits,
         );
       } else {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+        showAppMessage(context, dioErrorMessage(e), isError: true);
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -68,14 +66,11 @@ class _ReservationSectionState extends State<ReservationSection> {
     try {
       await portalDio().post('/admin/reservations/$id/reject');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Reservation rejected.')),
-      );
+      showAppMessage(context, 'Reservation rejected.');
       await widget.onChanged();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }

@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
 
 import '../../auth_storage.dart';
@@ -77,18 +78,10 @@ class _AdminHotelLogoScreenState extends State<AdminHotelLogoScreen> {
         _logoUrl =
             (res.data?['logo_url'] ?? res.data?['banner_url'] ?? '').toString();
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Hotel logo updated. Guests will see it when browsing hotels.',
-          ),
-        ),
-      );
+      showAppMessage(context, 'Hotel logo updated. Guests will see it when browsing hotels.',);
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _uploading = false);
     }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 /// Hotel wallet rules shared across admin screens.
 abstract final class HotelCreditsPolicy {
@@ -48,20 +49,15 @@ class AdminCreditsGate extends InheritedWidget {
 
   static void showActionsBlockedMessage(BuildContext context) {
     final gate = maybeOf(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          gate?.isDepleted == true
-              ? 'Credits are depleted. Top up credits in Settings or sign out.'
-              : 'This action is unavailable while credits are depleted.',
-        ),
-        action: gate != null
-            ? SnackBarAction(
-                label: 'Top up',
-                onPressed: gate.onTopUp,
-              )
-            : null,
-      ),
+    final message = gate?.isDepleted == true
+        ? 'Credits are depleted. Top up credits in Settings or sign out.'
+        : 'This action is unavailable while credits are depleted.';
+    showAppMessage(
+      context,
+      message,
+      isError: true,
+      actionLabel: gate != null ? 'Top up' : null,
+      onAction: gate?.onTopUp,
     );
   }
 

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
@@ -174,9 +175,7 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
         _refreshing = false;
       });
       if (_regions.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(msg)),
-        );
+        showAppMessage(context, msg);
       }
     } catch (e) {
       if (!mounted) return;
@@ -349,12 +348,7 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
       if (!mounted) return;
 
       if (distances.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(context.tr('near_me_no_coordinates')),
-            duration: const Duration(seconds: 6),
-          ),
-        );
+        showAppMessage(context, context.tr('near_me_no_coordinates'));
         setState(() {
           _locatingNearMe = false;
         });
@@ -370,12 +364,9 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
         _locatingNearMe = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            context.tr('near_me_found').replaceAll('{n}', '$locatedCount'),
-          ),
-        ),
+      showAppMessage(
+        context,
+        context.tr('near_me_found').replaceAll('{n}', '$locatedCount'),
       );
     } on NearbyHotelsException catch (e) {
       if (!mounted) return;
@@ -385,7 +376,7 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
         'location_services_disabled' => context.tr('near_me_location_disabled'),
         _ => context.tr('near_me_location_failed'),
       };
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      showAppMessage(context, msg);
       if (e.code == 'permission_denied' ||
           e.code == 'permission_denied_forever' ||
           e.code == 'location_services_disabled') {
@@ -417,9 +408,7 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
       setState(() => _locatingNearMe = false);
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('near_me_location_failed'))),
-      );
+      showAppMessage(context, context.tr('near_me_location_failed'), isError: true);
       setState(() => _locatingNearMe = false);
     }
   }
@@ -1919,12 +1908,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
         _previewCoords = pos;
         _locatingGps = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('GPS location saved for this hotel.'),
-          duration: Duration(seconds: 2),
-        ),
-      );
+      showAppMessage(context, 'GPS location saved for this hotel.');
     } on NearbyHotelsException catch (e) {
       if (!mounted) return;
       final message = switch (e.code) {
@@ -2057,13 +2041,9 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
       (_) => false,
     );
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Hotel ready. Add rooms under Settings → Categories & rooms, then use Walk-in to book guests.',
-        ),
-        duration: Duration(seconds: 7),
-      ),
+    showAppMessage(
+      context,
+      'Hotel ready. Add rooms under Settings → Categories & rooms, then use Walk-in to book guests.',
     );
   }
 
@@ -2099,15 +2079,11 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
                 data: {'registration_token': token},
               );
               if (ctx.mounted) {
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(content: Text('A new verification code was sent.')),
-                );
+                showAppMessage(ctx, 'A new verification code was sent.');
               }
             } on DioException catch (e) {
               if (ctx.mounted) {
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  SnackBar(content: Text(dioErrorMessage(e))),
-                );
+                showAppMessage(ctx, dioErrorMessage(e), isError: true);
               }
             } finally {
               if (ctx.mounted) setLocal(() => resendBusy = false);
@@ -2146,9 +2122,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
               FilledButton(
                 onPressed: () {
                   if (otpCtrl.text.trim().length != 6) {
-                    ScaffoldMessenger.of(ctx).showSnackBar(
-                      const SnackBar(content: Text('Enter the 6-digit code.')),
-                    );
+                    showAppMessage(ctx, 'Enter the 6-digit code.');
                     return;
                   }
                   Navigator.of(ctx).pop(true);

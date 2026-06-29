@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/services.dart';
 
 import '../admin_dashboard_models.dart';
@@ -16,6 +17,7 @@ class _RoomListPayload {
     required this.showGuest,
     this.subtitle,
     this.useFloorPicker = false,
+    this.preferCheckIn = false,
   });
 
   final String title;
@@ -23,6 +25,7 @@ class _RoomListPayload {
   final bool showGuest;
   final String? subtitle;
   final bool useFloorPicker;
+  final bool preferCheckIn;
 }
 
 /// Slide-up room list for Summary → Hotel totals; detail stays in-panel until back.
@@ -43,6 +46,7 @@ class HotelTotalsRoomPanelScope extends InheritedWidget {
     required List<Map<String, dynamic>> rooms,
     required bool showGuest,
     String? subtitle,
+    bool preferCheckIn,
   }) openRoomList;
 
   final void Function(String roomId) openRoomDetail;
@@ -145,6 +149,7 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     required List<Map<String, dynamic>> rooms,
     required bool showGuest,
     String? subtitle,
+    bool preferCheckIn = false,
   }) {
     HapticFeedback.selectionClick();
     final useFloorPicker = AdminDashboardModels.needsFloorDrilldown(rooms);
@@ -159,6 +164,7 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
         showGuest: showGuest,
         subtitle: subtitle,
         useFloorPicker: useFloorPicker,
+        preferCheckIn: preferCheckIn,
       );
     });
     _syncOpenFlag();
@@ -215,6 +221,7 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     await AdminRoomNavigation.handleRoomTap(
       navContext,
       room: room,
+      preferCheckIn: _list?.preferCheckIn ?? false,
       onSuccess: () async {
         await widget.onRefresh?.call();
       },
@@ -588,21 +595,16 @@ void openHotelTotalsRoomList(
   required List<Map<String, dynamic>> rooms,
   required bool showGuest,
   String? subtitle,
+  bool preferCheckIn = false,
 }) {
   if (rooms.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('No rooms in "$title".')),
-    );
+    showAppMessage(context, 'No rooms in "$title".');
     return;
   }
 
   final panel = HotelTotalsRoomPanelScope.maybeOf(context);
   if (panel == null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Could not open room list. Pull to refresh and retry.'),
-      ),
-    );
+    showAppMessage(context, 'Could not open room list. Pull to refresh and retry.');
     return;
   }
 
@@ -611,6 +613,7 @@ void openHotelTotalsRoomList(
     rooms: rooms,
     showGuest: showGuest,
     subtitle: subtitle,
+    preferCheckIn: preferCheckIn,
   );
 }
 
@@ -620,13 +623,7 @@ void openHotelTotalsRoomDetail(
 }) {
   final id = AdminDashboardModels.roomIdOf(room);
   if (id.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Room ID missing. Pull to refresh the dashboard and try again.',
-        ),
-      ),
-    );
+    showAppMessage(context, 'Room ID missing. Pull to refresh the dashboard and try again.',);
     return;
   }
 

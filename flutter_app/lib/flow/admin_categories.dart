@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -409,13 +410,11 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     try {
       await _postMultipart('/room-categories', payload, image);
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Category created.')));
+      showAppMessage(context, 'Category created.');
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -424,11 +423,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
   Future<void> _createRoomInCategory(Map<String, dynamic> category) async {
     if (_categoryId(category).isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Category id missing. Pull to refresh and try again.'),
-        ),
-      );
+      showAppMessage(context, 'Category id missing. Pull to refresh and try again.');
       return;
     }
     if (_busy) return;
@@ -440,15 +435,11 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
       );
       if (!mounted) return;
       if (created) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Room created.')),
-        );
+        showAppMessage(context, 'Room created.');
       }
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -578,14 +569,10 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     try {
       await _putMultipart('/room-categories/$categoryId', payload, image);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Category updated.')),
-      );
+      showAppMessage(context, 'Category updated.');
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -600,9 +587,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
       rooms = await _roomsInCategory(category);
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
       return;
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -610,9 +595,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
 
     if (rooms.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No rooms in this category.')),
-      );
+      showAppMessage(context, 'No rooms in this category.');
       return;
     }
 
@@ -634,11 +617,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     final roomId = _roomId(room);
     if (roomId.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Room id missing. Pull to refresh and try again.'),
-        ),
-      );
+      showAppMessage(context, 'Room id missing. Pull to refresh and try again.');
       return;
     }
 
@@ -661,9 +640,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
       );
       if (!mounted) return;
       if (saved) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Room updated.')),
-        );
+        showAppMessage(context, 'Room updated.');
         await _load();
       }
     } catch (e, stack) {
@@ -687,9 +664,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
       final rooms = await _roomsInCategory(category);
       if (rooms.isEmpty) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No rooms found in this category.')),
-        );
+        showAppMessage(context, 'No rooms found in this category.');
         return;
       }
       String selectedId = _roomId(rooms.first);
@@ -725,12 +700,10 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
       if (ok != true) return;
       await portalDio().delete('/rooms/$selectedId');
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Room deleted.')));
+      showAppMessage(context, 'Room deleted.');
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   }
 
@@ -757,13 +730,11 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     try {
       await portalDio().delete('/room-categories/$categoryId');
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Category deleted.')));
+      showAppMessage(context, 'Category deleted.');
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   }
 

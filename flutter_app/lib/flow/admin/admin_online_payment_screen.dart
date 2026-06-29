@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
 import '../../dio_client.dart';
 import '../../widgets/app_button.dart';
@@ -80,14 +81,10 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
       setState(() {
         _qrUrl = (res.data?['qr_url'] ?? '').toString();
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Payment QR updated.')),
-      );
+      showAppMessage(context, 'Payment QR updated.');
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
@@ -96,9 +93,7 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
   Future<void> _searchRefs() async {
     final q = _refCtrl.text.trim();
     if (q.length < 3) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter at least 3 characters.')),
-      );
+      showAppMessage(context, 'Enter at least 3 characters.');
       return;
     }
     setState(() => _searching = true);
@@ -116,9 +111,7 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
       });
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dioErrorMessage(e))),
-      );
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _searching = false);
     }

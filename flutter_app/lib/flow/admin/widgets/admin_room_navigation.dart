@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -6,6 +7,7 @@ import 'package:flutter/scheduler.dart';
 import '../../../auth_storage.dart';
 import '../../../navigation_keys.dart';
 import '../admin_dashboard_models.dart';
+import 'admin_check_in_helper.dart';
 import 'admin_room_detail_navigation.dart';
 import 'admin_summary_room_tile.dart';
 import 'admin_walk_in_customer_booking.dart';
@@ -19,7 +21,7 @@ enum AdminRoomOpenMode {
   manageOnly,
 }
 
-enum _AdminRoomAction { book, manage }
+enum _AdminRoomAction { book, manage, checkIn }
 
 typedef AdminRoomManageHandler = Future<void> Function(
   BuildContext context,
@@ -36,6 +38,7 @@ abstract final class AdminRoomNavigation {
     BuildContext? sheetContext,
     AdminRoomOpenMode mode = AdminRoomOpenMode.bookOrManage,
     AdminRoomManageHandler? onManageRoom,
+    bool preferCheckIn = false,
   }) {
     return openRoom(
       context,
@@ -44,6 +47,7 @@ abstract final class AdminRoomNavigation {
       sheetContext: sheetContext,
       mode: mode,
       onManageRoom: onManageRoom,
+      preferCheckIn: preferCheckIn,
     );
   }
 
@@ -82,6 +86,7 @@ abstract final class AdminRoomNavigation {
     BuildContext? sheetContext,
     AdminRoomOpenMode mode = AdminRoomOpenMode.bookOrManage,
     AdminRoomManageHandler? onManageRoom,
+    bool preferCheckIn = false,
   }) async {
     if (mode == AdminRoomOpenMode.manageOnly) {
       await openSummaryRoomDetail(
@@ -109,6 +114,7 @@ abstract final class AdminRoomNavigation {
         room: room,
         onSuccess: onSuccess,
         onManageRoom: onManageRoom,
+        preferCheckIn: preferCheckIn,
       );
     }
 
@@ -125,8 +131,12 @@ abstract final class AdminRoomNavigation {
     required Map<String, dynamic> room,
     required Future<void> Function() onSuccess,
     AdminRoomManageHandler? onManageRoom,
+    bool preferCheckIn = false,
   }) async {
     final roomNo = (room['room_number'] ?? 'Room').toString();
+    final showCheckIn =
+        preferCheckIn && AdminDashboardModels.canQuickCheckIn(room);
+
     final action = await showModalBottomSheet<_AdminRoomAction>(
       context: context,
       useRootNavigator: true,
@@ -146,12 +156,20 @@ abstract final class AdminRoomNavigation {
               ),
               const SizedBox(height: 4),
               Text(
-                'Choose what you want to do with this room.',
+                AdminDashboardModels.guestName(room),
                 style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
                       color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                     ),
               ),
               const SizedBox(height: 16),
+              if (showCheckIn) ...[
+                FilledButton.icon(
+                  onPressed: () => Navigator.pop(ctx, _AdminRoomAction.checkIn),
+                  icon: const Icon(Icons.login_rounded),
+                  label: const Text('Check in guest'),
+                ),
+                const SizedBox(height: 10),
+              ],
               FilledButton.icon(
                 onPressed: () => Navigator.pop(ctx, _AdminRoomAction.book),
                 icon: const Icon(Icons.event_available_outlined),
@@ -171,6 +189,15 @@ abstract final class AdminRoomNavigation {
 
     if (!context.mounted || action == null) return;
 
+    if (action == _AdminRoomAction.checkIn) {
+      await performAdminRoomCheckIn(
+        context,
+        room: room,
+        onSuccess: onSuccess,
+      );
+      return;
+    }
+
     if (action == _AdminRoomAction.manage) {
       if (onManageRoom != null) {
         await onManageRoom(context, room);
@@ -181,15 +208,8 @@ abstract final class AdminRoomNavigation {
       return;
     }
 
-    if (!AdminDashboardModels.isWalkInBookable(room)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Room $roomNo cannot be booked right now '
-            '(${AdminDashboardModels.displayStatusForRoom(room)}).',
-          ),
-        ),
-      );
+    if (!AdminDashboardModels.canScheduleFutureBooking(room)) {
+      showAppMessage(context, 'Room $roomNo is under maintenance and cannot be booked.',);
       return;
     }
 
@@ -235,13 +255,7 @@ abstract final class AdminRoomNavigation {
   }
 
   static void _missingRoomId(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Room ID missing. Pull to refresh the dashboard and try again.',
-        ),
-      ),
-    );
+    showAppMessage(context, 'Room ID missing. Pull to refresh the dashboard and try again.',);
   }
 }
 

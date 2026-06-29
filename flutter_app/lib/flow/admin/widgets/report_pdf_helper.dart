@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -49,9 +50,7 @@ Future<void> downloadReportPdf({
     final pdfError = _pdfErrorFromBytes(bytes);
     if (pdfError != null) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(pdfError)),
-        );
+        showAppMessage(context, pdfError);
       }
       return;
     }
@@ -63,25 +62,15 @@ Future<void> downloadReportPdf({
     final result = await OpenFilex.open(file.path, type: 'application/pdf');
     if (!context.mounted) return;
     if (result.type != ResultType.done) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result.message.isNotEmpty
+      showAppMessage(context, result.message.isNotEmpty
                 ? result.message
-                : 'PDF saved to ${file.path}',
-          ),
-        ),
-      );
+                : 'PDF saved to ${file.path}',);
     }
   } on DioException catch (e) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(dioErrorMessage(e))),
-    );
+    showAppMessage(context, dioErrorMessage(e), isError: true);
   } catch (e) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$e')),
-    );
+    showAppMessage(context, '$e');
   }
 }

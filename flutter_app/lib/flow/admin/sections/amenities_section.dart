@@ -1,9 +1,12 @@
 import 'package:dio/dio.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
 import '../admin_dashboard_models.dart';
+import '../widgets/admin_room_navigation.dart';
 import '../widgets/admin_sales_panel.dart';
+import '../widgets/charge_amenity_to_room_dialog.dart';
 
 class AmenitiesSection extends StatefulWidget {
   const AmenitiesSection({
@@ -12,12 +15,14 @@ class AmenitiesSection extends StatefulWidget {
     required this.onAddProduct,
     required this.onRefresh,
     this.canManageProducts = true,
+    this.rooms = const [],
   });
 
   final List<dynamic> claims;
   final Future<void> Function() onAddProduct;
   final Future<void> Function() onRefresh;
   final bool canManageProducts;
+  final List<Map<String, dynamic>> rooms;
 
   @override
   State<AmenitiesSection> createState() => _AmenitiesSectionState();
@@ -47,8 +52,7 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
     } on DioException catch (e) {
       if (!mounted) return;
       setState(() => _loadingMenu = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   }
 
@@ -73,13 +77,78 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
       await widget.onRefresh();
       await _loadMenu();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Request marked fulfilled.')),
-      );
+      showAppMessage(context, 'Request marked fulfilled.');
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
+  Future<void> _onProductTap(Map<String, dynamic> item) async {
+    final id = (item['id'] ?? item['_id'] ?? '').toString();
+    if (id.isEmpty) return;
+
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                (item['name'] ?? 'Product').toString(),
+                style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(ctx, 'charge'),
+                icon: const Icon(Icons.hotel_outlined),
+                label: const Text('Charge to room'),
+              ),
+              if (widget.canManageProducts) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.pop(ctx, 'edit'),
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('Edit product'),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.pop(ctx, 'delete'),
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Delete product'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (!mounted || action == null) return;
+    switch (action) {
+      case 'charge':
+        final charged = await showChargeAmenityToRoomDialog(
+          context: context,
+          menuItem: item,
+          rooms: widget.rooms,
+        );
+        if (charged) {
+          await widget.onRefresh();
+          await _loadMenu();
+        }
+        break;
+      case 'edit':
+        await _editItem(item);
+        break;
+      case 'delete':
+        await _deleteItem(item);
+        break;
     }
   }
 
@@ -153,13 +222,10 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
       });
       await _loadMenu();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Product updated.')),
-      );
+      showAppMessage(context, 'Product updated.');
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   }
 
@@ -190,13 +256,10 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
       await portalDio().delete('/admin/amenity-menu/$id');
       await _loadMenu();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Product removed.')),
-      );
+      showAppMessage(context, 'Product removed.');
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   }
 
@@ -245,7 +308,7 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
         final active = m['is_active'] != false;
         return Card(
           child: InkWell(
-            onTap: widget.canManageProducts ? () => _editItem(m) : null,
+            onTap: () => _onProductTap(m),
             child: Padding(
               padding: const EdgeInsets.all(10),
               child: Column(

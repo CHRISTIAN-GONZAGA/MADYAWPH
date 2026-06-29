@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 import 'front_desk_shift.dart';
 
@@ -67,11 +68,7 @@ Future<FrontDeskShift?> showFrontDeskShiftSetupDialog({
           );
           if (!picked.isAfter(timeIn)) {
             if (!ctx.mounted) return;
-            ScaffoldMessenger.of(ctx).showSnackBar(
-              const SnackBar(
-                content: Text('Time out must be after time in.'),
-              ),
-            );
+            showAppMessage(ctx, 'Time out must be after time in.');
             return;
           }
           setLocal(() => timeOut = picked);

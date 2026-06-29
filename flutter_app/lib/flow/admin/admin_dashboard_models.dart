@@ -96,6 +96,51 @@ class AdminDashboardModels {
     return true;
   }
 
+  /// True when staff may schedule a booking (including future dates on occupied rooms).
+  static bool canScheduleFutureBooking(Map<String, dynamic> room) {
+    return statusOf(room) != 'maintenance';
+  }
+
+  /// Booked / reserved arrivals eligible for quick check-in from Summary.
+  static bool canQuickCheckIn(Map<String, dynamic> room) {
+    if (statusOf(room) == 'checked_in') return false;
+    final status = statusOf(room);
+    if (status == 'booked' || status == 'reserved') return true;
+    if ((status == 'available' ||
+            status == 'checked_out' ||
+            status.isEmpty) &&
+        _hasUpcomingBookingRecord(room)) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Guest head count for a checked-in room (adults + children, or demographics).
+  static int guestHeadCount(Map<String, dynamic> room) {
+    final booking = room['latest_booking'];
+    if (booking is Map) {
+      final adults = (booking['adults'] as num?)?.toInt() ?? 0;
+      final children = (booking['children'] as num?)?.toInt() ?? 0;
+      final party = adults + children;
+      if (party > 0) return party;
+      final male = (booking['guests_male'] as num?)?.toInt() ?? 0;
+      final female = (booking['guests_female'] as num?)?.toInt() ?? 0;
+      if (male + female > 0) return male + female;
+    }
+    return 1;
+  }
+
+  /// Total guests currently checked in across the hotel.
+  static int guestsInHotelNow(List<Map<String, dynamic>> rooms) {
+    var total = 0;
+    for (final room in rooms) {
+      if (statusOf(room) == 'checked_in') {
+        total += guestHeadCount(room);
+      }
+    }
+    return total;
+  }
+
   /// Parses dashboard room payloads (JSON maps are not always [Map<String, dynamic>]).
   static List<Map<String, dynamic>> parseRoomMaps(List<dynamic>? raw) {
     if (raw == null || raw.isEmpty) return const [];

@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -220,11 +221,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
 
   void _copyReportForPrint(BuildContext context, String body) {
     Clipboard.setData(ClipboardData(text: body));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Report copied. Paste into any app to print or share.'),
-      ),
-    );
+    showAppMessage(context, 'Report copied. Paste into any app to print or share.');
   }
 
   void _openPrintableReport(
@@ -1149,11 +1146,7 @@ class _InlineReportErrorPanel extends StatelessWidget {
                   ? null
                   : () {
                       Clipboard.setData(ClipboardData(text: message));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Error copied to clipboard.'),
-                        ),
-                      );
+                      showAppMessage(context, 'Error copied to clipboard.');
                     },
               icon: const Icon(Icons.copy_outlined, size: 18),
               label: const Text('Copy error'),
@@ -1912,12 +1905,9 @@ class _ResellerCommissionRecordFormState
       if (!mounted) return;
       _amountCtrl.clear();
       _noteCtrl.clear();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Commission ₱${amount.toStringAsFixed(2)} recorded.',
-          ),
-        ),
+      showAppMessage(
+        context,
+        'Commission ₱${amount.toStringAsFixed(2)} recorded.',
       );
       await widget.onRecorded();
     } on DioException catch (e) {

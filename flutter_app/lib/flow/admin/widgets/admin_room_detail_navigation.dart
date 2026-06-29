@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 import '../../../navigation_keys.dart';
 import '../../../widgets/app_overlay.dart';
@@ -68,13 +69,7 @@ abstract final class AdminRoomDetailNavigation {
     final ctx = _resolveContext(context);
     if (id.isEmpty) {
       if (ctx != null) {
-        ScaffoldMessenger.of(ctx).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Room ID missing. Pull to refresh the dashboard and try again.',
-            ),
-          ),
-        );
+        showAppMessage(ctx, 'Room ID missing. Pull to refresh the dashboard and try again.',);
       }
       return;
     }
