@@ -253,6 +253,22 @@ void main() {
       );
     });
 
+    test('floorOf uses first digit when floor field is missing', () {
+      expect(AdminDashboardModels.floorOf({'room_number': '101'}), 1);
+      expect(AdminDashboardModels.floorOf({'room_number': '201'}), 2);
+      expect(
+        AdminDashboardModels.roomsOnFloor(
+          [
+            {'room_number': '101'},
+            {'room_number': '102'},
+            {'room_number': '201'},
+          ],
+          1,
+        ).length,
+        2,
+      );
+    });
+
     test('floorsForRooms includes floor 1 for single-floor categories', () {
       final rooms = [
         {'room_number': '101', 'floor': 1},
@@ -266,7 +282,7 @@ void main() {
       expect(AdminDashboardModels.needsCategoryFloorDrilldown(rooms), isTrue);
     });
 
-    test('isAmenityChargeable requires checked_in booking', () {
+    test('isAmenityChargeable requires active booking', () {
       expect(
         AdminDashboardModels.isAmenityChargeable({
           'status': 'checked_in',
@@ -280,6 +296,14 @@ void main() {
           'latest_booking': {'id': 'b1'},
         }),
         isFalse,
+      );
+      expect(
+        AdminDashboardModels.isAmenityChargeable({
+          'status': 'booked',
+          'current_guest_name': 'Jane Doe',
+          'latest_booking': {'id': 'b1'},
+        }),
+        isTrue,
       );
     });
 

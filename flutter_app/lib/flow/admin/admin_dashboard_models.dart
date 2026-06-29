@@ -787,7 +787,8 @@ class AdminDashboardModels {
     final parsed = int.tryParse('$raw');
     if (parsed != null && parsed > 0) return parsed;
     final rn = (room['room_number'] ?? '').toString();
-    final match = RegExp(r'^(\d+)').firstMatch(rn);
+    // Match backend: first digit of room number (101 → floor 1, not 101).
+    final match = RegExp(r'^(\d)').firstMatch(rn);
     if (match != null) {
       final fromNumber = int.tryParse(match.group(1)!);
       if (fromNumber != null && fromNumber > 0) return fromNumber;
@@ -851,13 +852,19 @@ class AdminDashboardModels {
     return rooms.isNotEmpty;
   }
 
-  /// Checked-in room with an active booking — eligible for amenity charges.
+  /// Checked-in (or in-house) room with an active booking — eligible for amenity charges.
   static bool isAmenityChargeable(Map<String, dynamic> room) {
-    if (statusOf(room) != 'checked_in') return false;
+    if (statusOf(room) == 'maintenance') return false;
     final booking = room['latest_booking'];
     if (booking is! Map) return false;
     final id = (booking['id'] ?? booking['_id'] ?? '').toString().trim();
-    return id.isNotEmpty;
+    if (id.isEmpty) return false;
+
+    if (statusOf(room) == 'checked_in') return true;
+    if (isSummaryOccupied(room)) return true;
+
+    final guest = (room['current_guest_name'] ?? '').toString().trim();
+    return guest.isNotEmpty;
   }
 
   static List<Map<String, dynamic>> amenityChargeableRooms(

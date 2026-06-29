@@ -92,6 +92,7 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
 
     final action = await showModalBottomSheet<String>(
       context: context,
+      useRootNavigator: true,
       showDragHandle: true,
       builder: (ctx) => SafeArea(
         child: Padding(

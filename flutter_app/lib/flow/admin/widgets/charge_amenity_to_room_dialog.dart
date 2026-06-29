@@ -5,7 +5,6 @@ import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 import '../../../dio_client.dart';
 import '../admin_dashboard_models.dart';
-import 'admin_floor_picker_grid.dart';
 
 /// Charges an amenity menu item to a checked-in room (updates booking bill / receipt).
 Future<bool> showChargeAmenityToRoomDialog({
@@ -25,8 +24,8 @@ Future<bool> showChargeAmenityToRoomDialog({
   var resolvedRooms = rooms;
   if (resolvedRooms.isEmpty) {
     try {
-      final res =
-          await portalDio().get<Map<String, dynamic>>('/admin/dashboard');
+      final res = await portalDioWithLongTimeout()
+          .get<Map<String, dynamic>>('/admin/dashboard');
       resolvedRooms = AdminDashboardModels.parseRoomMaps(
         res.data?['rooms'] as List<dynamic>?,
       );
@@ -47,17 +46,18 @@ Future<bool> showChargeAmenityToRoomDialog({
     if (!context.mounted) return false;
     showAppMessage(
       context,
-      'No checked-in rooms to charge. Check a guest in first.',
+      'No in-house rooms to charge. Check a guest in first, then pull to refresh.',
     );
     return false;
   }
 
-  if (!context.mounted) return false;
   final grouped = AdminDashboardModels.groupByCategory(chargeable);
   final categoryKeys = grouped.keys.toList()..sort();
 
+  if (!context.mounted) return false;
   final selection = await showModalBottomSheet<_ChargeSelection>(
     context: context,
+    useRootNavigator: true,
     isScrollControlled: true,
     useSafeArea: true,
     showDragHandle: true,
@@ -66,7 +66,6 @@ Future<bool> showChargeAmenityToRoomDialog({
       unitPrice: unitPrice,
       groupedRooms: grouped,
       categoryKeys: categoryKeys,
-      allRooms: resolvedRooms,
       categories: categories,
     ),
   );
@@ -113,15 +112,12 @@ class _ChargeSelection {
   final int quantity;
 }
 
-enum _PickerStep { category, floor, room }
-
 class _ChargeAmenityRoomPicker extends StatefulWidget {
   const _ChargeAmenityRoomPicker({
     required this.productName,
     required this.unitPrice,
     required this.groupedRooms,
     required this.categoryKeys,
-    required this.allRooms,
     required this.categories,
   });
 
@@ -129,7 +125,6 @@ class _ChargeAmenityRoomPicker extends StatefulWidget {
   final double unitPrice;
   final Map<String, List<Map<String, dynamic>>> groupedRooms;
   final List<String> categoryKeys;
-  final List<Map<String, dynamic>> allRooms;
   final List<Map<String, dynamic>> categories;
 
   @override
@@ -138,46 +133,23 @@ class _ChargeAmenityRoomPicker extends StatefulWidget {
 }
 
 class _ChargeAmenityRoomPickerState extends State<_ChargeAmenityRoomPicker> {
-  _PickerStep _step = _PickerStep.category;
   String? _category;
-  int? _floor;
   Map<String, dynamic>? _selectedRoom;
   var _quantity = 1;
 
-  List<Map<String, dynamic>> get _categoryRooms =>
-      _category == null ? const [] : widget.groupedRooms[_category!] ?? const [];
+  @override
+  void initState() {
+    super.initState();
+    if (widget.categoryKeys.length == 1) {
+      _category = widget.categoryKeys.first;
+    }
+  }
 
   void _pickCategory(String label) {
     HapticFeedback.selectionClick();
-    final categoryRooms = widget.groupedRooms[label] ?? const [];
-    final floorCount = AdminDashboardModels.categoryFloorCountFrom(
-      label,
-      categoryRooms,
-      widget.categories,
-    );
-    final floors = AdminDashboardModels.floorsForRooms(
-      categoryRooms,
-      categoryFloorCount: floorCount,
-    );
     setState(() {
       _category = label;
       _selectedRoom = null;
-      if (floors.length == 1) {
-        _floor = floors.first;
-        _step = _PickerStep.room;
-      } else {
-        _floor = null;
-        _step = _PickerStep.floor;
-      }
-    });
-  }
-
-  void _pickFloor(int floor) {
-    HapticFeedback.selectionClick();
-    setState(() {
-      _floor = floor;
-      _selectedRoom = null;
-      _step = _PickerStep.room;
     });
   }
 
@@ -186,19 +158,10 @@ class _ChargeAmenityRoomPickerState extends State<_ChargeAmenityRoomPicker> {
     setState(() => _selectedRoom = room);
   }
 
-  void _back() {
+  void _clearCategory() {
     setState(() {
-      switch (_step) {
-        case _PickerStep.room:
-          _step = _PickerStep.floor;
-          _selectedRoom = null;
-        case _PickerStep.floor:
-          _step = _PickerStep.category;
-          _category = null;
-          _floor = null;
-        case _PickerStep.category:
-          break;
-      }
+      _category = null;
+      _selectedRoom = null;
     });
   }
 
@@ -206,6 +169,7 @@ class _ChargeAmenityRoomPickerState extends State<_ChargeAmenityRoomPicker> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final maxHeight = MediaQuery.sizeOf(context).height * 0.88;
+    final pickingCategory = _category == null && widget.categoryKeys.length > 1;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -220,11 +184,11 @@ class _ChargeAmenityRoomPickerState extends State<_ChargeAmenityRoomPicker> {
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
               child: Row(
                 children: [
-                  if (_step != _PickerStep.category)
+                  if (!pickingCategory && widget.categoryKeys.length > 1)
                     IconButton(
-                      onPressed: _back,
+                      onPressed: _clearCategory,
                       icon: const Icon(Icons.arrow_back),
-                      tooltip: 'Back',
+                      tooltip: 'All categories',
                     )
                   else
                     const SizedBox(width: 8),
@@ -255,7 +219,11 @@ class _ChargeAmenityRoomPickerState extends State<_ChargeAmenityRoomPicker> {
               ),
             ),
             const Divider(height: 1),
-            Expanded(child: _buildStepBody(context)),
+            Expanded(
+              child: pickingCategory
+                  ? _buildCategoryList(context)
+                  : _buildRoomPicker(context),
+            ),
             const Divider(height: 1),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
@@ -314,17 +282,6 @@ class _ChargeAmenityRoomPickerState extends State<_ChargeAmenityRoomPicker> {
     );
   }
 
-  Widget _buildStepBody(BuildContext context) {
-    switch (_step) {
-      case _PickerStep.category:
-        return _buildCategoryList(context);
-      case _PickerStep.floor:
-        return _buildFloorPicker(context);
-      case _PickerStep.room:
-        return _buildRoomGrid(context);
-    }
-  }
-
   Widget _buildCategoryList(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -344,7 +301,7 @@ class _ChargeAmenityRoomPickerState extends State<_ChargeAmenityRoomPicker> {
               leading: const Icon(Icons.category_outlined),
               title: Text(label),
               subtitle: Text(
-                '${list.length} checked-in room${list.length == 1 ? '' : 's'}',
+                '${list.length} in-house room${list.length == 1 ? '' : 's'}',
               ),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => _pickCategory(label),
@@ -355,62 +312,78 @@ class _ChargeAmenityRoomPickerState extends State<_ChargeAmenityRoomPicker> {
     );
   }
 
-  Widget _buildFloorPicker(BuildContext context) {
-    final label = _category ?? '';
-    final categoryRooms = _categoryRooms;
-    final floorCount = AdminDashboardModels.categoryFloorCountFrom(
-      label,
-      categoryRooms,
-      widget.categories,
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: Text(
-            label,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-          ),
-        ),
-        Expanded(
-          child: AdminFloorPickerGrid(
-            rooms: categoryRooms,
-            categoryFloorCount: floorCount,
-            onFloorTap: _pickFloor,
-            subtitle: 'Checked-in rooms on each floor',
-          ),
-        ),
-      ],
-    );
-  }
-  Widget _buildRoomGrid(BuildContext context) {
-    final label = _category ?? '';
-    final floor = _floor ?? 1;
-    final onFloor = AdminDashboardModels.roomsOnFloor(_categoryRooms, floor);
+  Widget _buildRoomPicker(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final columns = MediaQuery.sizeOf(context).width >= 600 ? 4 : 3;
 
-    if (onFloor.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            'No checked-in rooms on ${AdminDashboardModels.floorLabel(floor)}.',
-            textAlign: TextAlign.center,
-          ),
-        ),
+    if (widget.categoryKeys.length == 1) {
+      return _buildCategoryRoomSection(
+        context,
+        category: widget.categoryKeys.first,
+        rooms: widget.groupedRooms[widget.categoryKeys.first] ?? const [],
+        columns: columns,
+        scheme: scheme,
+      );
+    }
+
+    if (_category != null) {
+      return _buildCategoryRoomSection(
+        context,
+        category: _category!,
+        rooms: widget.groupedRooms[_category!] ?? const [],
+        columns: columns,
+        scheme: scheme,
       );
     }
 
     return ListView(
       padding: const EdgeInsets.all(16),
+      children: widget.categoryKeys.map((label) {
+        final rooms = widget.groupedRooms[label] ?? const [];
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 20),
+          child: _buildCategoryRoomSection(
+            context,
+            category: label,
+            rooms: rooms,
+            columns: columns,
+            scheme: scheme,
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildCategoryRoomSection(
+    BuildContext context, {
+    required String category,
+    required List<Map<String, dynamic>> rooms,
+    required int columns,
+    required ColorScheme scheme,
+  }) {
+    if (rooms.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Text(
+          'No chargeable rooms in $category.',
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    final byFloor = <int, List<Map<String, dynamic>>>{};
+    for (final room in rooms) {
+      final floor = AdminDashboardModels.floorOf(room);
+      byFloor.putIfAbsent(floor, () => []).add(room);
+    }
+    final floors = byFloor.keys.toList()..sort();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          '$label · ${AdminDashboardModels.floorLabel(floor)}',
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+          category,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w800,
               ),
         ),
@@ -422,66 +395,110 @@ class _ChargeAmenityRoomPickerState extends State<_ChargeAmenityRoomPicker> {
               ),
         ),
         const SizedBox(height: 12),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-            childAspectRatio: 1.35,
-          ),
-          itemCount: onFloor.length,
-          itemBuilder: (context, i) {
-            final room = onFloor[i];
-            final selected = _selectedRoom != null &&
-                AdminDashboardModels.roomIdOf(room) ==
-                    AdminDashboardModels.roomIdOf(_selectedRoom!);
-            final guest = AdminDashboardModels.guestName(room);
-            return Material(
-              color: selected
-                  ? scheme.primary
-                  : Colors.green.shade600,
-              borderRadius: BorderRadius.circular(10),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: () => _pickRoom(room),
-                child: Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        (room['room_number'] ?? '—').toString(),
-                        style: TextStyle(
-                          color: selected ? scheme.onPrimary : Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 16,
-                        ),
-                      ),
-                      if (guest != '—') ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          guest,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: selected
-                                ? scheme.onPrimary.withValues(alpha: 0.9)
-                                : Colors.white.withValues(alpha: 0.92),
-                            fontSize: 10,
+        ...floors.map((floor) {
+          final floorRooms =
+              AdminDashboardModels.sortRoomsByNumber(byFloor[floor]!);
+          final floorLabel = floors.length > 1
+              ? AdminDashboardModels.floorLabel(floor)
+              : null;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (floorLabel != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      floorLabel,
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: scheme.primary,
                           ),
-                        ),
-                      ],
-                    ],
+                    ),
+                  ),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columns,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 8,
+                    childAspectRatio: 1.35,
+                  ),
+                  itemCount: floorRooms.length,
+                  itemBuilder: (context, i) => _roomTile(
+                    context,
+                    room: floorRooms[i],
+                    scheme: scheme,
                   ),
                 ),
-              ),
-            );
-          },
-        ),
+              ],
+            ),
+          );
+        }),
       ],
+    );
+  }
+
+  Widget _roomTile(
+    BuildContext context, {
+    required Map<String, dynamic> room,
+    required ColorScheme scheme,
+  }) {
+    final selected = _selectedRoom != null &&
+        AdminDashboardModels.roomIdOf(room) ==
+            AdminDashboardModels.roomIdOf(_selectedRoom!);
+    final guest = AdminDashboardModels.guestName(room);
+    final floor = AdminDashboardModels.floorOf(room);
+
+    return Material(
+      color: selected ? scheme.primary : Colors.green.shade600,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => _pickRoom(room),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                (room['room_number'] ?? '—').toString(),
+                style: TextStyle(
+                  color: selected ? scheme.onPrimary : Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                ),
+              ),
+              Text(
+                'F$floor',
+                style: TextStyle(
+                  color: selected
+                      ? scheme.onPrimary.withValues(alpha: 0.85)
+                      : Colors.white.withValues(alpha: 0.85),
+                  fontSize: 10,
+                ),
+              ),
+              if (guest != '—') ...[
+                const SizedBox(height: 2),
+                Text(
+                  guest,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: selected
+                        ? scheme.onPrimary.withValues(alpha: 0.9)
+                        : Colors.white.withValues(alpha: 0.92),
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
