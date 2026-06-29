@@ -3706,6 +3706,7 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
             checkOut: (payload['check_out'] ?? '').toString(),
             discountType: (payload['discount_type'] ?? 'none').toString(),
             paymentMethod: (payload['payment_method'] ?? 'Cash').toString(),
+            bookingMode: (payload['booking_mode'] ?? 'walk-in').toString(),
             guestIdFile: guestIdFile,
             discountIdFile: discountIdFile,
           ),

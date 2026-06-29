@@ -41,6 +41,7 @@ class Booking extends Model
         'source',
         'booking_type',
         'booking_source',
+        'booking_mode',
         'status',
         'discount_type',
         'discount_percent',

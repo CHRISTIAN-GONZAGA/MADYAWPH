@@ -58,6 +58,7 @@ Future<void> submitAdminWalkInBooking({
     'guests_male': payload.guestsMale,
     'guests_female': payload.guestsFemale,
     'guest_nationality': payload.guestNationality,
+    'booking_mode': payload.bookingMode,
     if (breakfastJson.isNotEmpty) 'free_breakfast_options': breakfastJson,
     if (payload.discountType != 'none') 'discount_type': payload.discountType,
   };

@@ -22,6 +22,10 @@ final class AdminBookingPresenter
             'booking_reference' => (string) $booking->booking_reference,
             'booking_type' => $type,
             'booking_source' => (string) $source,
+            'booking_mode' => (string) ($booking->booking_mode ?? ''),
+            'booking_mode_label' => \App\Support\BookingModeSupport::label(
+                (string) ($booking->booking_mode ?? '')
+            ),
             'guest_name' => (string) $booking->guest_name,
             'guest_email' => (string) ($booking->guest_email ?? ''),
             'guest_phone' => (string) ($booking->guest_phone ?? ''),

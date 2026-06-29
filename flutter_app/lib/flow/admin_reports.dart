@@ -122,29 +122,38 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         'to': _fmtDay(monthEnd),
       };
       final failures = <String>[];
-
-      final sales = await _safeReportGet('/reports/sales/timeseries', queryParameters: qp);
-      if (sales == null) failures.add('sales');
-      final timeline =
-          await _safeReportGet('/reports/activity/timeline', queryParameters: qp);
-      if (timeline == null) failures.add('activity');
-      final transfers = await _safeReportGet('/reports/transfers');
-      if (transfers == null) failures.add('transfers');
-      final tasks = await _safeReportGet('/reports/tasks/performance');
-      if (tasks == null) failures.add('tasks');
-      final occupancy = await _safeReportGet('/reports/room-occupancy');
-      if (occupancy == null) failures.add('occupancy');
-      final profitOverview = await _safeReportGet(
-        '/reports/profit-overview',
-        queryParameters: {'anchor_date': _fmtDay(_selectedDay)},
-      );
-      if (profitOverview == null) failures.add('profit overview');
       String? resellerPaymentsError;
-      final resellerPayments = await _safeReportGet(
-        '/reports/reseller-payments/timeseries',
-        queryParameters: commissionQp,
-        onError: (message) => resellerPaymentsError = message,
-      );
+
+      final reportResults = await Future.wait<Map<String, dynamic>?>([
+        _safeReportGet('/reports/sales/timeseries', queryParameters: qp),
+        _safeReportGet('/reports/activity/timeline', queryParameters: qp),
+        _safeReportGet('/reports/transfers'),
+        _safeReportGet('/reports/tasks/performance'),
+        _safeReportGet('/reports/room-occupancy'),
+        _safeReportGet(
+          '/reports/profit-overview',
+          queryParameters: {'anchor_date': _fmtDay(_selectedDay)},
+        ),
+        _safeReportGet(
+          '/reports/reseller-payments/timeseries',
+          queryParameters: commissionQp,
+          onError: (message) => resellerPaymentsError = message,
+        ),
+      ]);
+
+      final sales = reportResults[0];
+      if (sales == null) failures.add('sales');
+      final timeline = reportResults[1];
+      if (timeline == null) failures.add('activity');
+      final transfers = reportResults[2];
+      if (transfers == null) failures.add('transfers');
+      final tasks = reportResults[3];
+      if (tasks == null) failures.add('tasks');
+      final occupancy = reportResults[4];
+      if (occupancy == null) failures.add('occupancy');
+      final profitOverview = reportResults[5];
+      if (profitOverview == null) failures.add('profit overview');
+      final resellerPayments = reportResults[6];
       if (resellerPayments == null && resellerPaymentsError == null) {
         resellerPaymentsError =
             'Reseller commissions request returned no data.';
@@ -533,6 +542,15 @@ ${subtitleLabel(point)}
               isRefreshing: _refreshing,
             ),
           if (!widget.embedded) const SizedBox(height: 16),
+          if (reportFrom.isNotEmpty || reportTo.isNotEmpty) ...[
+            ReportsDataRangeBanner(
+              from: reportFrom,
+              to: reportTo,
+              granularityLabel:
+                  _granularityLabels[_granularity] ?? _granularity,
+            ),
+            const SizedBox(height: 16),
+          ],
           ReportsSection(
             title: 'Financial overview',
             subtitle: isToday

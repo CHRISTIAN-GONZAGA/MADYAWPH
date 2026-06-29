@@ -986,8 +986,12 @@ class ReportController extends Controller
         $payload['title'] = $title;
 
         $pdf = Pdf::loadView('pdf.shift-summary', $payload);
+        $filename = 'shift-summary.pdf';
 
-        return $pdf->download('shift-summary.pdf');
+        return response($pdf->output(), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+        ]);
     }
 
     /**

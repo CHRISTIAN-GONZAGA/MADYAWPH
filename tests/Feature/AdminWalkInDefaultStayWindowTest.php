@@ -43,11 +43,14 @@ class AdminWalkInDefaultStayWindowTest extends TestCase
             'check_out_at' => $checkOut->toIso8601String(),
             'payment_method' => 'Cash',
             'check_in_now' => true,
+            'booking_mode' => 'messenger',
         ]);
 
         $response->assertCreated();
         $response->assertJsonPath('ok', true);
         $response->assertJsonPath('booking.booking_type', 'local');
+        $response->assertJsonPath('booking.booking_mode', 'messenger');
+        $response->assertJsonPath('booking.booking_mode_label', 'Messenger');
     }
 
     public function test_admin_walk_in_multipart_string_true_is_accepted(): void

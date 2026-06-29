@@ -13,6 +13,7 @@ import 'free_breakfast_selection.dart';
 import 'hourly_billing.dart';
 import 'walk_in_complimentary_picker.dart';
 import 'admin_walk_in_stay_calendar_dialog.dart';
+import 'booking_mode_field.dart';
 import 'guest_nationalities.dart';
 import 'manual_booking_dialog.dart';
 
@@ -41,6 +42,7 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
   final phoneCtrl = TextEditingController(text: savedGuest?.phone ?? '');
   final checkInCtrl = TextEditingController();
   final checkOutCtrl = TextEditingController();
+  final bookingModeOtherCtrl = TextEditingController();
 
   final today = DateTime(
     DateTime.now().year,
@@ -54,6 +56,7 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
 
   var discountType = 'none';
   var paymentMethod = 'Cash';
+  var bookingMode = BookingModeOptions.defaultValue;
   XFile? discountIdFile;
   XFile? guestIdFile;
   var adults = 1;
@@ -310,6 +313,12 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                   suffixIcon: const Icon(Icons.calendar_month_outlined),
                 ),
                 const SizedBox(height: 12),
+                BookingModeField(
+                  mode: bookingMode,
+                  otherController: bookingModeOtherCtrl,
+                  onModeChanged: (value) => setLocal(() => bookingMode = value),
+                ),
+                const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   value: paymentMethod,
                   decoration: const InputDecoration(
@@ -376,6 +385,17 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                   );
                   return;
                 }
+                if (bookingMode == 'other' &&
+                    bookingModeOtherCtrl.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Specify the booking mode or choose another option.',
+                      ),
+                    ),
+                  );
+                  return;
+                }
                 if (checkInCtrl.text.trim().isEmpty ||
                     checkOutCtrl.text.trim().isEmpty) {
                   ScaffoldMessenger.of(dialogContext).showSnackBar(
@@ -393,6 +413,10 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                   'check_out': checkOutCtrl.text.trim(),
                   'discount_type': discountType,
                   'payment_method': paymentMethod,
+                  'booking_mode': BookingModeOptions.apiValue(
+                    bookingMode,
+                    bookingModeOtherCtrl.text,
+                  ),
                   'adults': adults,
                   'children': children,
                   'guests_male': guestsMale,
@@ -428,6 +452,7 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
   phoneCtrl.dispose();
   checkInCtrl.dispose();
   checkOutCtrl.dispose();
+  bookingModeOtherCtrl.dispose();
 
   if (payload == null || !context.mounted) return false;
 
@@ -449,6 +474,8 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
         guestsMale: (payload['guests_male'] as num?)?.toInt() ?? 0,
         guestsFemale: (payload['guests_female'] as num?)?.toInt() ?? 0,
         guestNationality: (payload['guest_nationality'] ?? 'Filipino').toString(),
+        bookingMode: (payload['booking_mode'] ?? BookingModeOptions.defaultValue)
+            .toString(),
         freeBreakfastSelections: FreeBreakfastSelection.listFromDynamic(
           payload['free_breakfast_options'] as List?,
         ),

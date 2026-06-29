@@ -9,8 +9,12 @@ class ReportsHeroHeader extends StatelessWidget {
     required this.selectedDateLabel,
     required this.onRefresh,
     this.isRefreshing = false,
+    this.title = 'Reports & analytics',
+    this.caption = 'Tap any metric or period to view details and print.',
   });
 
+  final String title;
+  final String caption;
   final String selectedDateLabel;
   final VoidCallback onRefresh;
   final bool isRefreshing;
@@ -56,7 +60,7 @@ class ReportsHeroHeader extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Reports & analytics',
+                          title,
                           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                                 color: scheme.onPrimary,
                                 fontWeight: FontWeight.w800,
@@ -71,7 +75,7 @@ class ReportsHeroHeader extends StatelessWidget {
                         ),
                         const SizedBox(height: 10),
                         Text(
-                          'Tap any metric or period to view details and print.',
+                          caption,
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                 color: scheme.onPrimary.withValues(alpha: 0.78),
                               ),
@@ -272,6 +276,7 @@ class ReportsKpiTile extends StatelessWidget {
     required this.icon,
     required this.accent,
     this.onTap,
+    this.hint,
   });
 
   final String label;
@@ -279,6 +284,7 @@ class ReportsKpiTile extends StatelessWidget {
   final IconData icon;
   final Color accent;
   final VoidCallback? onTap;
+  final String? hint;
 
   @override
   Widget build(BuildContext context) {
@@ -297,48 +303,127 @@ class ReportsKpiTile extends StatelessWidget {
             border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.45)),
             boxShadow: visual.cardShadow,
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          child: ClipRRect(
+            borderRadius: visual.radiusMd,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: accent.withValues(alpha: 0.14),
-                        borderRadius: visual.radiusSm,
-                      ),
-                      child: Icon(icon, color: accent, size: 20),
+                Container(width: 4, color: accent),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: accent.withValues(alpha: 0.14),
+                                borderRadius: visual.radiusSm,
+                              ),
+                              child: Icon(icon, color: accent, size: 20),
+                            ),
+                            if (onTap != null) ...[
+                              const Spacer(),
+                              Icon(
+                                Icons.chevron_right_rounded,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          value,
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          label,
+                          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                        if (hint != null && hint!.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            hint!,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                          ),
+                        ],
+                      ],
                     ),
-                    if (onTap != null) ...[
-                      const Spacer(),
-                      Icon(
-                        Icons.chevron_right_rounded,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  value,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  label,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                      ),
+                  ),
                 ),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Shows the active report date range from sales timeseries metadata.
+class ReportsDataRangeBanner extends StatelessWidget {
+  const ReportsDataRangeBanner({
+    super.key,
+    required this.from,
+    required this.to,
+    required this.granularityLabel,
+  });
+
+  final String from;
+  final String to;
+  final String granularityLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final visual = AppVisual.of(context);
+    final rangeText = from.isNotEmpty && to.isNotEmpty
+        ? '$from → $to'
+        : 'Loading range…';
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: visual.radiusSm,
+        color: scheme.secondaryContainer.withValues(alpha: 0.35),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Row(
+          children: [
+            Icon(Icons.date_range_rounded, size: 20, color: scheme.secondary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$granularityLabel view',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  Text(
+                    rangeText,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

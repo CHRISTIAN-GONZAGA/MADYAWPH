@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
 import '../../../widgets/app_scaffold.dart';
+import 'admin_reports_ui.dart';
 import 'report_pdf_helper.dart';
 import 'shift_report_table.dart';
 
@@ -125,6 +126,12 @@ class _HotelPeriodReportScreenState extends State<HotelPeriodReportScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        Icon(
+                          Icons.error_outline_rounded,
+                          size: 48,
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                        const SizedBox(height: 12),
                         Text(_error!, textAlign: TextAlign.center),
                         const SizedBox(height: 12),
                         FilledButton(
@@ -138,6 +145,14 @@ class _HotelPeriodReportScreenState extends State<HotelPeriodReportScreen> {
               : ListView(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                   children: [
+                    ReportsHeroHeader(
+                      title: widget.title,
+                      selectedDateLabel: period,
+                      caption: 'Hotel-wide revenue for this period',
+                      onRefresh: _load,
+                      isRefreshing: _loading,
+                    ),
+                    const SizedBox(height: 16),
                     if (widget.subtitle != null &&
                         widget.subtitle!.isNotEmpty) ...[
                       Text(
@@ -146,36 +161,41 @@ class _HotelPeriodReportScreenState extends State<HotelPeriodReportScreen> {
                               fontWeight: FontWeight.w700,
                             ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 12),
                     ],
-                    Text(
-                      period,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant,
-                          ),
+                    ReportsSection(
+                      title: 'Transactions',
+                      subtitle: 'Bookings and amenity charges in this period',
+                      icon: Icons.receipt_long_outlined,
+                      accent: Theme.of(context).colorScheme.primary,
+                      child: ShiftReportTable(
+                        summary: (_data?['summary'] as Map<String, dynamic>?) ??
+                            const {},
+                        bookingRows: ((_data?['booking_transactions'] as List?)
+                                ?.whereType<Map<String, dynamic>>()
+                                .map(Map<String, dynamic>.from)
+                                .toList()) ??
+                            const [],
+                        amenityRows: ((_data?['amenity_transactions'] as List?)
+                                ?.whereType<Map<String, dynamic>>()
+                                .map(Map<String, dynamic>.from)
+                                .toList()) ??
+                            const [],
+                      ),
                     ),
                     const SizedBox(height: 20),
-                    ShiftReportTable(
-                      summary: (_data?['summary'] as Map<String, dynamic>?) ??
-                          const {},
-                      bookingRows: ((_data?['booking_transactions'] as List?)
-                              ?.whereType<Map<String, dynamic>>()
-                              .map(Map<String, dynamic>.from)
-                              .toList()) ??
-                          const [],
-                      amenityRows: ((_data?['amenity_transactions'] as List?)
-                              ?.whereType<Map<String, dynamic>>()
-                              .map(Map<String, dynamic>.from)
-                              .toList()) ??
-                          const [],
-                    ),
-                    const SizedBox(height: 24),
                     FilledButton.icon(
                       onPressed: _pdfBusy ? null : _downloadPdf,
-                      icon: const Icon(Icons.picture_as_pdf_outlined),
-                      label: const Text('Download printable PDF'),
+                      icon: _pdfBusy
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.picture_as_pdf_outlined),
+                      label: Text(
+                        _pdfBusy ? 'Preparing PDF…' : 'Download printable PDF',
+                      ),
                     ),
                     const SizedBox(height: 12),
                     OutlinedButton(

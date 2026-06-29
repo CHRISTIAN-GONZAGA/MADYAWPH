@@ -564,6 +564,8 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             'free_breakfast_options' => ['nullable', 'array'],
             'guest_id_file' => ['nullable', 'image', 'max:5120'],
             'discount_id_file' => ['nullable', 'image', 'max:5120'],
+            'booking_mode' => ['nullable', 'string', 'max:80'],
+            'booking_mode_other' => ['nullable', 'string', 'max:80'],
         ]);
 
         $discountType = strtolower((string) ($validated['discount_type'] ?? 'none'));
@@ -585,6 +587,10 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             'source' => \App\Enums\BookingSource::ADMIN->value,
             'booking_type' => \App\Enums\BookingType::LOCAL->value,
             'booking_source' => 'admin-walk-in',
+            'booking_mode' => \App\Support\BookingModeSupport::normalize(
+                $validated['booking_mode'] ?? 'walk-in',
+                $validated['booking_mode_other'] ?? null
+            ),
         ];
         if ($discountPercent > 0) {
             $bookingData['discount_type'] = $discountType;

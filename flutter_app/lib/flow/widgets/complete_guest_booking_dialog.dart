@@ -9,6 +9,7 @@ import '../../widgets/app_button.dart';
 import '../../widgets/app_input.dart';
 import '../../widgets/chat_attachment.dart';
 import '../admin/widgets/free_breakfast_selection.dart';
+import '../admin/widgets/booking_mode_field.dart';
 import '../../widgets/admin_time_slot_field.dart';
 
 /// Result from [showCompleteGuestBookingDialog].
@@ -31,6 +32,7 @@ class CompleteGuestBookingPayload {
     this.guestsFemale = 0,
     this.guestNationality = '',
     this.freeBreakfastSelections = const [],
+    this.bookingMode = 'walk-in',
   });
 
   final String guestName;
@@ -50,6 +52,7 @@ class CompleteGuestBookingPayload {
   final int guestsFemale;
   final String guestNationality;
   final List<FreeBreakfastSelection> freeBreakfastSelections;
+  final String bookingMode;
 }
 
 class CompleteGuestBookingConfig {
@@ -194,6 +197,7 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
   late final TextEditingController _phoneCtrl;
   late final TextEditingController _checkInCtrl;
   late final TextEditingController _checkOutCtrl;
+  late final TextEditingController _bookingModeOtherCtrl;
 
   DateTime? _checkInDate;
   DateTime? _checkOutDate;
@@ -201,6 +205,7 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
   TimeOfDay? _checkOutTime;
   var _discountType = 'none';
   var _paymentMethod = 'Cash';
+  var _bookingMode = BookingModeOptions.defaultValue;
   XFile? _guestIdFile;
   XFile? _discountIdFile;
   String _paymentQrUrl = '';
@@ -217,6 +222,7 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
     _phoneCtrl = TextEditingController();
     _checkInCtrl = TextEditingController();
     _checkOutCtrl = TextEditingController();
+    _bookingModeOtherCtrl = TextEditingController();
     _checkInDate = config.initialCheckIn;
     _checkOutDate = config.initialCheckOut;
     if (_checkInDate != null) {
@@ -245,6 +251,7 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
     _phoneCtrl.dispose();
     _checkInCtrl.dispose();
     _checkOutCtrl.dispose();
+    _bookingModeOtherCtrl.dispose();
     super.dispose();
   }
 
@@ -380,6 +387,12 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
         return;
       }
     }
+    if (config.showAdminPaymentMethods &&
+        _bookingMode == 'other' &&
+        _bookingModeOtherCtrl.text.trim().isEmpty) {
+      _snack('Specify the booking mode or choose another option.');
+      return;
+    }
 
     Navigator.of(context).pop(
       CompleteGuestBookingPayload(
@@ -394,6 +407,12 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
         checkOutTime: config.showAdminTimeSlots ? _checkOutTime : null,
         guestIdFile: _guestIdFile,
         discountIdFile: _discountIdFile,
+        bookingMode: config.showAdminPaymentMethods
+            ? BookingModeOptions.apiValue(
+                _bookingMode,
+                _bookingModeOtherCtrl.text,
+              )
+            : BookingModeOptions.defaultValue,
       ),
     );
   }
@@ -684,6 +703,13 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
       ],
       if (config.showOnlinePayment || config.showAdminPaymentMethods) ...[
         const SizedBox(height: 12),
+        if (config.showAdminPaymentMethods)
+          BookingModeField(
+            mode: _bookingMode,
+            otherController: _bookingModeOtherCtrl,
+            onModeChanged: (value) => setState(() => _bookingMode = value),
+          ),
+        if (config.showAdminPaymentMethods) const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           value: _paymentMethod,
           decoration: const InputDecoration(
