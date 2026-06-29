@@ -34,6 +34,12 @@ class _HotelPropertyLoginScreenState extends State<HotelPropertyLoginScreen> {
   static const _gold = Color(0xFFD4A843);
 
   @override
+  void initState() {
+    super.initState();
+    warmPublicApi();
+  }
+
+  @override
   void dispose() {
     _username.dispose();
     _password.dispose();

@@ -114,6 +114,32 @@ Dio _authedDio(_AuthKind kind) {
 
 Dio portalDio() => portalDioTestOverride?.call() ?? _authedDio(_AuthKind.portal);
 
+/// Same generous timeouts as [publicDio] — Render cold starts often exceed 45s.
+Dio portalDioWithLongTimeout() {
+  final dio = _baseDio(
+    connectTimeout: kPublicConnectTimeout,
+    receiveTimeout: kPublicReceiveTimeout,
+  );
+  dio.interceptors.add(
+    InterceptorsWrapper(
+      onRequest: (options, handler) async {
+        final t = await AuthStorage.portalToken();
+        if (t != null && t.isNotEmpty) {
+          options.headers['Authorization'] = 'Bearer $t';
+        }
+        handler.next(options);
+      },
+      onError: (error, handler) async {
+        if (error.response?.statusCode == 401) {
+          await AuthStorage.clearPortalAuth();
+        }
+        handler.next(error);
+      },
+    ),
+  );
+  return dio;
+}
+
 Dio guestDio() => _authedDio(_AuthKind.guest);
 
 /// Widget tests set this to mock walk-in calendar / amenity API calls.

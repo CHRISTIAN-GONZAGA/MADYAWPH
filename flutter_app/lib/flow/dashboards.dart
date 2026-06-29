@@ -116,7 +116,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     }
     try {
       final res =
-          await portalDio().get<Map<String, dynamic>>('/admin/dashboard');
+          await portalDioWithLongTimeout().get<Map<String, dynamic>>('/admin/dashboard');
       if (!mounted) return;
       setState(() {
         _data = res.data;
@@ -1009,7 +1009,7 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     });
     try {
       final res =
-          await portalDio().get<Map<String, dynamic>>('/staff/dashboard');
+          await portalDioWithLongTimeout().get<Map<String, dynamic>>('/staff/dashboard');
       setState(() {
         _data = res.data;
         _loading = false;
@@ -2403,7 +2403,7 @@ class _AdminAccountSettingsScreenState extends State<AdminAccountSettingsScreen>
     final role = await AuthStorage.portalRole();
     var isSuper = role == 'super_admin';
     try {
-      final r = await portalDio().get<Map<String, dynamic>>('/admin/dashboard');
+      final r = await portalDioWithLongTimeout().get<Map<String, dynamic>>('/admin/dashboard');
       final u =
           (r.data?['auth'] as Map<String, dynamic>?)?['user'] as Map<String, dynamic>?;
       final n = (u?['name'] ?? '').toString();

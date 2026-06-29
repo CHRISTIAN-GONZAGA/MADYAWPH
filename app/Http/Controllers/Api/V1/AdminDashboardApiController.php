@@ -32,7 +32,7 @@ use Illuminate\Support\Facades\Log;
 
 class AdminDashboardApiController extends Controller
 {
-    public function __invoke(Request $request, AutoCheckoutService $autoCheckoutService): JsonResponse
+    public function __invoke(Request $request): JsonResponse
     {
         try {
             $user = $request->user();
@@ -47,7 +47,10 @@ class AdminDashboardApiController extends Controller
             }
             $hotel = Hotel::withoutGlobalScopes()->find($user?->hotel_id);
             $hotelId = (string) $user->hotel_id;
-            $autoCheckoutService->processOverdueRooms($hotelId);
+            // Do not block dashboard JSON on auto-checkout (slow on cold Render + many rooms).
+            dispatch(function () use ($hotelId) {
+                app(AutoCheckoutService::class)->processOverdueRooms($hotelId);
+            })->afterResponse();
             $rooms = Room::query()->get();
         $bookingBase = Booking::withoutGlobalScopes()->where('hotel_id', $hotelId);
         $awaitingCheckInRoomIds = Room::withoutGlobalScopes()

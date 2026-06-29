@@ -46,6 +46,12 @@ class _SystemAccessScreenState extends State<SystemAccessScreen> {
   };
 
   @override
+  void initState() {
+    super.initState();
+    warmPublicApi();
+  }
+
+  @override
   void dispose() {
     _username.dispose();
     _password.dispose();
