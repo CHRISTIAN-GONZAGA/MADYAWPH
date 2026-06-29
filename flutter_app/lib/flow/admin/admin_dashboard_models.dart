@@ -487,10 +487,23 @@ class AdminDashboardModels {
     return at.difference(DateTime.now()).inMinutes;
   }
 
+  /// Minutes after scheduled checkout before the server auto-checks out a guest.
+  static const int checkoutGraceMinutes = 40;
+
+  /// Checked-in rooms due within 30 minutes or past checkout (grace window).
   static bool isCheckoutSoon(Map<String, dynamic> room) {
+    if (statusOf(room) != 'checked_in') return false;
     final mins = minutesUntilCheckout(room);
     if (mins == null) return false;
-    return mins >= 0 && mins <= 30;
+    return mins <= 30;
+  }
+
+  /// True while guest is past checkout but still inside the grace window.
+  static bool isCheckoutInGracePeriod(Map<String, dynamic> room) {
+    if (statusOf(room) != 'checked_in') return false;
+    final mins = minutesUntilCheckout(room);
+    if (mins == null) return false;
+    return mins < 0 && mins >= -checkoutGraceMinutes;
   }
 
   static DateTime? parseDate(dynamic raw) {
@@ -791,8 +804,66 @@ class AdminDashboardModels {
     return list;
   }
 
+  /// Floors 1..N for a category, including floor 1 when the category has only one floor.
+  static List<int> floorsForRooms(
+    List<Map<String, dynamic>> rooms, {
+    int? categoryFloorCount,
+  }) {
+    var maxFloor = (categoryFloorCount ?? 1).clamp(1, 99);
+    for (final room in rooms) {
+      final f = floorOf(room);
+      if (f > maxFloor) maxFloor = f;
+    }
+    return List.generate(maxFloor, (i) => i + 1);
+  }
+
+  static int categoryFloorCountFrom(
+    String label,
+    List<Map<String, dynamic>> categoryRooms,
+    List<Map<String, dynamic>>? categories,
+  ) {
+    if (categories != null) {
+      final catId = categoryRooms.isNotEmpty
+          ? (categoryRooms.first['category_id'] ?? '').toString().trim()
+          : '';
+      for (final c in categories) {
+        final id = (c['id'] ?? c['_id'] ?? '').toString().trim();
+        final name = (c['name'] ?? '').toString().trim();
+        final matches = (catId.isNotEmpty && id == catId) || name == label;
+        if (!matches) continue;
+        final raw = c['floor_count'];
+        if (raw is int && raw > 0) return raw.clamp(1, 99);
+        if (raw is num && raw.toInt() > 0) return raw.toInt().clamp(1, 99);
+        final parsed = int.tryParse('$raw');
+        if (parsed != null && parsed > 0) return parsed.clamp(1, 99);
+      }
+    }
+    final fromRooms = distinctFloors(categoryRooms);
+    return fromRooms.isEmpty ? 1 : fromRooms.last.clamp(1, 99);
+  }
+
   static bool needsFloorDrilldown(List<Map<String, dynamic>> rooms) {
     return distinctFloors(rooms).length > 1;
+  }
+
+  /// Category breakdown always drills through floors (including floor 1 only).
+  static bool needsCategoryFloorDrilldown(List<Map<String, dynamic>> rooms) {
+    return rooms.isNotEmpty;
+  }
+
+  /// Checked-in room with an active booking — eligible for amenity charges.
+  static bool isAmenityChargeable(Map<String, dynamic> room) {
+    if (statusOf(room) != 'checked_in') return false;
+    final booking = room['latest_booking'];
+    if (booking is! Map) return false;
+    final id = (booking['id'] ?? booking['_id'] ?? '').toString().trim();
+    return id.isNotEmpty;
+  }
+
+  static List<Map<String, dynamic>> amenityChargeableRooms(
+    List<Map<String, dynamic>> rooms,
+  ) {
+    return sortRoomsByNumber(rooms.where(isAmenityChargeable).toList());
   }
 
   static List<Map<String, dynamic>> roomsOnFloor(

@@ -10,16 +10,21 @@ class AdminFloorPickerGrid extends StatelessWidget {
     required this.rooms,
     required this.onFloorTap,
     this.subtitle,
+    this.categoryFloorCount,
   });
 
   final List<Map<String, dynamic>> rooms;
   final ValueChanged<int> onFloorTap;
   final String? subtitle;
+  final int? categoryFloorCount;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final floors = AdminDashboardModels.distinctFloors(rooms);
+    final floors = AdminDashboardModels.floorsForRooms(
+      rooms,
+      categoryFloorCount: categoryFloorCount,
+    );
     final columns = MediaQuery.sizeOf(context).width >= 600 ? 3 : 2;
 
     return Column(

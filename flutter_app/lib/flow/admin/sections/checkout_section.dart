@@ -114,7 +114,7 @@ class _CheckoutSectionState extends State<CheckoutSection> {
                               ?.copyWith(fontWeight: FontWeight.w800),
                         ),
                         Text(
-                          'Expected from checkouts within 30 minutes',
+                          'Due within 30 min or in 40-min grace after checkout',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
@@ -127,17 +127,21 @@ class _CheckoutSectionState extends State<CheckoutSection> {
           ),
           const SizedBox(height: 16),
           Text(
-            'Before checkout (≤ 30 min)',
+            'Checkout queue',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w700,
                 ),
+          ),
+          Text(
+            'Guests stay up to ${AdminDashboardModels.checkoutGraceMinutes} minutes past checkout before auto check-out.',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 10),
           if (keys.isEmpty)
             const Card(
               child: Padding(
                 padding: EdgeInsets.all(24),
-                child: Text('No guests checking out in the next 30 minutes.'),
+                child: Text('No guests due for checkout right now.'),
               ),
             )
           else
@@ -237,22 +241,32 @@ class _CheckoutRoomCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final mins = AdminDashboardModels.minutesUntilCheckout(room);
+    final inGrace = AdminDashboardModels.isCheckoutInGracePeriod(room);
     final guest = (room['current_guest_name'] ?? '').toString();
     final co = AdminDashboardModels.checkoutDateTime(room);
     final coLabel = co != null
         ? '${co.hour > 12 ? co.hour - 12 : (co.hour == 0 ? 12 : co.hour)}:${co.minute.toString().padLeft(2, '0')} ${co.hour >= 12 ? 'PM' : 'AM'}'
         : '—';
+    final remainingLabel = mins == null
+        ? '—'
+        : inGrace
+            ? '${mins.abs()} min past checkout (grace)'
+            : mins < 0
+                ? '${mins.abs()} min overdue'
+                : '$mins min remaining';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
+      color: inGrace ? Colors.orange.shade50 : null,
       child: ListTile(
         leading: CircleAvatar(
+          backgroundColor: inGrace ? Colors.orange.shade700 : null,
           child: Text((room['room_number'] ?? '?').toString()),
         ),
         title: Text('Room ${room['room_number']}'),
         subtitle: Text(
           'Guest: ${guest.isEmpty ? '—' : guest}\n'
-          'Checkout: $coLabel · Remaining: ${mins ?? '—'} mins',
+          'Checkout: $coLabel · $remainingLabel',
         ),
         isThreeLine: true,
         trailing: const Icon(Icons.chevron_right),

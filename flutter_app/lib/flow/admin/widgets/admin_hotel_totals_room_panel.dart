@@ -18,6 +18,7 @@ class _RoomListPayload {
     this.subtitle,
     this.useFloorPicker = false,
     this.preferCheckIn = false,
+    this.categoryFloorCount,
   });
 
   final String title;
@@ -26,6 +27,7 @@ class _RoomListPayload {
   final String? subtitle;
   final bool useFloorPicker;
   final bool preferCheckIn;
+  final int? categoryFloorCount;
 }
 
 /// Slide-up room list for Summary → Hotel totals; detail stays in-panel until back.
@@ -331,6 +333,7 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
             Expanded(
               child: AdminFloorPickerGrid(
                 rooms: list.rooms,
+                categoryFloorCount: list.categoryFloorCount,
                 subtitle: list.subtitle,
                 onFloorTap: (floor) => setState(() => _pickedFloor = floor),
               ),

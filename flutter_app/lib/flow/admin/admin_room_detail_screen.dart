@@ -11,6 +11,7 @@ import 'admin_dashboard_models.dart';
 import 'widgets/admin_opaque_scaffold.dart';
 import 'widgets/hourly_billing.dart';
 import 'widgets/stay_receipt_dialog.dart';
+import 'admin_room_fee_presets_screen.dart';
 
 class AdminRoomDetailScreen extends StatefulWidget {
   const AdminRoomDetailScreen({
@@ -238,41 +239,95 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       return;
     }
 
+    final presets = await fetchRoomFeePresets();
+    if (!mounted) return;
     final reasonCtrl = TextEditingController();
     final amountCtrl = TextEditingController();
     final payload = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Add fee'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: reasonCtrl,
-              decoration: const InputDecoration(
-                  labelText: 'Reason (custom)', border: OutlineInputBorder()),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) {
+          void applyPreset(Map<String, dynamic> preset) {
+            reasonCtrl.text = (preset['label'] ?? '').toString();
+            final amount = (preset['amount'] as num?)?.toDouble() ?? 0;
+            if (amount > 0) {
+              amountCtrl.text = amount == amount.roundToDouble()
+                  ? '${amount.toInt()}'
+                  : amount.toStringAsFixed(2);
+            }
+            setLocal(() {});
+          }
+
+          return AlertDialog(
+            title: const Text('Add fee'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (presets.isNotEmpty) ...[
+                    Text(
+                      'Quick pick',
+                      style: Theme.of(ctx).textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: presets.map((preset) {
+                        final label = (preset['label'] ?? '').toString();
+                        final amount = (preset['amount'] as num?)?.toDouble() ?? 0;
+                        final subtitle = amount > 0
+                            ? '₱${amount.toStringAsFixed(amount == amount.roundToDouble() ? 0 : 2)}'
+                            : null;
+                        return ActionChip(
+                          label: Text(
+                            subtitle == null ? label : '$label · $subtitle',
+                          ),
+                          onPressed: () => applyPreset(preset),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  TextField(
+                    controller: reasonCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Reason (custom)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: amountCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Amount',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: amountCtrl,
-              decoration: const InputDecoration(
-                  labelText: 'Amount', border: OutlineInputBorder()),
-              keyboardType: TextInputType.number,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop({
-              'label': reasonCtrl.text.trim(),
-              'amount': double.tryParse(amountCtrl.text.trim()) ?? 0,
-            }),
-            child: const Text('Add'),
-          ),
-        ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop({
+                  'label': reasonCtrl.text.trim(),
+                  'amount': double.tryParse(amountCtrl.text.trim()) ?? 0,
+                }),
+                child: const Text('Add'),
+              ),
+            ],
+          );
+        },
       ),
     );
     reasonCtrl.dispose();

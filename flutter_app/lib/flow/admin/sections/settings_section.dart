@@ -12,6 +12,7 @@ import '../admin_guest_portal_qr_screen.dart';
 import '../admin_hotel_logo_screen.dart';
 import '../admin_online_payment_screen.dart';
 import '../admin_portal_users_screen.dart';
+import '../admin_room_fee_presets_screen.dart';
 
 class SettingsSection extends StatelessWidget {
   const SettingsSection({
@@ -128,6 +129,20 @@ class SettingsSection extends StatelessWidget {
                   await Navigator.of(context).push<void>(
                     MaterialPageRoute<void>(
                       builder: (_) => const AdminCategoriesScreen(),
+                    ),
+                  );
+                  await onRefreshAfterNav();
+                },
+              ),
+              _SettingsTile(
+                icon: Icons.receipt_long_outlined,
+                title: 'Room fee options',
+                subtitle: 'Preset reasons for Add fee in room details',
+                enabled: !creditsLocked,
+                onTap: () async {
+                  await Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const AdminRoomFeePresetsScreen(),
                     ),
                   );
                   await onRefreshAfterNav();

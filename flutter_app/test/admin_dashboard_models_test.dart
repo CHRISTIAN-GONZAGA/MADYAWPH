@@ -253,6 +253,36 @@ void main() {
       );
     });
 
+    test('floorsForRooms includes floor 1 for single-floor categories', () {
+      final rooms = [
+        {'room_number': '101', 'floor': 1},
+        {'room_number': '102', 'floor': 1},
+      ];
+      expect(
+        AdminDashboardModels.floorsForRooms(rooms, categoryFloorCount: 1),
+        [1],
+      );
+      expect(AdminDashboardModels.needsFloorDrilldown(rooms), isFalse);
+      expect(AdminDashboardModels.needsCategoryFloorDrilldown(rooms), isTrue);
+    });
+
+    test('isAmenityChargeable requires checked_in booking', () {
+      expect(
+        AdminDashboardModels.isAmenityChargeable({
+          'status': 'checked_in',
+          'latest_booking': {'id': 'b1'},
+        }),
+        isTrue,
+      );
+      expect(
+        AdminDashboardModels.isAmenityChargeable({
+          'status': 'booked',
+          'latest_booking': {'id': 'b1'},
+        }),
+        isFalse,
+      );
+    });
+
     test('bookingRecordStatusLabel uses checked in when room is occupied', () {
       expect(
         AdminDashboardModels.bookingRecordStatusLabel(

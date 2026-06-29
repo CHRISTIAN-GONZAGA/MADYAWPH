@@ -16,6 +16,7 @@ class AmenitiesSection extends StatefulWidget {
     required this.onRefresh,
     this.canManageProducts = true,
     this.rooms = const [],
+    this.categories = const [],
   });
 
   final List<dynamic> claims;
@@ -23,6 +24,7 @@ class AmenitiesSection extends StatefulWidget {
   final Future<void> Function() onRefresh;
   final bool canManageProducts;
   final List<Map<String, dynamic>> rooms;
+  final List<Map<String, dynamic>> categories;
 
   @override
   State<AmenitiesSection> createState() => _AmenitiesSectionState();
@@ -137,6 +139,7 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
           context: context,
           menuItem: item,
           rooms: widget.rooms,
+          categories: widget.categories,
         );
         if (charged) {
           await widget.onRefresh();

@@ -13,6 +13,8 @@ use Illuminate\Support\Facades\Log;
 
 class AutoCheckoutService
 {
+    public const CHECKOUT_GRACE_MINUTES = 40;
+
     public function __construct(
         private readonly RoomCheckoutService $roomCheckoutService,
     ) {}
@@ -38,12 +40,12 @@ class AutoCheckoutService
 
         $count = 0;
         foreach ($query->get() as $room) {
-            $checkoutDay = $this->resolveCheckoutDay($room);
-            if ($checkoutDay === null) {
+            $checkoutAt = $this->resolveCheckoutMoment($room);
+            if ($checkoutAt === null) {
                 continue;
             }
 
-            if (! $this->isCheckoutDue($checkoutDay, $now)) {
+            if (! $this->isCheckoutDue($checkoutAt, $now)) {
                 continue;
             }
 
@@ -91,19 +93,49 @@ class AutoCheckoutService
         return $count;
     }
 
-    public function isCheckoutDue(Carbon $checkoutDay, Carbon $now): bool
+    /**
+     * Auto-checkout only after scheduled checkout + grace period.
+     */
+    public function isCheckoutDue(Carbon $checkoutAt, Carbon $now): bool
     {
+        $checkoutDay = $checkoutAt->copy()->startOfDay();
         $today = $now->copy()->startOfDay();
 
         if ($checkoutDay->lt($today)) {
             return true;
         }
 
-        if ($checkoutDay->gt($today)) {
-            return false;
+        $autoAt = $checkoutAt->copy()->addMinutes(self::CHECKOUT_GRACE_MINUTES);
+
+        return $now->gte($autoAt);
+    }
+
+    private function resolveCheckoutMoment(Room $room): ?Carbon
+    {
+        $day = $this->resolveCheckoutDay($room);
+        if ($day === null) {
+            return null;
         }
 
-        return $now->gte($checkoutDay->copy()->setTime(11, 0));
+        $booking = Booking::withoutGlobalScopes()
+            ->where('room_id', (string) $room->id)
+            ->whereNotIn('status', [
+                BookingStatus::COMPLETED->value,
+                BookingStatus::CANCELLED->value,
+            ])
+            ->latest('created_at')
+            ->first();
+
+        $timeRaw = trim((string) ($booking?->check_out_time ?? ''));
+        if ($timeRaw !== '' && str_contains($timeRaw, ':')) {
+            $parts = explode(':', $timeRaw);
+            $hour = (int) ($parts[0] ?? 11);
+            $minute = (int) ($parts[1] ?? 0);
+
+            return $day->copy()->setTime($hour, $minute);
+        }
+
+        return $day->copy()->setTime(11, 0);
     }
 
     private function resolveCheckoutDay(Room $room): ?Carbon

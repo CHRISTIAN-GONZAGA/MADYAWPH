@@ -1296,8 +1296,8 @@ Route::put('/tasks/{task}/status', [TaskController::class, 'updateStatus'])->mid
 Route::get('/tasks/assigned-to-me', [TaskController::class, 'assignedToMe'])->middleware('role:staff');
 
 // Reports
-Route::get('/reports/shift-summary', [ReportController::class, 'shiftSummary'])->middleware('role:admin,frontdesk');
-Route::get('/reports/shift-summary/pdf', [ReportController::class, 'shiftSummaryPdf'])->middleware('role:admin,frontdesk');
+Route::get('/reports/shift-summary', [ReportController::class, 'shiftSummary'])->middleware('role:admin,frontdesk,staff');
+Route::get('/reports/shift-summary/pdf', [ReportController::class, 'shiftSummaryPdf'])->middleware('role:admin,frontdesk,staff');
 Route::get('/reports/sales', [ReportController::class, 'sales'])->middleware('role:admin,frontdesk');
 Route::get('/reports/sales/timeseries', [ReportController::class, 'salesTimeseries'])->middleware('role:admin,frontdesk');
 Route::get('/reports/paid-transactions', [ReportController::class, 'paidTransactions'])->middleware('role:admin,frontdesk');
@@ -2038,6 +2038,64 @@ Route::patch('/admin/pricing/surge', function (Request $request) {
 
     return response()->json(['ok' => true]);
 })->middleware('role:admin,frontdesk');
+
+Route::get('/admin/settings/room-fee-presets', function (Request $request) {
+    $hotelId = (string) $request->user()->hotel_id;
+    $settings = SystemSetting::withoutGlobalScopes()->firstOrCreate(
+        ['hotel_id' => $hotelId],
+        [
+            'theme_color' => '#2563eb',
+            'theme_mode' => 'light',
+            'sound_notifications_enabled' => false,
+        ]
+    );
+    $presets = $settings->room_fee_presets;
+    if (! is_array($presets) || $presets === []) {
+        $presets = [
+            ['label' => 'Stained sheets', 'amount' => 500],
+            ['label' => 'Missing towel', 'amount' => 250],
+            ['label' => 'Minibar restock', 'amount' => 350],
+            ['label' => 'Late checkout', 'amount' => 500],
+            ['label' => 'Smoking fee', 'amount' => 1500],
+            ['label' => 'Damage / breakage', 'amount' => 0],
+        ];
+    }
+
+    return response()->json([
+        'presets' => collect($presets)->map(function ($row) {
+            $label = trim((string) ($row['label'] ?? ''));
+            $amount = (float) ($row['amount'] ?? 0);
+
+            return ['label' => $label, 'amount' => $amount];
+        })->filter(fn ($row) => $row['label'] !== '')->values(),
+    ]);
+})->middleware('role:admin,frontdesk');
+
+Route::patch('/admin/settings/room-fee-presets', function (Request $request) {
+    $validated = $request->validate([
+        'presets' => ['required', 'array', 'max:40'],
+        'presets.*.label' => ['required', 'string', 'max:120'],
+        'presets.*.amount' => ['nullable', 'numeric', 'min:0'],
+    ]);
+    $hotelId = (string) $request->user()->hotel_id;
+    $settings = SystemSetting::withoutGlobalScopes()->firstOrCreate(
+        ['hotel_id' => $hotelId],
+        [
+            'theme_color' => '#2563eb',
+            'theme_mode' => 'light',
+            'sound_notifications_enabled' => false,
+        ]
+    );
+    $presets = collect($validated['presets'])->map(function ($row) {
+        return [
+            'label' => trim((string) $row['label']),
+            'amount' => (float) ($row['amount'] ?? 0),
+        ];
+    })->filter(fn ($row) => $row['label'] !== '')->values()->all();
+    $settings->update(['room_fee_presets' => $presets]);
+
+    return response()->json(['ok' => true, 'presets' => $presets]);
+})->middleware('role:admin');
 
 Route::get('/admin/chat/inbox', [AdminChatController::class, 'inbox'])->middleware('role:admin,frontdesk');
 Route::get('/admin/chat/rooms/{roomId}', [AdminChatController::class, 'room'])->middleware('role:admin,frontdesk');

@@ -23,6 +23,7 @@ class RoomSummarySection extends StatelessWidget {
     required this.onOpenOnlineBookings,
     required this.onOpenBookingsAlert,
     required this.onRefresh,
+    this.categories = const [],
   });
 
   final List<Map<String, dynamic>> rooms;
@@ -36,6 +37,7 @@ class RoomSummarySection extends StatelessWidget {
   final VoidCallback onOpenOnlineBookings;
   final VoidCallback onOpenBookingsAlert;
   final Future<void> Function() onRefresh;
+  final List<Map<String, dynamic>> categories;
 
   List<Map<String, dynamic>> _filterByStatuses(Set<String> statuses) {
     return rooms
@@ -378,7 +380,7 @@ class RoomSummarySection extends StatelessWidget {
     required Map<String, dynamic> stats,
   }) {
     HapticFeedback.selectionClick();
-    if (!AdminDashboardModels.needsFloorDrilldown(rooms)) {
+    if (!AdminDashboardModels.needsCategoryFloorDrilldown(rooms)) {
       _openRooms(
         context,
         title: label,
@@ -416,13 +418,19 @@ class RoomSummarySection extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    '${stats['total']} rooms · ${AdminDashboardModels.distinctFloors(rooms).length} floors',
+                    '${stats['total']} rooms · ${AdminDashboardModels.floorsForRooms(rooms, categoryFloorCount: AdminDashboardModels.categoryFloorCountFrom(label, rooms, categories)).length} floors',
                     textAlign: TextAlign.center,
                     style: Theme.of(ctx).textTheme.bodySmall,
                   ),
                   Expanded(
                     child: AdminFloorPickerGrid(
                       rooms: rooms,
+                      categoryFloorCount:
+                          AdminDashboardModels.categoryFloorCountFrom(
+                        label,
+                        rooms,
+                        categories,
+                      ),
                       onFloorTap: (floor) {
                         Navigator.of(ctx).pop();
                         final onFloor = AdminDashboardModels.roomsOnFloor(

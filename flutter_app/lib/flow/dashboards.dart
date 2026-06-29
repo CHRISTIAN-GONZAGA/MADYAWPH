@@ -19,6 +19,8 @@ import '../widgets/app_state_views.dart';
 import '../widgets/dashboard_clock.dart';
 import '../widgets/dashboard_exit_guard.dart';
 import 'admin/admin_dashboard_models.dart';
+import 'admin/widgets/portal_shift_session.dart';
+import 'admin/widgets/front_desk_shift.dart';
 import 'admin/admin_dashboard_shell.dart';
 import 'admin/widgets/admin_room_detail_navigation.dart';
 import 'admin/widgets/admin_hotel_totals_room_panel.dart';
@@ -947,11 +949,57 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
   Map<String, dynamic>? _data;
   String? _error;
   bool _loading = true;
+  FrontDeskShift? _shift;
+  bool _shiftPromptShown = false;
+  Timer? _shiftPoll;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _shiftPoll = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted && _shift != null) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _shiftPoll?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _initStaffShift() async {
+    final auth = (_data?['auth'] as Map<String, dynamic>?)?['user']
+        as Map<String, dynamic>?;
+    final userId = (auth?['id'] ?? auth?['_id'] ?? '').toString();
+    final hotelId = (auth?['hotel_id'] ?? auth?['hotelId'] ?? '').toString();
+    final staffName = (auth?['name'] ?? auth?['username'] ?? 'Staff').toString();
+    if (userId.isEmpty || hotelId.isEmpty || !mounted) return;
+
+    final shift = await PortalShiftSession.ensureShift(
+      context: context,
+      userId: userId,
+      hotelId: hotelId,
+      staffName: staffName,
+      shiftPromptShown: _shiftPromptShown,
+      onPromptShown: (shown) => _shiftPromptShown = shown,
+      shiftSetupTitle: 'Start staff shift',
+      shiftSetupDescription:
+          'Set your time in and scheduled time out for this staff session.',
+    );
+    if (mounted) setState(() => _shift = shift);
+  }
+
+  Future<void> _handleTimeOut() async {
+    final shift = _shift;
+    if (shift == null || !shift.canTimeOut) return;
+    await PortalShiftSession.handleTimeOut(
+      context: context,
+      shift: shift,
+      summaryTitle: 'Staff shift summary',
+    );
+    if (!mounted) return;
+    setState(() => _shift = null);
   }
 
   Future<void> _load() async {
@@ -966,6 +1014,9 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
         _data = res.data;
         _loading = false;
       });
+      if (mounted) {
+        await _initStaffShift();
+      }
     } on DioException catch (e) {
       setState(() {
         _error = dioErrorMessage(e);
@@ -1063,6 +1114,21 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
         title: const Text('Staff dashboard'),
         actions: [
           const DashboardClockAction(),
+          if (_shift != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: FilledButton.tonal(
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                ),
+                onPressed: _shift!.canTimeOut ? _handleTimeOut : null,
+                child: Text(
+                  PortalShiftSession.timeOutButtonLabel(_shift),
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+            ),
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
           PopupMenuButton<String>(
             onSelected: (v) {

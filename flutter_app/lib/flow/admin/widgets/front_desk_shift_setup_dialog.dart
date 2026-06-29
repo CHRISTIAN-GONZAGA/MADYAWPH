@@ -9,6 +9,9 @@ Future<FrontDeskShift?> showFrontDeskShiftSetupDialog({
   required String userId,
   required String hotelId,
   required String staffName,
+  String title = 'Start your shift',
+  String description =
+      'Set your time in and scheduled time out. You can only clock out after the time out you set.',
 }) async {
   final now = DateTime.now();
   var timeIn = DateTime(now.year, now.month, now.day, now.hour, now.minute);
@@ -79,14 +82,14 @@ Future<FrontDeskShift?> showFrontDeskShiftSetupDialog({
             '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 
         return AlertDialog(
-          title: const Text('Start your shift'),
+          title: Text(title),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'Set your time in and scheduled time out. You can only clock out after the time out you set.',
+                  description,
                   style: Theme.of(ctx).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 16),

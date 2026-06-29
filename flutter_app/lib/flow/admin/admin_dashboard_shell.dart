@@ -20,8 +20,7 @@ import 'sections/resellers_section.dart';
 import 'sections/settings_section.dart';
 import 'sections/super_admin_control_section.dart';
 import 'widgets/front_desk_shift.dart';
-import 'widgets/front_desk_shift_setup_dialog.dart';
-import 'widgets/front_desk_shift_summary_screen.dart';
+import 'widgets/portal_shift_session.dart';
 
 class AdminDashboardShell extends StatefulWidget {
   const AdminDashboardShell({
@@ -181,54 +180,28 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         (user?['name'] ?? user?['username'] ?? 'Front desk').toString();
     if (userId.isEmpty || hotelId.isEmpty) return;
 
-    var shift = await FrontDeskShiftStorage.load(
-      hotelId: hotelId,
+    final shift = await PortalShiftSession.ensureShift(
+      context: context,
       userId: userId,
+      hotelId: hotelId,
+      staffName: staffName,
+      shiftPromptShown: _shiftPromptShown,
+      onPromptShown: (shown) => _shiftPromptShown = shown,
     );
-    if (!mounted) return;
-
-    if (shift == null && !_shiftPromptShown) {
-      _shiftPromptShown = true;
-      final created = await showFrontDeskShiftSetupDialog(
-        context: context,
-        userId: userId,
-        hotelId: hotelId,
-        staffName: staffName,
-      );
-      if (created != null) {
-        await FrontDeskShiftStorage.save(created);
-        shift = created;
-      }
-    }
 
     if (mounted) {
       setState(() => _shift = shift);
     }
   }
 
-  String _timeOutButtonLabel() {
-    final shift = _shift;
-    if (shift == null) return 'Time out';
-    if (shift.canTimeOut) return 'Time out';
-    final remaining = shift.timeUntilTimeOut;
-    final h = remaining.inHours;
-    final m = remaining.inMinutes.remainder(60);
-    return '${h}h ${m.toString().padLeft(2, '0')}m';
-  }
+  String _timeOutButtonLabel() => PortalShiftSession.timeOutButtonLabel(_shift);
 
   Future<void> _handleTimeOut() async {
     final shift = _shift;
     if (shift == null || !shift.canTimeOut) return;
-    final endedAt = DateTime.now();
-    if (!mounted) return;
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => FrontDeskShiftSummaryScreen(
-          shift: shift,
-          endedAt: endedAt,
-          logoutOnFinish: true,
-        ),
-      ),
+    await PortalShiftSession.handleTimeOut(
+      context: context,
+      shift: shift,
     );
     if (!mounted) return;
     setState(() => _shift = null);
@@ -293,6 +266,12 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
   List<Map<String, dynamic>> get _rooms {
     return AdminDashboardModels.parseRoomMaps(
       widget.data['rooms'] as List<dynamic>?,
+    );
+  }
+
+  List<Map<String, dynamic>> get _categories {
+    return AdminDashboardModels.parseRoomMaps(
+      widget.data['categories'] as List<dynamic>?,
     );
   }
 
@@ -463,6 +442,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         RoomSummarySection(
           key: refreshKey,
           rooms: _rooms,
+          categories: _categories,
           tasks: tasks,
           hotelName: hotelName,
           localBookingsTotal: localTotal,
@@ -506,6 +486,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           key: refreshKey,
           claims: claims,
           rooms: _rooms,
+          categories: _categories,
           onAddProduct: widget.onAmenityAddProduct,
           onRefresh: widget.onRefresh,
           canManageProducts: !widget.isFrontDesk,

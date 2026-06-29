@@ -14,7 +14,7 @@ use Tests\TestCase;
 
 class AutoCheckoutServiceTest extends TestCase
 {
-    public function test_overdue_stay_is_auto_checked_out(): void
+    public function test_overdue_stay_is_auto_checked_out_after_grace_period(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-06-15 12:00:00'));
 
@@ -57,6 +57,55 @@ class AutoCheckoutServiceTest extends TestCase
         $room->refresh();
         $this->assertSame(RoomStatus::MAINTENANCE->value, $room->status?->value ?? (string) $room->status);
         $this->assertNull($room->current_guest_name);
+
+        Carbon::setTestNow();
+    }
+
+    public function test_same_day_checkout_waits_for_grace_period(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-06-13 11:20:00'));
+
+        $hotel = Hotel::create(['name' => 'Grace Hotel', 'location' => 'Loc']);
+        User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'grace_admin',
+            'email' => 'grace-admin@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '202',
+            'room_type' => 'Single',
+            'price_per_night' => 1500,
+            'status' => RoomStatus::CHECKED_IN->value,
+            'current_guest_name' => 'Grace Guest',
+            'current_check_in' => '2026-06-12',
+            'current_check_out' => '2026-06-13',
+            'current_access_code' => 'ABC12345',
+        ]);
+        Booking::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'booking_reference' => 'BK-GRACE-1',
+            'guest_name' => 'Grace Guest',
+            'check_in_date' => '2026-06-12',
+            'check_out_date' => '2026-06-13',
+            'check_out_time' => '11:00',
+            'nights' => 1,
+            'total_amount' => 1500,
+            'payment_status' => 'unpaid',
+            'payment_method' => 'Cash',
+            'status' => 'booked',
+        ]);
+
+        $service = app(AutoCheckoutService::class);
+        $this->assertSame(0, $service->processOverdueRooms((string) $hotel->id));
+        $room->refresh();
+        $this->assertSame(RoomStatus::CHECKED_IN->value, $room->status?->value ?? (string) $room->status);
+
+        Carbon::setTestNow(Carbon::parse('2026-06-13 11:41:00'));
+        $this->assertSame(1, $service->processOverdueRooms((string) $hotel->id));
 
         Carbon::setTestNow();
     }

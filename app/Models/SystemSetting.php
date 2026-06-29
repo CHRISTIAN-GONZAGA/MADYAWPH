@@ -19,5 +19,13 @@ class SystemSetting extends Model
         'surge_threshold_percent',
         'surge_markup_percent',
         'payment_qr_url',
+        'room_fee_presets',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'room_fee_presets' => 'array',
+        ];
+    }
 }
