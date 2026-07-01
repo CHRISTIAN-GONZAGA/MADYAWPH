@@ -37,53 +37,63 @@ class _CustomerLandscapePagedGridState extends State<CustomerLandscapePagedGrid>
       return const SizedBox.shrink();
     }
 
-    final layout =
-        widget.layout ?? CustomerLandscapeGridLayout.forSize(MediaQuery.sizeOf(context));
+    final size = MediaQuery.sizeOf(context);
+    final layout = widget.layout ??
+        CustomerLandscapeGridLayout.forItemCount(size, widget.itemCount);
     final pageSize = layout.pageSize;
     final pages = (widget.itemCount / pageSize).ceil();
     final startIndices = List.generate(pages, (p) => p * pageSize);
+    final singlePage = pages == 1;
+
+    final grid = LayoutBuilder(
+      builder: (context, constraints) {
+        return PageView.builder(
+          controller: _pageCtrl,
+          itemCount: pages,
+          onPageChanged: (i) => setState(() => _page = i),
+          itemBuilder: (context, pageIndex) {
+            final start = startIndices[pageIndex];
+            final countOnPage = (pageIndex == pages - 1)
+                ? widget.itemCount - start
+                : pageSize;
+
+            const spacing = 10.0;
+            final columns = layout.crossAxisCount;
+            final rowsOnPage =
+                ((countOnPage - 1) ~/ columns) + 1;
+            final cellW =
+                (constraints.maxWidth - spacing * (columns - 1)) / columns;
+            final cellH = singlePage
+                ? (constraints.maxHeight - spacing * (rowsOnPage - 1)) /
+                    rowsOnPage
+                : (constraints.maxHeight - spacing * (layout.rowCount - 1)) /
+                    layout.rowCount;
+
+            return GridView.builder(
+              physics: const NeverScrollableScrollPhysics(),
+              padding: EdgeInsets.zero,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                mainAxisSpacing: spacing,
+                crossAxisSpacing: spacing,
+                childAspectRatio: cellW / cellH,
+              ),
+              itemCount: countOnPage,
+              itemBuilder: (context, i) =>
+                  widget.itemBuilder(context, start + i),
+            );
+          },
+        );
+      },
+    );
+
+    if (singlePage) {
+      return grid;
+    }
 
     return Column(
       children: [
-        Expanded(
-          child: PageView.builder(
-            controller: _pageCtrl,
-            itemCount: pages,
-            onPageChanged: (i) => setState(() => _page = i),
-            itemBuilder: (context, pageIndex) {
-              final start = startIndices[pageIndex];
-              final countOnPage = (pageIndex == pages - 1)
-                  ? widget.itemCount - start
-                  : pageSize;
-
-              return LayoutBuilder(
-                builder: (context, constraints) {
-                  const spacing = 10.0;
-                  final columns = layout.crossAxisCount;
-                  final rows = layout.rowCount;
-                  final cellW =
-                      (constraints.maxWidth - spacing * (columns - 1)) / columns;
-                  final cellH =
-                      (constraints.maxHeight - spacing * (rows - 1)) / rows;
-
-                  return GridView.builder(
-                    physics: const NeverScrollableScrollPhysics(),
-                    padding: EdgeInsets.zero,
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: columns,
-                      mainAxisSpacing: spacing,
-                      crossAxisSpacing: spacing,
-                      childAspectRatio: cellW / cellH,
-                    ),
-                    itemCount: countOnPage,
-                    itemBuilder: (context, i) =>
-                        widget.itemBuilder(context, start + i),
-                  );
-                },
-              );
-            },
-          ),
-        ),
+        Expanded(child: grid),
         if (pages > 1) ...[
           const SizedBox(height: 8),
           Row(

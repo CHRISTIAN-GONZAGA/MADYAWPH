@@ -21,6 +21,7 @@ class BookingsSection extends StatefulWidget {
     required this.onChanged,
     required this.currentCredits,
     required this.onTopUpCredits,
+    this.isFrontDesk = false,
   });
 
   final List<Map<String, dynamic>> rooms;
@@ -31,6 +32,7 @@ class BookingsSection extends StatefulWidget {
   final Future<void> Function() onChanged;
   final double currentCredits;
   final VoidCallback onTopUpCredits;
+  final bool isFrontDesk;
 
   @override
   State<BookingsSection> createState() => _BookingsSectionState();
@@ -386,6 +388,7 @@ class _BookingsSectionState extends State<BookingsSection>
                 final ok = await showAdminManageBookingDialog(
                   context: context,
                   booking: b,
+                  isFrontDesk: widget.isFrontDesk,
                 );
                 if (ok && mounted) await widget.onChanged();
               },
@@ -457,6 +460,7 @@ class _BookingsSectionState extends State<BookingsSection>
                   final ok = await showAdminManageReservationDialog(
                     context: context,
                     reservation: r,
+                    isFrontDesk: widget.isFrontDesk,
                   );
                   if (ok && mounted) await widget.onChanged();
                 },
@@ -796,6 +800,7 @@ class _BookingsSectionState extends State<BookingsSection>
                           final ok = await showAdminManageBookingDialog(
                             context: context,
                             booking: b,
+                            isFrontDesk: widget.isFrontDesk,
                           );
                           if (ok && mounted) await widget.onChanged();
                         },
@@ -926,6 +931,7 @@ class _BookingsSectionState extends State<BookingsSection>
                       final ok = await showAdminManageBookingDialog(
                         context: context,
                         booking: booking,
+                        isFrontDesk: widget.isFrontDesk,
                       );
                       if (ok && mounted) await widget.onChanged();
                     },
@@ -991,6 +997,7 @@ class _BookingsSectionState extends State<BookingsSection>
                               final ok = await showAdminManageReservationDialog(
                                 context: context,
                                 reservation: r,
+                                isFrontDesk: widget.isFrontDesk,
                               );
                               if (ok && mounted) await widget.onChanged();
                             },

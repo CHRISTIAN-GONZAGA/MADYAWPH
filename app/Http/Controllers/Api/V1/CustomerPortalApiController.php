@@ -221,6 +221,7 @@ class CustomerPortalApiController extends Controller
             'category' => [
                 'id' => $categoryId,
                 'name' => $category?->name ?? 'Rooms',
+                'description' => (string) ($category?->description ?? ''),
                 'image_url' => (string) ($categoryImage ?? ''),
             ],
             'rooms' => $rooms->values()->all(),
@@ -678,6 +679,11 @@ class CustomerPortalApiController extends Controller
             'category_id' => (string) ($attrs['category_id'] ?? ''),
             'category_name' => (string) ($attrs['category_name'] ?? ''),
             'image_url' => (string) ($roomImage ?? ''),
+            'amenities' => collect($room->amenities ?? [])
+                ->map(fn ($item) => trim((string) $item))
+                ->filter()
+                ->values()
+                ->all(),
         ];
     }
 

@@ -282,7 +282,7 @@ void main() {
       expect(AdminDashboardModels.needsCategoryFloorDrilldown(rooms), isTrue);
     });
 
-    test('isAmenityChargeable requires active booking', () {
+    test('isAmenityChargeable requires checked_in with booking', () {
       expect(
         AdminDashboardModels.isAmenityChargeable({
           'status': 'checked_in',
@@ -303,7 +303,7 @@ void main() {
           'current_guest_name': 'Jane Doe',
           'latest_booking': {'id': 'b1'},
         }),
-        isTrue,
+        isFalse,
       );
     });
 

@@ -132,6 +132,142 @@ class AdminReservationService
         });
     }
 
+    /**
+     * @param  array{check_in_at: string, check_out_at: string}  $data
+     */
+    public function requestReschedule(ExternalReservation $reservation, array $data, User $actor): ExternalReservation
+    {
+        return DB::transaction(function () use ($reservation, $data, $actor): ExternalReservation {
+            $reservation = ExternalReservation::withoutGlobalScopes()
+                ->lockForUpdate()
+                ->findOrFail($reservation->id);
+
+            $status = (string) ($reservation->status ?? '');
+            if (! in_array($status, ['pending_approval', 'approved', 'reserved', 'booked'], true)) {
+                throw ValidationException::withMessages([
+                    'reservation' => 'Only active reservation holds can be rescheduled.',
+                ]);
+            }
+
+            $hotelId = (string) $reservation->hotel_id;
+            $room = $this->assignedRoom($hotelId, (string) ($reservation->assigned_room_id ?? ''));
+            if (! $room) {
+                throw ValidationException::withMessages([
+                    'room_id' => 'Assigned room is no longer available.',
+                ]);
+            }
+
+            $checkIn = Carbon::parse($data['check_in_at'])->startOfDay();
+            $checkOut = Carbon::parse($data['check_out_at'])->startOfDay();
+            if (! $checkOut->gt($checkIn)) {
+                throw ValidationException::withMessages([
+                    'check_out_at' => 'Check-out must be after check-in.',
+                ]);
+            }
+
+            if (! $this->hotelAvailabilityService->isRoomAvailableForStay(
+                (string) $room->id,
+                $hotelId,
+                $checkIn,
+                $checkOut,
+                (string) $reservation->id,
+            )) {
+                throw ValidationException::withMessages([
+                    'check_in_at' => 'Selected dates conflict with another stay or reservation.',
+                ]);
+            }
+
+            $meta = is_array($reservation->metadata) ? $reservation->metadata : [];
+            $meta['pending_date_change'] = [
+                'check_in_date' => $checkIn->toDateString(),
+                'check_out_date' => $checkOut->toDateString(),
+                'requested_by' => (string) $actor->id,
+                'requested_by_name' => (string) ($actor->name ?? $actor->email ?? 'Front desk'),
+                'requested_at' => now()->toISOString(),
+                'status' => 'pending',
+            ];
+
+            $reservation->update(['metadata' => $meta]);
+
+            $this->activityLogService->log(
+                $hotelId,
+                $actor,
+                "Requested date change for reservation {$reservation->external_reference}",
+                [
+                    'reservation_id' => (string) $reservation->id,
+                    'check_in_date' => $checkIn->toDateString(),
+                    'check_out_date' => $checkOut->toDateString(),
+                ]
+            );
+
+            return $reservation->fresh();
+        });
+    }
+
+    public function approveReschedule(ExternalReservation $reservation, User $actor): ExternalReservation
+    {
+        return DB::transaction(function () use ($reservation, $actor): ExternalReservation {
+            $reservation = ExternalReservation::withoutGlobalScopes()
+                ->lockForUpdate()
+                ->findOrFail($reservation->id);
+
+            $meta = is_array($reservation->metadata) ? $reservation->metadata : [];
+            $pending = is_array($meta['pending_date_change'] ?? null) ? $meta['pending_date_change'] : [];
+            if (($pending['status'] ?? '') !== 'pending') {
+                throw ValidationException::withMessages([
+                    'reservation' => 'No pending date change for this reservation.',
+                ]);
+            }
+
+            $updated = $this->reschedule($reservation, [
+                'check_in_at' => (string) ($pending['check_in_date'] ?? ''),
+                'check_out_at' => (string) ($pending['check_out_date'] ?? ''),
+            ], $actor);
+
+            $freshMeta = is_array($updated->metadata) ? $updated->metadata : [];
+            unset($freshMeta['pending_date_change']);
+            $updated->update(['metadata' => $freshMeta]);
+
+            $this->activityLogService->log(
+                (string) $updated->hotel_id,
+                $actor,
+                "Approved date change for reservation {$updated->external_reference}",
+                ['reservation_id' => (string) $updated->id]
+            );
+
+            return $updated->fresh();
+        });
+    }
+
+    public function rejectReschedule(ExternalReservation $reservation, User $actor): ExternalReservation
+    {
+        return DB::transaction(function () use ($reservation, $actor): ExternalReservation {
+            $reservation = ExternalReservation::withoutGlobalScopes()
+                ->lockForUpdate()
+                ->findOrFail($reservation->id);
+
+            $meta = is_array($reservation->metadata) ? $reservation->metadata : [];
+            $pending = is_array($meta['pending_date_change'] ?? null) ? $meta['pending_date_change'] : [];
+            if (($pending['status'] ?? '') !== 'pending') {
+                throw ValidationException::withMessages([
+                    'reservation' => 'No pending date change for this reservation.',
+                ]);
+            }
+
+            unset($meta['pending_date_change']);
+            $reservation->update(['metadata' => $meta]);
+
+            $this->activityLogService->log(
+                (string) $reservation->hotel_id,
+                $actor,
+                "Rejected date change for reservation {$reservation->external_reference}",
+                ['reservation_id' => (string) $reservation->id]
+            );
+
+            return $reservation->fresh();
+        });
+    }
+
     private function assignedRoom(string $hotelId, string $roomId): ?Room
     {
         if ($roomId === '') {

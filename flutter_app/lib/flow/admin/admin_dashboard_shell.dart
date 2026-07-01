@@ -472,6 +472,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           bookings: bookings,
           bookingFilter: _bookingListFilter,
           onChanged: widget.onRefresh,
+          isFrontDesk: widget.isFrontDesk,
           currentCredits: creditAmount,
           onTopUpCredits: widget.isFrontDesk
               ? () {

@@ -22,21 +22,32 @@ Future<bool> showChargeAmenityToRoomDialog({
   }
 
   var resolvedRooms = rooms;
-  if (resolvedRooms.isEmpty) {
-    try {
-      final res = await portalDioWithLongTimeout()
-          .get<Map<String, dynamic>>('/admin/dashboard');
-      resolvedRooms = AdminDashboardModels.parseRoomMaps(
-        res.data?['rooms'] as List<dynamic>?,
-      );
-      final rawCategories = res.data?['categories'] as List<dynamic>?;
-      if (rawCategories != null && categories.isEmpty) {
-        categories = AdminDashboardModels.parseRoomMaps(rawCategories);
+  try {
+    final res = await portalDioWithLongTimeout()
+        .get<Map<String, dynamic>>('/admin/amenity-chargeable-rooms');
+    final fromApi = AdminDashboardModels.parseRoomMaps(
+      res.data?['rooms'] as List<dynamic>?,
+    );
+    if (fromApi.isNotEmpty) {
+      resolvedRooms = fromApi;
+    }
+  } on DioException {
+    if (resolvedRooms.isEmpty) {
+      try {
+        final res = await portalDioWithLongTimeout()
+            .get<Map<String, dynamic>>('/admin/dashboard');
+        resolvedRooms = AdminDashboardModels.parseRoomMaps(
+          res.data?['rooms'] as List<dynamic>?,
+        );
+        final rawCategories = res.data?['categories'] as List<dynamic>?;
+        if (rawCategories != null && categories.isEmpty) {
+          categories = AdminDashboardModels.parseRoomMaps(rawCategories);
+        }
+      } on DioException catch (e) {
+        if (!context.mounted) return false;
+        showAppMessage(context, dioErrorMessage(e), isError: true);
+        return false;
       }
-    } on DioException catch (e) {
-      if (!context.mounted) return false;
-      showAppMessage(context, dioErrorMessage(e), isError: true);
-      return false;
     }
   }
 
@@ -222,7 +233,12 @@ class _ChargeAmenityRoomPickerState extends State<_ChargeAmenityRoomPicker> {
             Expanded(
               child: pickingCategory
                   ? _buildCategoryList(context)
-                  : _buildRoomPicker(context),
+                  : ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        _buildRoomPicker(context),
+                      ],
+                    ),
             ),
             const Divider(height: 1),
             Padding(

@@ -18,6 +18,37 @@ class CustomerLandscapeGridLayout {
 
   int get pageSize => crossAxisCount * rowCount;
 
+  /// Tighter grid when only a few categories or rooms are available.
+  static CustomerLandscapeGridLayout forItemCount(Size size, int itemCount) {
+    if (itemCount <= 0) {
+      return const CustomerLandscapeGridLayout(crossAxisCount: 1, rowCount: 1);
+    }
+    final base = forSize(size);
+    if (itemCount == 1) {
+      return const CustomerLandscapeGridLayout(crossAxisCount: 1, rowCount: 1);
+    }
+    if (itemCount <= 2) {
+      return CustomerLandscapeGridLayout(
+        crossAxisCount: itemCount.clamp(1, base.crossAxisCount),
+        rowCount: 1,
+      );
+    }
+    if (itemCount < base.crossAxisCount) {
+      return CustomerLandscapeGridLayout(
+        crossAxisCount: itemCount,
+        rowCount: 1,
+      );
+    }
+    if (itemCount < base.pageSize) {
+      final rows = ((itemCount - 1) ~/ base.crossAxisCount) + 1;
+      return CustomerLandscapeGridLayout(
+        crossAxisCount: base.crossAxisCount,
+        rowCount: rows.clamp(1, base.rowCount),
+      );
+    }
+    return base;
+  }
+
   static CustomerLandscapeGridLayout forSize(Size size) {
     final w = size.width;
     final h = size.height;

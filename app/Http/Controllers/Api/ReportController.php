@@ -12,6 +12,7 @@ use App\Models\ResellerCommissionPayment;
 use App\Models\RoomTransfer;
 use App\Models\StaffMember;
 use App\Models\Task;
+use App\Support\CancellationRetentionSupport;
 use App\Support\SafeModelAttributes;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
@@ -721,14 +722,18 @@ class ReportController extends Controller
         foreach ($bookingIds as $id) {
             $idStr = (string) $id;
             $set = $charges->filter(fn ($c) => (string) ($c->booking_id ?? '') === $idStr);
+            $booking = $bookings->first(fn ($b) => (string) $b->id === $idStr);
             if ($set->isEmpty()) {
-                $booking = $bookings->first(fn ($b) => (string) $b->id === $idStr);
-                $byBooking[$idStr] = (float) ($booking?->total_amount ?? 0);
+                $gross = (float) ($booking?->total_amount ?? 0);
             } else {
-                $byBooking[$idStr] = (float) $set
+                $gross = (float) $set
                     ->reject(fn ($c) => (string) ($c->type ?? '') === 'refund')
                     ->sum(fn ($c) => (float) ($c->amount ?? 0));
             }
+            if ($booking !== null) {
+                $gross = CancellationRetentionSupport::recognizedRevenueForBooking($booking, $gross);
+            }
+            $byBooking[$idStr] = $gross;
         }
 
         return $byBooking;
@@ -836,6 +841,12 @@ class ReportController extends Controller
             $refundExpense += $refunds;
             $netRevenue -= $refunds;
         }
+        $cancelledPaid = (int) $bookings
+            ->filter(fn ($b) => strtolower((string) ($b->status?->value ?? $b->status ?? '')) === 'cancelled')
+            ->count();
+        $retentionPercent = CancellationRetentionSupport::retentionPercentForHotel(
+            (string) ($bookings->first()?->hotel_id ?? '')
+        );
         $totalExpenses = $refundExpense + $resellerCommissions;
         $profitAfterReseller = $netRevenue - $resellerCommissions;
 
@@ -855,6 +866,8 @@ class ReportController extends Controller
             'net_revenue' => round($netRevenue, 2),
             'profit' => round($profitAfterReseller, 2),
             'profit_before_reseller_payouts' => round($netRevenue, 2),
+            'cancelled_bookings' => $cancelledPaid,
+            'cancellation_retention_percent' => round($retentionPercent, 2),
         ];
     }
 

@@ -58,6 +58,9 @@ final class AdminBookingPresenter
             'total_amount' => (float) $booking->total_amount,
             'created_at' => optional($booking->created_at)->toISOString(),
             'date_booked' => optional($booking->created_at)->toDateString(),
+            'pending_date_change' => is_array($booking->pending_date_change)
+                ? $booking->pending_date_change
+                : null,
         ];
     }
 }

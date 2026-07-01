@@ -339,6 +339,51 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
         return response()->json(['data' => $items]);
     })->name('api.v1.admin.amenity.menu.index');
 
+    Route::get('/admin/amenity-chargeable-rooms', function (Request $request) {
+        $hotelId = (string) $request->user()->hotel_id;
+        $rooms = Room::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where('status', RoomStatus::CHECKED_IN->value)
+            ->orderBy('room_number')
+            ->get();
+
+        $roomIds = $rooms->map(fn ($r) => (string) $r->id)->all();
+        $bookingsByRoom = Booking::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->whereIn('room_id', $roomIds)
+            ->whereNotIn('status', [
+                BookingStatus::COMPLETED->value,
+                BookingStatus::CANCELLED->value,
+            ])
+            ->whereNull('checked_out_at')
+            ->latest('created_at')
+            ->get()
+            ->groupBy('room_id')
+            ->map(fn ($group) => $group->first());
+
+        $payload = $rooms->map(function ($room) use ($bookingsByRoom) {
+            $booking = $bookingsByRoom->get((string) $room->id);
+            $row = array_merge($room->toArray(), [
+                'id' => (string) $room->id,
+                'status' => RoomStatus::CHECKED_IN->value,
+                'floor' => max(
+                    1,
+                    (int) ($room->floor ?? (preg_replace('/\D/', '', substr((string) $room->room_number, 0, 1)) ?: 1))
+                ),
+                'latest_booking' => $booking ? [
+                    'id' => (string) $booking->id,
+                    'guest_name' => (string) $booking->guest_name,
+                    'check_in_date' => optional($booking->check_in_date)->toDateString(),
+                    'check_out_date' => optional($booking->check_out_date)->toDateString(),
+                ] : null,
+            ]);
+
+            return $row;
+        })->filter(fn ($row) => $row['latest_booking'] !== null)->values();
+
+        return response()->json(['rooms' => $payload]);
+    })->middleware('role:admin,frontdesk')->name('api.v1.admin.amenity.chargeable-rooms');
+
     Route::post('/admin/amenity-menu', function (Request $request) {
         $validated = $request->validate([
             'amenity_type' => ['required', 'string', 'max:100'],
@@ -651,6 +696,23 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             'check_out_at' => ['required', 'date', 'after:check_in_at'],
         ]);
 
+        $isFrontDesk = $request->user()->roleValue() === UserRole::FRONTDESK->value;
+        if ($isFrontDesk) {
+            $updated = $bookingService->requestReschedule($booking, $validated, $request->user());
+            $room = Room::withoutGlobalScopes()->find((string) $updated->room_id);
+
+            return response()->json([
+                'ok' => true,
+                'pending_approval' => true,
+                'message' => 'Date change submitted for admin approval.',
+                'booking' => AdminBookingPresenter::present($updated, $room),
+            ]);
+        }
+
+        if (is_array($booking->pending_date_change) && $booking->pending_date_change !== []) {
+            $booking->update(['pending_date_change' => null]);
+        }
+
         $updated = $bookingService->reschedule($booking, $validated, $request->user());
         $room = Room::withoutGlobalScopes()->find((string) $updated->room_id);
 
@@ -659,6 +721,42 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             'booking' => AdminBookingPresenter::present($updated, $room),
         ]);
     })->middleware('role:admin,frontdesk')->name('api.v1.admin.bookings.reschedule');
+
+    Route::post('/admin/bookings/{booking}/date-change/approve', function (
+        Request $request,
+        Booking $booking,
+        BookingService $bookingService,
+    ) {
+        if ((string) $booking->hotel_id !== (string) $request->user()->hotel_id) {
+            return response()->json(['message' => 'Booking outside hotel scope.'], 403);
+        }
+
+        $updated = $bookingService->approveReschedule($booking, $request->user());
+        $room = Room::withoutGlobalScopes()->find((string) $updated->room_id);
+
+        return response()->json([
+            'ok' => true,
+            'booking' => AdminBookingPresenter::present($updated, $room),
+        ]);
+    })->middleware('role:admin')->name('api.v1.admin.bookings.date-change.approve');
+
+    Route::post('/admin/bookings/{booking}/date-change/reject', function (
+        Request $request,
+        Booking $booking,
+        BookingService $bookingService,
+    ) {
+        if ((string) $booking->hotel_id !== (string) $request->user()->hotel_id) {
+            return response()->json(['message' => 'Booking outside hotel scope.'], 403);
+        }
+
+        $updated = $bookingService->rejectReschedule($booking, $request->user());
+        $room = Room::withoutGlobalScopes()->find((string) $updated->room_id);
+
+        return response()->json([
+            'ok' => true,
+            'booking' => AdminBookingPresenter::present($updated, $room),
+        ]);
+    })->middleware('role:admin')->name('api.v1.admin.bookings.date-change.reject');
 
     Route::post('/admin/bookings/{booking}/cancel', function (
         Request $request,
@@ -1491,10 +1589,58 @@ Route::patch('/admin/reservations/{id}', function (
         'check_out_at' => ['required', 'date', 'after:check_in_at'],
     ]);
 
+    $isFrontDesk = $request->user()->roleValue() === UserRole::FRONTDESK->value;
+    if ($isFrontDesk) {
+        $updated = $reservationService->requestReschedule($res, $validated, $request->user());
+
+        return response()->json([
+            'ok' => true,
+            'pending_approval' => true,
+            'message' => 'Date change submitted for admin approval.',
+            'reservation' => $updated,
+        ]);
+    }
+
+    $meta = is_array($res->metadata) ? $res->metadata : [];
+    if (isset($meta['pending_date_change'])) {
+        unset($meta['pending_date_change']);
+        $res->update(['metadata' => $meta]);
+    }
+
     $updated = $reservationService->reschedule($res, $validated, $request->user());
 
     return response()->json(['ok' => true, 'reservation' => $updated]);
 })->middleware('role:admin,frontdesk')->name('api.v1.admin.reservations.reschedule');
+
+Route::post('/admin/reservations/{id}/date-change/approve', function (
+    Request $request,
+    string $id,
+    AdminReservationService $reservationService,
+) {
+    $hotelId = (string) $request->user()->hotel_id;
+    $res = ExternalReservation::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->findOrFail($id);
+
+    $updated = $reservationService->approveReschedule($res, $request->user());
+
+    return response()->json(['ok' => true, 'reservation' => $updated]);
+})->middleware('role:admin')->name('api.v1.admin.reservations.date-change.approve');
+
+Route::post('/admin/reservations/{id}/date-change/reject', function (
+    Request $request,
+    string $id,
+    AdminReservationService $reservationService,
+) {
+    $hotelId = (string) $request->user()->hotel_id;
+    $res = ExternalReservation::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->findOrFail($id);
+
+    $updated = $reservationService->rejectReschedule($res, $request->user());
+
+    return response()->json(['ok' => true, 'reservation' => $updated]);
+})->middleware('role:admin')->name('api.v1.admin.reservations.date-change.reject');
 
 Route::post('/admin/reservations/{id}/cancel', function (
     Request $request,
@@ -2095,6 +2241,46 @@ Route::patch('/admin/settings/room-fee-presets', function (Request $request) {
     $settings->update(['room_fee_presets' => $presets]);
 
     return response()->json(['ok' => true, 'presets' => $presets]);
+})->middleware('role:admin');
+
+Route::get('/admin/settings/cancellation-retention', function (Request $request) {
+    $hotelId = (string) $request->user()->hotel_id;
+    $settings = SystemSetting::withoutGlobalScopes()->firstOrCreate(
+        ['hotel_id' => $hotelId],
+        [
+            'theme_color' => '#2563eb',
+            'theme_mode' => 'light',
+            'sound_notifications_enabled' => false,
+            'cancellation_retention_percent' => 0,
+        ]
+    );
+
+    return response()->json([
+        'cancellation_retention_percent' => (float) ($settings->cancellation_retention_percent ?? 0),
+    ]);
+})->middleware('role:admin,frontdesk');
+
+Route::patch('/admin/settings/cancellation-retention', function (Request $request) {
+    $validated = $request->validate([
+        'cancellation_retention_percent' => ['required', 'numeric', 'min:0', 'max:100'],
+    ]);
+    $hotelId = (string) $request->user()->hotel_id;
+    $settings = SystemSetting::withoutGlobalScopes()->firstOrCreate(
+        ['hotel_id' => $hotelId],
+        [
+            'theme_color' => '#2563eb',
+            'theme_mode' => 'light',
+            'sound_notifications_enabled' => false,
+        ]
+    );
+    $settings->update([
+        'cancellation_retention_percent' => (float) $validated['cancellation_retention_percent'],
+    ]);
+
+    return response()->json([
+        'ok' => true,
+        'cancellation_retention_percent' => (float) $settings->cancellation_retention_percent,
+    ]);
 })->middleware('role:admin');
 
 Route::get('/admin/chat/inbox', [AdminChatController::class, 'inbox'])->middleware('role:admin,frontdesk');

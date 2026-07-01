@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\BookingStatus;
 use App\Enums\RoomStatus;
 use App\Support\BookingTypeResolver;
+use App\Support\CancellationRetentionSupport;
 use App\Support\RoomBillingSupport;
 use App\Models\BillingCharge;
 use App\Models\Booking;
@@ -422,8 +423,142 @@ class BookingService
                 ]
             );
 
+            CancellationRetentionSupport::applyCancellationRefund(
+                $booking->fresh(),
+                $actor ? (string) $actor->id : null,
+            );
+
             return $booking->fresh();
         });
+    }
+
+    /**
+     * Front desk: submit proposed dates for admin approval (does not change booking yet).
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function requestReschedule(Booking $booking, array $data, User $actor): Booking
+    {
+        return DB::transaction(function () use ($booking, $data, $actor): Booking {
+            $booking = Booking::withoutGlobalScopes()->lockForUpdate()->findOrFail($booking->id);
+            $this->assertReschedulable($booking);
+
+            $stay = $this->resolveStayWindow($data);
+            $room = Room::withoutGlobalScopes()->lockForUpdate()->findOrFail($booking->room_id);
+
+            $this->domainGuardService->ensureRoomCanBeBookedForStay(
+                $room,
+                $stay['check_in'],
+                $stay['check_out'],
+                (string) $booking->hotel_id,
+                null,
+                (string) $booking->id,
+            );
+
+            $booking->update([
+                'pending_date_change' => [
+                    'check_in_date' => $stay['check_in_date'],
+                    'check_out_date' => $stay['check_out_date'],
+                    'requested_by' => (string) $actor->id,
+                    'requested_by_name' => (string) ($actor->name ?? $actor->email ?? 'Front desk'),
+                    'requested_at' => now()->toISOString(),
+                    'status' => 'pending',
+                ],
+            ]);
+
+            $this->activityLogService->log(
+                (string) $booking->hotel_id,
+                $actor,
+                "Requested date change for booking {$booking->booking_reference}",
+                [
+                    'booking_id' => (string) $booking->id,
+                    'check_in_date' => $stay['check_in_date'],
+                    'check_out_date' => $stay['check_out_date'],
+                ]
+            );
+
+            return $booking->fresh();
+        });
+    }
+
+    public function approveReschedule(Booking $booking, User $actor): Booking
+    {
+        return DB::transaction(function () use ($booking, $actor): Booking {
+            $booking = Booking::withoutGlobalScopes()->lockForUpdate()->findOrFail($booking->id);
+            $pending = is_array($booking->pending_date_change) ? $booking->pending_date_change : [];
+            if (($pending['status'] ?? '') !== 'pending') {
+                throw ValidationException::withMessages([
+                    'booking' => 'No pending date change for this booking.',
+                ]);
+            }
+
+            $updated = $this->reschedule($booking, [
+                'check_in_at' => (string) ($pending['check_in_date'] ?? ''),
+                'check_out_at' => (string) ($pending['check_out_date'] ?? ''),
+            ], $actor);
+
+            $updated->update(['pending_date_change' => null]);
+
+            $this->activityLogService->log(
+                (string) $updated->hotel_id,
+                $actor,
+                "Approved date change for booking {$updated->booking_reference}",
+                ['booking_id' => (string) $updated->id]
+            );
+
+            return $updated->fresh();
+        });
+    }
+
+    public function rejectReschedule(Booking $booking, User $actor): Booking
+    {
+        return DB::transaction(function () use ($booking, $actor): Booking {
+            $booking = Booking::withoutGlobalScopes()->lockForUpdate()->findOrFail($booking->id);
+            $pending = is_array($booking->pending_date_change) ? $booking->pending_date_change : [];
+            if (($pending['status'] ?? '') !== 'pending') {
+                throw ValidationException::withMessages([
+                    'booking' => 'No pending date change for this booking.',
+                ]);
+            }
+
+            $booking->update(['pending_date_change' => null]);
+
+            $this->activityLogService->log(
+                (string) $booking->hotel_id,
+                $actor,
+                "Rejected date change for booking {$booking->booking_reference}",
+                ['booking_id' => (string) $booking->id]
+            );
+
+            return $booking->fresh();
+        });
+    }
+
+    private function assertReschedulable(Booking $booking): void
+    {
+        $status = $booking->status instanceof BookingStatus
+            ? $booking->status->value
+            : (string) $booking->status;
+
+        if (in_array($status, [BookingStatus::COMPLETED->value, BookingStatus::CANCELLED->value], true)) {
+            throw ValidationException::withMessages([
+                'booking' => 'Completed or cancelled bookings cannot be rescheduled.',
+            ]);
+        }
+
+        if (filled($booking->checked_out_at)) {
+            throw ValidationException::withMessages([
+                'booking' => 'Checked-in stays cannot be rescheduled here. Use room detail tools.',
+            ]);
+        }
+
+        $room = Room::withoutGlobalScopes()->find($booking->room_id);
+        $roomStatus = strtolower($room?->status?->value ?? (string) ($room?->status ?? ''));
+        if ($roomStatus === RoomStatus::CHECKED_IN->value) {
+            throw ValidationException::withMessages([
+                'booking' => 'Checked-in stays cannot be rescheduled here.',
+            ]);
+        }
     }
 
     private function syncRoomHoldFromBooking(Room $room, Booking $booking): void

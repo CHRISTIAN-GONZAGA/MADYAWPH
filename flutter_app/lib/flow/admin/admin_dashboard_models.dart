@@ -852,19 +852,30 @@ class AdminDashboardModels {
     return rooms.isNotEmpty;
   }
 
-  /// Checked-in (or in-house) room with an active booking — eligible for amenity charges.
+  /// Checked-in room with an active booking — eligible for amenity charges.
   static bool isAmenityChargeable(Map<String, dynamic> room) {
-    if (statusOf(room) == 'maintenance') return false;
+    if (statusOf(room) != 'checked_in') return false;
     final booking = room['latest_booking'];
     if (booking is! Map) return false;
     final id = (booking['id'] ?? booking['_id'] ?? '').toString().trim();
-    if (id.isEmpty) return false;
+    return id.isNotEmpty;
+  }
 
-    if (statusOf(room) == 'checked_in') return true;
-    if (isSummaryOccupied(room)) return true;
+  static Map<String, dynamic>? pendingDateChange(Map<String, dynamic> record) {
+    final direct = record['pending_date_change'];
+    if (direct is Map) {
+      return Map<String, dynamic>.from(direct);
+    }
+    final meta = record['metadata'];
+    if (meta is Map && meta['pending_date_change'] is Map) {
+      return Map<String, dynamic>.from(meta['pending_date_change'] as Map);
+    }
+    return null;
+  }
 
-    final guest = (room['current_guest_name'] ?? '').toString().trim();
-    return guest.isNotEmpty;
+  static bool hasPendingDateChange(Map<String, dynamic> record) {
+    final pending = pendingDateChange(record);
+    return (pending?['status'] ?? '').toString() == 'pending';
   }
 
   static List<Map<String, dynamic>> amenityChargeableRooms(

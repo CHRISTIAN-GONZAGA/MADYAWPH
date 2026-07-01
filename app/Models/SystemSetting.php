@@ -20,6 +20,7 @@ class SystemSetting extends Model
         'surge_markup_percent',
         'payment_qr_url',
         'room_fee_presets',
+        'cancellation_retention_percent',
     ];
 
     protected function casts(): array

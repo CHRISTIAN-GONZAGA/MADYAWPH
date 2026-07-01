@@ -54,6 +54,7 @@ class Booking extends Model
         'guests_hispanic',
         'guest_nationality',
         'free_breakfast_options',
+        'pending_date_change',
     ];
 
     protected function casts(): array
@@ -80,6 +81,7 @@ class Booking extends Model
             'guests_female' => 'integer',
             'guests_hispanic' => 'integer',
             'free_breakfast_options' => 'array',
+            'pending_date_change' => 'array',
         ];
     }
 

@@ -8,6 +8,8 @@ import '../admin_dashboard_models.dart';
 Future<bool> showAdminManageBookingDialog({
   required BuildContext context,
   required Map<String, dynamic> booking,
+  bool isFrontDesk = false,
+  bool isAdmin = true,
 }) async {
   final bookingId = (booking['id'] ?? '').toString();
   if (bookingId.isEmpty) return false;
@@ -18,18 +20,21 @@ Future<bool> showAdminManageBookingDialog({
     return false;
   }
 
+  final pending = AdminDashboardModels.pendingDateChange(booking);
+  final hasPending = AdminDashboardModels.hasPendingDateChange(booking);
+
   final checkInCtrl = TextEditingController(
-    text: (booking['check_in_date'] ?? '').toString().split('T').first,
+    text: hasPending
+        ? (pending?['check_in_date'] ?? '').toString().split('T').first
+        : (booking['check_in_date'] ?? '').toString().split('T').first,
   );
   final checkOutCtrl = TextEditingController(
-    text: (booking['check_out_date'] ?? '').toString().split('T').first,
+    text: hasPending
+        ? (pending?['check_out_date'] ?? '').toString().split('T').first
+        : (booking['check_out_date'] ?? '').toString().split('T').first,
   );
-  DateTime? checkIn = AdminDashboardModels.parseDate(
-    (booking['check_in_date'] ?? '').toString(),
-  );
-  DateTime? checkOut = AdminDashboardModels.parseDate(
-    (booking['check_out_date'] ?? '').toString(),
-  );
+  DateTime? checkIn = AdminDashboardModels.parseDate(checkInCtrl.text);
+  DateTime? checkOut = AdminDashboardModels.parseDate(checkOutCtrl.text);
 
   final saved = await showDialog<bool>(
     context: context,
@@ -66,6 +71,28 @@ Future<bool> showAdminManageBookingDialog({
           setLocal(() {});
         }
 
+        Future<void> approvePending() async {
+          try {
+            await portalDio()
+                .post('/admin/bookings/$bookingId/date-change/approve');
+            if (ctx.mounted) Navigator.pop(ctx, true);
+          } on DioException catch (e) {
+            if (!ctx.mounted) return;
+            showAppMessage(ctx, dioErrorMessage(e), isError: true);
+          }
+        }
+
+        Future<void> rejectPending() async {
+          try {
+            await portalDio()
+                .post('/admin/bookings/$bookingId/date-change/reject');
+            if (ctx.mounted) Navigator.pop(ctx, true);
+          } on DioException catch (e) {
+            if (!ctx.mounted) return;
+            showAppMessage(ctx, dioErrorMessage(e), isError: true);
+          }
+        }
+
         return AlertDialog(
           title: Text('Manage booking ${booking['booking_reference'] ?? ''}'),
           content: SingleChildScrollView(
@@ -79,6 +106,34 @@ Future<bool> showAdminManageBookingDialog({
                         fontWeight: FontWeight.w700,
                       ),
                 ),
+                if (hasPending) ...[
+                  const SizedBox(height: 10),
+                  Card(
+                    color: Theme.of(ctx).colorScheme.tertiaryContainer,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Pending date change',
+                            style: Theme.of(ctx).textTheme.labelLarge?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Requested by ${pending?['requested_by_name'] ?? 'front desk'}',
+                            style: Theme.of(ctx).textTheme.bodySmall,
+                          ),
+                          Text(
+                            '${AdminDashboardModels.formatDisplayDate(pending?['check_in_date'])} → ${AdminDashboardModels.formatDisplayDate(pending?['check_out_date'])}',
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 TextField(
                   controller: checkInCtrl,
@@ -101,7 +156,9 @@ Future<bool> showAdminManageBookingDialog({
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Saving checks for conflicts with other stays on this room.',
+                  isFrontDesk
+                      ? 'Date changes are sent to the admin for approval. You can still cancel this booking.'
+                      : 'Saving checks for conflicts with other stays on this room.',
                   style: Theme.of(ctx).textTheme.bodySmall,
                 ),
               ],
@@ -112,6 +169,19 @@ Future<bool> showAdminManageBookingDialog({
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Close'),
             ),
+            if (hasPending && !isFrontDesk) ...[
+              TextButton(
+                onPressed: rejectPending,
+                child: Text(
+                  'Reject change',
+                  style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+                ),
+              ),
+              FilledButton(
+                onPressed: approvePending,
+                child: const Text('Approve change'),
+              ),
+            ],
             TextButton(
               onPressed: () async {
                 final confirm = await showDialog<bool>(
@@ -147,28 +217,39 @@ Future<bool> showAdminManageBookingDialog({
                 style: TextStyle(color: Theme.of(ctx).colorScheme.error),
               ),
             ),
-            FilledButton(
-              onPressed: checkIn == null || checkOut == null
-                  ? null
-                  : () async {
-                      try {
-                        await portalDio().patch(
-                          '/admin/bookings/$bookingId',
-                          data: {
-                            'check_in_at':
-                                checkIn!.toIso8601String().split('T').first,
-                            'check_out_at':
-                                checkOut!.toIso8601String().split('T').first,
-                          },
-                        );
-                        if (ctx.mounted) Navigator.pop(ctx, true);
-                      } on DioException catch (e) {
-                        if (!ctx.mounted) return;
-                        showAppMessage(ctx, dioErrorMessage(e), isError: true);
-                      }
-                    },
-              child: const Text('Save dates'),
-            ),
+            if (!hasPending || isFrontDesk)
+              FilledButton(
+                onPressed: checkIn == null || checkOut == null
+                    ? null
+                    : () async {
+                        try {
+                          final res = await portalDio().patch<Map<String, dynamic>>(
+                            '/admin/bookings/$bookingId',
+                            data: {
+                              'check_in_at':
+                                  checkIn!.toIso8601String().split('T').first,
+                              'check_out_at':
+                                  checkOut!.toIso8601String().split('T').first,
+                            },
+                          );
+                          if (!ctx.mounted) return;
+                          if (res.data?['pending_approval'] == true) {
+                            showAppMessage(
+                              ctx,
+                              (res.data?['message'] ?? 'Date change submitted for admin approval.')
+                                  .toString(),
+                            );
+                          }
+                          Navigator.pop(ctx, true);
+                        } on DioException catch (e) {
+                          if (!ctx.mounted) return;
+                          showAppMessage(ctx, dioErrorMessage(e), isError: true);
+                        }
+                      },
+                child: Text(
+                  isFrontDesk ? 'Request date change' : 'Save dates',
+                ),
+              ),
           ],
         );
       },
@@ -183,6 +264,8 @@ Future<bool> showAdminManageBookingDialog({
 Future<bool> showAdminManageReservationDialog({
   required BuildContext context,
   required Map<String, dynamic> reservation,
+  bool isFrontDesk = false,
+  bool isAdmin = true,
 }) async {
   final id = (reservation['id'] ?? reservation['_id'] ?? '').toString();
   if (id.isEmpty) return false;
@@ -193,18 +276,21 @@ Future<bool> showAdminManageReservationDialog({
     return false;
   }
 
+  final pending = AdminDashboardModels.pendingDateChange(reservation);
+  final hasPending = AdminDashboardModels.hasPendingDateChange(reservation);
+
   final checkInCtrl = TextEditingController(
-    text: (reservation['check_in_date'] ?? '').toString().split('T').first,
+    text: hasPending
+        ? (pending?['check_in_date'] ?? '').toString().split('T').first
+        : (reservation['check_in_date'] ?? '').toString().split('T').first,
   );
   final checkOutCtrl = TextEditingController(
-    text: (reservation['check_out_date'] ?? '').toString().split('T').first,
+    text: hasPending
+        ? (pending?['check_out_date'] ?? '').toString().split('T').first
+        : (reservation['check_out_date'] ?? '').toString().split('T').first,
   );
-  DateTime? checkIn = AdminDashboardModels.parseDate(
-    (reservation['check_in_date'] ?? '').toString(),
-  );
-  DateTime? checkOut = AdminDashboardModels.parseDate(
-    (reservation['check_out_date'] ?? '').toString(),
-  );
+  DateTime? checkIn = AdminDashboardModels.parseDate(checkInCtrl.text);
+  DateTime? checkOut = AdminDashboardModels.parseDate(checkOutCtrl.text);
 
   final saved = await showDialog<bool>(
     context: context,
@@ -241,6 +327,28 @@ Future<bool> showAdminManageReservationDialog({
           setLocal(() {});
         }
 
+        Future<void> approvePending() async {
+          try {
+            await portalDio()
+                .post('/admin/reservations/$id/date-change/approve');
+            if (ctx.mounted) Navigator.pop(ctx, true);
+          } on DioException catch (e) {
+            if (!ctx.mounted) return;
+            showAppMessage(ctx, dioErrorMessage(e), isError: true);
+          }
+        }
+
+        Future<void> rejectPending() async {
+          try {
+            await portalDio()
+                .post('/admin/reservations/$id/date-change/reject');
+            if (ctx.mounted) Navigator.pop(ctx, true);
+          } on DioException catch (e) {
+            if (!ctx.mounted) return;
+            showAppMessage(ctx, dioErrorMessage(e), isError: true);
+          }
+        }
+
         return AlertDialog(
           title: Text(
             'Manage reservation ${reservation['external_reference'] ?? id}',
@@ -257,6 +365,34 @@ Future<bool> showAdminManageReservationDialog({
                       ),
                 ),
                 Text('Status: ${AdminDashboardModels.reservationStatusLabel(status)}'),
+                if (hasPending) ...[
+                  const SizedBox(height: 10),
+                  Card(
+                    color: Theme.of(ctx).colorScheme.tertiaryContainer,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Pending date change',
+                            style: Theme.of(ctx).textTheme.labelLarge?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Requested by ${pending?['requested_by_name'] ?? 'front desk'}',
+                            style: Theme.of(ctx).textTheme.bodySmall,
+                          ),
+                          Text(
+                            '${AdminDashboardModels.formatDisplayDate(pending?['check_in_date'])} → ${AdminDashboardModels.formatDisplayDate(pending?['check_out_date'])}',
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 TextField(
                   controller: checkInCtrl,
@@ -277,6 +413,13 @@ Future<bool> showAdminManageReservationDialog({
                   ),
                   onTap: pickCheckOut,
                 ),
+                if (isFrontDesk) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Date changes are sent to the admin for approval. You can still cancel this hold.',
+                    style: Theme.of(ctx).textTheme.bodySmall,
+                  ),
+                ],
               ],
             ),
           ),
@@ -285,6 +428,19 @@ Future<bool> showAdminManageReservationDialog({
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Close'),
             ),
+            if (hasPending && !isFrontDesk) ...[
+              TextButton(
+                onPressed: rejectPending,
+                child: Text(
+                  'Reject change',
+                  style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+                ),
+              ),
+              FilledButton(
+                onPressed: approvePending,
+                child: const Text('Approve change'),
+              ),
+            ],
             if (status != 'pending_approval')
               TextButton(
                 onPressed: () async {
@@ -321,28 +477,39 @@ Future<bool> showAdminManageReservationDialog({
                   style: TextStyle(color: Theme.of(ctx).colorScheme.error),
                 ),
               ),
-            FilledButton(
-              onPressed: checkIn == null || checkOut == null
-                  ? null
-                  : () async {
-                      try {
-                        await portalDio().patch(
-                          '/admin/reservations/$id',
-                          data: {
-                            'check_in_at':
-                                checkIn!.toIso8601String().split('T').first,
-                            'check_out_at':
-                                checkOut!.toIso8601String().split('T').first,
-                          },
-                        );
-                        if (ctx.mounted) Navigator.pop(ctx, true);
-                      } on DioException catch (e) {
-                        if (!ctx.mounted) return;
-                        showAppMessage(ctx, dioErrorMessage(e), isError: true);
-                      }
-                    },
-              child: const Text('Save dates'),
-            ),
+            if (!hasPending || isFrontDesk)
+              FilledButton(
+                onPressed: checkIn == null || checkOut == null
+                    ? null
+                    : () async {
+                        try {
+                          final res = await portalDio().patch<Map<String, dynamic>>(
+                            '/admin/reservations/$id',
+                            data: {
+                              'check_in_at':
+                                  checkIn!.toIso8601String().split('T').first,
+                              'check_out_at':
+                                  checkOut!.toIso8601String().split('T').first,
+                            },
+                          );
+                          if (!ctx.mounted) return;
+                          if (res.data?['pending_approval'] == true) {
+                            showAppMessage(
+                              ctx,
+                              (res.data?['message'] ?? 'Date change submitted for admin approval.')
+                                  .toString(),
+                            );
+                          }
+                          Navigator.pop(ctx, true);
+                        } on DioException catch (e) {
+                          if (!ctx.mounted) return;
+                          showAppMessage(ctx, dioErrorMessage(e), isError: true);
+                        }
+                      },
+                child: Text(
+                  isFrontDesk ? 'Request date change' : 'Save dates',
+                ),
+              ),
           ],
         );
       },

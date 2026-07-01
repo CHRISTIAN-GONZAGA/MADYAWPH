@@ -13,6 +13,7 @@ import '../admin_hotel_logo_screen.dart';
 import '../admin_online_payment_screen.dart';
 import '../admin_portal_users_screen.dart';
 import '../admin_room_fee_presets_screen.dart';
+import '../admin_cancellation_retention_screen.dart';
 
 class SettingsSection extends StatelessWidget {
   const SettingsSection({
@@ -143,6 +144,20 @@ class SettingsSection extends StatelessWidget {
                   await Navigator.of(context).push<void>(
                     MaterialPageRoute<void>(
                       builder: (_) => const AdminRoomFeePresetsScreen(),
+                    ),
+                  );
+                  await onRefreshAfterNav();
+                },
+              ),
+              _SettingsTile(
+                icon: Icons.cancel_outlined,
+                title: 'Cancellation retention',
+                subtitle: 'Percent of paid booking kept when cancelled',
+                enabled: !creditsLocked,
+                onTap: () async {
+                  await Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const AdminCancellationRetentionScreen(),
                     ),
                   );
                   await onRefreshAfterNav();
