@@ -61,6 +61,7 @@ Future<void> submitAdminWalkInBooking({
     'booking_mode': payload.bookingMode,
     if (breakfastJson.isNotEmpty) 'free_breakfast_options': breakfastJson,
     if (payload.discountType != 'none') 'discount_type': payload.discountType,
+    if (payload.memberShidId.isNotEmpty) 'member_shid_id': payload.memberShidId,
   };
 
   final hasGuestId = payload.guestIdFile != null;

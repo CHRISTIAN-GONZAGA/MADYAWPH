@@ -14,6 +14,7 @@ class MemberSubscriptionRequest extends Model
         'payment_reference',
         'status',
         'member_valid_until',
+        'member_shid_id',
         'reviewed_by_user_id',
         'reviewed_at',
         'notes',

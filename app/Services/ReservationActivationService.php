@@ -92,10 +92,19 @@ class ReservationActivationService
             $bookingAttrs['discount_percent'] = round((float) ($meta['discount_percent'] ?? 0), 2);
             $bookingAttrs['discount_id_url'] = $meta['discount_id_url'] ?? null;
         }
+        if (! empty($meta['member_shid_id'])) {
+            $bookingAttrs['member_shid_id'] = (string) $meta['member_shid_id'];
+        }
 
         $booking = Booking::withoutGlobalScopes()->create(array_merge(
             $bookingAttrs,
             CustomerStayPricing::bookingFieldsFromCharge($charge, $window),
+            [
+                'adults' => max(1, (int) ($meta['adults'] ?? 1)),
+                'children' => max(0, (int) ($meta['children'] ?? 0)),
+                'guests_male' => max(0, (int) ($meta['guests_male'] ?? 0)),
+                'guests_female' => max(0, (int) ($meta['guests_female'] ?? 0)),
+            ],
         ));
 
         $chargeLabel = $charge['label'];

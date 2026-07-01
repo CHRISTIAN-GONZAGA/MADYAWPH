@@ -34,6 +34,7 @@ class CompleteGuestBookingPayload {
     this.guestNationality = '',
     this.freeBreakfastSelections = const [],
     this.bookingMode = 'walk-in',
+    this.memberShidId = '',
   });
 
   final String guestName;
@@ -54,6 +55,7 @@ class CompleteGuestBookingPayload {
   final String guestNationality;
   final List<FreeBreakfastSelection> freeBreakfastSelections;
   final String bookingMode;
+  final String memberShidId;
 }
 
 class CompleteGuestBookingConfig {

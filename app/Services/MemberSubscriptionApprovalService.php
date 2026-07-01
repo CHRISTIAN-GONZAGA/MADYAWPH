@@ -4,10 +4,15 @@ namespace App\Services;
 
 use App\Models\MemberSubscriptionRequest;
 use App\Models\User;
+use App\Services\MemberSubscriptionService;
 use Illuminate\Validation\ValidationException;
 
 class MemberSubscriptionApprovalService
 {
+    public function __construct(private readonly MemberSubscriptionService $members)
+    {
+    }
+
     public function approve(MemberSubscriptionRequest $request, User $reviewer): MemberSubscriptionRequest
     {
         if ((string) ($request->status ?? '') !== 'pending') {
@@ -18,6 +23,7 @@ class MemberSubscriptionApprovalService
 
         $request->update([
             'status' => 'approved',
+            'member_shid_id' => $request->member_shid_id ?: $this->members->generateShidId(),
             'member_valid_until' => now()->addMonth(),
             'reviewed_by_user_id' => (string) $reviewer->id,
             'reviewed_at' => now(),

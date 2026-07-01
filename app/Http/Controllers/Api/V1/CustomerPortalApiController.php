@@ -20,6 +20,7 @@ use App\Services\FinancialComputationService;
 use App\Services\GuestRoomAccessCodeService;
 use App\Services\HotelAvailabilityService;
 use App\Services\HotelCreditBookingFeeService;
+use App\Services\MemberSubscriptionService;
 use App\Services\RoomPricingService;
 use App\Services\SmsService;
 use App\Support\ChatAttachmentUrl;
@@ -48,6 +49,7 @@ class CustomerPortalApiController extends Controller
         private readonly GuestRoomAccessCodeService $guestRoomAccessCodeService,
         private readonly FinancialComputationService $financialComputationService,
         private readonly HotelAvailabilityService $hotelAvailabilityService,
+        private readonly MemberSubscriptionService $memberSubscriptionService,
     ) {}
 
     public function categories(Request $request): JsonResponse
@@ -309,16 +311,26 @@ class CustomerPortalApiController extends Controller
     {
         $validated = $request->validate([
             'hotel_id' => ['required', 'string'],
-            'guest_email' => ['required', 'email'],
+            'guest_email' => ['nullable', 'email', 'required_without:guest_phone'],
+            'guest_phone' => ['nullable', 'string', 'max:30', 'required_without:guest_email'],
         ]);
 
         $reservation = ExternalReservation::withoutGlobalScopes()
             ->where('hotel_id', (string) $validated['hotel_id'])
             ->where('external_reference', strtoupper(trim($reference)))
-            ->where('guest_email', $validated['guest_email'])
             ->first();
 
         if (! $reservation) {
+            return response()->json(['message' => 'Reservation not found.'], 404);
+        }
+
+        if (filled($validated['guest_email'] ?? null)
+            && strcasecmp((string) $reservation->guest_email, (string) $validated['guest_email']) !== 0) {
+            return response()->json(['message' => 'Reservation not found.'], 404);
+        }
+
+        if (filled($validated['guest_phone'] ?? null)
+            && trim((string) $reservation->guest_phone) !== trim((string) $validated['guest_phone'])) {
             return response()->json(['message' => 'Reservation not found.'], 404);
         }
 
@@ -418,7 +430,7 @@ class CustomerPortalApiController extends Controller
             'source' => 'app-customer',
             'external_reference' => 'RES'.now()->format('YmdHis').strtoupper(Str::random(4)),
             'guest_name' => $validated['guest_name'],
-            'guest_email' => $validated['guest_email'],
+            'guest_email' => (string) ($validated['guest_email'] ?? ''),
             'guest_phone' => $validated['guest_phone'],
             'check_in_date' => $checkIn->toDateString(),
             'check_out_date' => $checkOut->toDateString(),
@@ -437,8 +449,13 @@ class CustomerPortalApiController extends Controller
                 'block_hours' => $charge['block_hours'] ?? null,
                 'price_per_block' => $charge['price_per_block'] ?? null,
                 'rooms' => (int) ($validated['rooms'] ?? 1),
-                'adults' => (int) ($validated['adults'] ?? 2),
+                'adults' => (int) ($validated['adults'] ?? 1),
                 'children' => (int) ($validated['children'] ?? 0),
+                'guests_male' => (int) ($validated['guests_male'] ?? 0),
+                'guests_female' => (int) ($validated['guests_female'] ?? 0),
+                'member_shid_id' => filled($validated['member_shid_id'] ?? null)
+                    ? (string) $validated['member_shid_id']
+                    : null,
             ]),
         ]);
 
@@ -550,7 +567,7 @@ class CustomerPortalApiController extends Controller
             'hotel_id' => ['required', 'string'],
             'room_id' => ['required', 'string'],
             'guest_name' => ['required', 'string', 'max:255'],
-            'guest_email' => ['required', 'email'],
+            'guest_email' => ['nullable', 'email', 'max:255'],
             'guest_phone' => ['required', 'string', 'max:30'],
             'check_in' => ['required', 'date'],
             'check_out' => ['required', 'date', 'after_or_equal:check_in'],
@@ -561,6 +578,9 @@ class CustomerPortalApiController extends Controller
             'rooms' => ['nullable', 'integer', 'min:1', 'max:10'],
             'adults' => ['nullable', 'integer', 'min:1', 'max:30'],
             'children' => ['nullable', 'integer', 'min:0', 'max:20'],
+            'guests_male' => ['nullable', 'integer', 'min:0', 'max:30'],
+            'guests_female' => ['nullable', 'integer', 'min:0', 'max:30'],
+            'member_shid_id' => ['nullable', 'string', 'max:40'],
         ]);
     }
 
@@ -805,6 +825,26 @@ class CustomerPortalApiController extends Controller
      */
     private function mergeDiscountIntoValidated(Request $request, array $validated): array
     {
+        $memberInput = trim((string) ($validated['member_shid_id'] ?? ''));
+        if ($memberInput !== '') {
+            $memberDiscount = $this->memberSubscriptionService->resolveBookingMemberDiscount($memberInput);
+            if ($memberDiscount['member_shid_id'] === null) {
+                throw ValidationException::withMessages([
+                    'member_shid_id' => ['Membership not found or expired.'],
+                ]);
+            }
+            if ($memberDiscount['percent'] <= 0) {
+                throw ValidationException::withMessages([
+                    'member_shid_id' => ['Member discount is not active right now.'],
+                ]);
+            }
+            $validated['discount_type'] = 'member';
+            $validated['discount_percent'] = $memberDiscount['percent'];
+            $validated['member_shid_id'] = $memberDiscount['member_shid_id'];
+
+            return $validated;
+        }
+
         $discount = $this->resolveDiscount($request, $validated);
         $validated['discount_type'] = $discount['type'];
         $validated['discount_percent'] = $discount['percent'];
@@ -830,7 +870,7 @@ class CustomerPortalApiController extends Controller
             'booking_reference' => 'BK'.now()->format('YmdHis').strtoupper(Str::random(4)),
             'room_id' => (string) $room->id,
             'guest_name' => $validated['guest_name'],
-            'guest_email' => $validated['guest_email'],
+            'guest_email' => (string) ($validated['guest_email'] ?? ''),
             'guest_phone' => $validated['guest_phone'],
             'check_in_date' => $checkIn->toDateString(),
             'check_out_date' => $checkOut->toDateString(),

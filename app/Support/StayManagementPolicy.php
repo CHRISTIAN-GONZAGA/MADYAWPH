@@ -9,7 +9,7 @@ use App\Models\Room;
 final class StayManagementPolicy
 {
     /** @var list<string> */
-    private const ACTIVE_BOOKING_STATUSES = ['booked', 'checked_in', 'confirmed'];
+    private const ACTIVE_BOOKING_STATUSES = ['booked', 'checked_in', 'confirmed', 'reserved'];
 
     public static function roomStatusValue(Room $room): string
     {

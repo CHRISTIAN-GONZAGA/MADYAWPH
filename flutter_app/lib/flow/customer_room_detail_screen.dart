@@ -11,6 +11,7 @@ import '../widgets/app_input.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/chat_attachment.dart';
 import 'admin/widgets/hourly_billing.dart';
+import 'member_qr_scan.dart';
 import 'customer_booking_status_screen.dart';
 import 'customer_search_context.dart';
 
@@ -51,6 +52,7 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _emailCtrl;
   late final TextEditingController _phoneCtrl;
+  late final TextEditingController _memberShidCtrl;
   late final TextEditingController _checkInCtrl;
   late final TextEditingController _checkOutCtrl;
 
@@ -63,6 +65,12 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
   String _paymentQrUrl = '';
   var _qrLoading = false;
   var _guestFieldsReady = false;
+  var _adults = 2;
+  var _children = 0;
+  var _guestsMale = 0;
+  var _guestsFemale = 0;
+  var _memberDiscountPercent = 0.0;
+  var _memberValidating = false;
 
   bool get _fromSearch => widget.searchContext != null;
 
@@ -71,9 +79,14 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
     super.initState();
     _checkInDate = _fromSearch ? widget.searchContext!.checkIn : null;
     _checkOutDate = _fromSearch ? widget.searchContext!.checkOut : null;
+    if (_fromSearch) {
+      _adults = widget.searchContext!.adults;
+      _children = widget.searchContext!.children;
+    }
     _nameCtrl = TextEditingController();
     _emailCtrl = TextEditingController();
     _phoneCtrl = TextEditingController();
+    _memberShidCtrl = TextEditingController();
     _checkInCtrl = TextEditingController(
       text: _fromSearch ? widget.searchContext!.checkInIso : '',
     );
@@ -98,6 +111,7 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
+    _memberShidCtrl.dispose();
     _checkInCtrl.dispose();
     _checkOutCtrl.dispose();
     super.dispose();
@@ -196,8 +210,8 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
       showAppMessage(context, 'Enter your full name.');
       return;
     }
-    if (email.isEmpty || !email.contains('@')) {
-      showAppMessage(context, 'Enter a valid email address.');
+    if (email.isNotEmpty && !email.contains('@')) {
+      showAppMessage(context, 'Enter a valid email address or leave it blank.');
       return;
     }
     if (phone.length < 7) {
@@ -220,18 +234,23 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
     final payload = <String, dynamic>{
       'room_id': (widget.room['id'] ?? '').toString(),
       'guest_name': name,
-      'guest_email': email,
       'guest_phone': phone,
       'check_in': _checkInCtrl.text.trim(),
       'check_out': _checkOutCtrl.text.trim(),
       'discount_type': _discountType,
       'payment_method': _paymentMethod,
       'hotel_id': widget.hotelId,
+      'adults': _adults,
+      'children': _children,
+      'guests_male': _guestsMale,
+      'guests_female': _guestsFemale,
     };
+    if (email.isNotEmpty) payload['guest_email'] = email;
+    if (_memberDiscountPercent > 0 && _memberShidCtrl.text.trim().isNotEmpty) {
+      payload['member_shid_id'] = _memberShidCtrl.text.trim().toUpperCase();
+    }
     if (widget.searchContext != null) {
       payload['rooms'] = widget.searchContext!.rooms;
-      payload['adults'] = widget.searchContext!.adults;
-      payload['children'] = widget.searchContext!.children;
     }
 
     setState(() => _submitting = true);
@@ -294,6 +313,7 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
               hotelName: widget.hotelName,
               reference: ref,
               guestEmail: email,
+              guestPhone: phone,
               initialReservation: Map<String, dynamic>.from(reservation),
             ),
           ),
@@ -340,11 +360,13 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
             _checkOutDate!,
           )
         : 0.0;
-    final discountPct = switch (_discountType) {
-      'pwd' => 20.0,
-      'senior' => 20.0,
-      _ => 0.0,
-    };
+    final discountPct = _memberDiscountPercent > 0
+        ? _memberDiscountPercent
+        : switch (_discountType) {
+            'pwd' => 20.0,
+            'senior' => 20.0,
+            _ => 0.0,
+          };
     final estAfterDiscount =
         HourlyBilling.round50(estTotal * (1 - (discountPct / 100)));
 
@@ -502,13 +524,6 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        context.tr('guest_party_line', {
-                          'rooms': '${widget.searchContext!.rooms}',
-                          'adults': '${widget.searchContext!.adults}',
-                          'children': '${widget.searchContext!.children}',
-                        }),
-                      ),
-                      Text(
                         '${widget.searchContext!.checkInIso} → ${widget.searchContext!.checkOutIso}',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
@@ -518,11 +533,48 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
               ),
               const SizedBox(height: 12),
             ],
+            Text(
+              'Guests in room',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+            const SizedBox(height: 6),
+            _GuestCounterRow(
+              label: 'Adults',
+              value: _adults,
+              min: 1,
+              onChanged: (v) => setState(() => _adults = v),
+            ),
+            _GuestCounterRow(
+              label: 'Children',
+              value: _children,
+              onChanged: (v) => setState(() => _children = v),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Demographics (head count)',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+            const SizedBox(height: 6),
+            _GuestCounterRow(
+              label: 'Male',
+              value: _guestsMale,
+              onChanged: (v) => setState(() => _guestsMale = v),
+            ),
+            _GuestCounterRow(
+              label: 'Female',
+              value: _guestsFemale,
+              onChanged: (v) => setState(() => _guestsFemale = v),
+            ),
+            const SizedBox(height: 12),
             AppInput(controller: _nameCtrl, label: context.tr('full_name')),
             const SizedBox(height: 8),
             AppInput(
               controller: _emailCtrl,
-              label: context.tr('email_gmail'),
+              label: '${context.tr('email_gmail')} (optional)',
               keyboardType: TextInputType.emailAddress,
             ),
             const SizedBox(height: 8),
@@ -531,6 +583,66 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
               label: context.tr('phone_number'),
               keyboardType: TextInputType.phone,
             ),
+            const SizedBox(height: 12),
+            Text(
+              'MADYAWPH membership (optional)',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: AppInput(
+                    controller: _memberShidCtrl,
+                    label: 'Member SHID ID',
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: _memberValidating
+                      ? null
+                      : () async {
+                          setState(() => _memberValidating = true);
+                          final info = await validateMemberShidInput(
+                            context,
+                            _memberShidCtrl.text,
+                          );
+                          if (!mounted) return;
+                          setState(() {
+                            _memberValidating = false;
+                            if (info != null) {
+                              _memberShidCtrl.text = info.shid;
+                              _memberDiscountPercent = info.percent;
+                              _discountType = 'none';
+                              _discountIdFile = null;
+                            } else {
+                              _memberDiscountPercent = 0;
+                            }
+                          });
+                        },
+                  child: _memberValidating
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Apply'),
+                ),
+              ],
+            ),
+            if (_memberDiscountPercent > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  '${_memberDiscountPercent.toStringAsFixed(0)}% member discount applied',
+                  style: TextStyle(
+                    color: scheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
             const SizedBox(height: 8),
             OutlinedButton.icon(
               onPressed: () async {
@@ -564,6 +676,10 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
               onChanged: (v) => setState(() {
                 _discountType = v ?? 'none';
                 if (_discountType == 'none') _discountIdFile = null;
+                if (_discountType != 'none') {
+                  _memberDiscountPercent = 0;
+                  _memberShidCtrl.clear();
+                }
               }),
             ),
             if (_discountType != 'none') ...[
@@ -689,6 +805,50 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _GuestCounterRow extends StatelessWidget {
+  const _GuestCounterRow({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+    this.min = 0,
+  });
+
+  final String label;
+  final int value;
+  final int min;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          Expanded(child: Text(label)),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            onPressed: value > min ? () => onChanged(value - 1) : null,
+            icon: const Icon(Icons.remove_circle_outline),
+          ),
+          SizedBox(
+            width: 28,
+            child: Text(
+              '$value',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            onPressed: () => onChanged(value + 1),
+            icon: const Icon(Icons.add_circle_outline),
+          ),
+        ],
       ),
     );
   }

@@ -36,7 +36,8 @@ class CustomerBookingStatusScreen extends StatefulWidget {
     required this.hotelId,
     required this.hotelName,
     required this.reference,
-    required this.guestEmail,
+    this.guestEmail = '',
+    this.guestPhone = '',
     this.initialReservation,
     this.instantBooking = false,
   });
@@ -45,6 +46,7 @@ class CustomerBookingStatusScreen extends StatefulWidget {
   final String hotelName;
   final String reference;
   final String guestEmail;
+  final String guestPhone;
   /// Snapshot from POST /customer/reservations or instant /customer/bookings.
   final Map<String, dynamic>? initialReservation;
   /// Same-day instant booking — confirmed immediately, no reservation poll.
@@ -84,12 +86,16 @@ class _CustomerBookingStatusScreenState
   Future<void> _load({bool silent = false}) async {
     if (widget.instantBooking) return;
     try {
+      final query = <String, dynamic>{'hotel_id': widget.hotelId};
+      if (widget.guestEmail.trim().isNotEmpty) {
+        query['guest_email'] = widget.guestEmail.trim();
+      }
+      if (widget.guestPhone.trim().isNotEmpty) {
+        query['guest_phone'] = widget.guestPhone.trim();
+      }
       final res = await publicDio().get<Map<String, dynamic>>(
         '/customer/reservations/${widget.reference}',
-        queryParameters: {
-          'hotel_id': widget.hotelId,
-          'guest_email': widget.guestEmail,
-        },
+        queryParameters: query,
       );
       if (!mounted) return;
       setState(() {

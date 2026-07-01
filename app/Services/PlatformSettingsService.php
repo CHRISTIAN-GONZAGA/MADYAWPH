@@ -18,8 +18,20 @@ class PlatformSettingsService
                 'member_subscription_qr_url' => null,
                 'member_monthly_fee' => (float) config('platform.member_monthly_fee', 300),
                 'booking_confirm_fee_percent' => (float) config('services.hotel_credits.booking_confirm_fee_percent', 8),
+                'member_booking_discount_percent' => (float) config('platform.member_booking_discount_percent', 10),
             ]
         );
+    }
+
+    public function memberBookingDiscountPercent(): float
+    {
+        $row = $this->row();
+        $fromDb = $row->member_booking_discount_percent ?? null;
+        if ($fromDb !== null && (float) $fromDb >= 0) {
+            return (float) $fromDb;
+        }
+
+        return (float) config('platform.member_booking_discount_percent', 10);
     }
 
     public function bookingConfirmFeePercent(): float
@@ -44,6 +56,7 @@ class PlatformSettingsService
         return [
             'member_monthly_fee' => $fee,
             'booking_confirm_fee_percent' => $this->bookingConfirmFeePercent(),
+            'member_booking_discount_percent' => $this->memberBookingDiscountPercent(),
             'app_install_url' => trim((string) config('platform.app_install_url', '')),
             'member_subscription_qr_url' => ChatAttachmentUrl::fromStoredUrl(
                 filled($row->member_subscription_qr_url ?? null)

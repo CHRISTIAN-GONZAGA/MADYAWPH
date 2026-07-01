@@ -131,6 +131,21 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
     }
   }
 
+  Future<void> _updateMemberBookingDiscountPercent(double percent) async {
+    try {
+      await portalDio().patch<Map<String, dynamic>>(
+        '/platform/settings/member-booking-discount-percent',
+        data: {'member_booking_discount_percent': percent},
+      );
+      if (!mounted) return;
+      showAppMessage(context, 'Member booking discount updated.');
+      await _loadAll();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
   Future<void> _uploadQr({required bool creditWallet}) async {
     final image = await ChatAttachment.pickRoomImageFromGallery(context);
     if (image == null || !mounted) return;
@@ -418,6 +433,8 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
                       onUploadCredit: () => _uploadQr(creditWallet: true),
                       onUploadMember: () => _uploadQr(creditWallet: false),
                       onUpdateBookingFeePercent: _updateBookingFeePercent,
+                      onUpdateMemberBookingDiscountPercent:
+                          _updateMemberBookingDiscountPercent,
                     ),
                     _HotelsSection(
                       hotels: _hotels,
@@ -1163,12 +1180,14 @@ class _QrSettingsSection extends StatefulWidget {
     required this.onUploadCredit,
     required this.onUploadMember,
     required this.onUpdateBookingFeePercent,
+    required this.onUpdateMemberBookingDiscountPercent,
   });
 
   final Map<String, dynamic> settings;
   final VoidCallback onUploadCredit;
   final VoidCallback onUploadMember;
   final Future<void> Function(double percent) onUpdateBookingFeePercent;
+  final Future<void> Function(double percent) onUpdateMemberBookingDiscountPercent;
 
   @override
   State<_QrSettingsSection> createState() => _QrSettingsSectionState();
@@ -1176,13 +1195,18 @@ class _QrSettingsSection extends StatefulWidget {
 
 class _QrSettingsSectionState extends State<_QrSettingsSection> {
   late final TextEditingController _feePercentCtrl;
+  late final TextEditingController _memberDiscountCtrl;
   var _savingFee = false;
+  var _savingMemberDiscount = false;
 
   @override
   void initState() {
     super.initState();
     _feePercentCtrl = TextEditingController(
       text: _feePercentText(widget.settings),
+    );
+    _memberDiscountCtrl = TextEditingController(
+      text: _memberDiscountText(widget.settings),
     );
   }
 
@@ -1193,11 +1217,16 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     if (next != _feePercentCtrl.text) {
       _feePercentCtrl.text = next;
     }
+    final memberNext = _memberDiscountText(widget.settings);
+    if (memberNext != _memberDiscountCtrl.text) {
+      _memberDiscountCtrl.text = memberNext;
+    }
   }
 
   @override
   void dispose() {
     _feePercentCtrl.dispose();
+    _memberDiscountCtrl.dispose();
     super.dispose();
   }
 
@@ -1206,6 +1235,27 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     if (raw == null) return '8';
     return (raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 8)
         .toStringAsFixed(raw is num && raw % 1 == 0 ? 0 : 1);
+  }
+
+  static String _memberDiscountText(Map<String, dynamic> settings) {
+    final raw = settings['member_booking_discount_percent'];
+    if (raw == null) return '10';
+    return (raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 10)
+        .toStringAsFixed(raw is num && raw % 1 == 0 ? 0 : 1);
+  }
+
+  Future<void> _saveMemberDiscountPercent() async {
+    final parsed = double.tryParse(_memberDiscountCtrl.text.trim());
+    if (parsed == null || parsed < 0 || parsed > 100) {
+      showAppMessage(context, 'Enter a discount between 0 and 100.');
+      return;
+    }
+    setState(() => _savingMemberDiscount = true);
+    try {
+      await widget.onUpdateMemberBookingDiscountPercent(parsed);
+    } finally {
+      if (mounted) setState(() => _savingMemberDiscount = false);
+    }
   }
 
   Future<void> _saveFeePercent() async {
@@ -1315,6 +1365,60 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                               )
                             : const Icon(Icons.save_outlined),
                         label: Text(_savingFee ? 'Saving…' : 'Save fee percent'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Member room booking discount',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Applied when a guest scans their membership QR or enters their SHID ID during booking.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _memberDiscountCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Discount percent',
+                          suffixText: '%',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      FilledButton.icon(
+                        onPressed:
+                            _savingMemberDiscount ? null : _saveMemberDiscountPercent,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _kPlatformNavy,
+                          foregroundColor: Colors.white,
+                        ),
+                        icon: _savingMemberDiscount
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.save_outlined),
+                        label: Text(
+                          _savingMemberDiscount ? 'Saving…' : 'Save member discount',
+                        ),
                       ),
                     ],
                   ),

@@ -12,6 +12,7 @@ class PlatformSetting extends Model
         'member_subscription_qr_url',
         'member_monthly_fee',
         'booking_confirm_fee_percent',
+        'member_booking_discount_percent',
     ];
 
     protected function casts(): array
@@ -19,6 +20,7 @@ class PlatformSetting extends Model
         return [
             'member_monthly_fee' => 'float',
             'booking_confirm_fee_percent' => 'float',
+            'member_booking_discount_percent' => 'float',
         ];
     }
 }

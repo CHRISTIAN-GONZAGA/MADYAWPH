@@ -101,6 +101,23 @@ class PlatformAdminController extends Controller
         ]);
     }
 
+    public function updateMemberBookingDiscountPercent(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'member_booking_discount_percent' => ['required', 'numeric', 'min:0', 'max:100'],
+        ]);
+
+        $row = $this->settings->row();
+        $row->update([
+            'member_booking_discount_percent' => (float) $validated['member_booking_discount_percent'],
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'member_booking_discount_percent' => $this->settings->memberBookingDiscountPercent(),
+        ]);
+    }
+
     public function hotels(): JsonResponse
     {
         $creditRows = HotelCredit::withoutGlobalScopes()
@@ -294,6 +311,7 @@ class PlatformAdminController extends Controller
             'amount' => (float) ($r->amount ?? 0),
             'payment_reference' => (string) ($r->payment_reference ?? ''),
             'status' => (string) ($r->status ?? 'pending'),
+            'member_shid_id' => (string) ($r->member_shid_id ?? ''),
             'member_valid_until' => optional($r->member_valid_until)->toISOString(),
             'created_at' => optional($r->created_at)->toISOString(),
             'reviewed_at' => optional($r->reviewed_at)->toISOString(),

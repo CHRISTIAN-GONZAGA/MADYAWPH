@@ -339,7 +339,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
         return response()->json(['data' => $items]);
     })->name('api.v1.admin.amenity.menu.index');
 
-    Route::get('/admin/amenity-chargeable-rooms', function (Request $request) {
+    Route::get('/admin/amenity-chargeable-rooms', function (Request $request, RoomCheckoutService $roomCheckoutService) {
         $hotelId = (string) $request->user()->hotel_id;
         $rooms = Room::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
@@ -347,22 +347,11 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             ->orderBy('room_number')
             ->get();
 
-        $roomIds = $rooms->map(fn ($r) => (string) $r->id)->all();
-        $bookingsByRoom = Booking::withoutGlobalScopes()
-            ->where('hotel_id', $hotelId)
-            ->whereIn('room_id', $roomIds)
-            ->whereNotIn('status', [
-                BookingStatus::COMPLETED->value,
-                BookingStatus::CANCELLED->value,
-            ])
-            ->whereNull('checked_out_at')
-            ->latest('created_at')
-            ->get()
-            ->groupBy('room_id')
-            ->map(fn ($group) => $group->first());
-
-        $payload = $rooms->map(function ($room) use ($bookingsByRoom) {
-            $booking = $bookingsByRoom->get((string) $room->id);
+        $payload = $rooms->map(function ($room) use ($hotelId, $roomCheckoutService) {
+            $booking = $roomCheckoutService->resolveActiveBookingForRoom($hotelId, $room);
+            if ($booking === null || filled($booking->checked_out_at)) {
+                return null;
+            }
             $row = array_merge($room->toArray(), [
                 'id' => (string) $room->id,
                 'status' => RoomStatus::CHECKED_IN->value,
@@ -370,19 +359,21 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
                     1,
                     (int) ($room->floor ?? (preg_replace('/\D/', '', substr((string) $room->room_number, 0, 1)) ?: 1))
                 ),
-                'latest_booking' => $booking ? [
+                'latest_booking' => [
                     'id' => (string) $booking->id,
                     'guest_name' => (string) $booking->guest_name,
                     'check_in_date' => optional($booking->check_in_date)->toDateString(),
                     'check_out_date' => optional($booking->check_out_date)->toDateString(),
-                ] : null,
+                    'booking_type' => (string) ($booking->booking_type?->value ?? $booking->booking_type ?? ''),
+                    'booking_source' => (string) ($booking->booking_source ?? ''),
+                ],
             ]);
 
             return $row;
-        })->filter(fn ($row) => $row['latest_booking'] !== null)->values();
+        })->filter()->values();
 
         return response()->json(['rooms' => $payload]);
-    })->middleware('role:admin,frontdesk')->name('api.v1.admin.amenity.chargeable-rooms');
+    })->middleware('role:admin,frontdesk,staff')->name('api.v1.admin.amenity.chargeable-rooms');
 
     Route::post('/admin/amenity-menu', function (Request $request) {
         $validated = $request->validate([
@@ -430,6 +421,11 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             'status' => ['required', 'in:available,booked,checked_in,checked_out,maintenance,reserved'],
             'check_in_at' => ['nullable', 'date'],
             'check_out_at' => ['nullable', 'date', 'after_or_equal:check_in_at'],
+            'free_breakfast_options' => ['nullable', 'array'],
+            'free_breakfast_options.*.menu_item_id' => ['nullable', 'string', 'max:64'],
+            'free_breakfast_options.*.name' => ['required_with:free_breakfast_options', 'string', 'max:255'],
+            'free_breakfast_options.*.quantity' => ['nullable', 'integer', 'min:1', 'max:20'],
+            'free_breakfast_options.*.amenity_type' => ['nullable', 'string', 'max:100'],
         ]);
 
         $room = Room::withoutGlobalScopes()->findOrFail($id);
@@ -440,7 +436,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
 
         $previousStatus = $roomCheckoutService->normalizedStatus($room);
         $nextStatus = (string) $validated['status'];
-        $activeBooking = $roomCheckoutService->findActiveBooking($hotelId, (string) $room->id);
+        $activeBooking = $roomCheckoutService->resolveActiveBookingForRoom($hotelId, $room);
 
         if ($nextStatus === RoomStatus::CHECKED_IN->value) {
             $checkIn = isset($validated['check_in_at'])
@@ -450,6 +446,13 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
                 ? Carbon::parse($validated['check_out_at'])
                 : null;
             $room = $roomCheckoutService->checkInRoom($room, $request->user(), $checkIn, $checkOut);
+            if ($activeBooking && ! empty($validated['free_breakfast_options'])) {
+                $activeBooking->update([
+                    'free_breakfast_options' => \App\Support\FreeBreakfastOptionsSupport::normalize(
+                        $validated['free_breakfast_options']
+                    ),
+                ]);
+            }
             $result = ['room' => $room, 'message' => 'Guest checked in.'];
         } else {
             $result = $roomCheckoutService->applyStatusChange($room, $request->user(), $nextStatus);
@@ -609,14 +612,34 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             'free_breakfast_options' => ['nullable', 'array'],
             'guest_id_file' => ['nullable', 'image', 'max:5120'],
             'discount_id_file' => ['nullable', 'image', 'max:5120'],
+            'member_shid_id' => ['nullable', 'string', 'max:40'],
             'booking_mode' => ['nullable', 'string', 'max:80'],
             'booking_mode_other' => ['nullable', 'string', 'max:80'],
         ]);
 
         $discountType = strtolower((string) ($validated['discount_type'] ?? 'none'));
-        $discountPercent = in_array($discountType, ['pwd', 'senior'], true) ? 20.0 : 0.0;
-        if ($discountType === 'none') {
-            $discountPercent = 0.0;
+        $discountPercent = 0.0;
+        $memberInput = trim((string) ($validated['member_shid_id'] ?? ''));
+        if ($memberInput !== '') {
+            $memberDiscount = app(\App\Services\MemberSubscriptionService::class)
+                ->resolveBookingMemberDiscount($memberInput);
+            if ($memberDiscount['member_shid_id'] === null) {
+                return response()->json([
+                    'message' => 'Membership not found or expired.',
+                    'errors' => ['member_shid_id' => ['Invalid or expired membership.']],
+                ], 422);
+            }
+            if ($memberDiscount['percent'] <= 0) {
+                return response()->json([
+                    'message' => 'Member discount is not active right now.',
+                    'errors' => ['member_shid_id' => ['Member discount unavailable.']],
+                ], 422);
+            }
+            $discountType = 'member';
+            $discountPercent = (float) $memberDiscount['percent'];
+            $validated['member_shid_id'] = $memberDiscount['member_shid_id'];
+        } elseif (in_array($discountType, ['pwd', 'senior'], true)) {
+            $discountPercent = 20.0;
         }
 
         $room = Room::withoutGlobalScopes()
@@ -640,6 +663,9 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
         if ($discountPercent > 0) {
             $bookingData['discount_type'] = $discountType;
             $bookingData['discount_percent'] = $discountPercent;
+        }
+        if (! empty($validated['member_shid_id'])) {
+            $bookingData['member_shid_id'] = (string) $validated['member_shid_id'];
         }
         $bookingData['adults'] = max(1, (int) ($validated['adults'] ?? 1));
         $bookingData['children'] = max(0, (int) ($validated['children'] ?? 0));
@@ -1070,7 +1096,7 @@ Route::post('/billing/charges', function (Request $request, FinancialComputation
     if (! $booking || ! $room) {
         return response()->json(['message' => 'Invalid booking or room for your hotel.'], 403);
     }
-    StayManagementPolicy::denyUnlessCanManage($booking);
+    StayManagementPolicy::denyUnlessCanManage($booking, $room);
     $quantity = (int) ($validated['quantity'] ?? 1);
     $lineTotal = $financialComputationService->computeRoomCharge((float) $validated['amount'], $quantity);
     $charge = BillingCharge::withoutGlobalScopes()->create([
@@ -2294,6 +2320,7 @@ Route::middleware('role:central_admin')->prefix('platform')->group(function () {
     Route::post('/settings/credit-wallet-qr', [$platform, 'uploadCreditWalletQr']);
     Route::post('/settings/member-qr', [$platform, 'uploadMemberQr']);
     Route::patch('/settings/booking-fee-percent', [$platform, 'updateBookingFeePercent']);
+    Route::patch('/settings/member-booking-discount-percent', [$platform, 'updateMemberBookingDiscountPercent']);
     Route::get('/hotels', [$platform, 'hotels']);
     Route::get('/hotels/{hotelId}/credits', [$platform, 'hotelCredits']);
     Route::post('/hotels/{hotelId}/credits/grant', [$platform, 'grantHotelCredits']);

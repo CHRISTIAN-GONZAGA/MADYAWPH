@@ -33,6 +33,9 @@ class AuthStorage {
   static const _kCustomerGuestName = 'customer_guest_name';
   static const _kCustomerGuestEmail = 'customer_guest_email';
   static const _kCustomerGuestPhone = 'customer_guest_phone';
+  static const _kPortalPausedAtMs = 'portal_paused_at_ms';
+
+  static const portalIdleTimeout = Duration(minutes: 60);
 
   static SharedPreferences? _prefs;
   static bool _migrationStarted = false;
@@ -191,6 +194,7 @@ class AuthStorage {
   }) async {
     await _secure.write(key: _kPortalToken, value: token);
     await _secure.write(key: _kPortalRole, value: role);
+    await clearPortalPaused();
   }
 
   static Future<void> setGuestToken(String token) =>
@@ -200,6 +204,38 @@ class AuthStorage {
   static Future<void> clearPortalAuth() async {
     await _secure.delete(key: _kPortalToken);
     await _secure.delete(key: _kPortalRole);
+    await clearPortalPaused();
+  }
+
+  static Future<void> markPortalPaused() async {
+    await _ensureMigrated();
+    final token = await portalToken();
+    if (token == null || token.isEmpty) return;
+    await (await _preferences()).setInt(
+      _kPortalPausedAtMs,
+      DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
+  static Future<void> clearPortalPaused() async {
+    await _ensureMigrated();
+    await (await _preferences()).remove(_kPortalPausedAtMs);
+  }
+
+  static Future<bool> isPortalSessionExpired() async {
+    await _ensureMigrated();
+    final token = await portalToken();
+    if (token == null || token.isEmpty) return false;
+    final ms = (await _preferences()).getInt(_kPortalPausedAtMs);
+    if (ms == null) return false;
+    final pausedAt = DateTime.fromMillisecondsSinceEpoch(ms);
+    return DateTime.now().difference(pausedAt) >= portalIdleTimeout;
+  }
+
+  static Future<void> enforcePortalSessionTimeout() async {
+    if (await isPortalSessionExpired()) {
+      await clearPortalAuth();
+    }
   }
 
   static Future<void> clearGuestAuth() => _secure.delete(key: _kGuestToken);

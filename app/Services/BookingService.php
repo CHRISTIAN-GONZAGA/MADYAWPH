@@ -110,7 +110,18 @@ class BookingService
                 $this->roomPricingService,
             );
             $extraCharges = isset($data['extra_charges']) ? (float) $data['extra_charges'] : 0.0;
-            $totalAmount = $this->financialComputationService->computeTotal($charge['amount'], $extraCharges);
+            $grossCharge = (float) $charge['amount'];
+            $discountPercent = (float) ($data['discount_percent'] ?? 0);
+            $lineAmount = $discountPercent > 0
+                ? \App\Support\PriceRounding::nearest50(max(0, $grossCharge * (1 - ($discountPercent / 100))))
+                : $grossCharge;
+            $totalAmount = $this->financialComputationService->computeTotal($lineAmount, $extraCharges);
+
+            $chargeLabel = (string) $charge['label'];
+            if ($discountPercent > 0) {
+                $typeLabel = strtoupper((string) ($data['discount_type'] ?? 'discount'));
+                $chargeLabel .= ' — '.$typeLabel.' '.round($discountPercent, 1).'% off applied';
+            }
 
             $bookingPayload = $this->withBookingChannel([
                 ...$data,
@@ -140,12 +151,16 @@ class BookingService
                 'booking_id' => (string) $booking->id,
                 'room_id' => (string) $room->id,
                 'type' => 'room',
-                'label' => $charge['label'],
-                'amount' => $charge['amount'],
+                'label' => $chargeLabel,
+                'amount' => $lineAmount,
                 'quantity' => 1,
                 'is_manual' => false,
                 'created_by' => (string) ($actor?->id ?? ''),
-                'metadata' => $charge['metadata'],
+                'metadata' => array_merge($charge['metadata'] ?? [], $discountPercent > 0 ? [
+                    'gross_amount' => $grossCharge,
+                    'discount_percent' => $discountPercent,
+                    'discount_type' => (string) ($data['discount_type'] ?? ''),
+                ] : []),
             ]);
             $generatedPassword = $this->guestRoomAccessCodeService->generateUnique();
             $checkInDay = $stay['check_in']->copy()->startOfDay();

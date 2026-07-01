@@ -24,6 +24,7 @@ use App\Enums\BookingStatus;
 use App\Enums\RoomStatus;
 use Carbon\Carbon;
 use App\Services\AutoCheckoutService;
+use App\Services\RoomCheckoutService;
 use App\Support\AdminBookingPresenter;
 use App\Support\BookingTypeResolver;
 use Illuminate\Http\JsonResponse;
@@ -143,8 +144,10 @@ class AdminDashboardApiController extends Controller
                     'user_id' => (string) $user->id,
                 ]))->theme_color,
             ],
-            'rooms' => $rooms->map(function ($room) use ($latestBookingsByRoom) {
-                $booking = $latestBookingsByRoom->get((string) $room->id);
+            'rooms' => $rooms->map(function ($room) use ($latestBookingsByRoom, $hotelId) {
+                $booking = app(RoomCheckoutService::class)
+                    ->resolveActiveBookingForRoom($hotelId, $room)
+                    ?? $latestBookingsByRoom->get((string) $room->id);
                 $charges = BillingCharge::withoutGlobalScopes()
                     ->where('room_id', (string) $room->id)
                     ->latest()
@@ -189,6 +192,8 @@ class AdminDashboardApiController extends Controller
                         'billing_mode' => (string) ($booking->billing_mode ?? ''),
                         'total_amount' => (float) $booking->total_amount,
                         'created_at' => optional($booking->created_at)->toISOString(),
+                        'booking_type' => BookingTypeResolver::resolveForBooking($booking),
+                        'booking_source' => (string) ($booking->booking_source ?? ''),
                     ] : null,
                     'charges' => $charges->map(fn ($charge) => [
                         'id' => (string) $charge->id,

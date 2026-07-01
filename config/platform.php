@@ -18,6 +18,9 @@ return [
     /** Monthly member subscription price (PHP). */
     'member_monthly_fee' => (float) env('PLATFORM_MEMBER_MONTHLY_FEE', 300),
 
+    /** Room booking discount (%) for active MADYAWPH members. */
+    'member_booking_discount_percent' => (float) env('PLATFORM_MEMBER_BOOKING_DISCOUNT_PERCENT', 10),
+
     /** Direct HTTPS link to the Android APK (used in app install QR on the landing screen). */
     'app_install_url' => env('APP_INSTALL_URL', ''),
 

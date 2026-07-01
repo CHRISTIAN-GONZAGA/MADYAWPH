@@ -103,7 +103,7 @@ class RoomCheckoutService
         ?Carbon $checkOutAt = null,
     ): Room {
         $hotelId = (string) $room->hotel_id;
-        $booking = $this->findActiveBooking($hotelId, (string) $room->id);
+        $booking = $this->resolveActiveBookingForRoom($hotelId, $room);
 
         if ($booking && $checkInAt && $checkOutAt) {
             $this->applyStayScheduleToBooking($booking, $room, $checkInAt, $checkOutAt, $actor);

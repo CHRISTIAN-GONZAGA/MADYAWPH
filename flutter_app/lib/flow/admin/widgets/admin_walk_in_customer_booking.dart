@@ -14,6 +14,7 @@ import 'free_breakfast_selection.dart';
 import 'hourly_billing.dart';
 import 'walk_in_complimentary_picker.dart';
 import 'admin_walk_in_stay_calendar_dialog.dart';
+import '../../member_qr_scan.dart';
 import 'booking_mode_field.dart';
 import 'guest_nationalities.dart';
 import 'manual_booking_dialog.dart';
@@ -56,6 +57,8 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
   checkOutCtrl.text = checkOutDate.toIso8601String().split('T').first;
 
   var discountType = 'none';
+  var memberShidId = '';
+  var memberDiscountPercent = 0.0;
   var paymentMethod = 'Cash';
   var bookingMode = BookingModeOptions.defaultValue;
   XFile? discountIdFile;
@@ -96,11 +99,13 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                 checkOutDate!,
               )
             : 0.0;
-        final discountPct = switch (discountType) {
-          'pwd' => 20.0,
-          'senior' => 20.0,
-          _ => 0.0,
-        };
+        final discountPct = memberDiscountPercent > 0
+            ? memberDiscountPercent
+            : switch (discountType) {
+                'pwd' => 20.0,
+                'senior' => 20.0,
+                _ => 0.0,
+              };
         final estAfterDiscount = HourlyBilling.round50(
           estTotal * (1 - (discountPct / 100)),
         );
@@ -187,6 +192,62 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                   controller: phoneCtrl,
                   label: '${dialogContext.tr('phone_number')} (optional)',
                   keyboardType: TextInputType.phone,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Member discount (optional)',
+                  style: Theme.of(dialogContext).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 6),
+                if (memberShidId.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      '${memberDiscountPercent.toStringAsFixed(0)}% off — $memberShidId',
+                      style: TextStyle(
+                        color: Theme.of(dialogContext).colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final shid =
+                              await scanAndValidateMemberShid(dialogContext);
+                          if (shid == null) return;
+                          final info = await validateMemberShidInput(
+                            dialogContext,
+                            shid,
+                          );
+                          if (info == null) return;
+                          setLocal(() {
+                            memberShidId = info.shid;
+                            memberDiscountPercent = info.percent;
+                            discountType = 'none';
+                            discountIdFile = null;
+                          });
+                        },
+                        icon: const Icon(Icons.qr_code_scanner),
+                        label: const Text('Scan member QR'),
+                      ),
+                    ),
+                    if (memberShidId.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: 'Clear member discount',
+                        onPressed: () => setLocal(() {
+                          memberShidId = '';
+                          memberDiscountPercent = 0;
+                        }),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 12),
                 Text(
@@ -373,7 +434,9 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                   showAppMessage(dialogContext, 'Enter a valid phone number.');
                   return;
                 }
-                if (discountType != 'none' && discountIdFile == null) {
+                if (memberShidId.isEmpty &&
+                    discountType != 'none' &&
+                    discountIdFile == null) {
                   showAppMessage(dialogContext, 'Upload a photo of your discount ID.');
                   return;
                 }
@@ -394,6 +457,7 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                   'check_in': checkInCtrl.text.trim(),
                   'check_out': checkOutCtrl.text.trim(),
                   'discount_type': discountType,
+                  if (memberShidId.isNotEmpty) 'member_shid_id': memberShidId,
                   'payment_method': paymentMethod,
                   'booking_mode': BookingModeOptions.apiValue(
                     bookingMode,
@@ -461,6 +525,7 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
         freeBreakfastSelections: FreeBreakfastSelection.listFromDynamic(
           payload['free_breakfast_options'] as List?,
         ),
+        memberShidId: (payload['member_shid_id'] ?? '').toString(),
       ),
     );
     if (context.mounted) {

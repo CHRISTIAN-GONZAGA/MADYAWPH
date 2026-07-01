@@ -1,8 +1,10 @@
 import 'dart:async';
-import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../dio_client.dart';
 import '../widgets/app_input.dart';
@@ -358,6 +360,9 @@ class _MemberProcessingScreenState extends State<MemberProcessingScreen> {
   Timer? _timer;
   String _status = 'pending';
   String? _validUntil;
+  String _shid = '';
+  String _qrPayload = '';
+  double _memberDiscountPercent = 0;
 
   @override
   void initState() {
@@ -381,6 +386,10 @@ class _MemberProcessingScreenState extends State<MemberProcessingScreen> {
       setState(() {
         _status = (res.data?['status'] ?? 'pending').toString();
         _validUntil = (res.data?['member_valid_until'] ?? '').toString();
+        _shid = (res.data?['member_shid_id'] ?? '').toString();
+        _qrPayload = (res.data?['member_qr_payload'] ?? '').toString();
+        _memberDiscountPercent =
+            (res.data?['member_discount_percent'] as num?)?.toDouble() ?? 0;
       });
       if (_status == 'approved' || _status == 'rejected') {
         _timer?.cancel();
@@ -426,10 +435,69 @@ class _MemberProcessingScreenState extends State<MemberProcessingScreen> {
                         fontWeight: FontWeight.w800,
                       ),
                 ),
+                if (_shid.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Your member SHID ID',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  SelectableText(
+                    _shid,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.2,
+                        ),
+                  ),
+                  IconButton(
+                    tooltip: 'Copy SHID',
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: _shid));
+                      showAppMessage(context, 'Member ID copied.');
+                    },
+                    icon: const Icon(Icons.copy_outlined),
+                  ),
+                ],
+                if (_qrPayload.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Show this QR when booking a room',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: scheme.outlineVariant),
+                    ),
+                    child: QrImageView(
+                      data: _qrPayload,
+                      size: 220,
+                      backgroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+                if (_memberDiscountPercent > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      '${_memberDiscountPercent.toStringAsFixed(0)}% off room bookings while active',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: scheme.primary),
+                    ),
+                  ),
                 if ((_validUntil ?? '').isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
-                    child: Text('Active until $_validUntil'),
+                    child: Text(
+                      'Valid until ${_formatValidUntil(_validUntil!)}',
+                      textAlign: TextAlign.center,
+                    ),
                   ),
               ] else ...[
                 Icon(Icons.cancel_outlined, size: 64, color: scheme.error),
@@ -448,5 +516,11 @@ class _MemberProcessingScreenState extends State<MemberProcessingScreen> {
         ),
       ),
     );
+  }
+
+  String _formatValidUntil(String iso) {
+    final parsed = DateTime.tryParse(iso);
+    if (parsed == null) return iso;
+    return '${parsed.year}-${parsed.month.toString().padLeft(2, '0')}-${parsed.day.toString().padLeft(2, '0')}';
   }
 }

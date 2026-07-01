@@ -861,6 +861,16 @@ class AdminDashboardModels {
     return id.isNotEmpty;
   }
 
+  /// Public customer portal booking (online, not walk-in local).
+  static bool isPublicOnlineBooking(Map<String, dynamic> room) {
+    final booking = room['latest_booking'];
+    if (booking is! Map) return false;
+    final type = (booking['booking_type'] ?? '').toString().toLowerCase();
+    if (type == 'online') return true;
+    final source = (booking['booking_source'] ?? '').toString().toLowerCase();
+    return source == 'app-customer';
+  }
+
   static Map<String, dynamic>? pendingDateChange(Map<String, dynamic> record) {
     final direct = record['pending_date_change'];
     if (direct is Map) {

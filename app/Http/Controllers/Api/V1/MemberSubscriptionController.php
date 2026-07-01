@@ -4,14 +4,17 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\MemberSubscriptionRequest;
+use App\Services\MemberSubscriptionService;
 use App\Services\PlatformSettingsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class MemberSubscriptionController extends Controller
 {
-    public function __construct(private readonly PlatformSettingsService $settings)
-    {
+    public function __construct(
+        private readonly PlatformSettingsService $settings,
+        private readonly MemberSubscriptionService $members,
+    ) {
     }
 
     public function platformInfo(): JsonResponse
@@ -64,12 +67,46 @@ class MemberSubscriptionController extends Controller
     {
         $row = MemberSubscriptionRequest::query()->findOrFail($id);
 
+        return response()->json($this->members->serializeForClient($row));
+    }
+
+    public function validateMember(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'member_shid_id' => ['nullable', 'string', 'max:40'],
+            'qr_payload' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $input = trim((string) ($validated['member_shid_id'] ?? ''));
+        if ($input === '') {
+            $input = trim((string) ($validated['qr_payload'] ?? ''));
+        }
+
+        if ($input === '') {
+            return response()->json([
+                'valid' => false,
+                'message' => 'Enter a membership ID or scan a member QR code.',
+            ], 422);
+        }
+
+        $member = $this->members->findActiveMember($input);
+        if ($member === null) {
+            return response()->json([
+                'valid' => false,
+                'message' => 'Membership not found or expired. Check your SHID ID or renew your membership.',
+            ], 422);
+        }
+
+        $discount = $this->members->resolveBookingMemberDiscount((string) $member->member_shid_id);
+
         return response()->json([
-            'id' => (string) $row->id,
-            'status' => (string) ($row->status ?? 'pending'),
-            'full_name' => (string) ($row->full_name ?? ''),
-            'member_valid_until' => optional($row->member_valid_until)->toISOString(),
-            'amount' => (float) ($row->amount ?? 0),
+            'valid' => true,
+            'member_shid_id' => (string) $member->member_shid_id,
+            'member_qr_payload' => $this->members->qrPayloadFor($member),
+            'full_name' => (string) $member->full_name,
+            'member_valid_until' => optional($member->member_valid_until)->toISOString(),
+            'discount_percent' => $discount['percent'],
+            'discount_type' => $discount['type'],
         ]);
     }
 }
