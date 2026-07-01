@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 import '../../../dio_client.dart';
 import '../admin_dashboard_models.dart';
@@ -62,13 +63,23 @@ class _CheckoutSectionState extends State<CheckoutSection> {
   }
 
   Future<void> _openReceiptPdf(Map<String, dynamic> row) async {
-    final id = (row['id'] ?? '').toString();
-    if (id.isEmpty) return;
+    final id = AdminDashboardModels.documentIdOf(row);
+    if (id.isEmpty) {
+      if (!mounted) return;
+      await showAppMessage(
+        context,
+        'Guest log entry has no booking ID (raw id: ${row['id']}, _id: ${row['_id']}).',
+        isError: true,
+        title: 'Cannot open receipt',
+      );
+      return;
+    }
     if (!mounted) return;
     await showStayReceiptDialog(
       context,
       receipt: {
         'booking_id': id,
+        'id': id,
         'booking_reference': row['booking_reference'],
         'guest_name': row['guest_name'],
         'room_number': row['room_number'],

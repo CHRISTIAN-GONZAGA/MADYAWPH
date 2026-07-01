@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 import '../../../dio_client.dart';
+import '../../../navigation_keys.dart';
+import '../../../utils/money_format.dart';
 import '../admin_dashboard_models.dart';
 
 /// Charges an amenity menu item to a checked-in room (updates booking bill / receipt).
@@ -15,37 +17,48 @@ Future<bool> showChargeAmenityToRoomDialog({
   required List<Map<String, dynamic>> rooms,
   List<Map<String, dynamic>> categories = const [],
 }) async {
-  final dialogCtx = resolveNoticeContext(context);
-  if (dialogCtx == null) {
+  final dialogCtx =
+      resolveNoticeContext(context) ?? appNavigatorKey.currentContext;
+  if (dialogCtx == null || !dialogCtx.mounted) {
     return false;
   }
 
-  final itemId = (menuItem['id'] ?? menuItem['_id'] ?? '').toString();
-  final name = (menuItem['name'] ?? 'Item').toString();
-  final unitPrice = (menuItem['price'] as num?)?.toDouble() ?? 0.0;
-
-  if (itemId.isEmpty || unitPrice <= 0) {
-    await _showChargeDiagnosticDialog(
-      dialogCtx,
-      title: 'Cannot charge product',
-      isError: true,
-      summary: 'This product has no price set or is missing an ID.',
-      details: 'Product: $name\n'
-          'ID: ${itemId.isEmpty ? '(empty)' : itemId}\n'
-          'Price: $unitPrice',
-    );
-    return false;
-  }
-
-  _LoadingHandle? loading;
   try {
-    loading = _showLoadingDialog(dialogCtx, 'Loading in-house rooms…');
+    final itemId = AdminDashboardModels.documentIdOf(menuItem);
+    final name = (menuItem['name'] ?? 'Item').toString();
+    final unitPrice = parseJsonDouble(menuItem['price']);
 
-    final loadResult = await _loadChargeableRooms(rooms);
-    loading.close();
-    loading = null;
+    if (itemId.isEmpty || unitPrice <= 0) {
+      await _showChargeDiagnosticDialog(
+        dialogCtx,
+        title: 'Cannot charge product',
+        isError: true,
+        summary: itemId.isEmpty
+            ? 'This product has no ID in the menu data.'
+            : 'This product has no price set (price must be greater than 0).',
+        details: _menuItemDiagnostics(menuItem, itemId: itemId, unitPrice: unitPrice),
+      );
+      return false;
+    }
+
+    final loadResult = await showDialog<_ChargeableRoomsLoadResult>(
+      context: dialogCtx,
+      useRootNavigator: true,
+      barrierDismissible: false,
+      builder: (ctx) => _ChargeRoomLoadDialog(dashboardRooms: rooms),
+    );
 
     if (!dialogCtx.mounted) return false;
+    if (loadResult == null) {
+      await _showChargeDiagnosticDialog(
+        dialogCtx,
+        title: 'Charge to room cancelled',
+        isError: true,
+        summary: 'Room lookup did not finish (dialog was dismissed).',
+        details: 'Dashboard rooms passed: ${rooms.length}',
+      );
+      return false;
+    }
 
     if (loadResult.rooms.isEmpty) {
       await _showChargeDiagnosticDialog(
@@ -79,8 +92,13 @@ Future<bool> showChargeAmenityToRoomDialog({
 
     final roomId = AdminDashboardModels.roomIdOf(room);
     final booking = room['latest_booking'] as Map?;
-    final bookingId =
-        (booking?['id'] ?? booking?['_id'] ?? '').toString().trim();
+    final bookingId = AdminDashboardModels.documentIdOf(
+      booking is Map<String, dynamic>
+          ? booking
+          : booking is Map
+              ? Map<String, dynamic>.from(booking)
+              : const <String, dynamic>{},
+    );
     final roomNo = (room['room_number'] ?? '—').toString();
     final guest = AdminDashboardModels.guestName(room);
     final lineTotal = unitPrice * quantity;
@@ -112,12 +130,15 @@ Future<bool> showChargeAmenityToRoomDialog({
     if (roomId.isEmpty || bookingId.isEmpty) {
       await _showChargeDiagnosticDialog(
         dialogCtx,
-        title: 'Missing booking',
+        title: 'Missing booking or room ID',
         isError: true,
-        summary: 'This room has no active booking ID on record.',
+        summary: 'This room is missing a normalized room or booking ID.',
         details: 'Room: $roomNo\n'
             'Room ID: ${roomId.isEmpty ? '(empty)' : roomId}\n'
-            'Booking ID: ${bookingId.isEmpty ? '(empty)' : bookingId}\n\n'
+            'Booking ID: ${bookingId.isEmpty ? '(empty)' : bookingId}\n'
+            'Raw room id field: ${room['id']}\n'
+            'Raw room _id: ${room['_id']}\n'
+            'Raw booking: ${jsonEncode(booking ?? {})}\n\n'
             'Pull to refresh the dashboard, then try again.',
       );
       return false;
@@ -146,24 +167,40 @@ Future<bool> showChargeAmenityToRoomDialog({
         title: 'Charge failed',
         isError: true,
         summary: dioErrorMessage(e),
-        details: _formatDioDiagnostics(e, endpoint: 'POST /billing/charges'),
+        details: _formatDioDiagnostics(
+          e,
+          endpoint: 'POST /billing/charges',
+          extra: 'booking_id=$bookingId\nroom_id=$roomId',
+        ),
       );
       return false;
     }
   } catch (e, st) {
-    loading?.close();
     if (!dialogCtx.mounted) return false;
     await _showChargeDiagnosticDialog(
       dialogCtx,
       title: 'Charge to room error',
       isError: true,
       summary: e.toString(),
-      details: '$st',
+      details: '$st\n\n${_menuItemDiagnostics(menuItem)}',
     );
     return false;
-  } finally {
-    loading?.close();
   }
+}
+
+String _menuItemDiagnostics(
+  Map<String, dynamic> menuItem, {
+  String? itemId,
+  double? unitPrice,
+}) {
+  final id = itemId ?? AdminDashboardModels.documentIdOf(menuItem);
+  final price = unitPrice ?? parseJsonDouble(menuItem['price']);
+  return 'Product: ${menuItem['name']}\n'
+      'Normalized ID: ${id.isEmpty ? '(empty)' : id}\n'
+      'Raw id: ${menuItem['id']}\n'
+      'Raw _id: ${menuItem['_id']}\n'
+      'Price (parsed): $price\n'
+      'Raw price: ${menuItem['price']} (${menuItem['price']?.runtimeType})';
 }
 
 class _ChargeableRoomsLoadResult {
@@ -176,6 +213,7 @@ class _ChargeableRoomsLoadResult {
     this.dashboardCheckedIn = 0,
     this.dashboardWithBooking = 0,
     this.unexpectedError,
+    this.skippedApiRooms = const [],
   });
 
   final List<Map<String, dynamic>> rooms;
@@ -186,6 +224,7 @@ class _ChargeableRoomsLoadResult {
   final int dashboardCheckedIn;
   final int dashboardWithBooking;
   final String? unexpectedError;
+  final List<String> skippedApiRooms;
 
   String diagnosticReport() {
     final buf = StringBuffer()
@@ -209,6 +248,13 @@ class _ChargeableRoomsLoadResult {
       buf.writeln('  • OK — raw rooms returned: $apiRawCount');
     }
 
+    if (skippedApiRooms.isNotEmpty) {
+      buf
+        ..writeln()
+        ..writeln('API rooms skipped (missing id/booking):')
+        ..writeln(skippedApiRooms.take(8).join('\n'));
+    }
+
     buf
       ..writeln()
       ..writeln('Chargeable after merge: ${rooms.length}');
@@ -221,6 +267,61 @@ class _ChargeableRoomsLoadResult {
     }
 
     return buf.toString();
+  }
+}
+
+class _ChargeRoomLoadDialog extends StatefulWidget {
+  const _ChargeRoomLoadDialog({required this.dashboardRooms});
+
+  final List<Map<String, dynamic>> dashboardRooms;
+
+  @override
+  State<_ChargeRoomLoadDialog> createState() => _ChargeRoomLoadDialogState();
+}
+
+class _ChargeRoomLoadDialogState extends State<_ChargeRoomLoadDialog> {
+  @override
+  void initState() {
+    super.initState();
+    _run();
+  }
+
+  Future<void> _run() async {
+    try {
+      final result = await _loadChargeableRooms(widget.dashboardRooms);
+      if (!mounted) return;
+      Navigator.of(context).pop(result);
+    } catch (e, st) {
+      if (!mounted) return;
+      Navigator.of(context).pop(
+        _ChargeableRoomsLoadResult(
+          rooms: const [],
+          dashboardTotal: widget.dashboardRooms.length,
+          unexpectedError: '$e\n$st',
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      child: AlertDialog(
+        content: Row(
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(width: 20),
+            Expanded(
+              child: Text(
+                'Loading in-house rooms…',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -253,6 +354,7 @@ Future<_ChargeableRoomsLoadResult> _loadChargeableRooms(
   int? apiStatusCode;
   var apiRawCount = 0;
   String? unexpectedError;
+  final skippedApiRooms = <String>[];
 
   try {
     final res = await portalDioWithLongTimeout()
@@ -264,16 +366,30 @@ Future<_ChargeableRoomsLoadResult> _loadChargeableRooms(
 
     for (final room in rawList) {
       final id = AdminDashboardModels.roomIdOf(room);
-      if (id.isEmpty) continue;
       final booking = room['latest_booking'];
-      if (booking is! Map) continue;
-      final bookingId =
-          (booking['id'] ?? booking['_id'] ?? '').toString().trim();
-      if (bookingId.isEmpty) continue;
+      Map<String, dynamic>? bookingMap;
+      if (booking is Map<String, dynamic>) {
+        bookingMap = booking;
+      } else if (booking is Map) {
+        bookingMap = Map<String, dynamic>.from(booking);
+      }
+      final bookingId = bookingMap == null
+          ? ''
+          : AdminDashboardModels.documentIdOf(bookingMap);
+      if (id.isEmpty || bookingId.isEmpty) {
+        skippedApiRooms.add(
+          'room ${room['room_number'] ?? '?'}: roomId=${id.isEmpty ? 'missing' : id}, bookingId=${bookingId.isEmpty ? 'missing' : bookingId}',
+        );
+        continue;
+      }
       merged[id] = {
         ...room,
-        'status': 'checked_in',
         'id': id,
+        'status': 'checked_in',
+        'latest_booking': {
+          ...?bookingMap,
+          'id': bookingId,
+        },
       };
     }
   } on DioException catch (e) {
@@ -297,13 +413,22 @@ Future<_ChargeableRoomsLoadResult> _loadChargeableRooms(
     dashboardCheckedIn: dashboardCheckedIn,
     dashboardWithBooking: dashboardWithBooking,
     unexpectedError: unexpectedError,
+    skippedApiRooms: skippedApiRooms,
   );
 }
 
-String _formatDioDiagnostics(DioException e, {required String endpoint}) {
+String _formatDioDiagnostics(
+  DioException e, {
+  required String endpoint,
+  String? extra,
+}) {
   final buf = StringBuffer()
     ..writeln('Endpoint: $endpoint')
     ..writeln('Type: ${e.type.name}');
+
+  if (extra != null && extra.isNotEmpty) {
+    buf.writeln(extra);
+  }
 
   final code = e.response?.statusCode;
   if (code != null) {
@@ -365,7 +490,7 @@ Future<void> _showChargeDiagnosticDialog(
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Diagnostics',
+                  'Developer diagnostics',
                   style: Theme.of(ctx).textTheme.labelLarge?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
@@ -393,7 +518,9 @@ Future<void> _showChargeDiagnosticDialog(
         actions: [
           TextButton(
             onPressed: () {
-              Clipboard.setData(ClipboardData(text: '$title\n\n$summary\n\n$details'));
+              Clipboard.setData(
+                ClipboardData(text: '$title\n\n$summary\n\n$details'),
+              );
               ScaffoldMessenger.of(ctx).showSnackBar(
                 const SnackBar(content: Text('Copied diagnostics')),
               );
@@ -408,37 +535,6 @@ Future<void> _showChargeDiagnosticDialog(
       );
     },
   );
-}
-
-class _LoadingHandle {
-  _LoadingHandle(this._close);
-  final VoidCallback _close;
-  void close() => _close();
-}
-
-_LoadingHandle _showLoadingDialog(BuildContext context, String message) {
-  showDialog<void>(
-    context: context,
-    useRootNavigator: true,
-    barrierDismissible: false,
-    builder: (ctx) => PopScope(
-      canPop: false,
-      child: AlertDialog(
-        content: Row(
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(width: 20),
-            Expanded(child: Text(message)),
-          ],
-        ),
-      ),
-    ),
-  );
-  return _LoadingHandle(() {
-    if (context.mounted) {
-      Navigator.of(context, rootNavigator: true).pop();
-    }
-  });
 }
 
 class _InHouseRoomPickerDialog extends StatefulWidget {

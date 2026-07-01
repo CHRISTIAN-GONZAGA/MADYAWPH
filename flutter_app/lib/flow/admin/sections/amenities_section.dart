@@ -87,8 +87,16 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
   }
 
   Future<void> _onProductTap(Map<String, dynamic> item) async {
-    final id = (item['id'] ?? item['_id'] ?? '').toString();
-    if (id.isEmpty) return;
+    final id = AdminDashboardModels.documentIdOf(item);
+    if (id.isEmpty) {
+      await showAppMessage(
+        context,
+        'Product has no ID in menu data (raw id: ${item['id']}, _id: ${item['_id']}). Pull to refresh or re-save the product.',
+        isError: true,
+        title: 'Cannot charge product',
+      );
+      return;
+    }
 
     final action = await showModalBottomSheet<String>(
       context: context,
@@ -136,15 +144,25 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
     if (!mounted || action == null) return;
     switch (action) {
       case 'charge':
-        final charged = await showChargeAmenityToRoomDialog(
-          context: context,
-          menuItem: item,
-          rooms: widget.rooms,
-          categories: widget.categories,
-        );
-        if (charged) {
-          await widget.onRefresh();
-          await _loadMenu();
+        try {
+          final charged = await showChargeAmenityToRoomDialog(
+            context: context,
+            menuItem: item,
+            rooms: widget.rooms,
+            categories: widget.categories,
+          );
+          if (charged) {
+            await widget.onRefresh();
+            await _loadMenu();
+          }
+        } catch (e, st) {
+          if (!mounted) return;
+          await showAppMessage(
+            context,
+            'Charge to room crashed: $e\n$st',
+            isError: true,
+            title: 'Developer error',
+          );
         }
         break;
       case 'edit':

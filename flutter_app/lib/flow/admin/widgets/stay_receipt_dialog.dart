@@ -1,29 +1,70 @@
 import 'dart:io';
-import 'package:gloretto_mobile/widgets/app_notice.dart';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/services.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
+import 'package:open_filex/open_filex.dart';
 
 import '../../../dio_client.dart';
 import '../../../utils/money_format.dart';
 import '../admin_dashboard_models.dart';
+
+bool _looksLikePdf(Uint8List bytes) {
+  return bytes.length >= 4 &&
+      bytes[0] == 0x25 &&
+      bytes[1] == 0x50 &&
+      bytes[2] == 0x44 &&
+      bytes[3] == 0x46;
+}
+
+String? _pdfErrorFromBytes(Uint8List bytes) {
+  if (bytes.isEmpty) {
+    return 'PDF download returned no data.';
+  }
+  if (_looksLikePdf(bytes)) return null;
+  try {
+    final text = String.fromCharCodes(bytes.take(512));
+    if (text.trimLeft().startsWith('{') || text.contains('"message"')) {
+      return 'Server did not return a PDF. Pull to refresh and try again.';
+    }
+  } catch (_) {}
+  return 'Downloaded file is not a valid PDF.';
+}
 
 /// Shows stay receipt summary; fetches line items when missing; downloads printable PDF.
 Future<void> showStayReceiptDialog(
   BuildContext context, {
   required Map<String, dynamic>? receipt,
 }) async {
+  final dialogCtx = resolveNoticeContext(context);
+  if (dialogCtx == null) return;
+
   if (receipt == null || receipt.isEmpty) {
+    await showAppMessage(
+      dialogCtx,
+      'No receipt data was passed to the dialog.',
+      isError: true,
+      title: 'Receipt error',
+    );
     return;
   }
 
   var data = Map<String, dynamic>.from(receipt);
-  final id = (data['booking_id'] ?? '').toString();
+  final id = AdminDashboardModels.documentIdOf(data);
 
-  if (id.isNotEmpty &&
-      ((data['lines'] as List?) ?? const []).isEmpty) {
+  if (id.isEmpty) {
+    await showAppMessage(
+      dialogCtx,
+      'Guest log row is missing a booking ID (raw id: ${receipt['id']}, _id: ${receipt['_id']}).',
+      isError: true,
+      title: 'Receipt error',
+    );
+    return;
+  }
+  data['booking_id'] = id;
+
+  if (((data['lines'] as List?) ?? const []).isEmpty) {
     try {
       final res = await portalDio().get<Map<String, dynamic>>(
         '/admin/bookings/$id/receipt-summary',
@@ -31,16 +72,26 @@ Future<void> showStayReceiptDialog(
       final summary = res.data?['receipt'];
       if (summary is Map) {
         data = Map<String, dynamic>.from(summary);
+        data['booking_id'] = AdminDashboardModels.documentIdOf(data).isEmpty
+            ? id
+            : AdminDashboardModels.documentIdOf(data);
       }
-    } on DioException {
-      // Show partial receipt from caller data.
+    } on DioException catch (e) {
+      if (!dialogCtx.mounted) return;
+      await showAppMessage(
+        dialogCtx,
+        'Could not load receipt summary: ${dioErrorMessage(e)}',
+        isError: true,
+        title: 'Receipt error',
+      );
     }
   }
 
-  if (!context.mounted) return;
+  if (!dialogCtx.mounted) return;
 
   await showDialog<void>(
-    context: context,
+    context: dialogCtx,
+    useRootNavigator: true,
     builder: (ctx) => AlertDialog(
       title: Row(
         children: [
@@ -57,7 +108,10 @@ Future<void> showStayReceiptDialog(
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Theme.of(ctx).colorScheme.primaryContainer.withValues(alpha: 0.35),
+                color: Theme.of(ctx)
+                    .colorScheme
+                    .primaryContainer
+                    .withValues(alpha: 0.35),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Column(
@@ -105,7 +159,7 @@ Future<void> showStayReceiptDialog(
             if (((data['lines'] as List?) ?? const []).isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
-                child: Text('No line breakdown — download PDF for full receipt.'),
+                child: Text('No line breakdown — open PDF for full receipt.'),
               ),
             const Divider(height: 20),
             if (((data['refunds'] as num?) ?? 0) > 0) ...[
@@ -158,8 +212,8 @@ Future<void> showStayReceiptDialog(
         ),
         FilledButton.icon(
           onPressed: () => _downloadReceiptPdf(ctx, data),
-          icon: const Icon(Icons.download_rounded),
-          label: const Text('Download PDF'),
+          icon: const Icon(Icons.picture_as_pdf_outlined),
+          label: const Text('Open PDF'),
         ),
       ],
     ),
@@ -170,35 +224,83 @@ Future<void> _downloadReceiptPdf(
   BuildContext context,
   Map<String, dynamic> receipt,
 ) async {
-  final id = (receipt['booking_id'] ?? '').toString();
-  if (id.isEmpty) return;
+  final id = AdminDashboardModels.documentIdOf(receipt).isEmpty
+      ? (receipt['booking_id'] ?? '').toString()
+      : AdminDashboardModels.documentIdOf(receipt);
+  if (id.isEmpty) {
+    if (context.mounted) {
+      await showAppMessage(
+        context,
+        'Missing booking ID for PDF download.',
+        isError: true,
+        title: 'Receipt error',
+      );
+    }
+    return;
+  }
 
   try {
-    final res = await portalDio().get<Uint8List>(
+    final res = await portalDio().get<List<int>>(
       '/admin/bookings/$id/receipt',
-      options: Options(responseType: ResponseType.bytes),
+      options: Options(
+        responseType: ResponseType.bytes,
+        headers: const {'Accept': 'application/pdf'},
+      ),
     );
-    final bytes = res.data;
-    if (bytes == null || bytes.isEmpty) {
-      throw Exception('Empty receipt file');
+    final bytes = Uint8List.fromList(res.data ?? const []);
+    final pdfError = _pdfErrorFromBytes(bytes);
+    if (pdfError != null) {
+      if (context.mounted) {
+        await showAppMessage(context, pdfError, isError: true, title: 'Receipt error');
+      }
+      return;
     }
+
     final ref = (receipt['booking_reference'] ?? id).toString();
-    final path = '${Directory.systemTemp.path}/receipt_$ref.pdf';
-    final file = File(path);
+    final safeRef = ref.replaceAll(RegExp(r'[^\w\-.]+'), '_');
+    final file = File('${Directory.systemTemp.path}/receipt_$safeRef.pdf');
     await file.writeAsBytes(bytes, flush: true);
-    final uri = Uri.file(file.path);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else if (context.mounted) {
-      showAppMessage(context, 'Receipt saved: ${file.path}');
+
+    final result = await OpenFilex.open(file.path, type: 'application/pdf');
+    if (!context.mounted) return;
+
+    if (result.type != ResultType.done) {
+      final detail = result.message.isNotEmpty
+          ? result.message
+          : 'Could not open PDF viewer.';
+      await showAppMessage(
+        context,
+        '$detail\n\nSaved to:\n${file.path}',
+        isError: true,
+        title: 'Open PDF failed',
+      );
     }
   } on DioException catch (e) {
     if (context.mounted) {
-      showAppMessage(context, dioErrorMessage(e), isError: true);
+      await showAppMessage(
+        context,
+        dioErrorMessage(e),
+        isError: true,
+        title: 'Receipt download failed',
+      );
+    }
+  } on PlatformException catch (e) {
+    if (context.mounted) {
+      await showAppMessage(
+        context,
+        '${e.code}: ${e.message ?? e.details ?? e.toString()}',
+        isError: true,
+        title: 'PlatformException',
+      );
     }
   } catch (e) {
     if (context.mounted) {
-      showAppMessage(context, '$e');
+      await showAppMessage(
+        context,
+        '$e',
+        isError: true,
+        title: 'Receipt error',
+      );
     }
   }
 }

@@ -164,6 +164,15 @@ class AdminDashboardModels {
     return '';
   }
 
+  /// Normalizes Mongo document ids (menu items, bookings, etc.).
+  static String documentIdOf(Map<String, dynamic> doc) {
+    for (final key in ['id', '_id']) {
+      final normalized = normalizeRoomIdString(doc[key]);
+      if (normalized.isNotEmpty) return normalized;
+    }
+    return '';
+  }
+
   /// Normalizes a raw id value (string, ObjectId map, etc.).
   static String normalizeRoomIdString(dynamic raw) {
     if (raw is Map) {
@@ -857,8 +866,10 @@ class AdminDashboardModels {
     if (statusOf(room) != 'checked_in') return false;
     final booking = room['latest_booking'];
     if (booking is! Map) return false;
-    final id = (booking['id'] ?? booking['_id'] ?? '').toString().trim();
-    return id.isNotEmpty;
+    final map = booking is Map<String, dynamic>
+        ? booking
+        : Map<String, dynamic>.from(booking);
+    return documentIdOf(map).isNotEmpty;
   }
 
   /// Public customer portal booking (online, not walk-in local).
