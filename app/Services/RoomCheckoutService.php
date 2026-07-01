@@ -328,6 +328,55 @@ class RoomCheckoutService
             === str_replace(['$', '{', '}', ' '], '', $roomId);
     }
 
+    /**
+     * Checked-in rooms with an active booking — for amenity "charge to room".
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function amenityChargeableRooms(string $hotelId): array
+    {
+        return Room::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->orderBy('room_number')
+            ->get()
+            ->map(function (Room $room) use ($hotelId) {
+                if ($this->normalizedStatus($room) !== RoomStatus::CHECKED_IN->value) {
+                    return null;
+                }
+
+                $booking = $this->resolveActiveBookingForRoom($hotelId, $room);
+                if ($booking === null || ! \App\Support\StayManagementPolicy::hasActiveBooking($booking)) {
+                    return null;
+                }
+
+                $guestName = trim((string) ($room->getAttributes()['current_guest_name'] ?? ''));
+                if ($guestName === '') {
+                    $guestName = trim((string) ($booking->guest_name ?? ''));
+                }
+
+                return array_merge($room->toArray(), [
+                    'id' => (string) $room->id,
+                    'status' => RoomStatus::CHECKED_IN->value,
+                    'current_guest_name' => $guestName,
+                    'floor' => max(
+                        1,
+                        (int) ($room->floor ?? (preg_replace('/\D/', '', substr((string) $room->room_number, 0, 1)) ?: 1))
+                    ),
+                    'latest_booking' => [
+                        'id' => (string) $booking->id,
+                        'guest_name' => (string) ($booking->guest_name ?? $guestName),
+                        'check_in_date' => optional($booking->check_in_date)->toDateString(),
+                        'check_out_date' => optional($booking->check_out_date)->toDateString(),
+                        'booking_type' => (string) ($booking->booking_type?->value ?? $booking->booking_type ?? ''),
+                        'booking_source' => (string) ($booking->booking_source ?? ''),
+                    ],
+                ]);
+            })
+            ->filter()
+            ->values()
+            ->all();
+    }
+
     public function normalizedStatus(Room $room): string
     {
         $raw = SafeModelAttributes::rawString($room, 'status');

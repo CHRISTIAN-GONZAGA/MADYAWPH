@@ -341,38 +341,10 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
 
     Route::get('/admin/amenity-chargeable-rooms', function (Request $request, RoomCheckoutService $roomCheckoutService) {
         $hotelId = (string) $request->user()->hotel_id;
-        $rooms = Room::withoutGlobalScopes()
-            ->where('hotel_id', $hotelId)
-            ->where('status', RoomStatus::CHECKED_IN->value)
-            ->orderBy('room_number')
-            ->get();
 
-        $payload = $rooms->map(function ($room) use ($hotelId, $roomCheckoutService) {
-            $booking = $roomCheckoutService->resolveActiveBookingForRoom($hotelId, $room);
-            if ($booking === null || filled($booking->checked_out_at)) {
-                return null;
-            }
-            $row = array_merge($room->toArray(), [
-                'id' => (string) $room->id,
-                'status' => RoomStatus::CHECKED_IN->value,
-                'floor' => max(
-                    1,
-                    (int) ($room->floor ?? (preg_replace('/\D/', '', substr((string) $room->room_number, 0, 1)) ?: 1))
-                ),
-                'latest_booking' => [
-                    'id' => (string) $booking->id,
-                    'guest_name' => (string) $booking->guest_name,
-                    'check_in_date' => optional($booking->check_in_date)->toDateString(),
-                    'check_out_date' => optional($booking->check_out_date)->toDateString(),
-                    'booking_type' => (string) ($booking->booking_type?->value ?? $booking->booking_type ?? ''),
-                    'booking_source' => (string) ($booking->booking_source ?? ''),
-                ],
-            ]);
-
-            return $row;
-        })->filter()->values();
-
-        return response()->json(['rooms' => $payload]);
+        return response()->json([
+            'rooms' => $roomCheckoutService->amenityChargeableRooms($hotelId),
+        ]);
     })->middleware('role:admin,frontdesk,staff')->name('api.v1.admin.amenity.chargeable-rooms');
 
     Route::post('/admin/amenity-menu', function (Request $request) {
