@@ -25,7 +25,7 @@ class GuestCheckInWelcomeMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: "Welcome to {$this->hotelName} — Room {$this->roomNumber}",
+            subject: "Welcome to {$this->hotelName}! Please enjoy your stay!",
         );
     }
 

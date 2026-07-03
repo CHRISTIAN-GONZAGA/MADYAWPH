@@ -12,13 +12,15 @@
             <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width:520px;background:#ffffff;border-radius:16px;padding:32px 28px;">
                 <tr>
                     <td>
-                        <p style="margin:0 0 8px;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;color:#1e88e5;font-weight:600;">
-                            {{ $hotelName }}
+                        <h1 style="margin:0 0 12px;font-size:26px;color:#1a237e;line-height:1.3;">
+                            Welcome to {{ $hotelName }}!
+                        </h1>
+                        <p style="margin:0 0 20px;font-size:16px;line-height:1.55;color:#4a5568;">
+                            Please enjoy your stay!
                         </p>
-                        <h1 style="margin:0 0 12px;font-size:24px;color:#1a237e;">Welcome, {{ $guestName }}!</h1>
                         <p style="margin:0 0 20px;font-size:15px;line-height:1.55;color:#4a5568;">
-                            Thank you for choosing <strong>{{ $hotelName }}</strong>. You have been checked in successfully.
-                            We hope you enjoy a comfortable stay with us.
+                            Hi {{ $guestName }}, you have been checked in successfully.
+                            Here are your room details and access password.
                         </p>
 
                         <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="margin:0 0 20px;background:#eef2fa;border-radius:12px;border:1px solid #d6e4f7;">
