@@ -55,6 +55,7 @@ use App\Support\AdminBookingPresenter;
 use App\Support\ChatAttachmentUrl;
 use App\Support\GuestMessageResource;
 use App\Support\HotelScopeGuard;
+use App\Support\PortalAccountSupport;
 use App\Support\PortalPassword;
 use App\Support\PriceRounding;
 use App\Support\RoomBillingSupport;
@@ -2214,21 +2215,48 @@ Route::post('/admin/portal-users', function (Request $request) {
     } elseif ($actorRole !== UserRole::SUPER_ADMIN->value) {
         return response()->json(['message' => 'Only hotel admin or super admin can create portal accounts.'], 403);
     }
+
     $hotelId = (string) $actor->hotel_id;
-    $name = $validated['name'];
-    $email = $validated['email'] ?? $name.'@hotel.local';
-    if (User::withoutGlobalScopes()->where('hotel_id', $hotelId)->where('name', $name)->exists()) {
-        return response()->json(['message' => 'An account with this username already exists.'], 422);
+    $name = trim((string) $validated['name']);
+
+    try {
+        PortalAccountSupport::assertUsernameAvailableInHotel($hotelId, $name);
+        $email = PortalAccountSupport::resolveEmail(
+            $hotelId,
+            $name,
+            $validated['email'] ?? null,
+        );
+        PortalAccountSupport::assertEmailAvailable($email);
+
+        $created = User::withoutGlobalScopes()->create([
+            'hotel_id' => $hotelId,
+            'name' => $name,
+            'email' => $email,
+            'password' => Hash::make($validated['password']),
+            'role' => $targetRole === UserRole::FRONTDESK->value
+                ? UserRole::FRONTDESK
+                : UserRole::ADMIN,
+        ]);
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        return response()->json([
+            'message' => collect($e->errors())->flatten()->first()
+                ?? 'Could not create portal account.',
+            'errors' => $e->errors(),
+        ], 422);
+    } catch (\Throwable $e) {
+        \Illuminate\Support\Facades\Log::error('Portal user create failed', [
+            'hotel_id' => $hotelId,
+            'name' => $name,
+            'error' => $e->getMessage(),
+        ]);
+
+        return response()->json([
+            'message' => config('app.debug')
+                ? $e->getMessage()
+                : 'Could not create portal account. Try a different email or contact support.',
+        ], 500);
     }
-    $created = User::withoutGlobalScopes()->create([
-        'hotel_id' => $hotelId,
-        'name' => $name,
-        'email' => $email,
-        'password' => Hash::make($validated['password']),
-        'role' => $targetRole === UserRole::FRONTDESK->value
-            ? UserRole::FRONTDESK
-            : UserRole::ADMIN,
-    ]);
+
     app(ActivityLogService::class)->log(
         $hotelId,
         $actor,

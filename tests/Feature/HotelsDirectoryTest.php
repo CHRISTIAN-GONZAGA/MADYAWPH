@@ -166,4 +166,55 @@ class HotelsDirectoryTest extends TestCase
             'hotel_id' => (string) $hotelB->id,
         ])->assertOk()->assertJsonStructure(['token']);
     }
+
+    public function test_super_admin_can_create_frontdesk_with_same_username_and_no_email(): void
+    {
+        $hotelA = Hotel::withoutGlobalScopes()->create([
+            'name' => 'Frontdesk Hotel A',
+            'location' => 'Butuan',
+            'city' => 'Butuan',
+        ]);
+        $hotelB = Hotel::withoutGlobalScopes()->create([
+            'name' => 'Frontdesk Hotel B',
+            'location' => 'Cebu',
+            'city' => 'Cebu',
+        ]);
+
+        User::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotelA->id,
+            'name' => 'desk_shared',
+            'email' => 'desk_shared@hotel.local',
+            'password' => Hash::make('alpha-pass'),
+            'role' => 'frontdesk',
+        ]);
+
+        $superB = User::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotelB->id,
+            'name' => 'super_frontdesk_b',
+            'email' => 'super-frontdesk-b@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => 'super_admin',
+        ]);
+
+        $create = $this->actingAs($superB)->postJson('/api/v1/admin/portal-users', [
+            'name' => 'desk_shared',
+            'password' => 'beta-pass',
+            'role' => 'frontdesk',
+        ]);
+
+        $create->assertCreated();
+        $create->assertJsonPath('user.name', 'desk_shared');
+        $create->assertJsonPath('user.role', 'frontdesk');
+        $this->assertNotSame(
+            'desk_shared@hotel.local',
+            (string) $create->json('user.email')
+        );
+
+        $this->postJson('/api/v1/auth/portal-login', [
+            'role' => 'frontdesk',
+            'username' => 'desk_shared',
+            'password' => 'beta-pass',
+            'hotel_id' => (string) $hotelB->id,
+        ])->assertOk()->assertJsonStructure(['token']);
+    }
 }
