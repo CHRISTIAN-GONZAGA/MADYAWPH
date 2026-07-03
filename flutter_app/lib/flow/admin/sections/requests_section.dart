@@ -156,6 +156,51 @@ class _RequestsSectionState extends State<RequestsSection> {
     }
   }
 
+  Future<void> _dismissStaffRequest(Map<String, dynamic> item) async {
+    final requestId = (item['staff_request_id'] ?? '').toString();
+    if (requestId.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      useRootNavigator: true,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove request?'),
+        content: const Text(
+          'This clears the request from the queue without approving or rejecting it. '
+          'The charge stays on the guest bill — use this for test requests.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Remove request'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await portalDio().delete('/admin/staff-requests/$requestId');
+      await _load();
+      await widget.onChanged();
+      if (!mounted) return;
+      showAppMessage(context, 'Request removed. The charge was not changed.');
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
+  bool _canDismiss(Map<String, dynamic> item) {
+    final kind = (item['kind'] ?? '').toString();
+    final requestId = (item['staff_request_id'] ?? '').toString();
+    return requestId.isNotEmpty && kind == 'charge_deletion';
+  }
+
   String _dateDetail(Map<String, dynamic> item) {
     final payload = item['payload'];
     if (payload is! Map) return '';
@@ -249,6 +294,14 @@ class _RequestsSectionState extends State<RequestsSection> {
                             ),
                           ],
                         ),
+                        if (_canDismiss(item)) ...[
+                          const SizedBox(height: 8),
+                          TextButton.icon(
+                            onPressed: () => _dismissStaffRequest(item),
+                            icon: const Icon(Icons.delete_outline, size: 18),
+                            label: const Text('Remove request (keep charge)'),
+                          ),
+                        ],
                       ],
                     ),
                   ),

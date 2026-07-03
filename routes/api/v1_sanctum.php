@@ -1415,6 +1415,31 @@ Route::post('/admin/staff-requests/{id}/reject', function (
     return response()->json(['ok' => true, 'request' => $updated]);
 })->middleware('role:admin');
 
+Route::delete('/admin/staff-requests/{id}', function (
+    Request $request,
+    string $id,
+    \App\Services\StaffRequestService $staffRequestService,
+) {
+    $validated = $request->validate([
+        'note' => ['nullable', 'string', 'max:500'],
+    ]);
+    $hotelId = (string) $request->user()->hotel_id;
+    $staffRequest = \App\Models\StaffRequest::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->findOrFail($id);
+    $updated = $staffRequestService->dismiss(
+        $staffRequest,
+        $request->user(),
+        $validated['note'] ?? null,
+    );
+
+    return response()->json([
+        'ok' => true,
+        'request' => $updated,
+        'message' => 'Request removed from the queue. No changes were made to the charge.',
+    ]);
+})->middleware('role:admin')->name('api.v1.admin.staff-requests.dismiss');
+
 // External reservations
 Route::post('/reservations/external', function (Request $request) {
     $validated = $request->validate([

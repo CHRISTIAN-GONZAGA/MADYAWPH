@@ -263,6 +263,39 @@ final class StaffRequestService
         return $request->fresh() ?? $request;
     }
 
+    /**
+     * Remove a pending request from the queue without approving or rejecting its action.
+     * Used when a front-desk test request should simply disappear (charge stays on the bill).
+     */
+    public function dismiss(StaffRequest $request, User $reviewer, ?string $note = null): StaffRequest
+    {
+        if ($request->status !== 'pending') {
+            throw ValidationException::withMessages([
+                'request' => ['This request was already processed.'],
+            ]);
+        }
+
+        $request->update([
+            'status' => 'dismissed',
+            'reviewed_by_user_id' => (string) $reviewer->id,
+            'reviewed_by_name' => (string) ($reviewer->name ?? $reviewer->username ?? 'Admin'),
+            'reviewed_at' => now(),
+            'rejection_reason' => trim((string) $note) ?: null,
+        ]);
+
+        $label = is_array($request->payload)
+            ? (string) ($request->payload['charge_label'] ?? 'charge')
+            : 'charge';
+        $this->activityLogService->log(
+            (string) $request->hotel_id,
+            $reviewer,
+            "Dismissed {$request->type} request ({$label})",
+            ['staff_request_id' => (string) $request->id]
+        );
+
+        return $request->fresh() ?? $request;
+    }
+
     public function deleteChargeDirect(BillingCharge $charge, User $user): void
     {
         $this->deleteChargeById((string) $charge->id, (string) $charge->hotel_id, $user);
