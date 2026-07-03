@@ -92,6 +92,9 @@ class ReservationActivationService
             $bookingAttrs['discount_percent'] = round((float) ($meta['discount_percent'] ?? 0), 2);
             $bookingAttrs['discount_id_url'] = $meta['discount_id_url'] ?? null;
         }
+        if (! empty($meta['guest_id_url'])) {
+            $bookingAttrs['guest_id_url'] = (string) $meta['guest_id_url'];
+        }
         if (! empty($meta['member_shid_id'])) {
             $bookingAttrs['member_shid_id'] = (string) $meta['member_shid_id'];
         }

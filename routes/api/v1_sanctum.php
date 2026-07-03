@@ -649,6 +649,21 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
         $bookingData['free_breakfast_options'] = \App\Support\FreeBreakfastOptionsSupport::normalize(
             $validated['free_breakfast_options'] ?? []
         );
+
+        if ($request->hasFile('guest_id_file')) {
+            $path = \App\Support\PublicUploadStorage::store(
+                $request->file('guest_id_file'),
+                'bookings/guest-ids'
+            );
+            $bookingData['guest_id_url'] = \App\Support\ChatAttachmentUrl::forPath($path);
+        }
+        if ($request->hasFile('discount_id_file')) {
+            $path = \App\Support\PublicUploadStorage::store(
+                $request->file('discount_id_file'),
+                'bookings/discount-ids'
+            );
+            $bookingData['discount_id_url'] = \App\Support\ChatAttachmentUrl::forPath($path);
+        }
         unset($bookingData['guest_id_file'], $bookingData['discount_id_file']);
 
         $booking = $bookingService->create($bookingData, $request->user());
@@ -679,6 +694,193 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             'wallet' => $walletFee,
         ], 201);
     })->middleware(['prevent.double.booking'])->name('api.v1.admin.bookings.store');
+
+    Route::post('/admin/bookings/bulk', function (
+        Request $request,
+        BookingService $bookingService,
+        RoomCheckoutService $roomCheckoutService,
+        HotelCreditBookingFeeService $walletFeeService,
+    ) {
+        if ($request->has('check_in_now')) {
+            $parsed = filter_var(
+                $request->input('check_in_now'),
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE
+            );
+            if ($parsed !== null) {
+                $request->merge(['check_in_now' => $parsed]);
+            }
+        }
+
+        $validated = $request->validate([
+            'room_ids' => ['required', 'array', 'min:2', 'max:20'],
+            'room_ids.*' => ['required', 'string', 'distinct'],
+            'guest_name' => ['required', 'string', 'max:255'],
+            'guest_email' => ['nullable', 'email', 'max:255'],
+            'guest_phone' => ['nullable', 'string', 'max:50'],
+            'check_in_at' => ['required', 'date'],
+            'check_out_at' => ['required', 'date', 'after:check_in_at'],
+            'payment_method' => ['required', 'in:Cash,GCash,PayMaya,Credit Card'],
+            'check_in_now' => ['nullable', 'boolean'],
+            'discount_type' => ['nullable', 'string', 'in:none,pwd,senior'],
+            'adults' => ['nullable', 'integer', 'min:1', 'max:20'],
+            'children' => ['nullable', 'integer', 'min:0', 'max:20'],
+            'guests_male' => ['nullable', 'integer', 'min:0', 'max:20'],
+            'guests_female' => ['nullable', 'integer', 'min:0', 'max:20'],
+            'guest_nationality' => ['nullable', 'string', 'max:100'],
+            'free_breakfast_options' => ['nullable', 'array'],
+            'guest_id_file' => ['nullable', 'image', 'max:5120'],
+            'discount_id_file' => ['nullable', 'image', 'max:5120'],
+            'member_shid_id' => ['nullable', 'string', 'max:40'],
+            'booking_mode' => ['nullable', 'string', 'max:80'],
+            'booking_mode_other' => ['nullable', 'string', 'max:80'],
+        ]);
+
+        $hotelId = (string) $request->user()->hotel_id;
+        $roomIds = array_values(array_unique($validated['room_ids']));
+
+        $guestIdUrl = null;
+        $discountIdUrl = null;
+        if ($request->hasFile('guest_id_file')) {
+            $path = \App\Support\PublicUploadStorage::store(
+                $request->file('guest_id_file'),
+                'bookings/guest-ids'
+            );
+            $guestIdUrl = \App\Support\ChatAttachmentUrl::forPath($path);
+        }
+        if ($request->hasFile('discount_id_file')) {
+            $path = \App\Support\PublicUploadStorage::store(
+                $request->file('discount_id_file'),
+                'bookings/discount-ids'
+            );
+            $discountIdUrl = \App\Support\ChatAttachmentUrl::forPath($path);
+        }
+
+        $discountType = strtolower((string) ($validated['discount_type'] ?? 'none'));
+        $discountPercent = 0.0;
+        $memberInput = trim((string) ($validated['member_shid_id'] ?? ''));
+        if ($memberInput !== '') {
+            $memberDiscount = app(\App\Services\MemberSubscriptionService::class)
+                ->resolveBookingMemberDiscount($memberInput);
+            if ($memberDiscount['member_shid_id'] === null) {
+                return response()->json([
+                    'message' => 'Membership not found or expired.',
+                    'errors' => ['member_shid_id' => ['Invalid or expired membership.']],
+                ], 422);
+            }
+            if ($memberDiscount['percent'] <= 0) {
+                return response()->json([
+                    'message' => 'Member discount is not active right now.',
+                    'errors' => ['member_shid_id' => ['Member discount unavailable.']],
+                ], 422);
+            }
+            $discountType = 'member';
+            $discountPercent = (float) $memberDiscount['percent'];
+            $validated['member_shid_id'] = $memberDiscount['member_shid_id'];
+        } elseif (in_array($discountType, ['pwd', 'senior'], true)) {
+            $discountPercent = 20.0;
+        }
+
+        $sharedBreakfast = \App\Support\FreeBreakfastOptionsSupport::normalize(
+            $validated['free_breakfast_options'] ?? []
+        );
+
+        $createdBookings = [];
+        $presented = [];
+
+        try {
+            foreach ($roomIds as $roomId) {
+                $room = Room::withoutGlobalScopes()
+                    ->where('hotel_id', $hotelId)
+                    ->findOrFail($roomId);
+                if ((string) $room->hotel_id !== $hotelId) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'room_ids' => ['One or more rooms are outside your hotel scope.'],
+                    ]);
+                }
+
+                $bookingData = [
+                    'room_id' => (string) $room->id,
+                    'guest_name' => $validated['guest_name'],
+                    'guest_email' => trim((string) ($validated['guest_email'] ?? '')),
+                    'guest_phone' => trim((string) ($validated['guest_phone'] ?? '')),
+                    'check_in_at' => $validated['check_in_at'],
+                    'check_out_at' => $validated['check_out_at'],
+                    'payment_method' => $validated['payment_method'],
+                    'hotel_id' => $hotelId,
+                    'source' => \App\Enums\BookingSource::ADMIN->value,
+                    'booking_type' => \App\Enums\BookingType::LOCAL->value,
+                    'booking_source' => 'admin-walk-in',
+                    'booking_mode' => \App\Support\BookingModeSupport::normalize(
+                        $validated['booking_mode'] ?? 'walk-in',
+                        $validated['booking_mode_other'] ?? null
+                    ),
+                    'adults' => max(1, (int) ($validated['adults'] ?? 1)),
+                    'children' => max(0, (int) ($validated['children'] ?? 0)),
+                    'guests_male' => max(0, (int) ($validated['guests_male'] ?? 0)),
+                    'guests_female' => max(0, (int) ($validated['guests_female'] ?? 0)),
+                    'guest_nationality' => trim((string) ($validated['guest_nationality'] ?? '')),
+                    'free_breakfast_options' => $sharedBreakfast,
+                ];
+                if ($discountPercent > 0) {
+                    $bookingData['discount_type'] = $discountType;
+                    $bookingData['discount_percent'] = $discountPercent;
+                }
+                if (! empty($validated['member_shid_id'])) {
+                    $bookingData['member_shid_id'] = (string) $validated['member_shid_id'];
+                }
+                if ($guestIdUrl) {
+                    $bookingData['guest_id_url'] = $guestIdUrl;
+                }
+                if ($discountIdUrl) {
+                    $bookingData['discount_id_url'] = $discountIdUrl;
+                }
+
+                $booking = $bookingService->create($bookingData, $request->user());
+                $room = $room->fresh() ?? $room;
+                try {
+                    $walletFeeService->deductForBooking(
+                        $booking->fresh() ?? $booking,
+                        $room,
+                        (string) $request->user()->id,
+                    );
+                } catch (\Illuminate\Validation\ValidationException $e) {
+                    $bookingService->adminCancel($booking, $request->user());
+                    throw $e;
+                }
+
+                if ($request->boolean('check_in_now')) {
+                    $checkIn = Carbon::parse($validated['check_in_at']);
+                    $checkOut = Carbon::parse($validated['check_out_at']);
+                    $roomCheckoutService->checkInRoom(
+                        $room->fresh() ?? $room,
+                        $request->user(),
+                        $checkIn,
+                        $checkOut
+                    );
+                    $booking->refresh();
+                    $room->refresh();
+                }
+
+                $createdBookings[] = $booking;
+                $presented[] = AdminBookingPresenter::present($booking, $room->fresh() ?? $room);
+            }
+        } catch (\Throwable $e) {
+            foreach ($createdBookings as $booking) {
+                try {
+                    $bookingService->adminCancel($booking, $request->user());
+                } catch (\Throwable) {
+                }
+            }
+            throw $e;
+        }
+
+        return response()->json([
+            'ok' => true,
+            'count' => count($presented),
+            'bookings' => $presented,
+        ], 201);
+    })->middleware(['prevent.double.booking', 'role:admin,frontdesk'])->name('api.v1.admin.bookings.bulk');
 
     Route::patch('/admin/bookings/{booking}', function (
         Request $request,
@@ -1098,6 +1300,120 @@ Route::get('/billing/booking/{bookingId}', function (Request $request, string $b
         'subtotal' => $financialComputationService->computeTotal($subtotal),
     ]);
 })->middleware('role:admin,staff,frontdesk');
+
+Route::get('/admin/amenity-charges', function (Request $request, \App\Services\StaffRequestService $staffRequestService) {
+    $hotelId = (string) $request->user()->hotel_id;
+    $charges = $staffRequestService->recentAmenityCharges($hotelId, 80);
+    $pendingDeletes = \App\Models\StaffRequest::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->where('type', 'charge_deletion')
+        ->where('status', 'pending')
+        ->get()
+        ->mapWithKeys(fn ($row) => [(string) ($row->payload['charge_id'] ?? '') => (string) $row->id]);
+
+    $rows = $charges->map(function (\App\Models\BillingCharge $charge) use ($pendingDeletes, $hotelId) {
+        $room = \App\Models\Room::withoutGlobalScopes()->find((string) $charge->room_id);
+        $booking = \App\Models\Booking::withoutGlobalScopes()->find((string) $charge->booking_id);
+
+        return [
+            'id' => (string) $charge->id,
+            'booking_id' => (string) $charge->booking_id,
+            'room_id' => (string) $charge->room_id,
+            'room_number' => $room ? (string) $room->room_number : '',
+            'guest_name' => $booking ? (string) $booking->guest_name : '',
+            'label' => (string) $charge->label,
+            'amount' => (float) $charge->amount,
+            'type' => (string) $charge->type,
+            'created_at' => optional($charge->created_at)->toISOString(),
+            'pending_delete_request_id' => $pendingDeletes[(string) $charge->id] ?? null,
+        ];
+    })->values();
+
+    return response()->json(['data' => $rows]);
+})->middleware('role:admin,staff,frontdesk');
+
+Route::delete('/billing/charges/{chargeId}', function (
+    Request $request,
+    string $chargeId,
+    \App\Services\StaffRequestService $staffRequestService,
+) {
+    $hotelId = (string) $request->user()->hotel_id;
+    $charge = \App\Models\BillingCharge::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->findOrFail($chargeId);
+    $staffRequestService->deleteChargeDirect($charge, $request->user());
+
+    return response()->json(['ok' => true]);
+})->middleware('role:admin');
+
+Route::post('/billing/charges/{chargeId}/delete-request', function (
+    Request $request,
+    string $chargeId,
+    \App\Services\StaffRequestService $staffRequestService,
+) {
+    $validated = $request->validate([
+        'reason' => ['nullable', 'string', 'max:500'],
+    ]);
+    $hotelId = (string) $request->user()->hotel_id;
+    $charge = \App\Models\BillingCharge::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->findOrFail($chargeId);
+    $staffRequest = $staffRequestService->createChargeDeletionRequest(
+        $charge,
+        $request->user(),
+        $validated['reason'] ?? null,
+    );
+
+    return response()->json([
+        'ok' => true,
+        'request' => $staffRequest,
+        'message' => 'Deletion request sent to admin for approval.',
+    ], 201);
+})->middleware('role:frontdesk');
+
+Route::get('/admin/approval-hub', function (Request $request, \App\Services\StaffRequestService $staffRequestService) {
+    $hotelId = (string) $request->user()->hotel_id;
+
+    return response()->json([
+        'pending_count' => $staffRequestService->pendingCount($hotelId),
+        'items' => $staffRequestService->hubItems($hotelId),
+    ]);
+})->middleware('role:admin');
+
+Route::post('/admin/staff-requests/{id}/approve', function (
+    Request $request,
+    string $id,
+    \App\Services\StaffRequestService $staffRequestService,
+) {
+    $hotelId = (string) $request->user()->hotel_id;
+    $staffRequest = \App\Models\StaffRequest::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->findOrFail($id);
+    $updated = $staffRequestService->approve($staffRequest, $request->user());
+
+    return response()->json(['ok' => true, 'request' => $updated]);
+})->middleware('role:admin');
+
+Route::post('/admin/staff-requests/{id}/reject', function (
+    Request $request,
+    string $id,
+    \App\Services\StaffRequestService $staffRequestService,
+) {
+    $validated = $request->validate([
+        'reason' => ['nullable', 'string', 'max:500'],
+    ]);
+    $hotelId = (string) $request->user()->hotel_id;
+    $staffRequest = \App\Models\StaffRequest::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->findOrFail($id);
+    $updated = $staffRequestService->reject(
+        $staffRequest,
+        $request->user(),
+        $validated['reason'] ?? null,
+    );
+
+    return response()->json(['ok' => true, 'request' => $updated]);
+})->middleware('role:admin');
 
 // External reservations
 Route::post('/reservations/external', function (Request $request) {

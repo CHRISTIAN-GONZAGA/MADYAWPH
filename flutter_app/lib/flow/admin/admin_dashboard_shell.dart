@@ -15,6 +15,8 @@ import 'sections/amenities_section.dart';
 import 'sections/bookings_section.dart';
 import 'sections/checkout_section.dart';
 import 'sections/guest_portfolio_section.dart';
+import 'sections/multiple_booking_section.dart';
+import 'sections/requests_section.dart';
 import 'sections/room_summary_section.dart';
 import 'sections/resellers_section.dart';
 import 'sections/settings_section.dart';
@@ -75,6 +77,10 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     final pendingRes = AdminDashboardModels.pendingReservationCount(reservations);
     final checkoutSoon = AdminDashboardModels.checkoutSoonCount(_rooms);
     final pendingClaims = AdminDashboardModels.pendingAmenityClaimCount(claims);
+    final bookingStats =
+        d['booking_stats'] as Map<String, dynamic>? ?? const {};
+    final pendingApprovals =
+        (bookingStats['pending_approvals'] as num?)?.toInt() ?? 0;
 
     final items = <AdminNavItem>[
       const AdminNavItem(
@@ -101,6 +107,11 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         badgeCount: pendingRes,
         badgeColor: const Color(0xFF6A1B9A),
       ),
+      const AdminNavItem(
+        label: 'Multiple',
+        shortLabel: 'Multi',
+        icon: Icons.library_add_outlined,
+      ),
       AdminNavItem(
         label: 'Amenities',
         shortLabel: 'Store',
@@ -109,6 +120,17 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         badgeColor: const Color(0xFF2E7D32),
       ),
     ];
+    if (!widget.isFrontDesk) {
+      items.add(
+        AdminNavItem(
+          label: 'Requests',
+          shortLabel: 'Req',
+          icon: Icons.pending_actions_outlined,
+          badgeCount: pendingApprovals,
+          badgeColor: const Color(0xFFE65100),
+        ),
+      );
+    }
     items.add(
       const AdminNavItem(
         label: 'Settings',
@@ -222,8 +244,8 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
   }
 
   int _settingsTabIndex(Map<String, dynamic> d) {
-    if (widget.isFrontDesk) return 5;
-    return widget.isSuperAdmin ? 7 : 6;
+    if (widget.isFrontDesk) return 6;
+    return widget.isSuperAdmin ? 9 : 8;
   }
 
   void _maybeRedirectToCreditsTab(
@@ -483,6 +505,14 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         3,
       ),
       wrapTab(
+        MultipleBookingSection(
+          key: refreshKey,
+          rooms: _rooms,
+          onBooked: widget.onRefresh,
+        ),
+        4,
+      ),
+      wrapTab(
         AmenitiesSection(
           key: refreshKey,
           claims: claims,
@@ -491,10 +521,23 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           onAddProduct: widget.onAmenityAddProduct,
           onRefresh: widget.onRefresh,
           canManageProducts: !widget.isFrontDesk,
+          isFrontDesk: widget.isFrontDesk,
         ),
-        4,
+        5,
       ),
     ];
+
+    if (!widget.isFrontDesk) {
+      sections.add(
+        wrapTab(
+          RequestsSection(
+            key: refreshKey,
+            onChanged: widget.onRefresh,
+          ),
+          sections.length,
+        ),
+      );
+    }
 
     if (!widget.isFrontDesk) {
       sections.add(

@@ -25,6 +25,7 @@ use App\Enums\RoomStatus;
 use Carbon\Carbon;
 use App\Services\AutoCheckoutService;
 use App\Services\RoomCheckoutService;
+use App\Services\StaffRequestService;
 use App\Support\AdminBookingPresenter;
 use App\Support\BookingTypeResolver;
 use Illuminate\Http\JsonResponse;
@@ -181,6 +182,7 @@ class AdminDashboardApiController extends Controller
                         'guests_female' => (int) ($booking->guests_female ?? 0),
                         'guests_hispanic' => (int) ($booking->guests_hispanic ?? 0),
                         'guest_nationality' => (string) ($booking->guest_nationality ?? ''),
+                        'guest_id_url' => (string) ($booking->guest_id_url ?? ''),
                         'free_breakfast_options' => \App\Support\FreeBreakfastOptionsSupport::normalize(
                             $booking->free_breakfast_options ?? []
                         ),
@@ -239,6 +241,7 @@ class AdminDashboardApiController extends Controller
                 'all_total' => $localTotal + $onlineTotal,
                 'recent_24h' => $recentBookings,
                 'pending_reservations' => $pendingReservations,
+                'pending_approvals' => app(StaffRequestService::class)->pendingCount($hotelId),
             ],
             'bookings' => $bookingsList,
             'reservations' => ExternalReservation::query()

@@ -61,6 +61,8 @@ final class AdminBookingPresenter
             'pending_date_change' => is_array($booking->pending_date_change)
                 ? $booking->pending_date_change
                 : null,
+            'guest_id_url' => (string) ($booking->guest_id_url ?? ''),
+            'discount_id_url' => (string) ($booking->discount_id_url ?? ''),
         ];
     }
 }

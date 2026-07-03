@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
+import '../../../widgets/chat_attachment.dart';
 import '../admin_dashboard_models.dart';
 
 class GuestPortfolioSection extends StatefulWidget {
@@ -78,6 +79,7 @@ class _GuestPortfolioSectionState extends State<GuestPortfolioSection>
             'free_breakfast': AdminDashboardModels.formatFreeBreakfast(
               b?['free_breakfast_options'] as List?,
             ),
+            'guest_id_url': (b?['guest_id_url'] ?? '').toString(),
           };
         })
         .toList();
@@ -169,6 +171,7 @@ class _GuestPortfolioSectionState extends State<GuestPortfolioSection>
                                 AdminDashboardModels.formatFreeBreakfast(
                               h['free_breakfast_options'] as List?,
                             ),
+                            'guest_id_url': (h['guest_id_url'] ?? '').toString(),
                           },
                           isHistory: true,
                         );
@@ -250,6 +253,30 @@ class _GuestCard extends StatelessWidget {
                   _row('Payment', data['payment_status'].toString()),
                 if ((data['booking_reference'] ?? '').toString().isNotEmpty)
                   _row('Reference', data['booking_reference'].toString()),
+                if ((data['guest_id_url'] ?? '').toString().isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Government ID',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      ChatAttachment.resolveMediaUrl(
+                        data['guest_id_url'].toString(),
+                      ),
+                      height: 180,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Text(
+                        'Could not load government ID image.',
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

@@ -6,6 +6,7 @@ import '../../../dio_client.dart';
 import '../admin_dashboard_models.dart';
 import '../widgets/admin_room_navigation.dart';
 import '../widgets/admin_sales_panel.dart';
+import '../widgets/amenity_charges_panel.dart';
 import '../widgets/charge_amenity_to_room_dialog.dart';
 
 class AmenitiesSection extends StatefulWidget {
@@ -15,6 +16,7 @@ class AmenitiesSection extends StatefulWidget {
     required this.onAddProduct,
     required this.onRefresh,
     this.canManageProducts = true,
+    this.isFrontDesk = false,
     this.rooms = const [],
     this.categories = const [],
   });
@@ -23,6 +25,7 @@ class AmenitiesSection extends StatefulWidget {
   final Future<void> Function() onAddProduct;
   final Future<void> Function() onRefresh;
   final bool canManageProducts;
+  final bool isFrontDesk;
   final List<Map<String, dynamic>> rooms;
   final List<Map<String, dynamic>> categories;
 
@@ -669,7 +672,7 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
         }
 
         return DefaultTabController(
-          length: 3,
+          length: 4,
           child: Column(
             children: [
               header,
@@ -679,6 +682,7 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
                   Tab(text: 'Sales'),
                   Tab(text: 'Products'),
                   Tab(text: 'Requests'),
+                  Tab(text: 'Charges'),
                 ],
               ),
               Expanded(
@@ -687,7 +691,7 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
                     ListView(
                       physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.all(12),
-                      children: [AdminSalesPanel()],
+                      children: const [AdminSalesPanel()],
                     ),
                     Column(
                       children: [
@@ -699,6 +703,10 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
                       ],
                     ),
                     _claimsList(),
+                    AmenityChargesPanel(
+                      isFrontDesk: widget.isFrontDesk,
+                      onChanged: widget.onRefresh,
+                    ),
                   ],
                 ),
               ),
