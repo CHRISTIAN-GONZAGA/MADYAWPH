@@ -6,6 +6,7 @@ use App\Enums\BookingStatus;
 use App\Enums\RoomStatus;
 use App\Support\BookingTypeResolver;
 use App\Support\CancellationRetentionSupport;
+use App\Support\EnumHelper;
 use App\Support\RoomBillingSupport;
 use App\Models\BillingCharge;
 use App\Models\Booking;
@@ -145,7 +146,14 @@ class BookingService
                 $bookingPayload['price_per_block'] = $charge['price_per_block'];
             }
 
-            $booking = Booking::withoutGlobalScopes()->create($bookingPayload);
+            $booking = Booking::withoutGlobalScopes()->create(
+                EnumHelper::withoutEmptyDecimals(
+                    $bookingPayload,
+                    'discount_percent',
+                    'total_amount',
+                    'price_per_block',
+                )
+            );
             BillingCharge::withoutGlobalScopes()->create([
                 'hotel_id' => (string) $room->hotel_id,
                 'booking_id' => (string) $booking->id,

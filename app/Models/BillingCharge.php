@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\FlexibleDecimalCast;
 use App\Models\Concerns\BelongsToHotel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use MongoDB\Laravel\Eloquent\Model;
@@ -26,7 +27,7 @@ class BillingCharge extends Model
     protected function casts(): array
     {
         return [
-            'amount' => 'decimal:2',
+            'amount' => FlexibleDecimalCast::class,
             'quantity' => 'integer',
             'is_manual' => 'boolean',
             'metadata' => 'array',

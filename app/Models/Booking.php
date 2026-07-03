@@ -2,6 +2,10 @@
 
 namespace App\Models;
 
+use App\Casts\FlexibleBookingSourceCast;
+use App\Casts\FlexibleBookingStatusCast;
+use App\Casts\FlexibleBookingTypeCast;
+use App\Casts\FlexibleDecimalCast;
 use App\Casts\FlexiblePaymentMethodCast;
 use App\Enums\BookingSource;
 use App\Enums\BookingStatus;
@@ -67,15 +71,15 @@ class Booking extends Model
             'payment_method' => FlexiblePaymentMethodCast::class,
             'paid_at' => 'datetime',
             'checked_out_at' => 'datetime',
-            'source' => BookingSource::class,
-            'booking_type' => BookingType::class,
-            'status' => BookingStatus::class,
-            'total_amount' => 'decimal:2',
+            'source' => FlexibleBookingSourceCast::class,
+            'booking_type' => FlexibleBookingTypeCast::class,
+            'status' => FlexibleBookingStatusCast::class,
+            'total_amount' => FlexibleDecimalCast::class,
             'stay_hours' => 'integer',
             'booked_stay_hours' => 'integer',
             'block_hours' => 'integer',
-            'price_per_block' => 'decimal:2',
-            'discount_percent' => 'decimal:2',
+            'price_per_block' => FlexibleDecimalCast::class,
+            'discount_percent' => FlexibleDecimalCast::class,
             'discount_id_verified' => 'boolean',
             'adults' => 'integer',
             'children' => 'integer',

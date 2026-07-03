@@ -28,6 +28,7 @@ use App\Services\RoomCheckoutService;
 use App\Services\StaffRequestService;
 use App\Support\AdminBookingPresenter;
 use App\Support\BookingTypeResolver;
+use App\Support\SafeModelAttributes;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -93,14 +94,15 @@ class AdminDashboardApiController extends Controller
             ->limit(200)
             ->get()
             ->filter(function (Booking $booking) use ($todayStart) {
-                if (filled($booking->checked_out_at)) {
+                if (SafeModelAttributes::carbonFromModel($booking, 'checked_out_at') !== null) {
                     return false;
                 }
-                if ($booking->check_out_date === null) {
+                $checkOut = SafeModelAttributes::carbonFromModel($booking, 'check_out_date');
+                if ($checkOut === null) {
                     return true;
                 }
 
-                return Carbon::parse($booking->check_out_date)->startOfDay()->gte($todayStart);
+                return $checkOut->copy()->startOfDay()->gte($todayStart);
             })
             ->take(120)
             ->map(fn (Booking $b) => AdminBookingPresenter::present($b, $b->room))
@@ -162,64 +164,84 @@ class AdminDashboardApiController extends Controller
                 ]))->theme_color,
             ],
             'rooms' => $rooms->map(function ($room) use ($latestBookingsByRoom, $hotelId) {
-                $booking = app(RoomCheckoutService::class)
-                    ->resolveActiveBookingForRoom($hotelId, $room)
-                    ?? $latestBookingsByRoom->get((string) $room->id);
-                $charges = BillingCharge::withoutGlobalScopes()
-                    ->where('room_id', (string) $room->id)
-                    ->latest()
-                    ->limit(25)
-                    ->get();
+                try {
+                    $booking = app(RoomCheckoutService::class)
+                        ->resolveActiveBookingForRoom($hotelId, $room)
+                        ?? $latestBookingsByRoom->get((string) $room->id);
+                    $charges = BillingCharge::withoutGlobalScopes()
+                        ->where('room_id', (string) $room->id)
+                        ->latest()
+                        ->limit(25)
+                        ->get();
 
-                return array_merge($room->toArray(), [
-                    'id' => (string) $room->id,
-                    'status' => $room->status instanceof RoomStatus
-                        ? $room->status->value
-                        : (filled($room->status) ? (string) $room->status : RoomStatus::AVAILABLE->value),
-                    'floor' => max(
-                        1,
-                        (int) ($room->floor ?? (preg_replace('/\D/', '', substr((string) $room->room_number, 0, 1)) ?: 1))
-                    ),
-                    'current_check_in' => filled($room->current_check_in)
-                        ? Carbon::parse($room->current_check_in)->toDateString()
-                        : null,
-                    'current_check_out' => filled($room->current_check_out)
-                        ? Carbon::parse($room->current_check_out)->toDateString()
-                        : null,
-                    'latest_booking' => $booking ? [
-                        'id' => (string) $booking->id,
-                        'booking_reference' => $booking->booking_reference,
-                        'guest_name' => $booking->guest_name,
-                        'guest_email' => $booking->guest_email,
-                        'guest_phone' => $booking->guest_phone,
-                        'adults' => (int) ($booking->adults ?? 1),
-                        'children' => (int) ($booking->children ?? 0),
-                        'guests_male' => (int) ($booking->guests_male ?? 0),
-                        'guests_female' => (int) ($booking->guests_female ?? 0),
-                        'guests_hispanic' => (int) ($booking->guests_hispanic ?? 0),
-                        'guest_nationality' => (string) ($booking->guest_nationality ?? ''),
-                        'guest_id_url' => (string) ($booking->guest_id_url ?? ''),
-                        'free_breakfast_options' => \App\Support\FreeBreakfastOptionsSupport::normalize(
-                            $booking->free_breakfast_options ?? []
+                    return [
+                        'id' => (string) $room->id,
+                        'hotel_id' => (string) $room->hotel_id,
+                        'room_number' => SafeModelAttributes::rawString($room, 'room_number'),
+                        'category_name' => SafeModelAttributes::rawString($room, 'category_name'),
+                        'display_name' => SafeModelAttributes::rawString($room, 'display_name'),
+                        'room_type' => SafeModelAttributes::rawString($room, 'room_type'),
+                        'price_per_night' => SafeModelAttributes::rawFloat($room, 'price_per_night'),
+                        'billing_mode' => SafeModelAttributes::rawString($room, 'billing_mode'),
+                        'status' => $room->status instanceof RoomStatus
+                            ? $room->status->value
+                            : (filled($room->status) ? (string) $room->status : RoomStatus::AVAILABLE->value),
+                        'floor' => max(
+                            1,
+                            (int) ($room->floor ?? (preg_replace('/\D/', '', substr((string) $room->room_number, 0, 1)) ?: 1))
                         ),
-                        'check_in_date' => optional($booking->check_in_date)->toDateString(),
-                        'check_out_date' => optional($booking->check_out_date)->toDateString(),
-                        'check_in_time' => (string) ($booking->check_in_time ?? ''),
-                        'check_out_time' => (string) ($booking->check_out_time ?? ''),
-                        'nights' => (int) ($booking->nights ?? 0),
-                        'billing_mode' => (string) ($booking->billing_mode ?? ''),
-                        'total_amount' => (float) $booking->total_amount,
-                        'created_at' => optional($booking->created_at)->toISOString(),
-                        'booking_type' => BookingTypeResolver::resolveForBooking($booking),
-                        'booking_source' => (string) ($booking->booking_source ?? ''),
-                    ] : null,
-                    'charges' => $charges->map(fn ($charge) => [
-                        'id' => (string) $charge->id,
-                        'label' => $charge->label,
-                        'amount' => (float) $charge->amount,
-                        'type' => $charge->type,
-                    ]),
-                ]);
+                        'current_guest_name' => SafeModelAttributes::rawString($room, 'current_guest_name'),
+                        'current_check_in' => SafeModelAttributes::carbonFromModel($room, 'current_check_in')?->toDateString(),
+                        'current_check_out' => SafeModelAttributes::carbonFromModel($room, 'current_check_out')?->toDateString(),
+                        'latest_booking' => $booking ? [
+                            'id' => (string) $booking->id,
+                            'booking_reference' => $booking->booking_reference,
+                            'guest_name' => $booking->guest_name,
+                            'guest_email' => $booking->guest_email,
+                            'guest_phone' => $booking->guest_phone,
+                            'adults' => (int) ($booking->adults ?? 1),
+                            'children' => (int) ($booking->children ?? 0),
+                            'guests_male' => (int) ($booking->guests_male ?? 0),
+                            'guests_female' => (int) ($booking->guests_female ?? 0),
+                            'guests_hispanic' => (int) ($booking->guests_hispanic ?? 0),
+                            'guest_nationality' => (string) ($booking->guest_nationality ?? ''),
+                            'guest_id_url' => (string) ($booking->guest_id_url ?? ''),
+                            'free_breakfast_options' => \App\Support\FreeBreakfastOptionsSupport::normalize(
+                                $booking->free_breakfast_options ?? []
+                            ),
+                            'check_in_date' => SafeModelAttributes::carbonFromModel($booking, 'check_in_date')?->toDateString(),
+                            'check_out_date' => SafeModelAttributes::carbonFromModel($booking, 'check_out_date')?->toDateString(),
+                            'check_in_time' => (string) ($booking->check_in_time ?? ''),
+                            'check_out_time' => (string) ($booking->check_out_time ?? ''),
+                            'nights' => (int) ($booking->nights ?? 0),
+                            'billing_mode' => (string) ($booking->billing_mode ?? ''),
+                            'total_amount' => SafeModelAttributes::rawFloat($booking, 'total_amount'),
+                            'created_at' => SafeModelAttributes::carbonFromModel($booking, 'created_at', 'updated_at')?->toISOString(),
+                            'booking_type' => BookingTypeResolver::resolveForBooking($booking),
+                            'booking_source' => (string) ($booking->booking_source ?? ''),
+                        ] : null,
+                        'charges' => $charges->map(fn ($charge) => [
+                            'id' => (string) $charge->id,
+                            'label' => $charge->label,
+                            'amount' => (float) $charge->amount,
+                            'type' => $charge->type,
+                        ]),
+                    ];
+                } catch (\Throwable $e) {
+                    Log::warning('Admin dashboard skipped room row', [
+                        'hotel_id' => $hotelId,
+                        'room_id' => (string) $room->id,
+                        'error' => $e->getMessage(),
+                    ]);
+
+                    return [
+                        'id' => (string) $room->id,
+                        'room_number' => SafeModelAttributes::rawString($room, 'room_number'),
+                        'status' => RoomStatus::AVAILABLE->value,
+                        'latest_booking' => null,
+                        'charges' => [],
+                    ];
+                }
             }),
             'credits' => [
                 'currentCredits' => $currentCredits,
