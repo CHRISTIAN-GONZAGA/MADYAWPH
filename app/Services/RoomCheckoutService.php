@@ -7,6 +7,7 @@ use App\Enums\RoomStatus;
 use App\Models\Booking;
 use App\Models\CheckoutReminder;
 use App\Models\ExternalReservation;
+use App\Models\Hotel;
 use App\Services\FinancialComputationService;
 use App\Services\RoomPricingService;
 use App\Models\GuestMessage;
@@ -19,6 +20,7 @@ use App\Support\RoomBillingSupport;
 use App\Support\SafeModelAttributes;
 use App\Models\BillingCharge;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class RoomCheckoutService
@@ -137,6 +139,27 @@ class RoomCheckoutService
             $room->forceFill(['current_guest_name' => $guestName]);
         }
 
+        $accessCode = trim((string) ($room->getAttributes()['current_access_code'] ?? ''));
+        if ($accessCode === '') {
+            $accessCode = app(GuestRoomAccessCodeService::class)->generateUnique();
+            $room->forceFill(['current_access_code' => $accessCode]);
+        }
+
+        if ($booking !== null) {
+            if (trim((string) ($room->getAttributes()['current_check_in'] ?? '')) === ''
+                && filled($booking->check_in_date)) {
+                $room->forceFill([
+                    'current_check_in' => optional($booking->check_in_date)->toDateString(),
+                ]);
+            }
+            if (trim((string) ($room->getAttributes()['current_check_out'] ?? '')) === ''
+                && filled($booking->check_out_date)) {
+                $room->forceFill([
+                    'current_check_out' => optional($booking->check_out_date)->toDateString(),
+                ]);
+            }
+        }
+
         $room->forceFill(['status' => RoomStatus::CHECKED_IN->value])->save();
 
         $fresh = $room->fresh() ?? $room;
@@ -147,7 +170,53 @@ class RoomCheckoutService
             ['room_id' => (string) $fresh->id, 'booking_id' => $booking ? (string) $booking->id : null]
         );
 
+        $this->sendGuestCheckInWelcomeEmail($fresh, $booking, $accessCode);
+
         return $fresh;
+    }
+
+    private function sendGuestCheckInWelcomeEmail(
+        Room $room,
+        ?Booking $booking,
+        string $accessCode,
+    ): void {
+        $email = trim((string) ($booking?->guest_email ?? ''));
+        if ($email === '') {
+            return;
+        }
+
+        try {
+            $hotel = Hotel::withoutGlobalScopes()->find((string) $room->hotel_id);
+            $hotelName = trim((string) ($hotel?->name ?? ''));
+            if ($hotelName === '') {
+                $hotelName = (string) config('app.name', 'MADYAW');
+            }
+
+            $guestName = trim((string) ($booking?->guest_name
+                ?? $room->getAttributes()['current_guest_name']
+                ?? 'Guest'));
+
+            app(AppEmailService::class)->sendGuestCheckInWelcome(
+                email: $email,
+                hotelName: $hotelName,
+                guestName: $guestName !== '' ? $guestName : 'Guest',
+                roomNumber: (string) ($room->room_number ?? ''),
+                roomPassword: $accessCode,
+                checkInDate: optional($booking?->check_in_date)->toDateString()
+                    ?? SafeModelAttributes::carbonFromModel($room, 'current_check_in')?->toDateString(),
+                checkOutDate: optional($booking?->check_out_date)->toDateString()
+                    ?? SafeModelAttributes::carbonFromModel($room, 'current_check_out')?->toDateString(),
+                bookingReference: $booking?->booking_reference
+                    ? (string) $booking->booking_reference
+                    : null,
+            );
+        } catch (\Throwable $e) {
+            Log::warning('Check-in welcome email skipped', [
+                'room_id' => (string) $room->id,
+                'booking_id' => $booking ? (string) $booking->id : null,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

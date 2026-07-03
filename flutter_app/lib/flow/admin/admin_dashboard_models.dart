@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../utils/money_format.dart';
 import 'widgets/free_breakfast_selection.dart';
 
 /// Pure helpers for admin dashboard UI (no API changes).
@@ -676,6 +677,13 @@ class AdminDashboardModels {
     return (b?['guest_name'] ?? '—').toString();
   }
 
+  static String guestEmail(Map<String, dynamic> room) {
+    final booking = room['latest_booking'] as Map<String, dynamic>?;
+    return (booking?['guest_email'] ?? room['guest_email'] ?? '')
+        .toString()
+        .trim();
+  }
+
   static String formatStayRange(Map<String, dynamic> room) {
     final inD = stayStartDate(room);
     final outD = stayEndDate(room);
@@ -771,21 +779,74 @@ class AdminDashboardModels {
     };
   }
 
+  /// Amount due for one checkout-queue room (charges if present, else booking total).
+  static double roomCollectibleAmount(Map<String, dynamic> room) {
+    final charges = (room['charges'] as List?) ?? const [];
+    var chargeSum = 0.0;
+    for (final c in charges) {
+      if (c is Map) {
+        chargeSum += parseJsonDouble(c['amount']);
+      }
+    }
+    if (chargeSum > 0) return chargeSum;
+    final booking = room['latest_booking'] as Map<String, dynamic>?;
+    return parseJsonDouble(booking?['total_amount']);
+  }
+
   static double collectiblesForRooms(List<Map<String, dynamic>> rooms) {
     var sum = 0.0;
     for (final r in rooms) {
       if (!isCheckoutSoon(r)) continue;
-      final booking = r['latest_booking'] as Map<String, dynamic>?;
-      if (booking == null) continue;
-      sum += (booking['total_amount'] as num?)?.toDouble() ?? 0;
-      final charges = (r['charges'] as List?) ?? const [];
-      for (final c in charges) {
-        if (c is Map<String, dynamic>) {
-          sum += (c['amount'] as num?)?.toDouble() ?? 0;
-        }
-      }
+      sum += roomCollectibleAmount(r);
     }
     return sum;
+  }
+
+  /// Receipt-style lines for rooms due for checkout.
+  static List<Map<String, dynamic>> collectiblesSummaryLines(
+    List<Map<String, dynamic>> rooms,
+  ) {
+    final lines = <Map<String, dynamic>>[];
+    for (final room in rooms) {
+      if (!isCheckoutSoon(room)) continue;
+      final booking = room['latest_booking'] as Map<String, dynamic>?;
+      final chargesRaw = (room['charges'] as List?) ?? const [];
+      final chargeLines = <Map<String, dynamic>>[];
+      for (final c in chargesRaw) {
+        if (c is! Map) continue;
+        final amount = parseJsonDouble(c['amount']);
+        if (amount == 0) continue;
+        chargeLines.add({
+          'label': (c['label'] ?? c['type'] ?? 'Charge').toString(),
+          'amount': amount,
+          'type': (c['type'] ?? '').toString(),
+        });
+      }
+      if (chargeLines.isEmpty) {
+        final stay = parseJsonDouble(booking?['total_amount']);
+        if (stay > 0) {
+          chargeLines.add({
+            'label': 'Stay charges',
+            'amount': stay,
+            'type': 'room',
+          });
+        }
+      }
+      final roomTotal = roomCollectibleAmount(room);
+      if (roomTotal <= 0 && chargeLines.isEmpty) continue;
+      lines.add({
+        'room_number': (room['room_number'] ?? '—').toString(),
+        'guest_name': guestName(room),
+        'booking_reference':
+            (booking?['booking_reference'] ?? '').toString(),
+        'check_out': formatDisplayDate(
+          room['current_check_out'] ?? booking?['check_out_date'],
+        ),
+        'charges': chargeLines,
+        'total': roomTotal,
+      });
+    }
+    return lines;
   }
 
   /// Physical floor for a room (stored value or parsed from room number).

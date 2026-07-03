@@ -216,7 +216,13 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
   try {
     await portalDio().patch('/admin/rooms/$roomId/status', data: data);
     if (!context.mounted) return false;
-    showAppMessage(context, 'Guest checked in.');
+    final guestEmail = AdminDashboardModels.guestEmail(room);
+    showAppMessage(
+      context,
+      guestEmail.isEmpty
+          ? 'Guest checked in.'
+          : 'Guest checked in. A welcome email with the room password was sent to $guestEmail (if email is configured).',
+    );
     return true;
   } on DioException catch (e) {
     if (!context.mounted) return false;

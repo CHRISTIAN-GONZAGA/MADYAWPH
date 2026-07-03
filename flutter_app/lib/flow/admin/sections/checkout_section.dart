@@ -5,6 +5,7 @@ import 'package:gloretto_mobile/widgets/app_notice.dart';
 import '../../../dio_client.dart';
 import '../admin_dashboard_models.dart';
 import '../widgets/admin_room_navigation.dart';
+import '../widgets/collectibles_summary_dialog.dart';
 import '../widgets/stay_receipt_dialog.dart';
 
 class CheckoutSection extends StatefulWidget {
@@ -103,36 +104,45 @@ class _CheckoutSectionState extends State<CheckoutSection> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
         children: [
-          Card(
+          Material(
             color: Theme.of(context).colorScheme.primaryContainer,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'TOTAL COLLECTIBLES',
-                          style: Theme.of(context).textTheme.labelLarge,
-                        ),
-                        Text(
-                          '₱${collectibles.toStringAsFixed(2)}',
-                          style: Theme.of(context)
-                              .textTheme
-                              .headlineMedium
-                              ?.copyWith(fontWeight: FontWeight.w800),
-                        ),
-                        Text(
-                          'Due within 30 min or in 40-min grace after checkout',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => showCollectiblesSummaryDialog(
+                context,
+                rooms: _soonRooms,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'TOTAL COLLECTIBLES',
+                            style: Theme.of(context).textTheme.labelLarge,
+                          ),
+                          Text(
+                            '₱${collectibles.toStringAsFixed(2)}',
+                            style: Theme.of(context)
+                                .textTheme
+                                .headlineMedium
+                                ?.copyWith(fontWeight: FontWeight.w800),
+                          ),
+                          Text(
+                            'Tap for receipt summary · due within 30 min or '
+                            '${AdminDashboardModels.checkoutGraceMinutes}-min grace',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const Icon(Icons.payments_outlined, size: 40),
-                ],
+                    const Icon(Icons.receipt_long_outlined, size: 40),
+                  ],
+                ),
               ),
             ),
           ),

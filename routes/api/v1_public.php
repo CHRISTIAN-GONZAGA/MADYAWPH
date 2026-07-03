@@ -75,8 +75,8 @@ Route::get('/integrations/status', function (SmsService $smsService, AppEmailSer
             'mail_mailer' => (string) config('mail.default'),
             'hint' => MessagingFlags::emailEnabled()
                 ? ($emailService->isConfigured()
-                    ? 'Hotel registration OTP and password reset use this mailer.'
-                    : 'Set MAIL_MAILER=ses, MAIL_FROM_ADDRESS, and AWS credentials on Render.')
+                    ? 'OTP, password reset, and guest check-in welcome emails use this mailer.'
+                    : 'Set MAIL_MAILER=smtp (Mailjet: in-v3.mailjet.com), MAIL_USERNAME, MAIL_PASSWORD, and MAIL_FROM_ADDRESS.')
                 : 'Email messaging is off (MESSAGING_EMAIL_ENABLED=false).',
         ]),
         'sms' => array_merge($smsService->status(), [
