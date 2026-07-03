@@ -4,9 +4,11 @@ namespace Tests\Feature;
 
 use App\Enums\UserRole;
 use App\Models\AmenityClaim;
+use App\Models\Booking;
 use App\Models\ExternalReservation;
 use App\Models\Hotel;
 use App\Models\Room;
+use App\Models\StaffRequest;
 use App\Models\User;
 use Tests\TestCase;
 
@@ -124,6 +126,61 @@ class AdminDashboardTest extends TestCase
                 fn (array $booking) => ($booking['booking_type'] ?? '') === 'local'
             )
         );
+    }
+
+    public function test_admin_dashboard_pending_approvals_survives_staff_requests(): void
+    {
+        $hotel = Hotel::create(['name' => 'Approvals Hotel', 'location' => 'City']);
+        $this->seedHotelCredits($hotel);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'admin_approvals',
+            'email' => 'admin-approvals@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => 'A1',
+            'category_name' => 'Standard',
+            'room_type' => 'Standard',
+            'price_per_night' => 1500,
+            'status' => 'available',
+        ]);
+
+        StaffRequest::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'type' => 'charge_deletion',
+            'status' => 'pending',
+            'requested_by_user_id' => (string) $admin->id,
+            'requested_by_name' => 'Front desk',
+            'payload' => [
+                'charge_id' => 'charge-1',
+                'charge_label' => 'Coffee',
+                'charge_amount' => 120,
+                'room_number' => 'A1',
+            ],
+        ]);
+
+        Booking::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'guest_name' => 'Pending Date Guest',
+            'status' => 'reserved',
+            'check_in_date' => now()->addDay(),
+            'check_out_date' => now()->addDays(2),
+            'total_amount' => 1500,
+            'pending_date_change' => [
+                'status' => 'pending',
+                'requested_by_name' => 'Front desk',
+                'requested_at' => now()->toISOString(),
+            ],
+        ]);
+
+        $response = $this->actingAs($admin)->getJson('/api/v1/admin/dashboard');
+
+        $response->assertOk();
+        $this->assertGreaterThanOrEqual(2, (int) $response->json('booking_stats.pending_approvals'));
     }
 
     public function test_admin_chat_inbox_returns_threads(): void

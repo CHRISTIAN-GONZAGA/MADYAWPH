@@ -133,8 +133,24 @@ class AdminDashboardApiController extends Controller
         );
         $currentCredits = (float) $credit->current_credits;
 
+        $pendingApprovals = 0;
+        try {
+            $pendingApprovals = app(StaffRequestService::class)->pendingCount($hotelId);
+        } catch (\Throwable $e) {
+            Log::warning('Admin dashboard pending approvals count failed', [
+                'hotel_id' => $hotelId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         $payload = [
-            'auth' => ['user' => array_merge($user->toArray(), [
+            'auth' => ['user' => array_merge([
+                'id' => (string) $user->id,
+                'hotel_id' => (string) $user->hotel_id,
+                'name' => (string) ($user->name ?? ''),
+                'email' => (string) ($user->email ?? ''),
+                'role' => $user->roleValue(),
+            ], [
                 'hotelName' => $hotel?->name,
                 'hotelId' => (string) $user->hotel_id,
             ])],
@@ -241,7 +257,7 @@ class AdminDashboardApiController extends Controller
                 'all_total' => $localTotal + $onlineTotal,
                 'recent_24h' => $recentBookings,
                 'pending_reservations' => $pendingReservations,
-                'pending_approvals' => app(StaffRequestService::class)->pendingCount($hotelId),
+                'pending_approvals' => $pendingApprovals,
             ],
             'bookings' => $bookingsList,
             'reservations' => ExternalReservation::query()
@@ -270,6 +286,7 @@ class AdminDashboardApiController extends Controller
             Log::error('Admin dashboard load failed', [
                 'user_id' => $request->user()?->id,
                 'hotel_id' => $request->user()?->hotel_id,
+                'exception' => $e::class,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);

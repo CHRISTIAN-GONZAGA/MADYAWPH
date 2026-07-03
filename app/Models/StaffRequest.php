@@ -10,6 +10,8 @@ class StaffRequest extends Model
 {
     use BelongsToHotel, HasFactory;
 
+    protected $collection = 'staff_requests';
+
     protected $fillable = [
         'hotel_id',
         'type',

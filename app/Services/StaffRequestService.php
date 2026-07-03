@@ -10,6 +10,7 @@ use App\Models\Room;
 use App\Models\StaffRequest;
 use App\Models\User;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 final class StaffRequestService
@@ -21,22 +22,59 @@ final class StaffRequestService
 
     public function pendingCount(string $hotelId): int
     {
-        $staff = StaffRequest::withoutGlobalScopes()
-            ->where('hotel_id', $hotelId)
-            ->where('status', 'pending')
-            ->count();
+        $staff = $this->pendingStaffRequestCount($hotelId);
 
-        $bookingDates = Booking::withoutGlobalScopes()
+        return $staff
+            + $this->bookingsWithPendingDateChange($hotelId)->count()
+            + $this->reservationsWithPendingDateChange($hotelId)->count();
+    }
+
+    private function pendingStaffRequestCount(string $hotelId): int
+    {
+        try {
+            return StaffRequest::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
+                ->where('status', 'pending')
+                ->count();
+        } catch (\Throwable $e) {
+            Log::warning('StaffRequest pending count failed', [
+                'hotel_id' => $hotelId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return 0;
+        }
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, Booking>
+     */
+    private function bookingsWithPendingDateChange(string $hotelId): Collection
+    {
+        return Booking::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
             ->whereNotNull('pending_date_change')
-            ->where('pending_date_change', '!=', [])
             ->whereNotIn('status', [
                 BookingStatus::COMPLETED->value,
                 BookingStatus::CANCELLED->value,
             ])
-            ->count();
+            ->get()
+            ->filter(function (Booking $booking) {
+                $pending = $booking->pending_date_change;
 
-        $reservationDates = ExternalReservation::withoutGlobalScopes()
+                return is_array($pending)
+                    && $pending !== []
+                    && ($pending['status'] ?? 'pending') === 'pending';
+            })
+            ->values();
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, ExternalReservation>
+     */
+    private function reservationsWithPendingDateChange(string $hotelId): Collection
+    {
+        return ExternalReservation::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
             ->get()
             ->filter(function (ExternalReservation $res) {
@@ -45,9 +83,7 @@ final class StaffRequestService
                 return is_array($pending)
                     && ($pending['status'] ?? '') === 'pending';
             })
-            ->count();
-
-        return $staff + $bookingDates + $reservationDates;
+            ->values();
     }
 
     /**
@@ -57,36 +93,28 @@ final class StaffRequestService
     {
         $items = [];
 
-        $staffRequests = StaffRequest::withoutGlobalScopes()
-            ->where('hotel_id', $hotelId)
-            ->where('status', 'pending')
-            ->latest()
-            ->limit(100)
-            ->get();
+        try {
+            $staffRequests = StaffRequest::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
+                ->where('status', 'pending')
+                ->latest()
+                ->limit(100)
+                ->get();
 
-        foreach ($staffRequests as $request) {
-            $items[] = $this->presentStaffRequest($request);
+            foreach ($staffRequests as $request) {
+                $items[] = $this->presentStaffRequest($request);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('StaffRequest hub list failed', [
+                'hotel_id' => $hotelId,
+                'error' => $e->getMessage(),
+            ]);
         }
 
-        $bookings = Booking::withoutGlobalScopes()
-            ->where('hotel_id', $hotelId)
-            ->whereNotNull('pending_date_change')
-            ->where('pending_date_change', '!=', [])
-            ->whereNotIn('status', [
-                BookingStatus::COMPLETED->value,
-                BookingStatus::CANCELLED->value,
-            ])
-            ->latest()
-            ->limit(50)
-            ->get();
-
-        foreach ($bookings as $booking) {
+        foreach ($this->bookingsWithPendingDateChange($hotelId) as $booking) {
             $pending = is_array($booking->pending_date_change)
                 ? $booking->pending_date_change
                 : [];
-            if (($pending['status'] ?? 'pending') !== 'pending') {
-                continue;
-            }
             $room = Room::withoutGlobalScopes()->find((string) $booking->room_id);
             $items[] = [
                 'id' => 'booking-date-'.(string) $booking->id,
@@ -103,15 +131,9 @@ final class StaffRequestService
             ];
         }
 
-        $reservations = ExternalReservation::withoutGlobalScopes()
-            ->where('hotel_id', $hotelId)
-            ->latest()
-            ->limit(80)
-            ->get();
-
-        foreach ($reservations as $reservation) {
+        foreach ($this->reservationsWithPendingDateChange($hotelId) as $reservation) {
             $pending = $reservation->metadata['pending_date_change'] ?? null;
-            if (! is_array($pending) || ($pending['status'] ?? '') !== 'pending') {
+            if (! is_array($pending)) {
                 continue;
             }
             $items[] = [
