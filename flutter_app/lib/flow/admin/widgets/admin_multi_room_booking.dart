@@ -17,6 +17,7 @@ import 'free_breakfast_selection.dart';
 import 'guest_nationalities.dart';
 import 'hourly_billing.dart';
 import 'manual_booking_dialog.dart';
+import 'multi_room_booking_summary.dart';
 import 'walk_in_complimentary_picker.dart';
 
 /// Group walk-in booking — same steps as single room: calendar → guest form → submit.
@@ -110,20 +111,6 @@ Future<bool> showAdminMultiRoomWalkInBooking({
     useRootNavigator: true,
     builder: (dialogContext) => StatefulBuilder(
       builder: (dialogContext, setLocal) {
-        double estTotal = 0;
-        if (checkInDate != null && checkOutDate != null) {
-          for (final room in rooms) {
-            estTotal += HourlyBilling.customerDateStayCharge(
-              room,
-              checkInDate!,
-              checkOutDate!,
-            );
-          }
-        }
-        final nights = (checkInDate != null && checkOutDate != null)
-            ? checkOutDate!.difference(checkInDate!).inDays
-            : 0;
-        final safeNights = nights > 0 ? nights : 0;
         final discountPct = memberDiscountPercent > 0
             ? memberDiscountPercent
             : switch (discountType) {
@@ -131,9 +118,6 @@ Future<bool> showAdminMultiRoomWalkInBooking({
                 'senior' => 20.0,
                 _ => 0.0,
               };
-        final estAfterDiscount = HourlyBilling.round50(
-          estTotal * (1 - (discountPct / 100)),
-        );
         final anchorRoom = rooms.first;
         final durationLabel = (checkInDate != null && checkOutDate != null)
             ? (HourlyBilling.isHourly(anchorRoom)
@@ -152,7 +136,12 @@ Future<bool> showAdminMultiRoomWalkInBooking({
                     );
                     return '$hours hr(s) · $blocks block(s) of ${HourlyBilling.blockHours(anchorRoom)}h';
                   }()
-                : '$safeNights night${safeNights == 1 ? '' : 's'}')
+                : () {
+                    final nights =
+                        checkOutDate!.difference(checkInDate!).inDays;
+                    final safeNights = nights > 0 ? nights : 0;
+                    return '$safeNights night${safeNights == 1 ? '' : 's'}';
+                  }())
             : '';
 
         Future<void> pickCheckIn() async {
@@ -459,16 +448,21 @@ Future<bool> showAdminMultiRoomWalkInBooking({
                   ],
                   onChanged: (v) => setLocal(() => paymentMethod = v ?? 'Cash'),
                 ),
-                const SizedBox(height: 10),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Duration: $durationLabel\n'
-                    'Estimated total (${rooms.length} rooms): '
-                    '₱${estTotal.toStringAsFixed(2)}'
-                    '${discountPct > 0 ? ' → ₱${estAfterDiscount.toStringAsFixed(2)} after discount' : ''}',
+                if (checkInDate != null && checkOutDate != null) ...[
+                  const SizedBox(height: 12),
+                  MultiRoomBookingTotalSummary(
+                    rooms: rooms,
+                    checkIn: checkInDate!,
+                    checkOut: checkOutDate!,
+                    discountPercent: discountPct,
                   ),
-                ),
+                ] else if (durationLabel.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Duration: $durationLabel'),
+                  ),
+                ],
               ],
             ),
           ),
@@ -611,9 +605,18 @@ Future<bool> showAdminMultiRoomWalkInBooking({
       ),
     );
     if (context.mounted) {
+      final checkIn = DateTime.parse((payload['check_in'] ?? '').toString());
+      final checkOut = DateTime.parse((payload['check_out'] ?? '').toString());
+      final lines = computeMultiRoomChargeLines(
+        rooms: rooms,
+        checkIn: checkIn,
+        checkOut: checkOut,
+      );
+      final gross = multiRoomGrossTotal(lines);
       showAppMessage(
         context,
         'Booked ${rooms.length} rooms for ${payload['guest_name']}. '
+        'Total due: ${formatPeso(gross)}. '
         'Open the Book tab to check guests in when they arrive.',
       );
     }

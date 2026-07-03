@@ -7,6 +7,7 @@ import '../../../widgets/admin_month_calendar.dart';
 import '../admin_dashboard_models.dart';
 import 'admin_walk_in_stay_calendar_dialog.dart';
 import 'hourly_billing.dart';
+import 'multi_room_booking_summary.dart';
 
 /// Combined stay calendar for multiple rooms (blocks dates when any room is occupied).
 Future<WalkInStayDates?> showMultiRoomWalkInStayCalendar({
@@ -315,6 +316,18 @@ class _MultiRoomStayCalendarDialogState extends State<_MultiRoomStayCalendarDial
                                   color: Theme.of(context).colorScheme.error,
                                   fontWeight: FontWeight.w600,
                                 ),
+                              ),
+                            ],
+                            if (_checkIn != null &&
+                                previewCheckOut != null &&
+                                !_rangeOverlapsAnyRoom(
+                                    _checkIn!, previewCheckOut)) ...[
+                              const SizedBox(height: 12),
+                              MultiRoomBookingTotalSummary(
+                                rooms: widget.rooms,
+                                checkIn: _checkIn!,
+                                checkOut: previewCheckOut,
+                                compact: true,
                               ),
                             ],
                           ],
