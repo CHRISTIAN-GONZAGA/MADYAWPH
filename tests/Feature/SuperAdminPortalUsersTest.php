@@ -61,7 +61,7 @@ class SuperAdminPortalUsersTest extends TestCase
         ])->assertForbidden();
     }
 
-    public function test_regular_admin_cannot_list_portal_users(): void
+    public function test_regular_admin_can_list_front_desk_portal_users_only(): void
     {
         $hotel = Hotel::create(['name' => 'List Hotel', 'location' => 'City']);
         $admin = User::create([
@@ -71,8 +71,18 @@ class SuperAdminPortalUsersTest extends TestCase
             'password' => bcrypt('secret123'),
             'role' => UserRole::ADMIN,
         ]);
+        User::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'desk1',
+            'email' => 'desk1@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::FRONTDESK,
+        ]);
 
-        $this->actingAs($admin)->getJson('/api/v1/admin/portal-users')->assertForbidden();
+        $response = $this->actingAs($admin)->getJson('/api/v1/admin/portal-users');
+        $response->assertOk();
+        $roles = collect($response->json('data'))->pluck('role')->unique()->values()->all();
+        $this->assertSame(['frontdesk'], $roles);
     }
 
     public function test_super_admin_can_load_admin_dashboard(): void

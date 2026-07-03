@@ -78,6 +78,92 @@ class HotelsDirectoryTest extends TestCase
         ]);
 
         $response->assertStatus(422);
-        $response->assertJsonFragment(['message' => 'This account belongs to another hotel.']);
+        $response->assertJsonFragment(['message' => 'These credentials do not match our records.']);
+    }
+
+    public function test_same_username_can_exist_in_two_hotels(): void
+    {
+        $hotelA = Hotel::withoutGlobalScopes()->create([
+            'name' => 'Hotel Alpha',
+            'location' => 'Butuan',
+            'city' => 'Butuan',
+        ]);
+        $hotelB = Hotel::withoutGlobalScopes()->create([
+            'name' => 'Hotel Beta',
+            'location' => 'Cebu',
+            'city' => 'Cebu',
+        ]);
+
+        User::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotelA->id,
+            'name' => 'frontdesk1',
+            'email' => 'frontdesk1@alpha.test',
+            'password' => Hash::make('pass-alpha'),
+            'role' => 'frontdesk',
+        ]);
+        User::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotelB->id,
+            'name' => 'frontdesk1',
+            'email' => 'frontdesk1@beta.test',
+            'password' => Hash::make('pass-beta'),
+            'role' => 'frontdesk',
+        ]);
+
+        $this->postJson('/api/v1/auth/portal-login', [
+            'role' => 'frontdesk',
+            'username' => 'frontdesk1',
+            'password' => 'pass-alpha',
+            'hotel_id' => (string) $hotelA->id,
+        ])->assertOk()->assertJsonStructure(['token']);
+
+        $this->postJson('/api/v1/auth/portal-login', [
+            'role' => 'frontdesk',
+            'username' => 'frontdesk1',
+            'password' => 'pass-beta',
+            'hotel_id' => (string) $hotelB->id,
+        ])->assertOk()->assertJsonStructure(['token']);
+    }
+
+    public function test_super_admin_can_create_username_used_in_another_hotel(): void
+    {
+        $hotelA = Hotel::withoutGlobalScopes()->create([
+            'name' => 'Create Hotel A',
+            'location' => 'Butuan',
+            'city' => 'Butuan',
+        ]);
+        $hotelB = Hotel::withoutGlobalScopes()->create([
+            'name' => 'Create Hotel B',
+            'location' => 'Cebu',
+            'city' => 'Cebu',
+        ]);
+
+        User::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotelA->id,
+            'name' => 'shared_admin',
+            'email' => 'shared@alpha.test',
+            'password' => Hash::make('secret123'),
+            'role' => 'admin',
+        ]);
+
+        $superB = User::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotelB->id,
+            'name' => 'super_b',
+            'email' => 'super@beta.test',
+            'password' => bcrypt('secret123'),
+            'role' => 'super_admin',
+        ]);
+
+        $this->actingAs($superB)->postJson('/api/v1/admin/portal-users', [
+            'name' => 'shared_admin',
+            'email' => 'shared@beta.test',
+            'password' => 'password123',
+        ])->assertCreated()->assertJsonPath('user.name', 'shared_admin');
+
+        $this->postJson('/api/v1/auth/portal-login', [
+            'role' => 'admin',
+            'username' => 'shared_admin',
+            'password' => 'password123',
+            'hotel_id' => (string) $hotelB->id,
+        ])->assertOk()->assertJsonStructure(['token']);
     }
 }

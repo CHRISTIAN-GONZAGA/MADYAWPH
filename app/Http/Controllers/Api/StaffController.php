@@ -47,7 +47,8 @@ class StaffController extends Controller
                 'errors' => ['username' => ['Username is already in use for this hotel.']],
             ], 422);
         }
-        $user = User::create([
+        $user = User::withoutGlobalScopes()->create([
+            'hotel_id' => $hotelId,
             'name' => $validated['username'],
             // Generate a deterministic local email for staff accounts.
             'email' => sprintf('%s.%s.%s@staff.local', strtolower(preg_replace('/[^a-zA-Z0-9]+/', '.', $validated['username'])), substr((string) $hotelId, -8), substr((string) \Illuminate\Support\Str::uuid(), 0, 6)),

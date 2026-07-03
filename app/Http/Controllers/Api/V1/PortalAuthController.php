@@ -342,9 +342,12 @@ class PortalAuthController extends Controller
         $identifier = trim((string) ($validated['username'] ?? $validated['email'] ?? ''));
         $identifierField = filled($validated['username'] ?? null) ? 'name' : 'email';
 
-        $user = User::withoutGlobalScopes()
-            ->where($identifierField, $identifier)
-            ->first();
+        $activeHotelId = $this->normalizeHotelId($validated['hotel_id']);
+        if ($activeHotelId === '') {
+            return response()->json(['message' => 'Sign in to your property first.'], 422);
+        }
+
+        $user = $this->findPortalUserForHotel($activeHotelId, $identifierField, $identifier);
 
         if (! $user) {
             return response()->json(['message' => 'These credentials do not match our records.'], 422);
@@ -359,16 +362,6 @@ class PortalAuthController extends Controller
             ], true));
         if (! $roleMatches) {
             return response()->json(['message' => 'Use the role that matches this account (admin, front desk, owner, super admin, or staff).'], 422);
-        }
-
-        $userHotelId = $this->normalizeHotelId($user->hotel_id);
-        $activeHotelId = $this->normalizeHotelId($validated['hotel_id']);
-        if ($activeHotelId === '') {
-            return response()->json(['message' => 'Sign in to your property first.'], 422);
-        }
-
-        if ($userHotelId !== $activeHotelId) {
-            return response()->json(['message' => 'This account belongs to another hotel.'], 422);
         }
 
         if (! $this->passwordMatchesUser($validated['password'], $user)) {
@@ -421,7 +414,7 @@ class PortalAuthController extends Controller
                 'role' => $userRole,
             ],
             'role' => $userRole,
-            'hotel_id' => (string) $userHotelId,
+            'hotel_id' => $activeHotelId,
         ]);
     }
 
@@ -468,15 +461,19 @@ class PortalAuthController extends Controller
         }
 
         $validated = $request->validate([
-            'role' => ['nullable', 'in:admin,staff'],
+            'role' => ['nullable', 'in:admin,staff,frontdesk'],
             'username' => ['required', 'string', 'max:255'],
-            'hotel_id' => ['nullable', 'string'],
+            'hotel_id' => ['required', 'string'],
         ]);
 
-        $userQuery = User::withoutGlobalScopes()->where('name', $validated['username']);
-        if (! empty($validated['hotel_id'])) {
-            $userQuery->where('hotel_id', $validated['hotel_id']);
+        $hotelId = $this->normalizeHotelId($validated['hotel_id']);
+        if ($hotelId === '') {
+            return response()->json(['message' => 'Sign in to your property first.'], 422);
         }
+
+        $userQuery = User::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where('name', $validated['username']);
         if (! empty($validated['role'])) {
             $userQuery->where('role', $validated['role']);
         }
@@ -533,11 +530,17 @@ class PortalAuthController extends Controller
 
         $validated = $request->validate([
             'username' => ['required', 'string', 'max:255'],
+            'hotel_id' => ['required', 'string'],
             'code' => ['required', 'string', 'size:6'],
             'new_password' => ['required', 'string', 'min:8', 'confirmed'],
         ]);
 
-        $user = User::withoutGlobalScopes()->where('name', $validated['username'])->first();
+        $hotelId = $this->normalizeHotelId($validated['hotel_id']);
+        if ($hotelId === '') {
+            return response()->json(['message' => 'Sign in to your property first.'], 422);
+        }
+
+        $user = $this->findPortalUserForHotel($hotelId, 'name', $validated['username']);
         if (! $user) {
             return response()->json(['message' => 'User not found.'], 422);
         }
@@ -770,5 +773,25 @@ class PortalAuthController extends Controller
         }
 
         return $normalized;
+    }
+
+    private function findPortalUserForHotel(
+        string $hotelId,
+        string $identifierField,
+        string $identifier,
+    ): ?User {
+        $hotelId = $this->normalizeHotelId($hotelId);
+        $identifier = trim($identifier);
+        if ($hotelId === '' || $identifier === '') {
+            return null;
+        }
+        if (! in_array($identifierField, ['name', 'email'], true)) {
+            return null;
+        }
+
+        return User::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where($identifierField, $identifier)
+            ->first();
     }
 }
