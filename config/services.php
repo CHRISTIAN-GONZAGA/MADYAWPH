@@ -92,8 +92,14 @@ return [
     'messaging' => [
         /** Set true when ready to send SMS (Semaphore/Twilio). */
         'sms_enabled' => filter_var(env('MESSAGING_SMS_ENABLED', false), FILTER_VALIDATE_BOOL),
-        /** Set true when ready to send email OTP via SES/SMTP. */
+        /** Set true when ready to send email (Mailjet Send API / SMTP / SES). */
         'email_enabled' => filter_var(env('MESSAGING_EMAIL_ENABLED', false), FILTER_VALIDATE_BOOL),
+    ],
+
+    /** Mailjet Send API v3.1 — falls back to MAIL_USERNAME / MAIL_PASSWORD when unset. */
+    'mailjet' => [
+        'key' => trim((string) env('MAILJET_APIKEY_PUBLIC', env('MAIL_USERNAME', ''))),
+        'secret' => trim((string) env('MAILJET_APIKEY_PRIVATE', env('MAIL_PASSWORD', ''))),
     ],
 
     'email_otp' => [

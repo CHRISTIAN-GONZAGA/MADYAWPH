@@ -5,15 +5,20 @@ namespace App\Services;
 use App\Mail\GuestCheckInWelcomeMail;
 use App\Mail\OtpVerificationMail;
 use App\Support\MessagingFlags;
+use Illuminate\Mail\Mailable;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Throwable;
 
 /**
- * Transactional email via Laravel mail (Mailjet SMTP, SES, or log).
+ * Transactional email via Mailjet Send API v3.1 (preferred), SMTP, SES, or log.
  */
 class AppEmailService
 {
+    public function __construct(
+        private readonly MailjetSendApiService $mailjet,
+    ) {}
+
     public function sendOtp(
         string $email,
         string $code,
@@ -31,30 +36,13 @@ class AppEmailService
 
         $ttl = $expiresMinutes ?? (int) config('services.email_otp.registration_ttl_minutes', 10);
 
-        try {
-            Mail::to($normalized)->send(new OtpVerificationMail($code, $purpose, $ttl));
-
-            Log::info('OTP email sent', [
-                'email' => $this->maskEmail($normalized),
-                'purpose' => $purpose,
-                'provider' => $this->providerName(),
-            ]);
-
-            return new EmailSendResult(true, $this->providerName(), $normalized);
-        } catch (Throwable $e) {
-            Log::warning('OTP email failed', [
-                'email' => $this->maskEmail($normalized),
-                'purpose' => $purpose,
-                'message' => $e->getMessage(),
-            ]);
-
-            return new EmailSendResult(
-                false,
-                $this->providerName(),
-                $normalized,
-                config('app.debug') ? $e->getMessage() : 'Could not send verification email.',
-            );
-        }
+        return $this->dispatch(
+            $normalized,
+            new OtpVerificationMail($code, $purpose, $ttl),
+            'OTP email',
+            'Could not send verification email.',
+            ['purpose' => $purpose],
+        );
     }
 
     /**
@@ -89,8 +77,9 @@ class AppEmailService
             );
         }
 
-        try {
-            Mail::to($normalized)->send(new GuestCheckInWelcomeMail(
+        return $this->dispatch(
+            $normalized,
+            new GuestCheckInWelcomeMail(
                 hotelName: $hotelName !== '' ? $hotelName : (string) config('app.name', 'MADYAW'),
                 guestName: $guestName !== '' ? $guestName : 'Guest',
                 roomNumber: $roomNumber,
@@ -98,29 +87,47 @@ class AppEmailService
                 checkInDate: $checkInDate,
                 checkOutDate: $checkOutDate,
                 bookingReference: $bookingReference,
-            ));
+            ),
+            'Guest check-in welcome email',
+            'Could not send welcome email.',
+            ['hotel' => $hotelName, 'room' => $roomNumber],
+        );
+    }
 
-            Log::info('Guest check-in welcome email sent', [
-                'email' => $this->maskEmail($normalized),
-                'hotel' => $hotelName,
-                'room' => $roomNumber,
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private function dispatch(
+        string $to,
+        Mailable $mailable,
+        string $logLabel,
+        string $genericError,
+        array $context = [],
+    ): EmailSendResult {
+        try {
+            if ($this->usesMailjetApi()) {
+                $this->mailjet->sendMailable($to, $mailable);
+            } else {
+                Mail::to($to)->send($mailable);
+            }
+
+            Log::info("{$logLabel} sent", array_merge($context, [
+                'email' => $this->maskEmail($to),
                 'provider' => $this->providerName(),
-            ]);
+            ]));
 
-            return new EmailSendResult(true, $this->providerName(), $normalized);
+            return new EmailSendResult(true, $this->providerName(), $to);
         } catch (Throwable $e) {
-            Log::warning('Guest check-in welcome email failed', [
-                'email' => $this->maskEmail($normalized),
-                'hotel' => $hotelName,
-                'room' => $roomNumber,
+            Log::warning("{$logLabel} failed", array_merge($context, [
+                'email' => $this->maskEmail($to),
                 'message' => $e->getMessage(),
-            ]);
+            ]));
 
             return new EmailSendResult(
                 false,
                 $this->providerName(),
-                $normalized,
-                config('app.debug') ? $e->getMessage() : 'Could not send welcome email.',
+                $to,
+                config('app.debug') ? $e->getMessage() : $genericError,
             );
         }
     }
@@ -151,11 +158,31 @@ class AppEmailService
                 false,
                 null,
                 $normalizedEmail,
-                'Email is not configured. Set MAIL_MAILER=smtp (Mailjet) or ses, plus MAIL_FROM_ADDRESS.',
+                'Email is not configured. Set MAIL_MAILER=mailjet (or smtp with Mailjet keys), MAIL_FROM_ADDRESS, and API keys.',
             );
         }
 
         return null;
+    }
+
+    /**
+     * Prefer Mailjet Send API v3.1 when mailer is mailjet, or SMTP host is Mailjet
+     * (SMTP is often blocked on Render; HTTPS API works).
+     */
+    public function usesMailjetApi(): bool
+    {
+        $mailer = strtolower((string) config('mail.default', 'log'));
+        if ($mailer === 'mailjet') {
+            return $this->mailjet->isConfigured();
+        }
+
+        if ($mailer === 'smtp') {
+            $host = strtolower((string) config('mail.mailers.smtp.host', ''));
+
+            return str_contains($host, 'mailjet.com') && $this->mailjet->isConfigured();
+        }
+
+        return false;
     }
 
     public function isConfigured(): bool
@@ -164,11 +191,18 @@ class AppEmailService
             return false;
         }
 
-        $mailer = (string) config('mail.default', 'log');
+        $mailer = strtolower((string) config('mail.default', 'log'));
         $from = strtolower(trim((string) config('mail.from.address', '')));
 
         if ($from === '' || $from === 'hello@example.com') {
             return false;
+        }
+
+        if ($mailer === 'mailjet' || ($mailer === 'smtp' && str_contains(
+            strtolower((string) config('mail.mailers.smtp.host', '')),
+            'mailjet.com'
+        ))) {
+            return $this->mailjet->isConfigured();
         }
 
         if ($mailer === 'ses') {
@@ -185,11 +219,15 @@ class AppEmailService
 
     public function providerName(): ?string
     {
+        if ($this->usesMailjetApi()) {
+            return 'mailjet';
+        }
+
         return (string) config('mail.default', 'log');
     }
 
     /**
-     * @return array{configured: bool, provider: string, from: string}
+     * @return array{enabled: bool, configured: bool, provider: string|null, from: string, transport: string}
      */
     public function status(): array
     {
@@ -198,6 +236,7 @@ class AppEmailService
             'configured' => $this->isConfigured(),
             'provider' => $this->providerName(),
             'from' => (string) config('mail.from.address', ''),
+            'transport' => $this->usesMailjetApi() ? 'mailjet_send_api_v3.1' : (string) config('mail.default', 'log'),
         ];
     }
 
