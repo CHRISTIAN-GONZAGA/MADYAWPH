@@ -8,6 +8,7 @@ import '../widgets/admin_hotel_totals_room_panel.dart';
 import '../widgets/booking_overview_cards.dart';
 import '../widgets/admin_room_navigation.dart';
 import '../widgets/admin_summary_room_tile.dart';
+import '../widgets/front_desk_activity_dialog.dart';
 
 class RoomSummarySection extends StatelessWidget {
   const RoomSummarySection({
@@ -369,6 +370,8 @@ class RoomSummarySection extends StatelessWidget {
             ),
           ],
         ),
+        const SizedBox(height: 6),
+        const FoActivityStatCards(),
       ],
     );
   }

@@ -49,14 +49,6 @@ return [
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
 
-        /*
-         * Mailjet Send API v3.1 is used by AppEmailService (HTTPS).
-         * This mailer entry exists so Mailable::render() works when MAIL_MAILER=mailjet.
-         */
-        'mailjet' => [
-            'transport' => 'array',
-        ],
-
         'ses' => [
             'transport' => 'ses',
         ],

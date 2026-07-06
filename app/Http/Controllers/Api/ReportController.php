@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Enums\RoomStatus;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
+use App\Services\FrontDeskActivityReportService;
 use App\Models\BillingCharge;
 use App\Models\Booking;
 use App\Models\Room;
@@ -906,6 +907,8 @@ class ReportController extends Controller
             'net_revenue' => 0.0,
             'profit' => 0.0,
             'profit_before_reseller_payouts' => 0.0,
+            'rooms_checked_in' => 0,
+            'rooms_checked_out' => 0,
         ];
     }
 
@@ -952,6 +955,52 @@ class ReportController extends Controller
                 'by_category' => [],
             ];
         }
+    }
+
+    public function frontDeskActivitySummary(Request $request, FrontDeskActivityReportService $frontDeskActivity)
+    {
+        $validated = $request->validate([
+            'action' => ['required', 'in:check_in,check_out'],
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date'],
+        ]);
+
+        $hotelId = (string) $request->user()->hotel_id;
+        $from = isset($validated['from']) ? Carbon::parse($validated['from'])->startOfDay() : now()->startOfDay();
+        $to = isset($validated['to']) ? Carbon::parse($validated['to'])->endOfDay() : now()->endOfDay();
+
+        return response()->json(
+            $frontDeskActivity->summarizeByAccount(
+                $hotelId,
+                (string) $validated['action'],
+                $from,
+                $to,
+            )
+        );
+    }
+
+    public function frontDeskActivityRooms(Request $request, FrontDeskActivityReportService $frontDeskActivity)
+    {
+        $validated = $request->validate([
+            'action' => ['required', 'in:check_in,check_out'],
+            'user_id' => ['required', 'string', 'max:120'],
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date'],
+        ]);
+
+        $hotelId = (string) $request->user()->hotel_id;
+        $from = isset($validated['from']) ? Carbon::parse($validated['from'])->startOfDay() : now()->startOfDay();
+        $to = isset($validated['to']) ? Carbon::parse($validated['to'])->endOfDay() : now()->endOfDay();
+
+        return response()->json(
+            $frontDeskActivity->roomsForAccount(
+                $hotelId,
+                (string) $validated['user_id'],
+                (string) $validated['action'],
+                $from,
+                $to,
+            )
+        );
     }
 
     /**
@@ -1013,6 +1062,19 @@ class ReportController extends Controller
     private function buildShiftReportPayload(Carbon $from, Carbon $to, ?string $staffName = null): array
     {
         $summary = $this->safeFinancialSummary($from, $to);
+        $hotelId = (string) (request()->user()?->hotel_id ?? '');
+        if ($hotelId !== '') {
+            $roomCounts = app(FrontDeskActivityReportService::class)->shiftRoomCounts(
+                $hotelId,
+                $from,
+                $to,
+                $staffName,
+            );
+            $summary = array_merge($summary, $roomCounts);
+        } else {
+            $summary['rooms_checked_in'] = 0;
+            $summary['rooms_checked_out'] = 0;
+        }
         $bookings = $this->paidBookingsInRange($from, $to);
         $revenueByBooking = $this->recognizedRevenueByBooking($bookings);
 

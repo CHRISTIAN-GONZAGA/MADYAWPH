@@ -124,6 +124,8 @@ class _SummaryTable extends StatelessWidget {
       ['Net revenue', formatPeso(summary['net_revenue'] ?? 0)],
       ['Net profit', formatPeso(summary['profit'] ?? 0)],
       ['Paid bookings', '${summary['bookings'] ?? 0}'],
+      ['Rooms checked in', '${summary['rooms_checked_in'] ?? 0}'],
+      ['Rooms checked out', '${summary['rooms_checked_out'] ?? 0}'],
     ];
 
     return _DataTable(

@@ -11,14 +11,10 @@ use Illuminate\Support\Facades\Mail;
 use Throwable;
 
 /**
- * Transactional email via Mailjet Send API v3.1 (preferred), SMTP, SES, or log.
+ * Transactional email via Resend (preferred), SES, SMTP, or log.
  */
 class AppEmailService
 {
-    public function __construct(
-        private readonly MailjetSendApiService $mailjet,
-    ) {}
-
     public function sendOtp(
         string $email,
         string $code,
@@ -105,11 +101,7 @@ class AppEmailService
         array $context = [],
     ): EmailSendResult {
         try {
-            if ($this->usesMailjetApi()) {
-                $this->mailjet->sendMailable($to, $mailable);
-            } else {
-                Mail::to($to)->send($mailable);
-            }
+            Mail::mailer($this->activeMailer())->to($to)->send($mailable);
 
             Log::info("{$logLabel} sent", array_merge($context, [
                 'email' => $this->maskEmail($to),
@@ -158,31 +150,18 @@ class AppEmailService
                 false,
                 null,
                 $normalizedEmail,
-                'Email is not configured. Set MAIL_MAILER=mailjet (or smtp with Mailjet keys), MAIL_FROM_ADDRESS, and API keys.',
+                'Email is not configured. Set MAIL_MAILER=resend, RESEND_API_KEY, and a verified MAIL_FROM_ADDRESS.',
             );
         }
 
         return null;
     }
 
-    /**
-     * Prefer Mailjet Send API v3.1 when mailer is mailjet, or SMTP host is Mailjet
-     * (SMTP is often blocked on Render; HTTPS API works).
-     */
-    public function usesMailjetApi(): bool
+    public function activeMailer(): string
     {
         $mailer = strtolower((string) config('mail.default', 'log'));
-        if ($mailer === 'mailjet') {
-            return $this->mailjet->isConfigured();
-        }
 
-        if ($mailer === 'smtp') {
-            $host = strtolower((string) config('mail.mailers.smtp.host', ''));
-
-            return str_contains($host, 'mailjet.com') && $this->mailjet->isConfigured();
-        }
-
-        return false;
+        return $mailer !== '' ? $mailer : 'log';
     }
 
     public function isConfigured(): bool
@@ -191,18 +170,15 @@ class AppEmailService
             return false;
         }
 
-        $mailer = strtolower((string) config('mail.default', 'log'));
+        $mailer = $this->activeMailer();
         $from = strtolower(trim((string) config('mail.from.address', '')));
 
         if ($from === '' || $from === 'hello@example.com') {
             return false;
         }
 
-        if ($mailer === 'mailjet' || ($mailer === 'smtp' && str_contains(
-            strtolower((string) config('mail.mailers.smtp.host', '')),
-            'mailjet.com'
-        ))) {
-            return $this->mailjet->isConfigured();
+        if ($mailer === 'resend') {
+            return $this->resendApiKey() !== '';
         }
 
         if ($mailer === 'ses') {
@@ -219,11 +195,12 @@ class AppEmailService
 
     public function providerName(): ?string
     {
-        if ($this->usesMailjetApi()) {
-            return 'mailjet';
-        }
+        return $this->activeMailer();
+    }
 
-        return (string) config('mail.default', 'log');
+    public function resendApiKey(): string
+    {
+        return trim((string) config('services.resend.key', ''));
     }
 
     /**
@@ -231,12 +208,14 @@ class AppEmailService
      */
     public function status(): array
     {
+        $mailer = $this->activeMailer();
+
         return [
             'enabled' => MessagingFlags::emailEnabled(),
             'configured' => $this->isConfigured(),
             'provider' => $this->providerName(),
             'from' => (string) config('mail.from.address', ''),
-            'transport' => $this->usesMailjetApi() ? 'mailjet_send_api_v3.1' : (string) config('mail.default', 'log'),
+            'transport' => $mailer === 'resend' ? 'resend_api' : $mailer,
         ];
     }
 

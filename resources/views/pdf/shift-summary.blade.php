@@ -36,6 +36,8 @@
             <tr><td>Net revenue</td><td class="num">₱{{ number_format((float) ($summary['net_revenue'] ?? 0), 2) }}</td></tr>
             <tr class="totals"><td>Net profit</td><td class="num">₱{{ number_format((float) ($summary['profit'] ?? 0), 2) }}</td></tr>
             <tr><td>Paid bookings</td><td class="num">{{ (int) ($summary['bookings'] ?? 0) }}</td></tr>
+            <tr><td>Rooms checked in</td><td class="num">{{ (int) ($summary['rooms_checked_in'] ?? 0) }}</td></tr>
+            <tr><td>Rooms checked out</td><td class="num">{{ (int) ($summary['rooms_checked_out'] ?? 0) }}</td></tr>
         </tbody>
     </table>
 

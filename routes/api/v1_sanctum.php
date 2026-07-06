@@ -1736,6 +1736,8 @@ Route::get('/tasks/assigned-to-me', [TaskController::class, 'assignedToMe'])->mi
 // Reports
 Route::get('/reports/shift-summary', [ReportController::class, 'shiftSummary'])->middleware('role:admin,frontdesk,staff');
 Route::get('/reports/shift-summary/pdf', [ReportController::class, 'shiftSummaryPdf'])->middleware('role:admin,frontdesk,staff');
+Route::get('/reports/frontdesk-activity', [ReportController::class, 'frontDeskActivitySummary'])->middleware('role:admin,frontdesk');
+Route::get('/reports/frontdesk-activity/rooms', [ReportController::class, 'frontDeskActivityRooms'])->middleware('role:admin,frontdesk');
 Route::get('/reports/sales', [ReportController::class, 'sales'])->middleware('role:admin,frontdesk');
 Route::get('/reports/sales/timeseries', [ReportController::class, 'salesTimeseries'])->middleware('role:admin,frontdesk');
 Route::get('/reports/paid-transactions', [ReportController::class, 'paidTransactions'])->middleware('role:admin,frontdesk');

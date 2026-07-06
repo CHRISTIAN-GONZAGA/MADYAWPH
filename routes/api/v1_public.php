@@ -75,8 +75,8 @@ Route::get('/integrations/status', function (SmsService $smsService, AppEmailSer
             'mail_mailer' => (string) config('mail.default'),
             'hint' => MessagingFlags::emailEnabled()
                 ? ($emailService->isConfigured()
-                    ? 'OTP, password reset, and guest check-in welcome emails use Mailjet Send API v3.1 (or the configured mailer).'
-                    : 'Set MAIL_MAILER=mailjet, MAILJET_APIKEY_PUBLIC, MAILJET_APIKEY_PRIVATE (or MAIL_USERNAME/PASSWORD), and a verified MAIL_FROM_ADDRESS.')
+                    ? 'OTP, password reset, and guest check-in welcome emails use Resend (or the configured mailer).'
+                    : 'Set MAIL_MAILER=resend, RESEND_API_KEY, and a verified MAIL_FROM_ADDRESS.')
                 : 'Email messaging is off (MESSAGING_EMAIL_ENABLED=false).',
         ]),
         'sms' => array_merge($smsService->status(), [
