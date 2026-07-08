@@ -14,6 +14,7 @@ import '../admin_online_payment_screen.dart';
 import '../admin_portal_users_screen.dart';
 import '../admin_room_fee_presets_screen.dart';
 import '../admin_cancellation_retention_screen.dart';
+import '../admin_notification_emails_screen.dart';
 
 class SettingsSection extends StatelessWidget {
   const SettingsSection({
@@ -308,12 +309,27 @@ class SettingsSection extends StatelessWidget {
               enabled: _opsEnabled,
               onTap: () => onThemeReset(),
             ),
+            if (!isFrontDesk) ...[
+              _SettingsTile(
+                icon: Icons.mark_email_read_outlined,
+                title: 'Owner & notification Gmail',
+                subtitle: 'Guest portal check-in and room status alerts',
+                enabled: !creditsLocked,
+                onTap: () {
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const AdminNotificationEmailsScreen(),
+                    ),
+                  );
+                },
+              ),
+            ],
             _SettingsTile(
               icon: Icons.lock_outline,
               title: 'Account settings',
               subtitle: isFrontDesk
                   ? 'Change your password'
-                  : 'Admin password and portal admins',
+                  : 'Password, Gmail, and portal admins',
               enabled: isFrontDesk || !creditsLocked,
               onTap: onOpenAccountSettings,
             ),

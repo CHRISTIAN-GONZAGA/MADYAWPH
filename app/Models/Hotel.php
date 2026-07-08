@@ -21,6 +21,7 @@ class Hotel extends Model
         'latitude',
         'longitude',
         'contact_number',
+        'owner_email',
         'access_username',
         'access_password',
         'picker_banner_url',

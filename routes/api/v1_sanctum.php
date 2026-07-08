@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\StaffController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\V1\AdminChatController;
 use App\Http\Controllers\Api\V1\AdminDashboardApiController;
+use App\Http\Controllers\Api\V1\HotelNotificationEmailController;
 use App\Http\Controllers\Api\V1\PortalAuthController;
 use App\Http\Controllers\Api\V1\StaffDashboardApiController;
 use App\Models\AmenityClaim;
@@ -2016,7 +2017,14 @@ Route::put('/admin/profile', function (Request $request) {
     $user->save();
 
     return response()->json(['ok' => true, 'user' => $user->fresh()]);
-})->middleware('role:admin,frontdesk')->name('api.v1.admin.profile');
+})->middleware('role:admin,frontdesk,super_admin')->name('api.v1.admin.profile');
+
+Route::get('/admin/hotel/notification-emails', [HotelNotificationEmailController::class, 'show'])
+    ->middleware('role:admin,super_admin')
+    ->name('api.v1.admin.hotel.notification-emails.show');
+Route::patch('/admin/hotel/notification-emails', [HotelNotificationEmailController::class, 'update'])
+    ->middleware('role:admin,super_admin')
+    ->name('api.v1.admin.hotel.notification-emails.update');
 
 Route::get('/admin/hotel/picker-banner', function (Request $request) {
     $hotel = Hotel::withoutGlobalScopes()->findOrFail((string) $request->user()->hotel_id);

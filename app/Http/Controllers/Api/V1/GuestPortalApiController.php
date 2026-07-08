@@ -14,6 +14,7 @@ use App\Models\Hotel;
 use App\Models\Room;
 use App\Models\StayReview;
 use App\Services\ActivityLogService;
+use App\Services\AppEmailService;
 use App\Services\BookingPaymentService;
 use App\Services\FinancialComputationService;
 use App\Services\GuestPortalQrService;
@@ -24,12 +25,15 @@ use App\Services\StayExtensionService;
 use App\Support\ChatAttachmentUrl;
 use App\Support\GuestMessageResource;
 use App\Support\GuestPortalStore;
+use App\Support\HotelNotificationRecipients;
 use App\Support\PriceRounding;
 use App\Support\RoomBillingSupport;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class GuestPortalApiController extends Controller
 {
@@ -48,7 +52,7 @@ class GuestPortalApiController extends Controller
         ]);
     }
 
-    public function login(Request $request): JsonResponse
+    public function login(Request $request, AppEmailService $appEmailService): JsonResponse
     {
         $validated = $request->validate([
             'hotel_id' => ['required', 'string'],
@@ -85,6 +89,8 @@ class GuestPortalApiController extends Controller
         ];
         $token = GuestPortalStore::issue($portal);
 
+        $this->notifyOwnerOfGuestPortalLogin($room, $appEmailService, $accessCode);
+
         return response()->json([
             'guest_token' => $token,
             'token_type' => 'Bearer',
@@ -92,6 +98,59 @@ class GuestPortalApiController extends Controller
             'room_id' => $portal['room_id'],
             'room_number' => $portal['room_number'],
         ]);
+    }
+
+    private function notifyOwnerOfGuestPortalLogin(
+        Room $room,
+        AppEmailService $appEmailService,
+        string $accessCode,
+    ): void {
+        $hotelId = (string) $room->hotel_id;
+        $roomId = (string) $room->id;
+        $notifyKey = 'guest_portal_owner_notify:'
+            .$hotelId.':'
+            .$roomId.':'
+            .hash('sha256', $accessCode);
+
+        if (! Cache::add($notifyKey, true, now()->addDays(60))) {
+            return;
+        }
+
+        try {
+            $hotel = Hotel::withoutGlobalScopes()->find($hotelId);
+            $booking = Booking::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
+                ->where('room_id', $roomId)
+                ->whereNotIn('status', [
+                    BookingStatus::COMPLETED->value,
+                    BookingStatus::CANCELLED->value,
+                ])
+                ->latest('created_at')
+                ->first();
+
+            $guestName = trim((string) ($room->current_guest_name ?? $booking?->guest_name ?? 'Guest'));
+            $ownerEmails = HotelNotificationRecipients::ownerInboxEmails($hotelId);
+            if ($ownerEmails === []) {
+                return;
+            }
+
+            $appEmailService->sendGuestPortalLoginToOwner(
+                ownerEmails: $ownerEmails,
+                hotelName: trim((string) ($hotel?->name ?? config('app.name', 'MADYAW'))),
+                roomNumber: (string) ($room->room_number ?? ''),
+                guestName: $guestName !== '' ? $guestName : 'Guest',
+                bookingReference: $booking?->booking_reference
+                    ? (string) $booking->booking_reference
+                    : null,
+                loggedInAt: now()->format('M d, Y g:i A'),
+            );
+        } catch (\Throwable $e) {
+            Cache::forget($notifyKey);
+            Log::warning('Guest portal owner notification skipped', [
+                'room_id' => $roomId,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     public function logout(Request $request): JsonResponse

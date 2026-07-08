@@ -22,6 +22,7 @@ import 'admin/admin_dashboard_models.dart';
 import 'admin/widgets/portal_shift_session.dart';
 import 'admin/widgets/front_desk_shift.dart';
 import 'admin/admin_dashboard_shell.dart';
+import 'admin/admin_notification_emails_screen.dart';
 import 'admin/widgets/admin_room_detail_navigation.dart';
 import 'admin/widgets/admin_hotel_totals_room_panel.dart';
 import 'admin/widgets/admin_walk_in_customer_booking.dart';
@@ -2390,6 +2391,9 @@ class _AdminAccountSettingsScreenState extends State<AdminAccountSettingsScreen>
   final _adminNewPass2 = TextEditingController();
   bool _busy = false;
   bool _isSuperAdmin = false;
+  String _portalRole = '';
+
+  bool _isFrontDeskOnly() => _portalRole == 'frontdesk';
 
   @override
   void initState() {
@@ -2398,18 +2402,31 @@ class _AdminAccountSettingsScreenState extends State<AdminAccountSettingsScreen>
   }
 
   Future<void> _loadDefaults() async {
-    final role = await AuthStorage.portalRole();
+    final role = (await AuthStorage.portalRole()) ?? '';
     var isSuper = role == 'super_admin';
+    var resolvedRole = role;
     try {
       final r = await portalDioWithLongTimeout().get<Map<String, dynamic>>('/admin/dashboard');
       final u =
           (r.data?['auth'] as Map<String, dynamic>?)?['user'] as Map<String, dynamic>?;
       final n = (u?['name'] ?? '').toString();
       final apiRole = (u?['role'] ?? '').toString();
-      if (apiRole == 'super_admin') isSuper = true;
-      if (mounted && n.isNotEmpty) _nameCtrl.text = n;
+      if (apiRole.isNotEmpty) {
+        resolvedRole = apiRole;
+      }
+      if (apiRole == 'super_admin') {
+        isSuper = true;
+      }
+      if (mounted && n.isNotEmpty) {
+        _nameCtrl.text = n;
+      }
     } catch (_) {}
-    if (mounted) setState(() => _isSuperAdmin = isSuper);
+    if (mounted) {
+      setState(() {
+        _isSuperAdmin = isSuper;
+        _portalRole = resolvedRole;
+      });
+    }
   }
 
   @override
@@ -2501,6 +2518,32 @@ class _AdminAccountSettingsScreenState extends State<AdminAccountSettingsScreen>
             onPressed: _busy ? null : _saveAdminProfile,
             child: const Text('Change my password / username'),
           ),
+          if (_isSuperAdmin || !_isFrontDeskOnly()) ...[
+            const SizedBox(height: 28),
+            Text(
+              'Notification Gmail',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _isSuperAdmin
+                  ? 'Set owner Gmail, your super-admin Gmail, and the administrator Gmail for guest check-in and room status alerts.'
+                  : 'Set owner Gmail and your admin Gmail for guest check-in and room status alerts.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () {
+                Navigator.of(context).push<void>(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AdminNotificationEmailsScreen(),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.mark_email_read_outlined),
+              label: const Text('Manage owner & notification Gmail'),
+            ),
+          ],
           if (_isSuperAdmin) ...[
             const SizedBox(height: 28),
             Card(

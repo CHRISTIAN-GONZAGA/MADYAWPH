@@ -22,6 +22,7 @@ class PortalLoginBearerAuthTest extends TestCase
             'barangay' => 'Libertad',
             'contact_number' => '09171234567',
             'admin_email' => 'admin@bearertest.test',
+            'owner_email' => 'owner@bearertest.test',
             'total_rooms' => 10,
         ]);
 

@@ -30,6 +30,7 @@ class NewHotelDashboardLifecycleTest extends TestCase
             'barangay' => 'Libertad',
             'contact_number' => '09171230001',
             'admin_email' => 'admin@lifecycle.test',
+            'owner_email' => 'owner@lifecycle.test',
             'total_rooms' => 10,
         ]);
         $register->assertCreated();

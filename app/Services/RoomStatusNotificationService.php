@@ -7,6 +7,7 @@ use App\Models\Booking;
 use App\Models\Hotel;
 use App\Models\Room;
 use App\Models\User;
+use App\Support\HotelNotificationRecipients;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
@@ -28,20 +29,8 @@ class RoomStatusNotificationService
             'booking_reference' => (string) ($booking?->booking_reference ?? ''),
         ];
 
-        $recipients = User::withoutGlobalScopes()
-            ->where('hotel_id', (string) $room->hotel_id)
-            ->whereIn('role', ['admin', 'super_admin', 'staff'])
-            ->whereNotNull('email')
-            ->pluck('email')
-            ->filter(fn ($e) => filter_var($e, FILTER_VALIDATE_EMAIL))
-            ->unique()
-            ->values()
-            ->all();
-
-        $guestEmail = (string) ($booking?->guest_email ?? '');
-        if ($guestEmail !== '' && filter_var($guestEmail, FILTER_VALIDATE_EMAIL)) {
-            $recipients[] = $guestEmail;
-        }
+        // Staff only — guests must not receive room status change emails.
+        $recipients = HotelNotificationRecipients::statusAlertEmails((string) $room->hotel_id);
 
         if ($recipients === []) {
             return;

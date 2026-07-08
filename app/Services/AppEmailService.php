@@ -3,7 +3,9 @@
 namespace App\Services;
 
 use App\Mail\GuestCheckInWelcomeMail;
+use App\Mail\GuestPortalRoomLoginMail;
 use App\Mail\OtpVerificationMail;
+use App\Support\HotelNotificationRecipients;
 use App\Support\MessagingFlags;
 use Illuminate\Mail\Mailable;
 use Illuminate\Support\Facades\Log;
@@ -88,6 +90,82 @@ class AppEmailService
             'Could not send welcome email.',
             ['hotel' => $hotelName, 'room' => $roomNumber],
         );
+    }
+
+    /**
+     * Notify hotel owner (registration email) when a guest signs in via QR + room password.
+     *
+     * @param  list<string>  $ownerEmails
+     */
+    public function sendGuestPortalLoginToOwner(
+        array $ownerEmails,
+        string $hotelName,
+        string $roomNumber,
+        string $guestName,
+        ?string $bookingReference = null,
+        ?string $loggedInAt = null,
+    ): EmailSendResult {
+        $recipients = collect($ownerEmails)
+            ->map(fn (string $email) => $this->normalizeEmail($email))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($recipients === []) {
+            return new EmailSendResult(
+                false,
+                null,
+                '',
+                'No owner email is configured for this hotel.',
+            );
+        }
+
+        if ($blocked = $this->messagingGate($recipients[0])) {
+            return $blocked;
+        }
+
+        $mailable = new GuestPortalRoomLoginMail(
+            hotelName: $hotelName !== '' ? $hotelName : (string) config('app.name', 'MADYAW'),
+            roomNumber: $roomNumber,
+            guestName: $guestName !== '' ? $guestName : 'Guest',
+            bookingReference: $bookingReference,
+            loggedInAt: $loggedInAt,
+        );
+
+        try {
+            Mail::mailer($this->activeMailer())->to($recipients)->send($mailable);
+
+            Log::info('Guest portal login owner email sent', [
+                'hotel' => $hotelName,
+                'room' => $roomNumber,
+                'recipients' => count($recipients),
+                'provider' => $this->providerName(),
+            ]);
+
+            return new EmailSendResult(true, $this->providerName(), $recipients[0]);
+        } catch (Throwable $e) {
+            Log::warning('Guest portal login owner email failed', [
+                'hotel' => $hotelName,
+                'room' => $roomNumber,
+                'message' => $e->getMessage(),
+            ]);
+
+            return new EmailSendResult(
+                false,
+                $this->providerName(),
+                $recipients[0],
+                config('app.debug') ? $e->getMessage() : 'Could not send owner notification email.',
+            );
+        }
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function ownerEmailsForHotel(string $hotelId): array
+    {
+        return HotelNotificationRecipients::ownerInboxEmails($hotelId);
     }
 
     /**

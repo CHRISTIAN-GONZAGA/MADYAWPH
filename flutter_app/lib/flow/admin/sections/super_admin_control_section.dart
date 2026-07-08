@@ -6,6 +6,7 @@ import '../../../dio_client.dart';
 import '../../../widgets/app_input.dart';
 import '../../../widgets/chat_attachment.dart';
 import '../admin_portal_users_screen.dart';
+import '../admin_notification_emails_screen.dart';
 
 /// Super-admin control panel: manage lower-level admin accounts.
 class SuperAdminControlSection extends StatefulWidget {
@@ -287,6 +288,18 @@ class _SuperAdminControlSectionState extends State<SuperAdminControlSection> {
                   onPressed: widget.onOpenAccountSettings,
                   icon: const Icon(Icons.lock_outline),
                   label: const Text('Account settings'),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AdminNotificationEmailsScreen(),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.mark_email_read_outlined),
+                  label: const Text('Owner & notification Gmail'),
                 ),
               ],
             ),

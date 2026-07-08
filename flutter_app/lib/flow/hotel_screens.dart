@@ -1830,6 +1830,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
   final _contact = TextEditingController();
   PhilippineAddressSelection _address = const PhilippineAddressSelection();
   final _adminEmail = TextEditingController();
+  final _ownerEmail = TextEditingController();
   final _totalRooms = TextEditingController(text: '1');
   bool _busy = false;
   bool _locatingGps = false;
@@ -1850,6 +1851,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
     _hotelName.dispose();
     _contact.dispose();
     _adminEmail.dispose();
+    _ownerEmail.dispose();
     _totalRooms.dispose();
     super.dispose();
   }
@@ -1969,6 +1971,10 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
     if (email.isEmpty || !email.contains('@')) {
       return 'Enter a valid admin email address.';
     }
+    final ownerEmail = _ownerEmail.text.trim();
+    if (ownerEmail.isEmpty || !ownerEmail.contains('@')) {
+      return 'Enter a valid owner email address.';
+    }
     final username = _username.text.trim();
     if (username.isEmpty) return 'Choose an owner username.';
     if (username.contains(' ')) {
@@ -1997,6 +2003,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
       ..._address.toRegisterPayload(),
       'contact_number': _contact.text.trim(),
       'admin_email': _adminEmail.text.trim().toLowerCase(),
+      'owner_email': _ownerEmail.text.trim().toLowerCase(),
       'total_rooms': int.tryParse(_totalRooms.text.trim()) ?? 1,
     };
     if (coords != null) {
@@ -2330,6 +2337,18 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
         controller: _adminEmail,
         decoration: const InputDecoration(
           labelText: 'Admin email',
+          helperText: 'Used for admin account login and email verification',
+          border: OutlineInputBorder(),
+        ),
+        keyboardType: TextInputType.emailAddress,
+        textInputAction: TextInputAction.next,
+      ),
+      const SizedBox(height: 12),
+      TextField(
+        controller: _ownerEmail,
+        decoration: const InputDecoration(
+          labelText: 'Owner email',
+          helperText: 'Guest check-in alerts and room status notifications',
           border: OutlineInputBorder(),
         ),
         keyboardType: TextInputType.emailAddress,

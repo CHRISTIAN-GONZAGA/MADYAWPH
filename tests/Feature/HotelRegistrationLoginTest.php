@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Hotel;
 use App\Models\HotelCredit;
 use App\Models\User;
 use Illuminate\Routing\Middleware\ThrottleRequests;
@@ -26,6 +27,7 @@ class HotelRegistrationLoginTest extends TestCase
             'street_address' => 'Montilla Blvd',
             'contact_number' => '09171234567',
             'admin_email' => 'admin@palmresort.test',
+            'owner_email' => 'owner@palmresort.test',
             'total_rooms' => 25,
             'latitude' => 8.9475,
             'longitude' => 125.5406,
@@ -38,6 +40,9 @@ class HotelRegistrationLoginTest extends TestCase
         $response->assertJsonPath('registration_password', 'OwnerSecret9');
         $response->assertJsonPath('passwords_verified', true);
         $response->assertJsonPath('email_verified', false);
+
+        $hotel = Hotel::withoutGlobalScopes()->find($hotelId);
+        $this->assertSame('owner@palmresort.test', (string) ($hotel?->owner_email ?? ''));
 
         $credit = HotelCredit::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
@@ -119,6 +124,7 @@ class HotelRegistrationLoginTest extends TestCase
             'barangay' => 'Libertad',
             'contact_number' => '09171234567',
             'admin_email' => 'admin@emailoff.test',
+            'owner_email' => 'owner@emailoff.test',
             'total_rooms' => 10,
         ];
 
@@ -145,6 +151,7 @@ class HotelRegistrationLoginTest extends TestCase
             'barangay' => 'Ermita',
             'contact_number' => '09170001122',
             'admin_email' => 'ops@trimhotel.test',
+            'owner_email' => 'owner@trimhotel.test',
             'total_rooms' => 5,
         ]);
 
@@ -171,6 +178,7 @@ class HotelRegistrationLoginTest extends TestCase
             'barangay' => 'Buhangin',
             'contact_number' => '09181112233',
             'admin_email' => 'admin@gatefix.test',
+            'owner_email' => 'owner@gatefix.test',
             'total_rooms' => 10,
         ]);
 

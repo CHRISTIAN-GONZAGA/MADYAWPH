@@ -582,6 +582,7 @@ class PortalAuthController extends Controller
             'street_address' => ['nullable', 'string', 'max:255'],
             'contact_number' => ['required', 'string', 'max:30'],
             'admin_email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'owner_email' => ['required', 'email', 'max:255'],
             'total_rooms' => ['required', 'integer', 'min:1', 'max:5000'],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
@@ -590,6 +591,7 @@ class PortalAuthController extends Controller
         $validated['username'] = trim((string) $validated['username']);
         $validated['password'] = (string) $validated['password'];
         $validated['admin_email'] = strtolower(trim((string) $validated['admin_email']));
+        $validated['owner_email'] = strtolower(trim((string) $validated['owner_email']));
 
         return $validated;
     }
@@ -635,6 +637,7 @@ class PortalAuthController extends Controller
             'latitude' => $coords['latitude'],
             'longitude' => $coords['longitude'],
             'contact_number' => $validated['contact_number'],
+            'owner_email' => $validated['owner_email'],
             'access_username' => $validated['username'],
             'access_password' => Hash::make($validated['password']),
             'total_rooms' => $totalRooms,
