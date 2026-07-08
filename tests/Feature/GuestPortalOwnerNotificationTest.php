@@ -144,6 +144,49 @@ class GuestPortalOwnerNotificationTest extends TestCase
         });
     }
 
+    public function test_failed_owner_notification_allows_retry_on_next_login(): void
+    {
+        config([
+            'services.messaging.email_enabled' => false,
+            'mail.default' => 'resend',
+            'mail.from.address' => 'noreply@madyaw.test',
+            'services.resend.key' => 're_test_key',
+        ]);
+        Mail::fake();
+
+        $hotel = Hotel::create([
+            'name' => 'Retry Hotel',
+            'location' => 'Butuan',
+            'owner_email' => 'retry-owner@gmail.com',
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '404',
+            'room_type' => 'Single',
+            'price_per_night' => 1500,
+            'status' => RoomStatus::CHECKED_IN->value,
+            'current_guest_name' => 'Retry Guest',
+            'current_access_code' => 'RT01',
+        ]);
+
+        $payload = [
+            'hotel_id' => (string) $hotel->id,
+            'room' => '404',
+            'password' => 'RT01',
+        ];
+
+        $this->postJson('/api/v1/guest/login', $payload)->assertOk();
+        $this->postJson('/api/v1/guest/login', $payload)->assertOk();
+
+        Mail::assertNothingSent();
+
+        config(['services.messaging.email_enabled' => true]);
+
+        $this->postJson('/api/v1/guest/login', $payload)->assertOk();
+
+        Mail::assertSent(GuestPortalRoomLoginMail::class, 1);
+    }
+
     public function test_new_guest_password_triggers_owner_email_again(): void
     {
         config([

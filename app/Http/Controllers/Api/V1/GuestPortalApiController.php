@@ -112,7 +112,7 @@ class GuestPortalApiController extends Controller
             .$roomId.':'
             .hash('sha256', $accessCode);
 
-        if (! Cache::add($notifyKey, true, now()->addDays(60))) {
+        if (Cache::has($notifyKey)) {
             return;
         }
 
@@ -131,10 +131,15 @@ class GuestPortalApiController extends Controller
             $guestName = trim((string) ($room->current_guest_name ?? $booking?->guest_name ?? 'Guest'));
             $ownerEmails = HotelNotificationRecipients::ownerInboxEmails($hotelId);
             if ($ownerEmails === []) {
+                Log::info('Guest portal owner notification skipped: no deliverable owner email', [
+                    'hotel_id' => $hotelId,
+                    'room_id' => $roomId,
+                ]);
+
                 return;
             }
 
-            $appEmailService->sendGuestPortalLoginToOwner(
+            $result = $appEmailService->sendGuestPortalLoginToOwner(
                 ownerEmails: $ownerEmails,
                 hotelName: trim((string) ($hotel?->name ?? config('app.name', 'MADYAW'))),
                 roomNumber: (string) ($room->room_number ?? ''),
@@ -144,8 +149,18 @@ class GuestPortalApiController extends Controller
                     : null,
                 loggedInAt: now()->format('M d, Y g:i A'),
             );
+
+            if ($result->sent) {
+                Cache::put($notifyKey, true, now()->addDays(60));
+            } else {
+                Log::warning('Guest portal owner notification not sent', [
+                    'hotel_id' => $hotelId,
+                    'room_id' => $roomId,
+                    'error' => $result->error,
+                    'provider' => $result->provider,
+                ]);
+            }
         } catch (\Throwable $e) {
-            Cache::forget($notifyKey);
             Log::warning('Guest portal owner notification skipped', [
                 'room_id' => $roomId,
                 'error' => $e->getMessage(),

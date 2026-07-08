@@ -21,6 +21,7 @@ final class HotelNotificationRecipients
 
         foreach (self::userEmailsForRoles($hotelId, [
             UserRole::ADMIN->value,
+            UserRole::SUPER_ADMIN->value,
             UserRole::OWNER->value,
         ]) as $email) {
             $emails[] = $email;
