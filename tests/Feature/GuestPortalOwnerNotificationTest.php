@@ -5,7 +5,6 @@ namespace Tests\Feature;
 use App\Enums\RoomStatus;
 use App\Enums\UserRole;
 use App\Mail\GuestPortalRoomLoginMail;
-use App\Mail\RoomStatusChangedMail;
 use App\Models\Booking;
 use App\Models\Hotel;
 use App\Models\Room;
@@ -81,7 +80,7 @@ class GuestPortalOwnerNotificationTest extends TestCase
         });
     }
 
-    public function test_room_status_change_does_not_email_guest_or_staff(): void
+    public function test_room_status_change_does_not_send_email(): void
     {
         Mail::fake();
 
@@ -96,13 +95,6 @@ class GuestPortalOwnerNotificationTest extends TestCase
             'email' => 'admin@statushotel.test',
             'password' => bcrypt('secret123'),
             'role' => UserRole::ADMIN,
-        ]);
-        User::create([
-            'hotel_id' => (string) $hotel->id,
-            'name' => 'status_staff',
-            'email' => 'staff@statushotel.test',
-            'password' => bcrypt('secret123'),
-            'role' => UserRole::STAFF,
         ]);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
@@ -126,8 +118,6 @@ class GuestPortalOwnerNotificationTest extends TestCase
             'status' => 'booked',
         ]);
 
-        Sanctum::actingAs($admin);
-
         app(RoomStatusNotificationService::class)->notifyStatusChange(
             $room->fresh(),
             RoomStatus::BOOKED->value,
@@ -136,12 +126,7 @@ class GuestPortalOwnerNotificationTest extends TestCase
             $booking,
         );
 
-        Mail::assertSent(RoomStatusChangedMail::class, function (RoomStatusChangedMail $mail) {
-            return $mail->hasTo('admin@statushotel.test')
-                && $mail->hasTo('owner@statushotel.test')
-                && ! $mail->hasTo('jane.guest@gmail.com')
-                && ! $mail->hasTo('staff@statushotel.test');
-        });
+        Mail::assertNothingSent();
     }
 
     public function test_failed_owner_notification_allows_retry_on_next_login(): void
