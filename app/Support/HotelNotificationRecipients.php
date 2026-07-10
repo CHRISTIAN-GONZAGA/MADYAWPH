@@ -51,6 +51,21 @@ final class HotelNotificationRecipients
     }
 
     /**
+     * Owner inbox for scheduled sales reports (owner registration email, with admin fallback).
+     *
+     * @return list<string>
+     */
+    public static function salesReportEmails(string $hotelId): array
+    {
+        $owner = self::registeredOwnerEmail($hotelId);
+        if ($owner !== []) {
+            return $owner;
+        }
+
+        return self::ownerInboxEmails($hotelId);
+    }
+
+    /**
      * @return list<string>
      */
     private static function registeredOwnerEmail(string $hotelId): array

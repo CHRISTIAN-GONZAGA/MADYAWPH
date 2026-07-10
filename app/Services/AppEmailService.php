@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Mail\GuestCheckInWelcomeMail;
 use App\Mail\GuestPortalRoomLoginMail;
+use App\Mail\HotelSalesReportMail;
 use App\Mail\OtpVerificationMail;
 use App\Support\HotelNotificationRecipients;
 use App\Support\MessagingFlags;
@@ -156,6 +157,71 @@ class AppEmailService
                 $this->providerName(),
                 $recipients[0],
                 config('app.debug') ? $e->getMessage() : 'Could not send owner notification email.',
+            );
+        }
+    }
+
+    /**
+     * Daily or monthly sales report for the hotel owner.
+     *
+     * @param  list<string>  $ownerEmails
+     * @param  array<string, mixed>  $report
+     */
+    public function sendHotelSalesReportToOwner(
+        array $ownerEmails,
+        string $hotelName,
+        string $periodLabel,
+        array $report,
+    ): EmailSendResult {
+        $recipients = collect($ownerEmails)
+            ->map(fn (string $email) => $this->normalizeEmail($email))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($recipients === []) {
+            return new EmailSendResult(
+                false,
+                null,
+                '',
+                'No owner email is configured for this hotel.',
+            );
+        }
+
+        if ($blocked = $this->messagingGate($recipients[0])) {
+            return $blocked;
+        }
+
+        $mailable = new HotelSalesReportMail(
+            hotelName: $hotelName !== '' ? $hotelName : (string) config('app.name', 'MADYAW'),
+            periodLabel: $periodLabel,
+            report: $report,
+        );
+
+        try {
+            Mail::mailer($this->activeMailer())->to($recipients)->send($mailable);
+
+            Log::info('Hotel sales report email sent', [
+                'hotel' => $hotelName,
+                'period' => $periodLabel,
+                'recipients' => count($recipients),
+                'provider' => $this->providerName(),
+            ]);
+
+            return new EmailSendResult(true, $this->providerName(), $recipients[0]);
+        } catch (Throwable $e) {
+            Log::warning('Hotel sales report email failed', [
+                'hotel' => $hotelName,
+                'period' => $periodLabel,
+                'message' => $e->getMessage(),
+            ]);
+
+            return new EmailSendResult(
+                false,
+                $this->providerName(),
+                $recipients[0],
+                config('app.debug') ? $e->getMessage() : 'Could not send sales report email.',
             );
         }
     }

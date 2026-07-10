@@ -52,7 +52,7 @@ services:
       - key: SANCTUM_STATEFUL_DOMAINS
         sync: false
 
-  # Runs scheduled tasks: auto-checkout, reservation activation, booking purge.
+  # Runs scheduled tasks: auto-checkout, reservation activation, booking purge, owner sales reports.
   - type: cron
     name: madyawph-scheduler
     runtime: docker
