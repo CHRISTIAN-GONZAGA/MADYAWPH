@@ -171,6 +171,16 @@ class RoomCheckoutService
         );
 
         $this->sendGuestCheckInWelcomeEmail($fresh, $booking, $accessCode);
+        $this->sendStaffGuestCheckInAlert($fresh, $booking, $actor);
+
+        try {
+            app(MemberPointsService::class)->awardCheckInPoints($booking?->fresh() ?? $booking, $actor);
+        } catch (\Throwable $e) {
+            Log::warning('Member check-in points award failed', [
+                'booking_id' => $booking ? (string) $booking->id : null,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return $fresh;
     }
@@ -212,6 +222,61 @@ class RoomCheckoutService
             );
         } catch (\Throwable $e) {
             Log::warning('Check-in welcome email skipped', [
+                'room_id' => (string) $room->id,
+                'booking_id' => $booking ? (string) $booking->id : null,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function sendStaffGuestCheckInAlert(
+        Room $room,
+        ?Booking $booking,
+        User $actor,
+    ): void {
+        try {
+            $hotelId = (string) $room->hotel_id;
+            $recipients = \App\Support\HotelNotificationRecipients::checkInStaffAlertEmails($hotelId);
+            if ($recipients === []) {
+                return;
+            }
+
+            $hotel = Hotel::withoutGlobalScopes()->find($hotelId);
+            $hotelName = trim((string) ($hotel?->name ?? ''));
+            if ($hotelName === '') {
+                $hotelName = (string) config('app.name', 'MADYAW');
+            }
+
+            $guestName = trim((string) ($booking?->guest_name
+                ?? $room->getAttributes()['current_guest_name']
+                ?? 'Guest'));
+
+            $stay = \App\Support\GuestStayEmailDetails::fromBooking($booking);
+
+            app(AppEmailService::class)->sendStaffGuestCheckInAlert(
+                staffEmails: $recipients,
+                hotelName: $hotelName,
+                roomNumber: (string) ($room->room_number ?? ''),
+                guestName: $guestName !== '' ? $guestName : 'Guest',
+                bookingReference: $booking?->booking_reference
+                    ? (string) $booking->booking_reference
+                    : null,
+                checkedInBy: trim((string) ($actor->name ?? '')) ?: null,
+                checkedInAt: now()->timezone(config('app.timezone'))->format('M j, Y g:i A'),
+                checkInDate: $stay['check_in_date']
+                    ?? SafeModelAttributes::carbonFromModel($room, 'current_check_in')?->toDateString(),
+                checkOutDate: $stay['check_out_date']
+                    ?? SafeModelAttributes::carbonFromModel($room, 'current_check_out')?->toDateString(),
+                discountLabel: $stay['discount_label'],
+                stayLabel: $stay['stay_label'],
+                adults: $stay['adults'],
+                children: $stay['children'],
+                guestsMale: $stay['guests_male'],
+                guestsFemale: $stay['guests_female'],
+                guestNationality: $stay['guest_nationality'],
+            );
+        } catch (\Throwable $e) {
+            Log::warning('Staff check-in alert email skipped', [
                 'room_id' => (string) $room->id,
                 'booking_id' => $booking ? (string) $booking->id : null,
                 'error' => $e->getMessage(),

@@ -3,11 +3,13 @@
 namespace Tests\Feature;
 
 use App\Enums\UserRole;
+use App\Mail\HotelSalesReportMail;
 use App\Models\ActivityLog;
 use App\Models\Hotel;
 use App\Models\User;
 use App\Services\ActivityLogService;
 use App\Services\FrontDeskActivityReportService;
+use Illuminate\Support\Facades\Mail;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -141,5 +143,47 @@ class FrontDeskActivityReportTest extends TestCase
 
         $this->assertSame(1, $counts['rooms_checked_in']);
         $this->assertSame(0, $counts['rooms_checked_out']);
+    }
+
+    public function test_shift_summary_email_sends_sales_report_to_owner(): void
+    {
+        config([
+            'services.messaging.email_enabled' => true,
+            'mail.default' => 'array',
+            'mail.from.address' => 'noreply@madyaw.test',
+        ]);
+        Mail::fake();
+
+        $hotel = Hotel::create([
+            'name' => 'Shift Email Inn',
+            'location' => 'Butuan',
+            'owner_email' => 'owner-shift@gmail.com',
+        ]);
+        $fo = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'shift_email_fo',
+            'email' => 'shift-email-fo@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::FRONTDESK,
+        ]);
+
+        Sanctum::actingAs($fo);
+
+        $from = now()->subHours(8)->toIso8601String();
+        $to = now()->toIso8601String();
+
+        $this->postJson('/api/v1/reports/shift-summary/email', [
+            'time_in' => $from,
+            'time_out' => $to,
+            'staff_name' => 'shift_email_fo',
+        ])
+            ->assertOk()
+            ->assertJsonPath('sent', true);
+
+        Mail::assertSent(HotelSalesReportMail::class, function (HotelSalesReportMail $mail) {
+            return $mail->hotelName === 'Shift Email Inn'
+                && str_contains($mail->periodLabel, 'shift')
+                && $mail->hasTo('owner-shift@gmail.com');
+        });
     }
 }

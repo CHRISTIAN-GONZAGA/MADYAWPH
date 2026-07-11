@@ -29,6 +29,7 @@ class FlexiblePaymentMethodCast implements CastsAttributes
             'gcash', 'g-cash' => PaymentMethod::GCASH,
             'paymaya', 'maya', 'pay maya' => PaymentMethod::PAYMAYA,
             'credit card', 'credit_card', 'card' => PaymentMethod::CREDIT_CARD,
+            'member points', 'member_points', 'points' => PaymentMethod::MEMBER_POINTS,
             default => PaymentMethod::tryFrom($raw) ?? PaymentMethod::CASH,
         };
     }

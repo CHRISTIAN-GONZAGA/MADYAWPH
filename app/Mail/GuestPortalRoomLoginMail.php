@@ -19,6 +19,15 @@ class GuestPortalRoomLoginMail extends Mailable
         public readonly string $guestName,
         public readonly ?string $bookingReference = null,
         public readonly ?string $loggedInAt = null,
+        public readonly ?string $discountLabel = null,
+        public readonly ?string $stayLabel = null,
+        public readonly ?string $checkInDate = null,
+        public readonly ?string $checkOutDate = null,
+        public readonly ?int $adults = null,
+        public readonly ?int $children = null,
+        public readonly ?int $guestsMale = null,
+        public readonly ?int $guestsFemale = null,
+        public readonly ?string $guestNationality = null,
     ) {}
 
     public function envelope(): Envelope

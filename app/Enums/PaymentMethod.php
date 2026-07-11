@@ -8,4 +8,5 @@ enum PaymentMethod: string
     case GCASH = 'GCash';
     case PAYMAYA = 'PayMaya';
     case CREDIT_CARD = 'Credit Card';
+    case MEMBER_POINTS = 'Member Points';
 }

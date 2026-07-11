@@ -628,7 +628,7 @@ class BookingService
                 BookingStatus::CANCELLED->value,
                 BookingStatus::COMPLETED->value,
             ])
-            ->where('check_out_date', '>=', now()->toDateString())
+            ->where('check_out_date', '>=', now()->startOfDay())
             ->exists();
 
         if ($hasOtherActiveStays) {

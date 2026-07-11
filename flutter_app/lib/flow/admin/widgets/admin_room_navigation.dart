@@ -7,6 +7,7 @@ import 'package:flutter/scheduler.dart';
 import '../../../auth_storage.dart';
 import '../../../navigation_keys.dart';
 import '../admin_dashboard_models.dart';
+import '../admin_room_guest_qr_screen.dart';
 import 'admin_check_in_helper.dart';
 import 'admin_room_detail_navigation.dart';
 import 'admin_summary_room_tile.dart';
@@ -21,7 +22,7 @@ enum AdminRoomOpenMode {
   manageOnly,
 }
 
-enum _AdminRoomAction { book, manage, checkIn }
+enum _AdminRoomAction { book, manage, checkIn, viewQr }
 
 typedef AdminRoomManageHandler = Future<void> Function(
   BuildContext context,
@@ -181,6 +182,12 @@ abstract final class AdminRoomNavigation {
                 icon: const Icon(Icons.meeting_room_outlined),
                 label: const Text('Manage this room'),
               ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.pop(ctx, _AdminRoomAction.viewQr),
+                icon: const Icon(Icons.qr_code_2_outlined),
+                label: const Text('View room QR code'),
+              ),
             ],
           ),
         ),
@@ -194,6 +201,23 @@ abstract final class AdminRoomNavigation {
         context,
         room: room,
         onSuccess: onSuccess,
+      );
+      return;
+    }
+
+    if (action == _AdminRoomAction.viewQr) {
+      final roomId = AdminDashboardModels.roomIdOf(room);
+      if (roomId.isEmpty) {
+        _missingRoomId(context);
+        return;
+      }
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => AdminRoomGuestQrScreen(
+            roomId: roomId,
+            roomNumber: roomNo,
+          ),
+        ),
       );
       return;
     }

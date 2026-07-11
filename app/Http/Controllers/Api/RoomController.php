@@ -77,6 +77,7 @@ class RoomController extends Controller
         $payload = $this->roomAttributesFromValidated($payload, $hotelId, $category);
         $this->assertValidFloorForCategory($payload, $category);
         $payload['status'] = $payload['status'] ?? RoomStatus::AVAILABLE->value;
+        $payload['guest_portal_qr_token'] = (string) \Illuminate\Support\Str::uuid();
 
         if ($request->hasFile('image_file')) {
             $payload['image_url'] = RoomMediaStorage::store(

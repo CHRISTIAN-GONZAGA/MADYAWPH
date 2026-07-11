@@ -92,6 +92,59 @@ class HotelNotificationEmailSettingsTest extends TestCase
         $this->assertSame('super-owner@gmail.com', (string) $super->email);
     }
 
+    public function test_super_admin_can_set_frontdesk_gmail_via_dropdown_selection(): void
+    {
+        $hotel = Hotel::create([
+            'name' => 'FD Notify Hotel',
+            'location' => 'Davao',
+            'owner_email' => 'owner@fdnotify.test',
+        ]);
+        $super = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'fd_super',
+            'email' => 'super.fd@super.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::SUPER_ADMIN,
+        ]);
+        $fdOne = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'desk_one',
+            'email' => 'desk1@hotel.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::FRONTDESK,
+        ]);
+        $fdTwo = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'desk_two',
+            'email' => 'desk2@hotel.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::FRONTDESK,
+        ]);
+
+        Sanctum::actingAs($super);
+
+        $this->getJson('/api/v1/admin/hotel/notification-emails')
+            ->assertOk()
+            ->assertJsonPath('can_edit_frontdesk_email', true)
+            ->assertJsonCount(2, 'frontdesk_users');
+
+        $this->patchJson('/api/v1/admin/hotel/notification-emails', [
+            'owner_email' => 'owner@fdnotify.test',
+            'my_email' => 'super-fd@gmail.com',
+            'frontdesk_user_id' => (string) $fdTwo->id,
+            'frontdesk_email' => 'frontdesk2@gmail.com',
+        ])
+            ->assertOk()
+            ->assertJsonPath('frontdesk_user_id', (string) $fdTwo->id)
+            ->assertJsonPath('frontdesk_email', 'frontdesk2@gmail.com');
+
+        $hotel->refresh();
+        $fdTwo->refresh();
+        $this->assertSame((string) $fdTwo->id, (string) $hotel->frontdesk_notification_user_id);
+        $this->assertSame('frontdesk2@gmail.com', (string) $fdTwo->email);
+        $this->assertSame('desk1@hotel.local', (string) $fdOne->fresh()->email);
+    }
+
     public function test_frontdesk_cannot_access_notification_email_settings(): void
     {
         $hotel = Hotel::create(['name' => 'FD Hotel', 'location' => 'Loc']);

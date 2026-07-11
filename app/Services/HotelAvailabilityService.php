@@ -56,7 +56,13 @@ class HotelAvailabilityService
             ->where(function ($query) use ($roomId) {
                 $query->where('id', $roomId)->orWhere('_id', $roomId);
             })
-            ->first(['id', 'status']);
+            ->first([
+                'id',
+                'status',
+                'current_guest_name',
+                'current_check_in',
+                'current_check_out',
+            ]);
 
         if ($room === null) {
             return false;
@@ -132,6 +138,8 @@ class HotelAvailabilityService
         $requestEnd = $requestedCheckOutAt ?? $out->copy()->endOfDay();
         $useDateTimeOverlap = $requestedCheckInAt !== null && $requestedCheckOutAt !== null;
 
+        // Pass Carbon bounds (not Y-m-d strings). Mongo stores cast dates as UTC
+        // instants of local midnight; string compares miss same-day stays in UTC+ offsets.
         $bookings = Booking::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
             ->whereNotIn('status', [
@@ -156,7 +164,12 @@ class HotelAvailabilityService
             }
 
             $bookingCheckIn = Carbon::parse($booking->check_in_date)->startOfDay();
-            if ($bookingCheckIn->gte($out)) {
+            // Overnight turnover: a booking that starts on our checkout day does not overlap.
+            // Same-day hourly (check-in == check-out): that booking must still conflict.
+            if ($bookingCheckIn->gt($out)) {
+                continue;
+            }
+            if ($in->lt($out) && $bookingCheckIn->equalTo($out)) {
                 continue;
             }
 
@@ -220,7 +233,9 @@ class HotelAvailabilityService
 
     /**
      * Orphan booking rows must not block new stays when the room is physically vacant.
-     * Future holds on vacant tiles are intentional and must still participate in conflicts.
+     * Future and same-day holds on vacant tiles are intentional (walk-in board keeps
+     * status available until check-in) and must still participate in conflicts.
+     * Only past check-in dates on vacant rooms are treated as stale leftovers.
      */
     private function bookingIsStaleForVacantRoom(Booking $booking, Room $room): bool
     {
@@ -235,7 +250,7 @@ class HotelAvailabilityService
         $today = now()->startOfDay();
         $checkInDay = Carbon::parse($booking->check_in_date)->startOfDay();
 
-        return $checkInDay->lte($today);
+        return $checkInDay->lt($today);
     }
 
     private function bookingOverlapsRequestWindow(
@@ -442,7 +457,12 @@ class HotelAvailabilityService
             }
 
             $reservationCheckIn = Carbon::parse($reservation->check_in_date)->startOfDay();
-            if ($reservationCheckIn->gte($requestEndsAt->copy()->startOfDay())) {
+            $requestEndDay = $requestEndsAt->copy()->startOfDay();
+            if ($reservationCheckIn->gt($requestEndDay)) {
+                continue;
+            }
+            // Overnight only: reservation starting on request checkout day is turnover.
+            if ($checkIn->lt($checkOut) && $reservationCheckIn->equalTo($requestEndDay)) {
                 continue;
             }
 

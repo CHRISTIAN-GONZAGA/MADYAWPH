@@ -41,16 +41,16 @@ class AdminWalkInOptionalContactTest extends TestCase
             'check_out_at' => $checkOut->toIso8601String(),
             'payment_method' => 'Cash',
             'check_in_now' => false,
-            'free_breakfast_options' => [
-                ['name' => 'Continental Breakfast', 'quantity' => 2],
-            ],
+            'adults' => 1,
+            'guests_male' => 1,
         ]);
 
         $response->assertCreated();
         $response->assertJsonPath('booking.guest_name', 'Walk-in No Contact');
-        $options = $response->json('booking.free_breakfast_options');
-        $this->assertIsArray($options);
-        $this->assertSame('Continental Breakfast', $options[0]['name'] ?? null);
-        $this->assertSame(2, $options[0]['quantity'] ?? null);
+        $this->assertTrue(
+            blank($response->json('booking.guest_email'))
+            || $response->json('booking.guest_email') === null
+            || $response->json('booking.guest_email') === ''
+        );
     }
 }

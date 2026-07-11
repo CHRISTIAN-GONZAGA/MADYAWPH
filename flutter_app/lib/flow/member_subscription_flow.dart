@@ -2,14 +2,13 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:gloretto_mobile/widgets/app_notice.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 
 import '../dio_client.dart';
 import '../widgets/app_input.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/chat_attachment.dart';
+import 'member_login_screen.dart';
 
 /// Guest membership registration (₱300/month, QR Ph, platform approval).
 class MemberRegistrationScreen extends StatefulWidget {
@@ -24,6 +23,9 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
+  final _usernameCtrl = TextEditingController();
+  final _passwordCtrl = TextEditingController();
+  final _password2Ctrl = TextEditingController();
   final _refCtrl = TextEditingController();
   String _memberQrRaw = '';
   double _fee = 300;
@@ -45,6 +47,9 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
+    _usernameCtrl.dispose();
+    _passwordCtrl.dispose();
+    _password2Ctrl.dispose();
     _refCtrl.dispose();
     super.dispose();
   }
@@ -117,18 +122,33 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
     if (_nameCtrl.text.trim().isEmpty ||
         _emailCtrl.text.trim().isEmpty ||
         _phoneCtrl.text.trim().isEmpty ||
+        _usernameCtrl.text.trim().isEmpty ||
+        _passwordCtrl.text.isEmpty ||
         _refCtrl.text.trim().isEmpty) {
       showAppMessage(context, 'Please complete all fields.');
       return;
     }
+    if (_passwordCtrl.text != _password2Ctrl.text) {
+      showAppMessage(context, 'Passwords do not match.', isError: true);
+      return;
+    }
+    if (_passwordCtrl.text.length < 6) {
+      showAppMessage(context, 'Password must be at least 6 characters.', isError: true);
+      return;
+    }
     setState(() => _submitting = true);
     try {
+      final username = _usernameCtrl.text.trim().toLowerCase();
+      final password = _passwordCtrl.text;
       final res = await publicDio().post<Map<String, dynamic>>(
         '/member/register',
         data: {
           'full_name': _nameCtrl.text.trim(),
           'email': _emailCtrl.text.trim(),
           'phone': _phoneCtrl.text.trim(),
+          'username': username,
+          'password': password,
+          'password_confirmation': password,
           'payment_reference': _refCtrl.text.trim(),
         },
       );
@@ -136,7 +156,11 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
       if (!mounted || requestId.isEmpty) return;
       await Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
-          builder: (_) => MemberProcessingScreen(requestId: requestId),
+          builder: (_) => MemberProcessingScreen(
+            requestId: requestId,
+            username: username,
+            password: password,
+          ),
         ),
       );
     } on DioException catch (e) {
@@ -200,6 +224,22 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
                   controller: _phoneCtrl,
                   label: 'Phone number',
                   keyboardType: TextInputType.phone,
+                ),
+                const SizedBox(height: 12),
+                AppInput(
+                  controller: _usernameCtrl,
+                  label: 'Username (for member log-in)',
+                  autocorrect: false,
+                ),
+                const SizedBox(height: 12),
+                AppPasswordField(
+                  controller: _passwordCtrl,
+                  labelText: 'Password',
+                ),
+                const SizedBox(height: 12),
+                AppPasswordField(
+                  controller: _password2Ctrl,
+                  labelText: 'Confirm password',
                 ),
                 const SizedBox(height: 12),
                 AppInput(
@@ -348,9 +388,16 @@ class _MemberQrPhPaymentCard extends StatelessWidget {
 }
 
 class MemberProcessingScreen extends StatefulWidget {
-  const MemberProcessingScreen({super.key, required this.requestId});
+  const MemberProcessingScreen({
+    super.key,
+    required this.requestId,
+    this.username = '',
+    this.password = '',
+  });
 
   final String requestId;
+  final String username;
+  final String password;
 
   @override
   State<MemberProcessingScreen> createState() => _MemberProcessingScreenState();
@@ -360,9 +407,8 @@ class _MemberProcessingScreenState extends State<MemberProcessingScreen> {
   Timer? _timer;
   String _status = 'pending';
   String? _validUntil;
-  String _shid = '';
-  String _qrPayload = '';
   double _memberDiscountPercent = 0;
+  bool _openingDashboard = false;
 
   @override
   void initState() {
@@ -386,8 +432,6 @@ class _MemberProcessingScreenState extends State<MemberProcessingScreen> {
       setState(() {
         _status = (res.data?['status'] ?? 'pending').toString();
         _validUntil = (res.data?['member_valid_until'] ?? '').toString();
-        _shid = (res.data?['member_shid_id'] ?? '').toString();
-        _qrPayload = (res.data?['member_qr_payload'] ?? '').toString();
         _memberDiscountPercent =
             (res.data?['member_discount_percent'] as num?)?.toDouble() ?? 0;
       });
@@ -395,6 +439,35 @@ class _MemberProcessingScreenState extends State<MemberProcessingScreen> {
         _timer?.cancel();
       }
     } catch (_) {}
+  }
+
+  Future<void> _openMemberDashboard() async {
+    if (_openingDashboard) return;
+    setState(() => _openingDashboard = true);
+    try {
+      if (widget.username.isNotEmpty && widget.password.isNotEmpty) {
+        if (!mounted) return;
+        await Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute<void>(
+            builder: (_) => MemberLoginScreen(
+              initialUsername: widget.username,
+              autoPassword: widget.password,
+            ),
+          ),
+          (route) => route.isFirst,
+        );
+        return;
+      }
+      if (!mounted) return;
+      await Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute<void>(
+          builder: (_) => MemberLoginScreen(initialUsername: widget.username),
+        ),
+        (route) => route.isFirst,
+      );
+    } finally {
+      if (mounted) setState(() => _openingDashboard = false);
+    }
   }
 
   @override
@@ -435,60 +508,19 @@ class _MemberProcessingScreenState extends State<MemberProcessingScreen> {
                         fontWeight: FontWeight.w800,
                       ),
                 ),
-                if (_shid.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    'Your member SHID ID',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                  const SizedBox(height: 4),
-                  SelectableText(
-                    _shid,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.2,
-                        ),
-                  ),
-                  IconButton(
-                    tooltip: 'Copy SHID',
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: _shid));
-                      showAppMessage(context, 'Member ID copied.');
-                    },
-                    icon: const Icon(Icons.copy_outlined),
-                  ),
-                ],
-                if (_qrPayload.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    'Show this QR when booking a room',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: scheme.outlineVariant),
-                    ),
-                    child: QrImageView(
-                      data: _qrPayload,
-                      size: 220,
-                      backgroundColor: Colors.white,
-                    ),
-                  ),
-                ],
+                const SizedBox(height: 12),
+                Text(
+                  'Your membership is approved. Log in to your member dashboard to browse hotels and show your unique membership QR / ID for discounts.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: scheme.onSurfaceVariant),
+                ),
                 if (_memberDiscountPercent > 0)
                   Padding(
-                    padding: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.only(top: 12),
                     child: Text(
                       '${_memberDiscountPercent.toStringAsFixed(0)}% off room bookings while active',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: scheme.primary),
+                      style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w700),
                     ),
                   ),
                 if ((_validUntil ?? '').isNotEmpty)
@@ -499,18 +531,37 @@ class _MemberProcessingScreenState extends State<MemberProcessingScreen> {
                       textAlign: TextAlign.center,
                     ),
                   ),
+                const SizedBox(height: 24),
+                FilledButton.icon(
+                  onPressed: _openingDashboard ? null : _openMemberDashboard,
+                  icon: _openingDashboard
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.dashboard_outlined),
+                  label: Text(
+                    _openingDashboard ? 'Opening…' : 'Open member dashboard',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextButton(
+                  onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
+                  child: const Text('Back to home'),
+                ),
               ] else ...[
                 Icon(Icons.cancel_outlined, size: 64, color: scheme.error),
                 const SizedBox(height: 16),
                 const Text('Membership not approved'),
                 const SizedBox(height: 8),
                 const Text('Contact support if you believe this is an error.'),
+                const SizedBox(height: 24),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
+                  child: const Text('Done'),
+                ),
               ],
-              const SizedBox(height: 24),
-              FilledButton(
-                onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
-                child: const Text('Done'),
-              ),
             ],
           ),
         ),

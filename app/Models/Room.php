@@ -33,10 +33,12 @@ class Room extends Model
         'current_check_in',
         'current_check_out',
         'current_access_code',
+        'guest_portal_qr_token',
     ];
 
     protected $hidden = [
         'current_access_code',
+        'guest_portal_qr_token',
     ];
 
     protected function casts(): array

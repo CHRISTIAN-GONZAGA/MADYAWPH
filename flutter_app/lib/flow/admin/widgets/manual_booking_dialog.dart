@@ -47,8 +47,10 @@ Future<void> submitAdminWalkInBooking({
   final body = <String, dynamic>{
     'room_id': roomId,
     'guest_name': payload.guestName,
-    'guest_email': payload.guestEmail,
-    'guest_phone': payload.guestPhone,
+    if (payload.guestEmail.trim().isNotEmpty)
+      'guest_email': payload.guestEmail.trim(),
+    if (payload.guestPhone.trim().isNotEmpty)
+      'guest_phone': payload.guestPhone.trim(),
     'check_in_at': inAt.toIso8601String(),
     'check_out_at': outAt.toIso8601String(),
     'payment_method': payload.paymentMethod,
@@ -128,8 +130,10 @@ Future<void> submitAdminBulkWalkInBooking({
   final body = <String, dynamic>{
     'room_ids': roomIds,
     'guest_name': payload.guestName,
-    'guest_email': payload.guestEmail,
-    'guest_phone': payload.guestPhone,
+    if (payload.guestEmail.trim().isNotEmpty)
+      'guest_email': payload.guestEmail.trim(),
+    if (payload.guestPhone.trim().isNotEmpty)
+      'guest_phone': payload.guestPhone.trim(),
     'check_in_at': inAt.toIso8601String(),
     'check_out_at': outAt.toIso8601String(),
     'payment_method': payload.paymentMethod,

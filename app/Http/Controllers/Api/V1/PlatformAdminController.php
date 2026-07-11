@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Services\ActivityLogService;
 use App\Services\CreditWalletApprovalService;
 use App\Services\MemberSubscriptionApprovalService;
+use App\Services\PlatformGuestDemographicsService;
 use App\Services\PlatformHotelCreditService;
 use App\Services\PlatformRevenueAnalyticsService;
 use App\Services\PlatformSettingsService;
@@ -30,6 +31,7 @@ class PlatformAdminController extends Controller
     public function __construct(
         private readonly PlatformSettingsService $settings,
         private readonly PlatformRevenueAnalyticsService $revenueAnalytics,
+        private readonly PlatformGuestDemographicsService $guestDemographics,
         private readonly CreditWalletApprovalService $creditApprovals,
         private readonly MemberSubscriptionApprovalService $memberApprovals,
         private readonly ActivityLogService $activityLog,
@@ -44,6 +46,17 @@ class PlatformAdminController extends Controller
 
         return response()->json(
             $this->revenueAnalytics->summarize($validated['period'] ?? 'month')
+        );
+    }
+
+    public function guestDemographics(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'period' => ['nullable', 'in:day,week,month,year'],
+        ]);
+
+        return response()->json(
+            $this->guestDemographics->summarize($validated['period'] ?? 'month')
         );
     }
 
@@ -115,6 +128,26 @@ class PlatformAdminController extends Controller
         return response()->json([
             'ok' => true,
             'member_booking_discount_percent' => $this->settings->memberBookingDiscountPercent(),
+        ]);
+    }
+
+    public function updateMemberPointsSettings(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'member_points_per_check_in' => ['required', 'numeric', 'min:0', 'max:1000000'],
+            'member_points_per_peso' => ['required', 'numeric', 'min:0.01', 'max:10000'],
+        ]);
+
+        $row = $this->settings->row();
+        $row->update([
+            'member_points_per_check_in' => (float) $validated['member_points_per_check_in'],
+            'member_points_per_peso' => (float) $validated['member_points_per_peso'],
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'member_points_per_check_in' => $this->settings->memberPointsPerCheckIn(),
+            'member_points_per_peso' => $this->settings->memberPointsPerPeso(),
         ]);
     }
 

@@ -684,6 +684,16 @@ class AdminDashboardModels {
         .trim();
   }
 
+  static String guestPhone(Map<String, dynamic> room) {
+    final booking = room['latest_booking'] as Map<String, dynamic>?;
+    return (booking?['guest_phone'] ??
+            room['guest_phone'] ??
+            room['current_guest_phone'] ??
+            '')
+        .toString()
+        .trim();
+  }
+
   static String formatStayRange(Map<String, dynamic> room) {
     final inD = stayStartDate(room);
     final outD = stayEndDate(room);

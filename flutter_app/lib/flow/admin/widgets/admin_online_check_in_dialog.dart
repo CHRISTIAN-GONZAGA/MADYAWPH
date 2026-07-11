@@ -5,13 +5,12 @@ import 'package:gloretto_mobile/widgets/app_notice.dart';
 import '../../../dio_client.dart';
 import '../../../widgets/admin_time_slot_field.dart';
 import '../admin_dashboard_models.dart';
-import 'walk_in_complimentary_picker.dart';
+import 'device_guest_welcome_sms.dart';
 
 String formatAdminCheckInDate(DateTime d) =>
     '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-/// Check-in dialog for booked rooms. Public online guests must select amenity
-/// inquiries before check-in (complimentary options saved on the booking).
+/// Check-in dialog for booked rooms (walk-in or public online).
 Future<bool> showAdminOnlineAwareCheckInDialog(
   BuildContext context, {
   required Map<String, dynamic> room,
@@ -22,7 +21,6 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
     return false;
   }
 
-  final requiresAmenities = AdminDashboardModels.isPublicOnlineBooking(room);
   final inDate = AdminDashboardModels.stayStartDate(room) ?? DateTime.now();
   final outDate =
       AdminDashboardModels.stayEndDate(room) ?? inDate.add(const Duration(days: 1));
@@ -32,23 +30,6 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
       const TimeOfDay(hour: 15, minute: 0);
   var checkOutTime = AdminDashboardModels.bookingTimeOfDay(room, 'check_out_time') ??
       const TimeOfDay(hour: 11, minute: 0);
-
-  var amenityMenuItems = const <Map<String, dynamic>>[];
-  if (requiresAmenities) {
-    try {
-      final menuRes =
-          await portalDio().get<Map<String, dynamic>>('/admin/amenity-menu');
-      amenityMenuItems = ((menuRes.data?['data'] as List?) ?? const [])
-          .whereType<Map<String, dynamic>>()
-          .where((item) => item['is_active'] != false)
-          .toList();
-    } catch (_) {
-      amenityMenuItems = const [];
-    }
-    if (!context.mounted) return false;
-  }
-
-  final complimentaryQty = <String, int>{};
 
   final ok = await showDialog<bool>(
     context: context,
@@ -64,16 +45,6 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
                 AdminDashboardModels.guestName(room),
                 style: Theme.of(ctx).textTheme.titleMedium,
               ),
-              if (requiresAmenities) ...[
-                const SizedBox(height: 8),
-                Text(
-                  'Online booking — record amenity inquiries before check-in.',
-                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(ctx).colorScheme.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
-              ],
               const SizedBox(height: 12),
               ListTile(
                 contentPadding: EdgeInsets.zero,
@@ -120,27 +91,6 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
                   if (t != null) setLocal(() => checkOutTime = t);
                 },
               ),
-              if (requiresAmenities) ...[
-                const SizedBox(height: 12),
-                Text(
-                  'Guest amenity inquiries',
-                  style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-                const SizedBox(height: 6),
-                if (amenityMenuItems.isEmpty)
-                  Text(
-                    'No amenity menu items yet. Add products in Amenities, then check in.',
-                    style: Theme.of(ctx).textTheme.bodySmall,
-                  )
-                else
-                  WalkInComplimentaryPicker(
-                    menuItems: amenityMenuItems,
-                    quantitiesById: complimentaryQty,
-                    onChanged: () => setLocal(() {}),
-                  ),
-              ],
             ],
           ),
         ),
@@ -150,20 +100,7 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () {
-              if (requiresAmenities && amenityMenuItems.isNotEmpty) {
-                final selected = complimentaryQty.values.any((q) => q > 0);
-                if (!selected) {
-                  showAppMessage(
-                    ctx,
-                    'Select at least one amenity the guest is inquiring about.',
-                    isError: true,
-                  );
-                  return;
-                }
-              }
-              Navigator.pop(ctx, true);
-            },
+            onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Check in guest'),
           ),
         ],
@@ -189,44 +126,89 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
     outTime.minute,
   );
 
-  final data = <String, dynamic>{
-    'status': 'checked_in',
-    'check_in_at': checkInAt.toIso8601String(),
-    'check_out_at': checkOutAt.toIso8601String(),
-  };
-
-  if (requiresAmenities && complimentaryQty.isNotEmpty) {
-    data['free_breakfast_options'] = amenityMenuItems
-        .map((item) {
-          final id = (item['id'] ?? item['_id'] ?? '').toString();
-          final qty = complimentaryQty[id] ?? 0;
-          if (qty <= 0) return null;
-          return {
-            'menu_item_id': id,
-            'name': (item['name'] ?? '').toString(),
-            'quantity': qty,
-            'amenity_type':
-                (item['amenity_type'] ?? item['type'] ?? '').toString(),
-          };
-        })
-        .whereType<Map<String, dynamic>>()
-        .toList();
-  }
-
+  Map<String, dynamic>? checkInResponse;
   try {
-    await portalDio().patch('/admin/rooms/$roomId/status', data: data);
-    if (!context.mounted) return false;
-    final guestEmail = AdminDashboardModels.guestEmail(room);
-    showAppMessage(
-      context,
-      guestEmail.isEmpty
-          ? 'Guest checked in.'
-          : 'Guest checked in. A welcome email with the room password was sent to $guestEmail (if email is configured).',
+    final res = await portalDio().patch<Map<String, dynamic>>(
+      '/admin/rooms/$roomId/status',
+      data: {
+        'status': 'checked_in',
+        'check_in_at': checkInAt.toIso8601String(),
+        'check_out_at': checkOutAt.toIso8601String(),
+      },
     );
-    return true;
+    checkInResponse = res.data;
   } on DioException catch (e) {
     if (!context.mounted) return false;
     showAppMessage(context, dioErrorMessage(e), isError: true);
     return false;
+  } catch (e) {
+    if (!context.mounted) return false;
+    showAppMessage(context, 'Check-in failed: $e', isError: true);
+    return false;
   }
+
+  // Check-in already succeeded on the server. Never let SMS / toast plumbing
+  // make this look like a failure (Book tab refresh depends on returning true).
+  if (!context.mounted) return true;
+
+  final guestEmail = AdminDashboardModels.guestEmail(room);
+  final emailNote = guestEmail.isEmpty
+      ? ''
+      : ' Welcome email queued for $guestEmail (if email is configured).';
+
+  var smsNote = '';
+  try {
+    final rawSms = checkInResponse?['guest_welcome_sms'];
+    final smsPayload = rawSms is Map
+        ? Map<String, dynamic>.from(rawSms)
+        : const <String, dynamic>{};
+    final roomPayload = checkInResponse?['room'];
+    final roomMap = roomPayload is Map
+        ? Map<String, dynamic>.from(roomPayload)
+        : const <String, dynamic>{};
+
+    final smsPhone = (smsPayload['guest_phone'] ??
+            AdminDashboardModels.guestPhone(room))
+        .toString()
+        .trim();
+    final smsPassword = (smsPayload['room_access_password'] ??
+            roomMap['room_access_password'] ??
+            '')
+        .toString()
+        .trim();
+    final smsHotel = (smsPayload['hotel_name'] ?? '').toString().trim();
+    final smsGuest = (smsPayload['guest_name'] ??
+            AdminDashboardModels.guestName(room))
+        .toString()
+        .trim();
+    final smsRoom = (smsPayload['room_number'] ?? room['room_number'] ?? '')
+        .toString()
+        .trim();
+
+    if (smsPhone.isNotEmpty) {
+      // Best-effort only — do not block returning success if SMS hangs briefly.
+      final smsResult = await DeviceGuestWelcomeSms.sendWelcome(
+        guestPhone: smsPhone,
+        hotelName: smsHotel,
+        guestName: smsGuest,
+        roomNumber: smsRoom,
+        roomPassword: smsPassword,
+      ).timeout(
+        const Duration(seconds: 25),
+        onTimeout: () => DeviceSmsOutcome.skipped('SMS timed out.'),
+      );
+      if (smsResult.mode == DeviceSmsMode.sentDirect) {
+        smsNote = ' Welcome SMS sent from this phone.';
+      } else if (smsResult.mode == DeviceSmsMode.openedComposer) {
+        smsNote = ' Messages opened — tap Send to SMS from this SIM.';
+      }
+    }
+  } catch (_) {
+    // Ignore SMS failures; check-in already completed.
+  }
+
+  if (context.mounted) {
+    showAppMessage(context, 'Guest checked in.$emailNote$smsNote');
+  }
+  return true;
 }

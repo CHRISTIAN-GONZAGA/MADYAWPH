@@ -2549,10 +2549,16 @@ class GuestRoomLoginScreen extends StatefulWidget {
     super.key,
     required this.hotelId,
     this.hotelName,
+    this.roomId,
+    this.roomNumber,
+    this.roomBoundFromQr = false,
   });
 
   final String hotelId;
   final String? hotelName;
+  final String? roomId;
+  final String? roomNumber;
+  final bool roomBoundFromQr;
 
   @override
   State<GuestRoomLoginScreen> createState() => _GuestRoomLoginScreenState();
@@ -2563,6 +2569,18 @@ class _GuestRoomLoginScreenState extends State<GuestRoomLoginScreen> {
   final _password = TextEditingController();
   bool _busy = false;
   String? _error;
+
+  bool get _roomBound =>
+      widget.roomBoundFromQr && (widget.roomId ?? '').trim().isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    final knownRoom = (widget.roomNumber ?? '').trim();
+    if (knownRoom.isNotEmpty) {
+      _room.text = knownRoom;
+    }
+  }
 
   @override
   void dispose() {
@@ -2577,18 +2595,27 @@ class _GuestRoomLoginScreenState extends State<GuestRoomLoginScreen> {
       setState(() => _error = 'Room password must be exactly 4 characters.');
       return;
     }
+    if (!_roomBound && _room.text.trim().isEmpty) {
+      setState(() => _error = 'Enter your room number.');
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
+      final data = <String, dynamic>{
+        'hotel_id': widget.hotelId,
+        'password': pwd,
+      };
+      if (_roomBound) {
+        data['room_id'] = widget.roomId!.trim();
+      } else {
+        data['room'] = _room.text.trim();
+      }
       final res = await publicDio().post<Map<String, dynamic>>(
         '/guest/login',
-        data: {
-          'hotel_id': widget.hotelId,
-          'room': _room.text.trim(),
-          'password': pwd,
-        },
+        data: data,
       );
       final token = res.data?['guest_token'] as String?;
       if (token == null || token.isEmpty) {
@@ -2617,6 +2644,7 @@ class _GuestRoomLoginScreenState extends State<GuestRoomLoginScreen> {
   @override
   Widget build(BuildContext context) {
     final hotelLabel = (widget.hotelName ?? '').trim();
+    final roomLabel = (widget.roomNumber ?? '').trim();
 
     return AppScaffold(
       appBar: AppBar(title: const Text('Guest sign-in')),
@@ -2631,19 +2659,28 @@ class _GuestRoomLoginScreenState extends State<GuestRoomLoginScreen> {
                   ),
             ),
             const SizedBox(height: 8),
-            Text(
-              'Enter your room number and the 4-character password from the front desk.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-            ),
-            const SizedBox(height: 16),
           ],
-          TextField(
-            controller: _room,
-            decoration: const InputDecoration(labelText: 'Room number', border: OutlineInputBorder()),
+          Text(
+            _roomBound
+                ? (roomLabel.isNotEmpty
+                    ? 'Room $roomLabel — enter the 4-character password from the front desk.'
+                    : 'Enter the 4-character password from the front desk.')
+                : 'Enter your room number and the 4-character password from the front desk.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
+          if (!_roomBound) ...[
+            TextField(
+              controller: _room,
+              decoration: const InputDecoration(
+                labelText: 'Room number',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           AppPasswordField(
             controller: _password,
             labelText: 'Room password (4 characters)',

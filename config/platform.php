@@ -21,6 +21,12 @@ return [
     /** Room booking discount (%) for active MADYAWPH members. */
     'member_booking_discount_percent' => (float) env('PLATFORM_MEMBER_BOOKING_DISCOUNT_PERCENT', 10),
 
+    /** Points awarded to a member on each hotel check-in. */
+    'member_points_per_check_in' => (float) env('PLATFORM_MEMBER_POINTS_PER_CHECK_IN', 1000),
+
+    /** How many member points equal ₱1 (default 10 → 1000 pts = ₱100). */
+    'member_points_per_peso' => (float) env('PLATFORM_MEMBER_POINTS_PER_PESO', 10),
+
     /** Direct HTTPS link to the Android APK (used in app install QR on the landing screen). */
     'app_install_url' => env('APP_INSTALL_URL', ''),
 

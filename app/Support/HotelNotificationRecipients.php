@@ -66,6 +66,44 @@ final class HotelNotificationRecipients
     }
 
     /**
+     * Designated front desk notification Gmail (super-admin selected account).
+     *
+     * @return list<string>
+     */
+    public static function frontdeskNotificationEmails(string $hotelId): array
+    {
+        $hotel = Hotel::withoutGlobalScopes()->find($hotelId);
+        $selectedId = trim((string) ($hotel?->frontdesk_notification_user_id ?? ''));
+
+        if ($selectedId !== '') {
+            $user = User::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
+                ->find($selectedId);
+            if ($user !== null && $user->roleValue() === UserRole::FRONTDESK->value) {
+                $email = strtolower(trim((string) ($user->email ?? '')));
+                if (self::isDeliverable($email)) {
+                    return [$email];
+                }
+            }
+        }
+
+        return self::userEmailsForRoles($hotelId, [UserRole::FRONTDESK->value]);
+    }
+
+    /**
+     * Staff alerts for Book-section check-in: owner + designated front desk.
+     *
+     * @return list<string>
+     */
+    public static function checkInStaffAlertEmails(string $hotelId): array
+    {
+        return self::uniqueDeliverable(array_merge(
+            self::registeredOwnerEmail($hotelId),
+            self::frontdeskNotificationEmails($hotelId),
+        ));
+    }
+
+    /**
      * @return list<string>
      */
     private static function registeredOwnerEmail(string $hotelId): array

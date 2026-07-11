@@ -20,10 +20,17 @@ import 'customer_search_context.dart';
 import 'hotel_search_results_screen.dart';
 import 'guest_portal_qr_scan_screen.dart';
 import 'hotel_screens.dart';
+import 'member_login_screen.dart';
 
 /// Agoda-style public landing: search hotels, then browse/book as a guest.
 class PublicHotelSearchScreen extends StatefulWidget {
-  const PublicHotelSearchScreen({super.key});
+  const PublicHotelSearchScreen({
+    super.key,
+    this.embeddedInMemberDashboard = false,
+  });
+
+  /// When true, renders as a member-dashboard tab (no outer scaffold / no member login CTA).
+  final bool embeddedInMemberDashboard;
 
   @override
   State<PublicHotelSearchScreen> createState() => _PublicHotelSearchScreenState();
@@ -568,210 +575,221 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
     showAppInstallShareDialog(context);
   }
 
+  void _openMemberLogin() {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => const MemberLoginScreen(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final visual = AppVisual.of(context);
     final size = MediaQuery.sizeOf(context);
     final wideLandscape = customerUseWideBrowseLayout(context) && size.width >= 640;
+    final embedded = widget.embeddedInMemberDashboard;
+
+    final content = Column(
+      children: [
+        if (!embedded)
+          Padding(
+            padding: EdgeInsets.fromLTRB(16, wideLandscape ? 6 : 10, 12, 0),
+            child: Row(
+              children: [
+                MadyawLogoWidget(
+                  size: wideLandscape ? 44 : 52,
+                  glowStrength: 0.15,
+                  showWordmark: true,
+                  showBrandLine: false,
+                  brandReveal: 1,
+                ),
+                const Spacer(),
+                const LanguagePickerButton(),
+                IconButton(
+                  tooltip: 'Share app — install QR',
+                  onPressed: _openShareAppInstallQr,
+                  icon: const Icon(Icons.share_outlined),
+                ),
+                IconButton(
+                  tooltip: 'Scan hotel guest QR',
+                  onPressed: _openGuestQrScanner,
+                  icon: const Icon(Icons.qr_code_scanner_outlined),
+                ),
+                IconButton(
+                  tooltip: context.tr('property_sign_in'),
+                  onPressed: _openStaffPropertyLogin,
+                  icon: const Icon(Icons.badge_outlined),
+                ),
+              ],
+            ),
+          )
+        else
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 12, 0),
+            child: Row(
+              children: [
+                Icon(Icons.card_membership, color: scheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Member browse',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                ),
+                const LanguagePickerButton(),
+              ],
+            ),
+          ),
+        if (wideLandscape)
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 12, 16),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          context.tr('where_to_go'),
+                          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.5,
+                                height: 1.15,
+                              ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          context.tr('search_stays_sub'),
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                                height: 1.35,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: 3,
+                  child: RefreshIndicator(
+                    onRefresh: _loadHotels,
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: const EdgeInsets.fromLTRB(12, 8, 20, 28),
+                      child: _buildSearchScrollContent(
+                        context,
+                        scheme,
+                        visual,
+                        showMemberLogin: !embedded,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          )
+        else ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer.withValues(alpha: 0.65),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: scheme.primary.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.travel_explore,
+                          size: 18, color: scheme.primary),
+                      const SizedBox(width: 8),
+                      Text(
+                        context.tr('book_a_stay'),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: scheme.onPrimaryContainer,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  context.tr('where_to_go'),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.5,
+                        height: 1.15,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  context.tr('search_stays_sub'),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        height: 1.35,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _loadHotels,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
+                child: _buildSearchScrollContent(
+                  context,
+                  scheme,
+                  visual,
+                  showMemberLogin: !embedded,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+
+    if (embedded) {
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: visual.scaffoldGradient(scheme),
+        ),
+        child: content,
+      );
+    }
 
     return Scaffold(
       body: DecoratedBox(
         decoration: BoxDecoration(
           gradient: visual.scaffoldGradient(scheme),
         ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              Padding(
-                padding: EdgeInsets.fromLTRB(16, wideLandscape ? 6 : 10, 12, 0),
-                child: Row(
-                  children: [
-                    MadyawLogoWidget(
-                      size: wideLandscape ? 44 : 52,
-                      glowStrength: 0.15,
-                      showWordmark: true,
-                      showBrandLine: false,
-                      brandReveal: 1,
-                    ),
-                    const Spacer(),
-                    const LanguagePickerButton(),
-                    IconButton(
-                      tooltip: 'Share app — install QR',
-                      onPressed: _openShareAppInstallQr,
-                      icon: const Icon(Icons.share_outlined),
-                    ),
-                    IconButton(
-                      tooltip: 'Scan hotel guest QR',
-                      onPressed: _openGuestQrScanner,
-                      icon: const Icon(Icons.qr_code_scanner_outlined),
-                    ),
-                    IconButton(
-                      tooltip: context.tr('property_sign_in'),
-                      onPressed: _openStaffPropertyLogin,
-                      icon: const Icon(Icons.badge_outlined),
-                    ),
-                  ],
-                ),
-              ),
-              if (wideLandscape)
-                Expanded(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(
-                        flex: 2,
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 8, 12, 16),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: scheme.primaryContainer
-                                      .withValues(alpha: 0.65),
-                                  borderRadius: BorderRadius.circular(24),
-                                  border: Border.all(
-                                    color: scheme.primary.withValues(alpha: 0.2),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.travel_explore,
-                                        size: 18, color: scheme.primary),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      context.tr('book_a_stay'),
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                        color: scheme.onPrimaryContainer,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 18),
-                              Text(
-                                context.tr('where_to_go'),
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .headlineMedium
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: -0.5,
-                                      height: 1.12,
-                                    ),
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                context.tr('search_stays_sub'),
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodyMedium
-                                    ?.copyWith(
-                                      color: scheme.onSurfaceVariant,
-                                      height: 1.35,
-                                    ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        flex: 3,
-                        child: RefreshIndicator(
-                          onRefresh: _loadHotels,
-                          child: SingleChildScrollView(
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            keyboardDismissBehavior:
-                                ScrollViewKeyboardDismissBehavior.onDrag,
-                            padding: const EdgeInsets.fromLTRB(8, 4, 20, 20),
-                            child: _buildSearchScrollContent(context, scheme, visual),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              else ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
-                child: Column(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: scheme.primaryContainer.withValues(alpha: 0.65),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: scheme.primary.withValues(alpha: 0.2),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.travel_explore,
-                              size: 18, color: scheme.primary),
-                          const SizedBox(width: 8),
-                          Text(
-                            context.tr('book_a_stay'),
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: scheme.onPrimaryContainer,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Text(
-                      context.tr('where_to_go'),
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: -0.5,
-                            height: 1.15,
-                          ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      context.tr('search_stays_sub'),
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                            height: 1.35,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: RefreshIndicator(
-                  onRefresh: _loadHotels,
-                  child: SingleChildScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  keyboardDismissBehavior:
-                      ScrollViewKeyboardDismissBehavior.onDrag,
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
-                  child: _buildSearchScrollContent(context, scheme, visual),
-                ),
-                ),
-              ),
-              ],
-            ],
-          ),
-        ),
+        child: SafeArea(child: content),
       ),
     );
   }
@@ -779,8 +797,9 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
   Widget _buildSearchScrollContent(
     BuildContext context,
     ColorScheme scheme,
-    AppVisual visual,
-  ) {
+    AppVisual visual, {
+    bool showMemberLogin = true,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1127,6 +1146,32 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
             ],
           ),
         ),
+        if (showMemberLogin) ...[
+          const SizedBox(height: 28),
+          const Divider(),
+          const SizedBox(height: 16),
+          Text(
+            'Already a MADYAWPH member?',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Log in to open your member dashboard, browse hotels, and show your membership QR for discounts.',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+          ),
+          const SizedBox(height: 14),
+          OutlinedButton.icon(
+            onPressed: _openMemberLogin,
+            icon: const Icon(Icons.login),
+            label: const Text('Log in as member'),
+          ),
+        ],
       ],
     );
   }

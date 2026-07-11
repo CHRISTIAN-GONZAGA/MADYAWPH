@@ -40,10 +40,12 @@ class CentralAdminDashboardScreen extends StatefulWidget {
 class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScreen> {
   int _section = 0;
   String _revenuePeriod = 'month';
+  String _guestsPeriod = 'month';
   int _approvalTab = 0;
 
   Map<String, dynamic>? _settings;
   Map<String, dynamic>? _revenue;
+  Map<String, dynamic>? _guests;
   List<dynamic> _creditRequests = const [];
   List<dynamic> _memberRequests = const [];
   List<dynamic> _hotels = const [];
@@ -83,6 +85,10 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
           '/platform/revenue-analytics',
           queryParameters: {'period': _revenuePeriod},
         ),
+        portalDio().get<Map<String, dynamic>>(
+          '/platform/guest-demographics',
+          queryParameters: {'period': _guestsPeriod},
+        ),
         portalDio().get<Map<String, dynamic>>('/platform/credit-requests'),
         portalDio().get<Map<String, dynamic>>('/platform/member-requests'),
         portalDio().get<Map<String, dynamic>>('/platform/hotels'),
@@ -90,9 +96,10 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
       setState(() {
         _settings = results[0].data;
         _revenue = results[1].data;
-        _creditRequests = (results[2].data?['data'] as List?) ?? const [];
-        _memberRequests = (results[3].data?['data'] as List?) ?? const [];
-        _hotels = (results[4].data?['data'] as List?) ?? const [];
+        _guests = results[2].data;
+        _creditRequests = (results[3].data?['data'] as List?) ?? const [];
+        _memberRequests = (results[4].data?['data'] as List?) ?? const [];
+        _hotels = (results[5].data?['data'] as List?) ?? const [];
         _loading = false;
       });
     } on DioException catch (e) {
@@ -110,6 +117,19 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
         queryParameters: {'period': _revenuePeriod},
       );
       if (mounted) setState(() => _revenue = res.data);
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
+  Future<void> _reloadGuests() async {
+    try {
+      final res = await portalDio().get<Map<String, dynamic>>(
+        '/platform/guest-demographics',
+        queryParameters: {'period': _guestsPeriod},
+      );
+      if (mounted) setState(() => _guests = res.data);
     } on DioException catch (e) {
       if (!mounted) return;
       showAppMessage(context, dioErrorMessage(e), isError: true);
@@ -139,6 +159,27 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
       );
       if (!mounted) return;
       showAppMessage(context, 'Member booking discount updated.');
+      await _loadAll();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
+  Future<void> _updateMemberPointsSettings({
+    required double pointsPerCheckIn,
+    required double pointsPerPeso,
+  }) async {
+    try {
+      await portalDio().patch<Map<String, dynamic>>(
+        '/platform/settings/member-points',
+        data: {
+          'member_points_per_check_in': pointsPerCheckIn,
+          'member_points_per_peso': pointsPerPeso,
+        },
+      );
+      if (!mounted) return;
+      showAppMessage(context, 'Member points settings updated.');
       await _loadAll();
     } on DioException catch (e) {
       if (!mounted) return;
@@ -402,13 +443,15 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
                   children: [
                     _OverviewSection(
                       revenue: _revenue ?? const {},
+                      guests: _guests ?? const {},
                       hotelCount: _hotels.length,
                       depletedHotels: _depletedHotels,
                       pendingCredits: _pendingCredits,
                       pendingMembers: _pendingMembers,
-                      onOpenApprovals: () => setState(() => _section = 2),
+                      onOpenApprovals: () => setState(() => _section = 3),
                       onOpenRevenue: () => setState(() => _section = 1),
-                      onOpenHotels: () => setState(() => _section = 4),
+                      onOpenGuests: () => setState(() => _section = 2),
+                      onOpenHotels: () => setState(() => _section = 5),
                     ),
                     _RevenueSection(
                       revenue: _revenue ?? const {},
@@ -416,6 +459,14 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
                       onPeriodChanged: (p) {
                         setState(() => _revenuePeriod = p);
                         _reloadRevenue();
+                      },
+                    ),
+                    _GuestsSection(
+                      guests: _guests ?? const {},
+                      period: _guestsPeriod,
+                      onPeriodChanged: (p) {
+                        setState(() => _guestsPeriod = p);
+                        _reloadGuests();
                       },
                     ),
                     _ApprovalsSection(
@@ -435,6 +486,7 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
                       onUpdateBookingFeePercent: _updateBookingFeePercent,
                       onUpdateMemberBookingDiscountPercent:
                           _updateMemberBookingDiscountPercent,
+                      onUpdateMemberPointsSettings: _updateMemberPointsSettings,
                     ),
                     _HotelsSection(
                       hotels: _hotels,
@@ -479,6 +531,11 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
             icon: Icon(Icons.insights_outlined),
             selectedIcon: Icon(Icons.insights),
             label: 'Revenue',
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.groups_outlined),
+            selectedIcon: Icon(Icons.groups),
+            label: 'Guests',
           ),
           NavigationDestination(
             icon: Badge(
@@ -579,27 +636,32 @@ class _PlatformSectionHeader extends StatelessWidget {
 class _OverviewSection extends StatelessWidget {
   const _OverviewSection({
     required this.revenue,
+    required this.guests,
     required this.hotelCount,
     required this.depletedHotels,
     required this.pendingCredits,
     required this.pendingMembers,
     required this.onOpenApprovals,
     required this.onOpenRevenue,
+    required this.onOpenGuests,
     required this.onOpenHotels,
   });
 
   final Map<String, dynamic> revenue;
+  final Map<String, dynamic> guests;
   final int hotelCount;
   final int depletedHotels;
   final int pendingCredits;
   final int pendingMembers;
   final VoidCallback onOpenApprovals;
   final VoidCallback onOpenRevenue;
+  final VoidCallback onOpenGuests;
   final VoidCallback onOpenHotels;
 
   @override
   Widget build(BuildContext context) {
     final totals = revenue['totals'] as Map<String, dynamic>? ?? {};
+    final guestTotals = guests['totals'] as Map<String, dynamic>? ?? {};
     final period = (revenue['period'] ?? 'month').toString();
 
     return ListView(
@@ -727,6 +789,29 @@ class _OverviewSection extends StatelessWidget {
                 subtitle: const Text('See breakdown for every property'),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: onOpenRevenue,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Card(
+              clipBehavior: Clip.antiAlias,
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Colors.teal.withValues(alpha: 0.15),
+                  child: Icon(Icons.groups_outlined, color: Colors.teal.shade800),
+                ),
+                title: const Text(
+                  'Guest demographics',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text(
+                  '${guestTotals['total_guests'] ?? 0} guests · '
+                  '${guestTotals['bookings'] ?? 0} bookings',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: onOpenGuests,
               ),
             ),
           ),
@@ -929,6 +1014,208 @@ class _RevenueSection extends StatelessWidget {
                 ),
         ),
       ],
+    );
+  }
+}
+
+class _GuestsSection extends StatelessWidget {
+  const _GuestsSection({
+    required this.guests,
+    required this.period,
+    required this.onPeriodChanged,
+  });
+
+  final Map<String, dynamic> guests;
+  final String period;
+  final ValueChanged<String> onPeriodChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final totals = guests['totals'] as Map<String, dynamic>? ?? {};
+    final nationalities = (guests['nationalities'] as List<dynamic>?) ?? const [];
+    final hotels = (guests['hotels'] as List<dynamic>?) ?? const [];
+    final from = (guests['from'] ?? '').toString();
+    final to = (guests['to'] ?? '').toString();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _PlatformSectionHeader(
+          icon: Icons.groups_outlined,
+          title: 'Guest demographics',
+          subtitle: from.isNotEmpty ? '$from → $to' : 'Guests by gender and nationality',
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(value: 'day', label: Text('Today')),
+              ButtonSegment(value: 'week', label: Text('Week')),
+              ButtonSegment(value: 'month', label: Text('Month')),
+              ButtonSegment(value: 'year', label: Text('Year')),
+            ],
+            selected: {period},
+            onSelectionChanged: (s) => onPeriodChanged(s.first),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  _CountRow(label: 'Male', value: totals['male']),
+                  _CountRow(label: 'Female', value: totals['female']),
+                  _CountRow(
+                    label: 'Total guests',
+                    value: totals['total_guests'],
+                    bold: true,
+                  ),
+                  const Divider(height: 20),
+                  _CountRow(label: 'Bookings', value: totals['bookings']),
+                ],
+              ),
+            ),
+          ),
+        ),
+        if (nationalities.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              'Nationalities',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: _kPlatformNavy,
+                  ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  children: [
+                    for (final raw in nationalities)
+                      if (raw is Map<String, dynamic>)
+                        _CountRow(
+                          label: (raw['label'] ?? 'Unknown').toString(),
+                          value: raw['guests'],
+                        ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Text(
+            'By hotel',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: _kPlatformNavy,
+                ),
+          ),
+        ),
+        Expanded(
+          child: hotels.isEmpty
+              ? const Center(child: Text('No guest data in this period.'))
+              : ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  itemCount: hotels.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (_, i) {
+                    final h = hotels[i] as Map<String, dynamic>;
+                    final hotelNats =
+                        (h['nationalities'] as List<dynamic>?) ?? const [];
+                    final topNats = hotelNats
+                        .whereType<Map<String, dynamic>>()
+                        .take(3)
+                        .map((n) =>
+                            '${n['label'] ?? 'Unknown'} (${n['guests'] ?? 0})')
+                        .join(' · ');
+                    return Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              (h['hotel_name'] ?? 'Hotel').toString(),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                            if ((h['city'] ?? '').toString().isNotEmpty)
+                              Text(
+                                (h['city'] ?? '').toString(),
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _MiniStat(
+                                    label: 'Male',
+                                    value: '${h['male'] ?? 0}',
+                                  ),
+                                ),
+                                Expanded(
+                                  child: _MiniStat(
+                                    label: 'Female',
+                                    value: '${h['female'] ?? 0}',
+                                  ),
+                                ),
+                                Expanded(
+                                  child: _MiniStat(
+                                    label: 'Total',
+                                    value: '${h['total_guests'] ?? 0}',
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (topNats.isNotEmpty) ...[
+                              const SizedBox(height: 10),
+                              Text(
+                                topNats,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CountRow extends StatelessWidget {
+  const _CountRow({required this.label, required this.value, this.bold = false});
+
+  final String label;
+  final Object? value;
+  final bool bold;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(child: Text(label)),
+          Text(
+            '${value ?? 0}',
+            style: TextStyle(fontWeight: bold ? FontWeight.w800 : FontWeight.w600),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1181,6 +1468,7 @@ class _QrSettingsSection extends StatefulWidget {
     required this.onUploadMember,
     required this.onUpdateBookingFeePercent,
     required this.onUpdateMemberBookingDiscountPercent,
+    required this.onUpdateMemberPointsSettings,
   });
 
   final Map<String, dynamic> settings;
@@ -1188,6 +1476,10 @@ class _QrSettingsSection extends StatefulWidget {
   final VoidCallback onUploadMember;
   final Future<void> Function(double percent) onUpdateBookingFeePercent;
   final Future<void> Function(double percent) onUpdateMemberBookingDiscountPercent;
+  final Future<void> Function({
+    required double pointsPerCheckIn,
+    required double pointsPerPeso,
+  }) onUpdateMemberPointsSettings;
 
   @override
   State<_QrSettingsSection> createState() => _QrSettingsSectionState();
@@ -1196,8 +1488,11 @@ class _QrSettingsSection extends StatefulWidget {
 class _QrSettingsSectionState extends State<_QrSettingsSection> {
   late final TextEditingController _feePercentCtrl;
   late final TextEditingController _memberDiscountCtrl;
+  late final TextEditingController _pointsPerCheckInCtrl;
+  late final TextEditingController _pointsPerPesoCtrl;
   var _savingFee = false;
   var _savingMemberDiscount = false;
+  var _savingMemberPoints = false;
 
   @override
   void initState() {
@@ -1207,6 +1502,12 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     );
     _memberDiscountCtrl = TextEditingController(
       text: _memberDiscountText(widget.settings),
+    );
+    _pointsPerCheckInCtrl = TextEditingController(
+      text: _pointsPerCheckInText(widget.settings),
+    );
+    _pointsPerPesoCtrl = TextEditingController(
+      text: _pointsPerPesoText(widget.settings),
     );
   }
 
@@ -1221,12 +1522,22 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     if (memberNext != _memberDiscountCtrl.text) {
       _memberDiscountCtrl.text = memberNext;
     }
+    final ptsCheckIn = _pointsPerCheckInText(widget.settings);
+    if (ptsCheckIn != _pointsPerCheckInCtrl.text) {
+      _pointsPerCheckInCtrl.text = ptsCheckIn;
+    }
+    final ptsPeso = _pointsPerPesoText(widget.settings);
+    if (ptsPeso != _pointsPerPesoCtrl.text) {
+      _pointsPerPesoCtrl.text = ptsPeso;
+    }
   }
 
   @override
   void dispose() {
     _feePercentCtrl.dispose();
     _memberDiscountCtrl.dispose();
+    _pointsPerCheckInCtrl.dispose();
+    _pointsPerPesoCtrl.dispose();
     super.dispose();
   }
 
@@ -1244,6 +1555,20 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
         .toStringAsFixed(raw is num && raw % 1 == 0 ? 0 : 1);
   }
 
+  static String _pointsPerCheckInText(Map<String, dynamic> settings) {
+    final raw = settings['member_points_per_check_in'];
+    if (raw == null) return '1000';
+    return (raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 1000)
+        .toStringAsFixed(0);
+  }
+
+  static String _pointsPerPesoText(Map<String, dynamic> settings) {
+    final raw = settings['member_points_per_peso'];
+    if (raw == null) return '10';
+    return (raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 10)
+        .toStringAsFixed(raw is num && raw % 1 == 0 ? 0 : 2);
+  }
+
   Future<void> _saveMemberDiscountPercent() async {
     final parsed = double.tryParse(_memberDiscountCtrl.text.trim());
     if (parsed == null || parsed < 0 || parsed > 100) {
@@ -1255,6 +1580,28 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
       await widget.onUpdateMemberBookingDiscountPercent(parsed);
     } finally {
       if (mounted) setState(() => _savingMemberDiscount = false);
+    }
+  }
+
+  Future<void> _saveMemberPoints() async {
+    final checkIn = double.tryParse(_pointsPerCheckInCtrl.text.trim());
+    final perPeso = double.tryParse(_pointsPerPesoCtrl.text.trim());
+    if (checkIn == null || checkIn < 0) {
+      showAppMessage(context, 'Enter a valid check-in points amount.');
+      return;
+    }
+    if (perPeso == null || perPeso <= 0) {
+      showAppMessage(context, 'Points per peso must be greater than 0.');
+      return;
+    }
+    setState(() => _savingMemberPoints = true);
+    try {
+      await widget.onUpdateMemberPointsSettings(
+        pointsPerCheckIn: checkIn,
+        pointsPerPeso: perPeso,
+      );
+    } finally {
+      if (mounted) setState(() => _savingMemberPoints = false);
     }
   }
 
@@ -1418,6 +1765,68 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                             : const Icon(Icons.save_outlined),
                         label: Text(
                           _savingMemberDiscount ? 'Saving…' : 'Save member discount',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Member points wallet',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Members earn points on check-in. Hotels can redeem points when scanning a member QR; the peso value is added to that hotel’s credit wallet.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _pointsPerCheckInCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Points per check-in',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _pointsPerPesoCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Points per ₱1',
+                          helperText: 'Default 10 → 1000 points = ₱100',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      FilledButton.icon(
+                        onPressed: _savingMemberPoints ? null : _saveMemberPoints,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _kPlatformNavy,
+                          foregroundColor: Colors.white,
+                        ),
+                        icon: _savingMemberPoints
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.save_outlined),
+                        label: Text(
+                          _savingMemberPoints ? 'Saving…' : 'Save points settings',
                         ),
                       ),
                     ],

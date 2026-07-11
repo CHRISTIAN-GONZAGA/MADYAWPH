@@ -1927,6 +1927,135 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
     });
   }
 
+  Future<void> _claimFreeBreakfast() async {
+    final breakfast =
+        (_data?['freeBreakfast'] as Map<String, dynamic>?) ?? const {};
+    if (breakfast['alreadyClaimed'] == true) {
+      showAppMessage(
+        context,
+        'Free breakfast was already requested for this stay.',
+      );
+      return;
+    }
+    final quota = (breakfast['quota'] as num?)?.toInt() ?? 0;
+    if (quota < 1) {
+      showAppMessage(
+        context,
+        'No free breakfast quota for this room. Ask the front desk.',
+        isError: true,
+      );
+      return;
+    }
+    final items = (breakfast['menu'] as List<dynamic>? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    if (items.isEmpty) {
+      showAppMessage(
+        context,
+        'This hotel has no free breakfast options yet.',
+      );
+      return;
+    }
+
+    final qtyCtrl = TextEditingController(text: '1');
+    String selectedId = (items.first['id'] ?? '').toString();
+    final payload = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocal) => Dialog(
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: Padding(
+              padding: const EdgeInsets.all(22),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Free breakfast',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'You can choose up to $quota serving(s) based on guests registered for this room. This can only be requested once.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    key: ValueKey<String>(selectedId),
+                    initialValue: selectedId,
+                    decoration: const InputDecoration(
+                      labelText: 'Breakfast option',
+                    ),
+                    items: items.map((item) {
+                      final id = (item['id'] ?? '').toString();
+                      final name = (item['amenityName'] ?? '').toString();
+                      return DropdownMenuItem(
+                        value: id,
+                        child: Text(name),
+                      );
+                    }).toList(),
+                    onChanged: (v) =>
+                        setLocal(() => selectedId = v ?? selectedId),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: qtyCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: 'Servings (max $quota)',
+                      prefixIcon: const Icon(Icons.free_breakfast_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton(
+                        onPressed: () {
+                          final qty = int.tryParse(qtyCtrl.text.trim()) ?? 0;
+                          if (qty < 1 || qty > quota) {
+                            showAppMessage(
+                              context,
+                              'Enter a quantity between 1 and $quota.',
+                              isError: true,
+                            );
+                            return;
+                          }
+                          Navigator.of(context).pop({
+                            'amenityItemId': selectedId,
+                            'quantity': qty,
+                          });
+                        },
+                        child: const Text('Request'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (payload == null) return;
+
+    await _runGuestAction('Free breakfast', () async {
+      await guestDio().post('/guest/amenities/claim', data: payload);
+      return {
+        'message':
+            'Free breakfast requested. It will appear in amenities for hotel staff.',
+      };
+    });
+  }
+
   Future<void> _extendStay() async {
     final roomInfo = _data?['roomInfo'] as Map<String, dynamic>?;
     final billingMode =
@@ -2187,6 +2316,26 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
                   ),
                 ],
                 const SizedBox(height: 16),
+                AppActionTile(
+                  title: 'Free breakfast',
+                  subtitle: () {
+                    final fb = (_data?['freeBreakfast'] as Map<String, dynamic>?) ??
+                        const {};
+                    if (fb['alreadyClaimed'] == true) {
+                      final claim =
+                          (fb['claim'] as Map<String, dynamic>?) ?? const {};
+                      final name = (claim['amenityName'] ?? 'Breakfast').toString();
+                      final qty = claim['quantity'] ?? 1;
+                      return 'Already requested: $name × $qty';
+                    }
+                    final quota = (fb['quota'] as num?)?.toInt() ?? 0;
+                    return quota > 0
+                        ? 'Choose up to $quota free serving(s) for your stay'
+                        : 'Complimentary breakfast options for your stay';
+                  }(),
+                  icon: Icons.free_breakfast_outlined,
+                  onTap: _claimFreeBreakfast,
+                ),
                 AppActionTile(
                   title: 'Request amenity',
                   subtitle: 'Submit a housekeeping/amenity claim',

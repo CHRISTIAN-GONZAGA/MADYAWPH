@@ -50,7 +50,7 @@ String dioErrorMessage(DioException e) {
   return e.message ?? e.type.name;
 }
 
-enum _AuthKind { portal, guest }
+enum _AuthKind { portal, guest, member }
 
 /// Longer timeouts for cold-hosted APIs (e.g. Render spin-up).
 const kPublicConnectTimeout = Duration(seconds: 45);
@@ -88,22 +88,26 @@ Dio _authedDio(_AuthKind kind) {
   dio.interceptors.add(
     InterceptorsWrapper(
       onRequest: (options, handler) async {
-        if (kind == _AuthKind.portal) {
-          final t = await AuthStorage.portalToken();
-          if (t != null && t.isNotEmpty) {
-            options.headers['Authorization'] = 'Bearer $t';
-          }
-        } else {
-          final t = await AuthStorage.guestToken();
-          if (t != null && t.isNotEmpty) {
-            options.headers['Authorization'] = 'Bearer $t';
-          }
+        final String? t = switch (kind) {
+          _AuthKind.portal => await AuthStorage.portalToken(),
+          _AuthKind.guest => await AuthStorage.guestToken(),
+          _AuthKind.member => await AuthStorage.memberToken(),
+        };
+        if (t != null && t.isNotEmpty) {
+          options.headers['Authorization'] = 'Bearer $t';
         }
         handler.next(options);
       },
       onError: (error, handler) async {
-        if (kind == _AuthKind.portal && error.response?.statusCode == 401) {
-          await AuthStorage.clearPortalAuth();
+        if (error.response?.statusCode == 401) {
+          switch (kind) {
+            case _AuthKind.portal:
+              await AuthStorage.clearPortalAuth();
+            case _AuthKind.guest:
+              await AuthStorage.clearGuestAuth();
+            case _AuthKind.member:
+              await AuthStorage.clearMemberAuth();
+          }
         }
         handler.next(error);
       },
@@ -141,6 +145,8 @@ Dio portalDioWithLongTimeout() {
 }
 
 Dio guestDio() => _authedDio(_AuthKind.guest);
+
+Dio memberDio() => _authedDio(_AuthKind.member);
 
 /// Widget tests set this to mock walk-in calendar / amenity API calls.
 Dio Function()? portalDioTestOverride;

@@ -495,15 +495,15 @@ class CustomerPortalApiController extends Controller
         $checkOut,
         ?string $excludeReservationId
     ): bool {
-        $in = Carbon::parse($checkIn)->startOfDay()->toDateString();
-        $out = Carbon::parse($checkOut)->startOfDay()->toDateString();
+        $in = Carbon::parse($checkIn)->startOfDay();
+        $out = Carbon::parse($checkOut)->startOfDay();
 
         $q = ExternalReservation::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
             ->where('assigned_room_id', $roomId)
             ->whereIn('status', ['pending_approval', 'approved', 'reserved', 'booked'])
-            ->where('check_in_date', '<', $out)
-            ->where('check_out_date', '>', $in);
+            ->where('check_in_date', '<=', $out)
+            ->where('check_out_date', '>=', $in);
         if ($excludeReservationId !== null && $excludeReservationId !== '') {
             $q->where('id', '!=', $excludeReservationId);
         }

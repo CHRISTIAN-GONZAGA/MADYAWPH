@@ -13,12 +13,10 @@ import '../../member_qr_scan.dart';
 import '../../widgets/complete_guest_booking_dialog.dart';
 import 'admin_multi_room_stay_calendar_dialog.dart';
 import 'booking_mode_field.dart';
-import 'free_breakfast_selection.dart';
 import 'guest_nationalities.dart';
 import 'hourly_billing.dart';
 import 'manual_booking_dialog.dart';
 import 'multi_room_booking_summary.dart';
-import 'walk_in_complimentary_picker.dart';
 
 /// Group walk-in booking — same steps as single room: calendar → guest form → submit.
 Future<bool> showAdminMultiRoomWalkInBooking({
@@ -85,19 +83,7 @@ Future<bool> showAdminMultiRoomWalkInBooking({
   var guestsMale = 0;
   var guestsFemale = 0;
   var guestNationality = 'Filipino';
-  final complimentaryQty = <String, int>{};
-  var amenityMenuItems = const <Map<String, dynamic>>[];
 
-  try {
-    final menuRes =
-        await portalDio().get<Map<String, dynamic>>('/admin/amenity-menu');
-    amenityMenuItems = ((menuRes.data?['data'] as List?) ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .where((item) => item['is_active'] != false)
-        .toList();
-  } catch (_) {
-    amenityMenuItems = const [];
-  }
   if (!context.mounted) return false;
 
   final roomNumbers = rooms
@@ -269,17 +255,11 @@ Future<bool> showAdminMultiRoomWalkInBooking({
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: () async {
-                          final shid =
-                              await scanAndValidateMemberShid(dialogContext);
-                          if (shid == null) return;
-                          final info = await validateMemberShidInput(
-                            dialogContext,
-                            shid,
-                          );
+                          final info = await scanMemberForBooking(dialogContext);
                           if (info == null) return;
                           setLocal(() {
                             memberShidId = info.shid;
-                            memberDiscountPercent = info.percent;
+                            memberDiscountPercent = info.discountPercent;
                             discountType = 'none';
                             discountIdFile = null;
                           });
@@ -301,6 +281,17 @@ Future<bool> showAdminMultiRoomWalkInBooking({
                     ],
                   ],
                 ),
+                if (memberShidId.isNotEmpty)
+                  TextButton.icon(
+                    onPressed: () async {
+                      await promptRedeemMemberPointsByShid(
+                        dialogContext,
+                        memberShidId: memberShidId,
+                      );
+                    },
+                    icon: const Icon(Icons.stars_outlined),
+                    label: const Text('Redeem member points'),
+                  ),
                 const SizedBox(height: 12),
                 Text(
                   'Guests in room',
@@ -350,14 +341,6 @@ Future<bool> showAdminMultiRoomWalkInBooking({
                   onChanged: (v) =>
                       setLocal(() => guestNationality = v ?? 'Filipino'),
                 ),
-                if (amenityMenuItems.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  WalkInComplimentaryPicker(
-                    menuItems: amenityMenuItems,
-                    quantitiesById: complimentaryQty,
-                    onChanged: () => setLocal(() {}),
-                  ),
-                ],
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
                   onPressed: () async {
@@ -544,22 +527,6 @@ Future<bool> showAdminMultiRoomWalkInBooking({
                   'guests_male': guestsMale,
                   'guests_female': guestsFemale,
                   'guest_nationality': guestNationality,
-                  'free_breakfast_options': amenityMenuItems
-                      .map((item) {
-                        final id = (item['id'] ?? item['_id'] ?? '').toString();
-                        final qty = complimentaryQty[id] ?? 0;
-                        if (qty <= 0) return null;
-                        return {
-                          'menu_item_id': id,
-                          'name': (item['name'] ?? '').toString(),
-                          'quantity': qty,
-                          'amenity_type':
-                              (item['amenity_type'] ?? item['type'] ?? '')
-                                  .toString(),
-                        };
-                      })
-                      .whereType<Map<String, dynamic>>()
-                      .toList(),
                 });
               },
             ),
@@ -598,9 +565,7 @@ Future<bool> showAdminMultiRoomWalkInBooking({
         guestNationality: (payload['guest_nationality'] ?? 'Filipino').toString(),
         bookingMode: (payload['booking_mode'] ?? BookingModeOptions.defaultValue)
             .toString(),
-        freeBreakfastSelections: FreeBreakfastSelection.listFromDynamic(
-          payload['free_breakfast_options'] as List?,
-        ),
+        freeBreakfastSelections: const [],
         memberShidId: (payload['member_shid_id'] ?? '').toString(),
       ),
     );

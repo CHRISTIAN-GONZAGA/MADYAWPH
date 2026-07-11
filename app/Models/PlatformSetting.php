@@ -13,6 +13,8 @@ class PlatformSetting extends Model
         'member_monthly_fee',
         'booking_confirm_fee_percent',
         'member_booking_discount_percent',
+        'member_points_per_check_in',
+        'member_points_per_peso',
     ];
 
     protected function casts(): array
@@ -21,6 +23,8 @@ class PlatformSetting extends Model
             'member_monthly_fee' => 'float',
             'booking_confirm_fee_percent' => 'float',
             'member_booking_discount_percent' => 'float',
+            'member_points_per_check_in' => 'float',
+            'member_points_per_peso' => 'float',
         ];
     }
 }

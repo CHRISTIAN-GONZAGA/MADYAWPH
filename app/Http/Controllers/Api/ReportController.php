@@ -5,7 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Enums\RoomStatus;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
+use App\Models\Hotel;
+use App\Services\AppEmailService;
 use App\Services\FrontDeskActivityReportService;
+use App\Services\HotelFinancialReportService;
 use App\Models\BillingCharge;
 use App\Models\Booking;
 use App\Models\Room;
@@ -14,6 +17,7 @@ use App\Models\RoomTransfer;
 use App\Models\StaffMember;
 use App\Models\Task;
 use App\Support\CancellationRetentionSupport;
+use App\Support\HotelNotificationRecipients;
 use App\Support\SafeModelAttributes;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
@@ -1053,6 +1057,72 @@ class ReportController extends Controller
         return response($pdf->output(), 200, [
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+        ]);
+    }
+
+    /**
+     * Email owner a sales summary for the front-desk shift window (on timeout / sign-out).
+     */
+    public function shiftSummaryEmail(Request $request)
+    {
+        $validated = $request->validate([
+            'time_in' => ['required', 'date'],
+            'time_out' => ['required', 'date', 'after:time_in'],
+            'staff_name' => ['nullable', 'string', 'max:160'],
+        ]);
+
+        $user = $request->user();
+        $hotelId = (string) ($user->hotel_id ?? '');
+        if ($hotelId === '') {
+            return response()->json(['message' => 'Hotel context is required.'], 422);
+        }
+
+        $from = Carbon::parse($validated['time_in']);
+        $to = Carbon::parse($validated['time_out']);
+        $staffName = trim((string) ($validated['staff_name'] ?? ''));
+
+        $recipients = HotelNotificationRecipients::salesReportEmails($hotelId);
+        if ($recipients === []) {
+            return response()->json([
+                'sent' => false,
+                'message' => 'No owner Gmail is configured for sales reports.',
+            ], 422);
+        }
+
+        $hotel = Hotel::withoutGlobalScopes()->find($hotelId);
+        $hotelName = trim((string) ($hotel?->name ?? ''));
+        if ($hotelName === '') {
+            $hotelName = (string) config('app.name', 'MADYAW');
+        }
+
+        $periodLabel = $staffName !== ''
+            ? "shift ({$staffName})"
+            : 'shift';
+
+        $report = HotelFinancialReportService::forHotel($hotelId)
+            ->buildSalesReportPayload($from, $to, 'shift');
+        $report['from_display'] = $from->format('M j, Y g:i A');
+        $report['to_display'] = $to->format('M j, Y g:i A');
+        $report['staff_name'] = $staffName;
+
+        $result = app(AppEmailService::class)->sendHotelSalesReportToOwner(
+            $recipients,
+            $hotelName,
+            $periodLabel,
+            $report,
+        );
+
+        if (! $result->sent) {
+            return response()->json([
+                'sent' => false,
+                'message' => $result->error ?? 'Could not send shift sales report.',
+            ], 422);
+        }
+
+        return response()->json([
+            'sent' => true,
+            'message' => 'Shift sales summary emailed to the owner.',
+            'recipient' => $result->email,
         ]);
     }
 

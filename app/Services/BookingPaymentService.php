@@ -23,15 +23,15 @@ class BookingPaymentService
             'label' => (string) ($c->label ?? ''),
             'type' => (string) ($c->type ?? ''),
             'amount' => (float) ($c->amount ?? 0),
-            'is_credit' => (string) ($c->type ?? '') === 'refund',
+            'is_credit' => in_array((string) ($c->type ?? ''), ['refund', 'member_points'], true),
         ])->values()->all();
 
         $subtotal = (float) $charges
-            ->reject(fn ($c) => (string) ($c->type ?? '') === 'refund')
+            ->reject(fn ($c) => in_array((string) ($c->type ?? ''), ['refund', 'member_points'], true))
             ->sum(fn ($c) => (float) ($c->amount ?? 0));
 
         $refunds = (float) $charges
-            ->filter(fn ($c) => (string) ($c->type ?? '') === 'refund')
+            ->filter(fn ($c) => in_array((string) ($c->type ?? ''), ['refund', 'member_points'], true))
             ->sum(fn ($c) => (float) ($c->amount ?? 0));
 
         return [

@@ -20,6 +20,7 @@ class CustomerReservationLifecycleTest extends TestCase
     public function test_pending_future_reservation_keeps_room_available_status(): void
     {
         $hotel = Hotel::create(['name' => 'Pending Hotel', 'location' => 'Manila']);
+        $this->seedHotelCredits($hotel);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_number' => '110',

@@ -7,6 +7,7 @@ import '../locale_controller.dart';
 import 'central_admin/central_admin_dashboard_screen.dart';
 import 'dashboards.dart';
 import 'flow_state.dart';
+import 'member_dashboard_flow.dart';
 import 'owner_dashboard_screen.dart';
 import 'public_hotel_search_screen.dart';
 
@@ -25,6 +26,7 @@ class _FlowRootState extends State<FlowRoot> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _resumeCentralAdminSession();
       _resumeGuestSession();
+      _resumeMemberSession();
       _resumeHotelStaffSession();
     });
   }
@@ -112,6 +114,30 @@ class _FlowRootState extends State<FlowRoot> {
       await AuthStorage.clearGuestAuth();
     } catch (_) {
       await AuthStorage.clearGuestAuth();
+    }
+  }
+
+  Future<void> _resumeMemberSession() async {
+    final token = await AuthStorage.memberToken();
+    if (token == null || token.isEmpty || !mounted) return;
+
+    try {
+      final res = await memberDio().get<Map<String, dynamic>>('/member/dashboard');
+      if (!mounted) return;
+      final member = res.data?['member'];
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => MemberDashboardScreen(
+            initialMember: member is Map
+                ? Map<String, dynamic>.from(member)
+                : null,
+          ),
+        ),
+      );
+    } on DioException catch (_) {
+      await AuthStorage.clearMemberAuth();
+    } catch (_) {
+      await AuthStorage.clearMemberAuth();
     }
   }
 

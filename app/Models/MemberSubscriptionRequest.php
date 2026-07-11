@@ -10,6 +10,8 @@ class MemberSubscriptionRequest extends Model
         'full_name',
         'email',
         'phone',
+        'username',
+        'password',
         'amount',
         'payment_reference',
         'status',
@@ -18,6 +20,12 @@ class MemberSubscriptionRequest extends Model
         'reviewed_by_user_id',
         'reviewed_at',
         'notes',
+        'points_balance',
+        'points_ledger',
+    ];
+
+    protected $hidden = [
+        'password',
     ];
 
     protected function casts(): array
@@ -26,6 +34,9 @@ class MemberSubscriptionRequest extends Model
             'amount' => 'float',
             'member_valid_until' => 'datetime',
             'reviewed_at' => 'datetime',
+            'password' => 'hashed',
+            'points_balance' => 'float',
+            'points_ledger' => 'array',
         ];
     }
 }

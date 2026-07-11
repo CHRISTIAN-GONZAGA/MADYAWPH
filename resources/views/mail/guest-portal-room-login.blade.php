@@ -28,6 +28,34 @@
                                     @if($bookingReference)
                                         <p style="margin:8px 0 0;font-size:13px;color:#4a5568;">Reference: {{ $bookingReference }}</p>
                                     @endif
+                                    @if($stayLabel)
+                                        <p style="margin:8px 0 0;font-size:13px;color:#4a5568;">Stay: {{ $stayLabel }}</p>
+                                    @endif
+                                    @if($checkInDate || $checkOutDate)
+                                        <p style="margin:8px 0 0;font-size:13px;color:#4a5568;">
+                                            @if($checkInDate) Check-in: {{ $checkInDate }}@endif
+                                            @if($checkInDate && $checkOutDate) · @endif
+                                            @if($checkOutDate) Check-out: {{ $checkOutDate }}@endif
+                                        </p>
+                                    @endif
+                                    @if($discountLabel)
+                                        <p style="margin:8px 0 0;font-size:13px;color:#4a5568;">Discount: {{ $discountLabel }}</p>
+                                    @endif
+                                    @if($adults || $children || $guestsMale || $guestsFemale)
+                                        <p style="margin:8px 0 0;font-size:13px;color:#4a5568;">
+                                            Guests:
+                                            @if($adults) {{ $adults }} adult{{ $adults == 1 ? '' : 's' }}@endif
+                                            @if($adults && $children) · @endif
+                                            @if($children) {{ $children }} child{{ $children == 1 ? '' : 'ren' }}@endif
+                                            @if(($adults || $children) && ($guestsMale || $guestsFemale)) · @endif
+                                            @if($guestsMale) {{ $guestsMale }} male@endif
+                                            @if($guestsMale && $guestsFemale), @endif
+                                            @if($guestsFemale) {{ $guestsFemale }} female@endif
+                                        </p>
+                                    @endif
+                                    @if($guestNationality)
+                                        <p style="margin:8px 0 0;font-size:13px;color:#4a5568;">Nationality: {{ $guestNationality }}</p>
+                                    @endif
                                     @if($loggedInAt)
                                         <p style="margin:8px 0 0;font-size:13px;color:#4a5568;">Signed in: {{ $loggedInAt }}</p>
                                     @endif

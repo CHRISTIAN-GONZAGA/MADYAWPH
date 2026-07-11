@@ -22,6 +22,7 @@ class Hotel extends Model
         'longitude',
         'contact_number',
         'owner_email',
+        'frontdesk_notification_user_id',
         'access_username',
         'access_password',
         'picker_banner_url',

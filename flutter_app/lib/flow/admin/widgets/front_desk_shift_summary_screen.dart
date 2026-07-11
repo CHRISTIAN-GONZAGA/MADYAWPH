@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
@@ -37,6 +39,8 @@ class _FrontDeskShiftSummaryScreenState extends State<FrontDeskShiftSummaryScree
   String? _error;
   bool _pdfBusy = false;
   bool _finishing = false;
+  bool _ownerEmailSent = false;
+  bool _ownerEmailBusy = false;
 
   @override
   void initState() {
@@ -67,6 +71,8 @@ class _FrontDeskShiftSummaryScreenState extends State<FrontDeskShiftSummaryScree
         _data = res.data;
         _loading = false;
       });
+      // Email owner once when the timeout summary loads successfully.
+      unawaited(_emailOwnerSalesSummary());
     } on DioException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -79,6 +85,27 @@ class _FrontDeskShiftSummaryScreenState extends State<FrontDeskShiftSummaryScree
         _error = '$e';
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _emailOwnerSalesSummary() async {
+    if (_ownerEmailSent || _ownerEmailBusy) return;
+    setState(() => _ownerEmailBusy = true);
+    try {
+      await portalDio().post<Map<String, dynamic>>(
+        '/reports/shift-summary/email',
+        data: {
+          'time_in': widget.shift.startedAt.toIso8601String(),
+          'time_out': widget.endedAt.toIso8601String(),
+          'staff_name': widget.shift.staffName,
+        },
+      );
+      if (!mounted) return;
+      setState(() => _ownerEmailSent = true);
+    } catch (_) {
+      // Non-blocking: staff can still finish / download PDF if email fails.
+    } finally {
+      if (mounted) setState(() => _ownerEmailBusy = false);
     }
   }
 
@@ -106,6 +133,9 @@ class _FrontDeskShiftSummaryScreenState extends State<FrontDeskShiftSummaryScree
   Future<void> _finish() async {
     if (_finishing) return;
     setState(() => _finishing = true);
+    if (!_ownerEmailSent) {
+      await _emailOwnerSalesSummary();
+    }
     if (widget.clearShiftOnFinish) {
       await FrontDeskShiftStorage.clear(
         hotelId: widget.shift.hotelId,
@@ -194,6 +224,16 @@ class _FrontDeskShiftSummaryScreenState extends State<FrontDeskShiftSummaryScree
                           const [],
                     ),
                     const SizedBox(height: 24),
+                    if (_ownerEmailSent)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          'Shift sales summary emailed to the owner.',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                        ),
+                      ),
                     FilledButton.icon(
                       onPressed: _pdfBusy ? null : _downloadPdf,
                       icon: const Icon(Icons.picture_as_pdf_outlined),

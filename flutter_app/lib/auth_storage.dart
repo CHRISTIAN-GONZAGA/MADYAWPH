@@ -23,6 +23,7 @@ class AuthStorage {
   static const _kPortalToken = 'portal_token';
   static const _kPortalRole = 'portal_role';
   static const _kGuestToken = 'guest_token';
+  static const _kMemberToken = 'member_token';
   static const _kUiSeedColor = 'ui_seed_color';
   static const _kThemeMode = 'ui_theme_mode';
   static const _kThemeFabDx = 'theme_fab_dx';
@@ -91,6 +92,8 @@ class AuthStorage {
   static Future<String?> portalRole() => _secure.read(key: _kPortalRole);
 
   static Future<String?> guestToken() => _secure.read(key: _kGuestToken);
+
+  static Future<String?> memberToken() => _secure.read(key: _kMemberToken);
 
   static Future<String?> appLocaleCode() async {
     await _ensureMigrated();
@@ -200,6 +203,9 @@ class AuthStorage {
   static Future<void> setGuestToken(String token) =>
       _secure.write(key: _kGuestToken, value: token);
 
+  static Future<void> setMemberToken(String token) =>
+      _secure.write(key: _kMemberToken, value: token);
+
   /// Removes Sanctum portal credentials only (keeps hotel context and guest).
   static Future<void> clearPortalAuth() async {
     await _secure.delete(key: _kPortalToken);
@@ -239,6 +245,8 @@ class AuthStorage {
   }
 
   static Future<void> clearGuestAuth() => _secure.delete(key: _kGuestToken);
+
+  static Future<void> clearMemberAuth() => _secure.delete(key: _kMemberToken);
 
   static Future<void> setUiSeedColorHex(String hex) async {
     await _ensureMigrated();

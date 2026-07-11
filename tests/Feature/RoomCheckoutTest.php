@@ -6,6 +6,7 @@ use App\Enums\BookingStatus;
 use App\Enums\RoomStatus;
 use App\Enums\UserRole;
 use App\Mail\GuestCheckInWelcomeMail;
+use App\Mail\StaffGuestCheckInMail;
 use App\Models\Booking;
 use App\Models\ExternalReservation;
 use App\Models\GuestMessage;
@@ -296,6 +297,81 @@ class RoomCheckoutTest extends TestCase
                 && $mail->roomPassword === $password
                 && $mail->bookingReference === 'BK-WELCOME-1'
                 && $mail->hasTo('alex.guest@gmail.com');
+        });
+    }
+
+    public function test_check_in_emails_owner_and_frontdesk_staff_alert(): void
+    {
+        config([
+            'services.messaging.email_enabled' => true,
+            'mail.default' => 'array',
+            'mail.from.address' => 'noreply@madyaw.test',
+        ]);
+        Mail::fake();
+
+        $hotel = Hotel::create([
+            'name' => 'Staff Alert Inn',
+            'location' => 'Butuan',
+            'owner_email' => 'owner-alert@gmail.com',
+        ]);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'alert_admin',
+            'email' => 'alert-admin@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $fd = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'alert_fd',
+            'email' => 'frontdesk-alert@gmail.com',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::FRONTDESK,
+        ]);
+        $hotel->forceFill(['frontdesk_notification_user_id' => (string) $fd->id])->save();
+
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '312',
+            'room_type' => 'Deluxe',
+            'price_per_night' => 1800,
+            'status' => RoomStatus::BOOKED->value,
+            'current_guest_name' => 'Jordan Guest',
+        ]);
+        Booking::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'booking_reference' => 'BK-STAFF-1',
+            'guest_name' => 'Jordan Guest',
+            'guest_email' => 'jordan.guest@gmail.com',
+            'guest_phone' => '09171234567',
+            'check_in_date' => now()->toDateString(),
+            'check_out_date' => now()->addDay()->toDateString(),
+            'nights' => 1,
+            'total_amount' => 1800,
+            'payment_status' => 'unpaid',
+            'status' => BookingStatus::BOOKED,
+        ]);
+
+        Sanctum::actingAs($admin);
+
+        $this->patchJson('/api/v1/admin/rooms/'.$room->id.'/status', [
+            'status' => 'checked_in',
+        ])
+            ->assertOk()
+            ->assertJsonPath('guest_welcome_sms.guest_phone', '09171234567')
+            ->assertJsonPath('guest_welcome_sms.room_number', '312');
+
+        $room = Room::withoutGlobalScopes()->findOrFail($room->id);
+        $this->assertNotSame('', (string) ($room->current_access_code ?? ''));
+
+        Mail::assertSent(StaffGuestCheckInMail::class, function (StaffGuestCheckInMail $mail) {
+            return $mail->hotelName === 'Staff Alert Inn'
+                && $mail->roomNumber === '312'
+                && $mail->guestName === 'Jordan Guest'
+                && $mail->bookingReference === 'BK-STAFF-1'
+                && $mail->hasTo('owner-alert@gmail.com')
+                && $mail->hasTo('frontdesk-alert@gmail.com');
         });
     }
 

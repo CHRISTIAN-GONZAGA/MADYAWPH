@@ -6,7 +6,7 @@ import '../dio_client.dart';
 import '../widgets/app_scaffold.dart';
 import 'guest_portal_flow.dart';
 
-/// Scan a hotel guest-portal QR and route to room login.
+/// Scan a hotel or room guest-portal QR and route to room login.
 class GuestPortalQrScanScreen extends StatefulWidget {
   const GuestPortalQrScanScreen({super.key});
 
@@ -47,10 +47,18 @@ class _GuestPortalQrScanScreenState extends State<GuestPortalQrScanScreen> {
       _handled = true;
       if (!mounted) return;
       final hotelName = (res.data?['hotel_name'] ?? '').toString();
+      final roomBound = res.data?['room_bound'] == true ||
+          (res.data?['type'] ?? '').toString() == 'room';
+      final roomId = (res.data?['room_id'] ?? '').toString();
+      final roomNumber = (res.data?['room_number'] ?? '').toString();
+
       await openGuestPortalLogin(
         context,
         hotelId: hotelId,
         hotelName: hotelName.isEmpty ? null : hotelName,
+        roomId: roomId.isEmpty ? null : roomId,
+        roomNumber: roomNumber.isEmpty ? null : roomNumber,
+        roomBoundFromQr: roomBound && roomId.isNotEmpty,
       );
     } on DioException catch (e) {
       if (!mounted) return;
@@ -70,7 +78,7 @@ class _GuestPortalQrScanScreenState extends State<GuestPortalQrScanScreen> {
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      appBar: AppBar(title: const Text('Scan hotel QR')),
+      appBar: AppBar(title: const Text('Scan guest QR')),
       body: Column(
         children: [
           Expanded(
@@ -102,7 +110,7 @@ class _GuestPortalQrScanScreenState extends State<GuestPortalQrScanScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'Point your camera at the guest portal QR displayed at your hotel front desk.',
+                  'Point your camera at the QR code in your room, or the guest portal QR at the front desk.',
                   style: Theme.of(context).textTheme.bodySmall,
                   textAlign: TextAlign.center,
                 ),

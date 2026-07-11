@@ -72,6 +72,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'prevent.double.booking' => PreventDoubleBooking::class,
             'same.origin' => EnsureSameOrigin::class,
             'guest.portal' => AuthenticateGuestPortalToken::class,
+            'member.portal' => \App\Http\Middleware\AuthenticateMemberPortalToken::class,
             'hotel.tenant' => BindHotelTenantFromSanctumUser::class,
             'hotel.staff' => EnsureHotelStaffTenant::class,
         ]);

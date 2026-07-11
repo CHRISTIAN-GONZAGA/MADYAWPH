@@ -456,6 +456,11 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             ? $roomModel->toArray()
             : (array) $roomModel;
 
+        $freshBooking = $nextStatus === RoomStatus::CHECKED_IN->value
+            ? ($roomCheckoutService->resolveActiveBookingForRoom($hotelId, $result['room']) ?? $activeBooking)
+            : null;
+        $hotel = \App\Models\Hotel::withoutGlobalScopes()->find($hotelId);
+
         return response()->json([
             'ok' => true,
             'room' => array_merge($roomPayload, [
@@ -463,10 +468,23 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
                 'status' => $roomModel instanceof Room
                     ? StayManagementPolicy::roomStatusValue($roomModel)
                     : strtolower(trim((string) ($roomPayload['status'] ?? ''))),
+                'room_access_password' => $nextStatus === RoomStatus::CHECKED_IN->value
+                    ? (string) ($result['room']->current_access_code ?? '')
+                    : null,
             ]),
             'message' => $result['message'],
             'booking_id' => $bookingId,
-            'booking_reference' => $completedBooking?->booking_reference,
+            'booking_reference' => $completedBooking?->booking_reference
+                ?? ($freshBooking?->booking_reference ? (string) $freshBooking->booking_reference : null),
+            'guest_welcome_sms' => $nextStatus === RoomStatus::CHECKED_IN->value ? [
+                'guest_phone' => trim((string) ($freshBooking?->guest_phone ?? '')),
+                'guest_name' => trim((string) ($freshBooking?->guest_name
+                    ?? $result['room']->current_guest_name
+                    ?? '')),
+                'room_number' => (string) ($result['room']->room_number ?? ''),
+                'room_access_password' => (string) ($result['room']->current_access_code ?? ''),
+                'hotel_name' => trim((string) ($hotel?->name ?? '')),
+            ] : null,
             'receipt_url' => $receipt['receipt_url'] ?? null,
             'receipt' => $receipt,
         ]);
@@ -1038,6 +1056,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             'gcash', 'g-cash' => 'GCash',
             'paymaya', 'maya', 'pay maya' => 'PayMaya',
             'credit card', 'credit_card', 'card' => 'Credit Card',
+            'member points', 'member_points', 'points' => 'Member Points',
             default => null,
         };
         if ($methodRaw !== '' && $normalizedMethod === null) {
@@ -1051,6 +1070,45 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             app(BookingPaymentService::class)->applyPayment($booking, $request->user(), $validated)
         );
     })->name('api.v1.admin.bookings.payment-status');
+
+    Route::post('/admin/member/redeem-points', function (Request $request) {
+        $validated = $request->validate([
+            'member_shid_id' => ['nullable', 'string', 'max:40'],
+            'qr_payload' => ['nullable', 'string', 'max:255'],
+            'points' => ['required', 'integer', 'min:1', 'max:10000000'],
+            'booking_id' => ['nullable', 'string', 'max:64'],
+        ]);
+        $hotelId = (string) $request->user()->hotel_id;
+        $input = trim((string) ($validated['member_shid_id'] ?? ''));
+        if ($input === '') {
+            $input = trim((string) ($validated['qr_payload'] ?? ''));
+        }
+        if ($input === '') {
+            return response()->json(['message' => 'Scan a member QR or enter a membership ID.'], 422);
+        }
+
+        $booking = null;
+        $bookingId = trim((string) ($validated['booking_id'] ?? ''));
+        if ($bookingId !== '') {
+            $booking = Booking::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
+                ->find($bookingId);
+            if ($booking === null) {
+                return response()->json(['message' => 'Booking not found for this hotel.'], 404);
+            }
+            StayManagementPolicy::denyUnlessCanManage($booking);
+        }
+
+        return response()->json(
+            app(\App\Services\MemberPointsService::class)->redeemPoints(
+                hotelId: $hotelId,
+                shidOrPayload: $input,
+                points: (int) $validated['points'],
+                actor: $request->user(),
+                booking: $booking,
+            )
+        );
+    })->middleware('role:admin,frontdesk,super_admin')->name('api.v1.admin.member.redeem-points');
 
     Route::post('/admin/bookings/{booking}/refund', function (Request $request, Booking $booking) {
         $validated = $request->validate([
@@ -1737,6 +1795,7 @@ Route::get('/tasks/assigned-to-me', [TaskController::class, 'assignedToMe'])->mi
 // Reports
 Route::get('/reports/shift-summary', [ReportController::class, 'shiftSummary'])->middleware('role:admin,frontdesk,staff');
 Route::get('/reports/shift-summary/pdf', [ReportController::class, 'shiftSummaryPdf'])->middleware('role:admin,frontdesk,staff');
+Route::post('/reports/shift-summary/email', [ReportController::class, 'shiftSummaryEmail'])->middleware('role:admin,frontdesk,staff');
 Route::get('/reports/frontdesk-activity', [ReportController::class, 'frontDeskActivitySummary'])->middleware('role:admin,frontdesk');
 Route::get('/reports/frontdesk-activity/rooms', [ReportController::class, 'frontDeskActivityRooms'])->middleware('role:admin,frontdesk');
 Route::get('/reports/sales', [ReportController::class, 'sales'])->middleware('role:admin,frontdesk');
@@ -2116,6 +2175,30 @@ Route::post('/admin/hotel/guest-portal-qr', function (Request $request, GuestPor
         ...$payload,
     ]);
 })->middleware('role:admin')->name('api.v1.admin.hotel.guest-portal-qr.regenerate');
+
+Route::get('/admin/rooms/{id}/guest-portal-qr', function (Request $request, string $id, GuestPortalQrService $guestPortalQrService) {
+    $hotelId = (string) $request->user()->hotel_id;
+    $hotel = Hotel::withoutGlobalScopes()->findOrFail($hotelId);
+    $room = Room::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->findOrFail($id);
+
+    return response()->json($guestPortalQrService->presentRoom($room, $hotel));
+})->middleware('role:admin,frontdesk')->name('api.v1.admin.rooms.guest-portal-qr.show');
+
+Route::post('/admin/rooms/{id}/guest-portal-qr', function (Request $request, string $id, GuestPortalQrService $guestPortalQrService) {
+    $hotelId = (string) $request->user()->hotel_id;
+    $hotel = Hotel::withoutGlobalScopes()->findOrFail($hotelId);
+    $room = Room::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->findOrFail($id);
+    $payload = $guestPortalQrService->regenerateRoom($room, $hotel, $request->user());
+
+    return response()->json([
+        'ok' => true,
+        ...$payload,
+    ]);
+})->middleware('role:admin')->name('api.v1.admin.rooms.guest-portal-qr.regenerate');
 
 Route::get('/admin/hotel/payment-qr', function (Request $request) {
     $settings = SystemSetting::withoutGlobalScopes()
@@ -2668,10 +2751,12 @@ Route::middleware('role:central_admin')->prefix('platform')->group(function () {
     $platform = \App\Http\Controllers\Api\V1\PlatformAdminController::class;
     Route::get('/settings', [$platform, 'settings']);
     Route::get('/revenue-analytics', [$platform, 'revenueAnalytics']);
+    Route::get('/guest-demographics', [$platform, 'guestDemographics']);
     Route::post('/settings/credit-wallet-qr', [$platform, 'uploadCreditWalletQr']);
     Route::post('/settings/member-qr', [$platform, 'uploadMemberQr']);
     Route::patch('/settings/booking-fee-percent', [$platform, 'updateBookingFeePercent']);
     Route::patch('/settings/member-booking-discount-percent', [$platform, 'updateMemberBookingDiscountPercent']);
+    Route::patch('/settings/member-points', [$platform, 'updateMemberPointsSettings']);
     Route::get('/hotels', [$platform, 'hotels']);
     Route::get('/hotels/{hotelId}/credits', [$platform, 'hotelCredits']);
     Route::post('/hotels/{hotelId}/credits/grant', [$platform, 'grantHotelCredits']);

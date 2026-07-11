@@ -132,7 +132,7 @@ class _AdminGuestPortalQrScreenState extends State<AdminGuestPortalQrScreen> {
                       const SizedBox(height: 8),
                     ],
                     Text(
-                      'Guests scan this code at the app landing screen, then enter their room number and password to open the in-house guest dashboard.',
+                      'Guests can scan this front-desk code, then enter room number and password. Prefer printing each room’s own QR (View room QR code) so guests only need the password.',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             color: scheme.onSurfaceVariant,
                           ),

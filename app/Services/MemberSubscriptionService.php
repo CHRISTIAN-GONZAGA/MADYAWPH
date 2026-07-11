@@ -141,16 +141,25 @@ final class MemberSubscriptionService
         $approved = (string) ($row->status ?? '') === 'approved';
         $shid = trim((string) ($row->member_shid_id ?? ''));
         $qr = $approved && $shid !== '' ? $this->qrPayloadFor($row) : null;
+        $points = (float) ($row->points_balance ?? 0);
+        $pointsPerPeso = max(0.01, (float) $this->settings->memberPointsPerPeso());
 
         return [
             'id' => (string) $row->id,
             'status' => (string) ($row->status ?? 'pending'),
             'full_name' => (string) ($row->full_name ?? ''),
+            'email' => (string) ($row->email ?? ''),
+            'phone' => (string) ($row->phone ?? ''),
+            'username' => (string) ($row->username ?? ''),
             'member_shid_id' => $shid,
             'member_qr_payload' => $qr,
             'member_valid_until' => optional($row->member_valid_until)->toISOString(),
             'member_discount_percent' => $this->memberBookingDiscountPercent(),
             'amount' => (float) ($row->amount ?? 0),
+            'points_balance' => (int) round($points),
+            'points_balance_pesos' => round($points / $pointsPerPeso, 2),
+            'points_per_check_in' => (int) round($this->settings->memberPointsPerCheckIn()),
+            'points_per_peso' => $pointsPerPeso,
         ];
     }
 }

@@ -4,8 +4,10 @@ namespace App\Services;
 
 use App\Mail\GuestCheckInWelcomeMail;
 use App\Mail\GuestPortalRoomLoginMail;
+use App\Mail\GuestPortalRoomScanMail;
 use App\Mail\HotelSalesReportMail;
 use App\Mail\OtpVerificationMail;
+use App\Mail\StaffGuestCheckInMail;
 use App\Support\HotelNotificationRecipients;
 use App\Support\MessagingFlags;
 use Illuminate\Mail\Mailable;
@@ -94,6 +96,70 @@ class AppEmailService
     }
 
     /**
+     * Notify hotel owner when a room-specific guest QR is scanned (before password).
+     *
+     * @param  list<string>  $ownerEmails
+     */
+    public function sendGuestPortalRoomScanToOwner(
+        array $ownerEmails,
+        string $hotelName,
+        string $roomNumber,
+        ?string $scannedAt = null,
+    ): EmailSendResult {
+        $recipients = collect($ownerEmails)
+            ->map(fn (string $email) => $this->normalizeEmail($email))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($recipients === []) {
+            return new EmailSendResult(
+                false,
+                null,
+                '',
+                'No owner email is configured for this hotel.',
+            );
+        }
+
+        if ($blocked = $this->messagingGate($recipients[0])) {
+            return $blocked;
+        }
+
+        $mailable = new GuestPortalRoomScanMail(
+            hotelName: $hotelName !== '' ? $hotelName : (string) config('app.name', 'MADYAW'),
+            roomNumber: $roomNumber,
+            scannedAt: $scannedAt,
+        );
+
+        try {
+            Mail::mailer($this->activeMailer())->to($recipients)->send($mailable);
+
+            Log::info('Guest portal room scan owner email sent', [
+                'hotel' => $hotelName,
+                'room' => $roomNumber,
+                'recipients' => count($recipients),
+                'provider' => $this->providerName(),
+            ]);
+
+            return new EmailSendResult(true, $this->providerName(), $recipients[0]);
+        } catch (Throwable $e) {
+            Log::warning('Guest portal room scan owner email failed', [
+                'hotel' => $hotelName,
+                'room' => $roomNumber,
+                'message' => $e->getMessage(),
+            ]);
+
+            return new EmailSendResult(
+                false,
+                $this->providerName(),
+                $recipients[0],
+                config('app.debug') ? $e->getMessage() : 'Could not send room scan notification email.',
+            );
+        }
+    }
+
+    /**
      * Notify hotel owner (registration email) when a guest signs in via QR + room password.
      *
      * @param  list<string>  $ownerEmails
@@ -105,6 +171,15 @@ class AppEmailService
         string $guestName,
         ?string $bookingReference = null,
         ?string $loggedInAt = null,
+        ?string $discountLabel = null,
+        ?string $stayLabel = null,
+        ?string $checkInDate = null,
+        ?string $checkOutDate = null,
+        ?int $adults = null,
+        ?int $children = null,
+        ?int $guestsMale = null,
+        ?int $guestsFemale = null,
+        ?string $guestNationality = null,
     ): EmailSendResult {
         $recipients = collect($ownerEmails)
             ->map(fn (string $email) => $this->normalizeEmail($email))
@@ -132,6 +207,15 @@ class AppEmailService
             guestName: $guestName !== '' ? $guestName : 'Guest',
             bookingReference: $bookingReference,
             loggedInAt: $loggedInAt,
+            discountLabel: $discountLabel,
+            stayLabel: $stayLabel,
+            checkInDate: $checkInDate,
+            checkOutDate: $checkOutDate,
+            adults: $adults,
+            children: $children,
+            guestsMale: $guestsMale,
+            guestsFemale: $guestsFemale,
+            guestNationality: $guestNationality,
         );
 
         try {
@@ -157,6 +241,94 @@ class AppEmailService
                 $this->providerName(),
                 $recipients[0],
                 config('app.debug') ? $e->getMessage() : 'Could not send owner notification email.',
+            );
+        }
+    }
+
+    /**
+     * Notify owner + designated front desk when a guest is checked in (Book section).
+     *
+     * @param  list<string>  $staffEmails
+     */
+    public function sendStaffGuestCheckInAlert(
+        array $staffEmails,
+        string $hotelName,
+        string $roomNumber,
+        string $guestName,
+        ?string $bookingReference = null,
+        ?string $checkedInBy = null,
+        ?string $checkedInAt = null,
+        ?string $checkInDate = null,
+        ?string $checkOutDate = null,
+        ?string $discountLabel = null,
+        ?string $stayLabel = null,
+        ?int $adults = null,
+        ?int $children = null,
+        ?int $guestsMale = null,
+        ?int $guestsFemale = null,
+        ?string $guestNationality = null,
+    ): EmailSendResult {
+        $recipients = collect($staffEmails)
+            ->map(fn (string $email) => $this->normalizeEmail($email))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($recipients === []) {
+            return new EmailSendResult(
+                false,
+                null,
+                '',
+                'No owner or front desk email is configured for check-in alerts.',
+            );
+        }
+
+        if ($blocked = $this->messagingGate($recipients[0])) {
+            return $blocked;
+        }
+
+        $mailable = new StaffGuestCheckInMail(
+            hotelName: $hotelName !== '' ? $hotelName : (string) config('app.name', 'MADYAW'),
+            roomNumber: $roomNumber,
+            guestName: $guestName !== '' ? $guestName : 'Guest',
+            bookingReference: $bookingReference,
+            checkedInBy: $checkedInBy,
+            checkedInAt: $checkedInAt,
+            checkInDate: $checkInDate,
+            checkOutDate: $checkOutDate,
+            discountLabel: $discountLabel,
+            stayLabel: $stayLabel,
+            adults: $adults,
+            children: $children,
+            guestsMale: $guestsMale,
+            guestsFemale: $guestsFemale,
+            guestNationality: $guestNationality,
+        );
+
+        try {
+            Mail::mailer($this->activeMailer())->to($recipients)->send($mailable);
+
+            Log::info('Staff guest check-in alert sent', [
+                'hotel' => $hotelName,
+                'room' => $roomNumber,
+                'recipients' => count($recipients),
+                'provider' => $this->providerName(),
+            ]);
+
+            return new EmailSendResult(true, $this->providerName(), $recipients[0]);
+        } catch (Throwable $e) {
+            Log::warning('Staff guest check-in alert failed', [
+                'hotel' => $hotelName,
+                'room' => $roomNumber,
+                'message' => $e->getMessage(),
+            ]);
+
+            return new EmailSendResult(
+                false,
+                $this->providerName(),
+                $recipients[0],
+                config('app.debug') ? $e->getMessage() : 'Could not send check-in alert email.',
             );
         }
     }

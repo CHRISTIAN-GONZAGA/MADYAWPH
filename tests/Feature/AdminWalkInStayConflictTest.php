@@ -150,8 +150,9 @@ class AdminWalkInStayConflictTest extends TestCase
             'guest_name' => 'Previous Guest',
             'guest_email' => 'stale@test.local',
             'guest_phone' => '09170000015',
-            'check_in_date' => Carbon::today()->toDateString(),
-            'check_out_date' => Carbon::today()->toDateString(),
+            // Past check-in on a vacant room = orphan row (not an active same-day hold).
+            'check_in_date' => Carbon::today()->subDay()->toDateString(),
+            'check_out_date' => Carbon::today()->subDay()->toDateString(),
             'nights' => 0,
             'total_amount' => 350,
             'payment_status' => 'paid',
@@ -264,8 +265,9 @@ class AdminWalkInStayConflictTest extends TestCase
             'guest_name' => 'Old Guest',
             'guest_email' => 'old-twin@test.local',
             'guest_phone' => '09170000019',
-            'check_in_date' => Carbon::today()->toDateString(),
-            'check_out_date' => Carbon::today()->toDateString(),
+            // Past check-in on a vacant reserved tile = orphan row.
+            'check_in_date' => Carbon::today()->subDay()->toDateString(),
+            'check_out_date' => Carbon::today()->subDay()->toDateString(),
             'billing_mode' => 'hourly',
             'nights' => 0,
             'total_amount' => 500,

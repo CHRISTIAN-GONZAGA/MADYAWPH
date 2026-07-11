@@ -9,6 +9,9 @@ Future<void> openGuestPortalLogin(
   BuildContext context, {
   required String hotelId,
   String? hotelName,
+  String? roomId,
+  String? roomNumber,
+  bool roomBoundFromQr = false,
 }) async {
   await AuthStorage.clearPortalAuth();
   await AuthStorage.clearGuestAuth();
@@ -20,6 +23,9 @@ Future<void> openGuestPortalLogin(
       builder: (_) => GuestRoomLoginScreen(
         hotelId: hotelId,
         hotelName: hotelName,
+        roomId: roomId,
+        roomNumber: roomNumber,
+        roomBoundFromQr: roomBoundFromQr,
       ),
     ),
   );

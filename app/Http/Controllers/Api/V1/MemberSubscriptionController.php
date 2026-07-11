@@ -6,8 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\MemberSubscriptionRequest;
 use App\Services\MemberSubscriptionService;
 use App\Services\PlatformSettingsService;
+use App\Support\MemberPortalStore;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rules\Password;
 
 class MemberSubscriptionController extends Controller
 {
@@ -31,11 +34,16 @@ class MemberSubscriptionController extends Controller
             'full_name' => ['required', 'string', 'max:120'],
             'email' => ['required', 'email', 'max:255'],
             'phone' => ['required', 'string', 'max:30'],
+            'username' => ['required', 'string', 'min:3', 'max:40', 'regex:/^[A-Za-z0-9._-]+$/'],
+            'password' => ['required', 'string', 'confirmed', Password::min(6)->max(72)],
             'payment_reference' => ['required', 'string', 'max:120'],
         ]);
 
+        $email = strtolower(trim((string) $validated['email']));
+        $username = strtolower(trim((string) $validated['username']));
+
         $pending = MemberSubscriptionRequest::query()
-            ->where('email', strtolower(trim((string) $validated['email'])))
+            ->where('email', $email)
             ->where('status', 'pending')
             ->exists();
 
@@ -45,10 +53,39 @@ class MemberSubscriptionController extends Controller
             ], 422);
         }
 
+        $usernameTaken = MemberSubscriptionRequest::query()
+            ->where('username', $username)
+            ->whereIn('status', ['pending', 'approved'])
+            ->exists();
+
+        if ($usernameTaken) {
+            return response()->json([
+                'message' => 'That username is already taken. Choose another.',
+                'errors' => ['username' => ['That username is already taken.']],
+            ], 422);
+        }
+
+        $activeEmail = MemberSubscriptionRequest::query()
+            ->where('email', $email)
+            ->where('status', 'approved')
+            ->where(function ($q) {
+                $q->whereNull('member_valid_until')
+                    ->orWhere('member_valid_until', '>=', now());
+            })
+            ->exists();
+
+        if ($activeEmail) {
+            return response()->json([
+                'message' => 'This email already has an active membership. Log in as a member instead.',
+            ], 422);
+        }
+
         $row = MemberSubscriptionRequest::create([
             'full_name' => trim((string) $validated['full_name']),
-            'email' => strtolower(trim((string) $validated['email'])),
+            'email' => $email,
             'phone' => trim((string) $validated['phone']),
+            'username' => $username,
+            'password' => (string) $validated['password'],
             'amount' => $fee,
             'payment_reference' => trim((string) $validated['payment_reference']),
             'status' => 'pending',
@@ -58,9 +95,72 @@ class MemberSubscriptionController extends Controller
             'ok' => true,
             'request_id' => (string) $row->id,
             'status' => 'pending',
+            'username' => $username,
             'amount' => $fee,
-            'message' => 'Your membership is being reviewed. This usually takes a short while.',
+            'message' => 'Your membership is being reviewed. After approval, log in with your username and password.',
         ], 201);
+    }
+
+    public function login(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'username' => ['required', 'string', 'max:40'],
+            'password' => ['required', 'string', 'max:72'],
+        ]);
+
+        $username = strtolower(trim((string) $validated['username']));
+        $member = MemberSubscriptionRequest::query()
+            ->where('username', $username)
+            ->where('status', 'approved')
+            ->orderByDesc('reviewed_at')
+            ->first();
+
+        if ($member === null || ! filled($member->password) || ! Hash::check((string) $validated['password'], (string) $member->password)) {
+            return response()->json([
+                'message' => 'Invalid username or password.',
+            ], 422);
+        }
+
+        $until = $member->member_valid_until;
+        if ($until !== null && $until->isPast()) {
+            return response()->json([
+                'message' => 'Your membership has expired. Renew to continue using member benefits.',
+            ], 422);
+        }
+
+        if (! filled($member->member_shid_id)) {
+            return response()->json([
+                'message' => 'Your membership ID is not ready yet. Contact support.',
+            ], 422);
+        }
+
+        $token = MemberPortalStore::issue([
+            'member_id' => (string) $member->id,
+            'username' => (string) $member->username,
+        ]);
+
+        return response()->json([
+            'member_token' => $token,
+            'token_type' => 'Bearer',
+            'member' => $this->members->serializeForClient($member),
+        ]);
+    }
+
+    public function logout(Request $request): JsonResponse
+    {
+        MemberPortalStore::forget($request->attributes->get('member_token'));
+
+        return response()->json(['ok' => true]);
+    }
+
+    public function dashboard(Request $request): JsonResponse
+    {
+        /** @var MemberSubscriptionRequest $member */
+        $member = $request->attributes->get('member');
+
+        return response()->json([
+            'member' => $this->members->serializeForClient($member),
+        ]);
     }
 
     public function status(string $id): JsonResponse
@@ -98,6 +198,8 @@ class MemberSubscriptionController extends Controller
         }
 
         $discount = $this->members->resolveBookingMemberDiscount((string) $member->member_shid_id);
+        $points = (float) ($member->points_balance ?? 0);
+        $pointsPerPeso = max(0.01, (float) $this->settings->memberPointsPerPeso());
 
         return response()->json([
             'valid' => true,
@@ -107,6 +209,9 @@ class MemberSubscriptionController extends Controller
             'member_valid_until' => optional($member->member_valid_until)->toISOString(),
             'discount_percent' => $discount['percent'],
             'discount_type' => $discount['type'],
+            'points_balance' => (int) round($points),
+            'points_balance_pesos' => round($points / $pointsPerPeso, 2),
+            'points_per_peso' => $pointsPerPeso,
         ]);
     }
 }

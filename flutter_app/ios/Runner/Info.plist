@@ -30,6 +30,8 @@
 	<array>
 		<string>https</string>
 		<string>http</string>
+		<string>sms</string>
+		<string>tel</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
