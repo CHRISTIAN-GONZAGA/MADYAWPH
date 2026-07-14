@@ -14,12 +14,16 @@ class MemberLoginScreen extends StatefulWidget {
     super.key,
     this.initialUsername = '',
     this.autoPassword,
+    this.popOnSuccess = false,
   });
 
   final String initialUsername;
 
   /// When set (e.g. right after approval), attempts login automatically.
   final String? autoPassword;
+
+  /// When true, stores the session and pops with `true` instead of opening the dashboard.
+  final bool popOnSuccess;
 
   @override
   State<MemberLoginScreen> createState() => _MemberLoginScreenState();
@@ -70,8 +74,17 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
       if (token.isEmpty) {
         throw StateError('No member_token in response.');
       }
-      await AuthStorage.setMemberToken(token);
+      await AuthStorage.setMemberSession(
+        token: token,
+        member: res.data?['member'] is Map
+            ? Map<String, dynamic>.from(res.data!['member'] as Map)
+            : const <String, dynamic>{},
+      );
       if (!mounted) return;
+      if (widget.popOnSuccess) {
+        Navigator.of(context).pop(true);
+        return;
+      }
       await Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute<void>(
           builder: (_) => MemberDashboardScreen(

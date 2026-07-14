@@ -12,6 +12,7 @@ import 'widgets/admin_opaque_scaffold.dart';
 import 'widgets/hourly_billing.dart';
 import 'widgets/stay_receipt_dialog.dart';
 import 'admin_room_fee_presets_screen.dart';
+import '../member_qr_scan.dart';
 
 class AdminRoomDetailScreen extends StatefulWidget {
   const AdminRoomDetailScreen({
@@ -45,6 +46,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   bool _checkingOut = false;
   bool _issuingRefund = false;
   bool _recordingPartialPayment = false;
+  bool _scanningMember = false;
   bool _extendingStay = false;
   late final String _roomId;
 
@@ -962,6 +964,38 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     }
   }
 
+  Future<void> _scanMemberQr() async {
+    final booking = _asMap(_data?['active_booking']);
+    final bookingId = (booking?['id'] ?? '').toString();
+    if (bookingId.isEmpty) {
+      if (!mounted) return;
+      showAppMessage(context, 'No active booking for this room.');
+      return;
+    }
+    if (_scanningMember) return;
+    setState(() => _scanningMember = true);
+    try {
+      final balanceDue = parseJsonDouble(
+        _data?['balance_due'] ??
+            _asMap(_data?['bill_summary'])?['balance_due'] ??
+            _data?['booking_charges_total'] ??
+            booking?['total_amount'],
+      );
+      final result = await scanMemberForBooking(
+        context,
+        bookingId: bookingId,
+        amountDuePesos: balanceDue,
+        applyDiscountToBooking: true,
+      );
+      if (!mounted) return;
+      if (result != null) {
+        await _load();
+      }
+    } finally {
+      if (mounted) setState(() => _scanningMember = false);
+    }
+  }
+
   Future<void> _issueRefund() async {
     final booking = _asMap(_data?['active_booking']);
     final bookingId = (booking?['id'] ?? '').toString();
@@ -1502,6 +1536,29 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
               ),
               icon: const Icon(Icons.add),
               label: const Text('+ Add fee'),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: (_scanningMember || booking == null)
+                  ? null
+                  : _scanMemberQr,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: accent,
+                side: BorderSide(color: accent),
+              ),
+              icon: _scanningMember
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.qr_code_scanner),
+              label: Text(
+                _scanningMember ? 'Scanning…' : 'Scan member QR',
+              ),
             ),
           ),
           const SizedBox(height: 10),

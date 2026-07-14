@@ -41,10 +41,20 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
       final res = await memberDio().get<Map<String, dynamic>>('/member/dashboard');
       if (!mounted) return;
       final data = res.data?['member'];
+      final member = data is Map
+          ? Map<String, dynamic>.from(data)
+          : _member;
+      if (member != null) {
+        await AuthStorage.setMemberProfile(
+          shidId: (member['member_shid_id'] ?? '').toString(),
+          fullName: (member['full_name'] ?? '').toString(),
+          discountPercent:
+              (member['member_discount_percent'] as num?)?.toDouble() ?? 0,
+        );
+      }
+      if (!mounted) return;
       setState(() {
-        _member = data is Map
-            ? Map<String, dynamic>.from(data)
-            : _member;
+        _member = member;
         _loading = false;
       });
     } on DioException catch (e) {
@@ -387,7 +397,7 @@ class _PointsWalletCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            'Earn $perCheckIn points every time you check in to a hotel '
+            'Earn $perCheckIn points with every successful booking '
             '(${perPeso.toStringAsFixed(perPeso % 1 == 0 ? 0 : 1)} pts = ₱1). '
             'Hotels can redeem points from your QR at payment.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(

@@ -203,7 +203,14 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: () async {
-                          final info = await scanMemberForBooking(dialogContext);
+                          final info = await scanMemberForBooking(
+                            dialogContext,
+                            // Gross stay estimate; post-scan dialog uses discounted total.
+                            grossAmountPesos: estTotal,
+                            amountDuePesos: memberDiscountPercent > 0
+                                ? estAfterDiscount
+                                : 0,
+                          );
                           if (info == null) return;
                           setLocal(() {
                             memberShidId = info.shid;
@@ -229,16 +236,15 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                     ],
                   ],
                 ),
-                if (memberShidId.isNotEmpty)
-                  TextButton.icon(
-                    onPressed: () async {
-                      await promptRedeemMemberPointsByShid(
-                        dialogContext,
-                        memberShidId: memberShidId,
-                      );
-                    },
-                    icon: const Icon(Icons.stars_outlined),
-                    label: const Text('Redeem member points'),
+                if (memberShidId.isNotEmpty && memberDiscountPercent > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4, bottom: 4),
+                    child: Text(
+                      'Central admin member discount applied automatically.',
+                      style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(dialogContext).colorScheme.primary,
+                          ),
+                    ),
                   ),
                 const SizedBox(height: 12),
                 Text(

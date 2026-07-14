@@ -11,9 +11,9 @@ import '../widgets/app_input.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/chat_attachment.dart';
 import 'admin/widgets/hourly_billing.dart';
-import 'member_qr_scan.dart';
 import 'customer_booking_status_screen.dart';
 import 'customer_search_context.dart';
+import 'member_login_screen.dart';
 
 /// Room detail + guest booking form for the public customer portal.
 /// Submits via POST /customer/reservations (admin approval in Bookings tab).
@@ -52,7 +52,6 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _emailCtrl;
   late final TextEditingController _phoneCtrl;
-  late final TextEditingController _memberShidCtrl;
   late final TextEditingController _checkInCtrl;
   late final TextEditingController _checkOutCtrl;
 
@@ -69,10 +68,14 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
   var _children = 0;
   var _guestsMale = 0;
   var _guestsFemale = 0;
+  var _memberLoggedIn = false;
   var _memberDiscountPercent = 0.0;
-  var _memberValidating = false;
+  String _memberDisplayName = '';
+  String _memberShid = '';
 
   bool get _fromSearch => widget.searchContext != null;
+  bool get _hasMemberDiscount =>
+      _memberLoggedIn && _memberDiscountPercent > 0;
 
   @override
   void initState() {
@@ -86,23 +89,72 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
     _nameCtrl = TextEditingController();
     _emailCtrl = TextEditingController();
     _phoneCtrl = TextEditingController();
-    _memberShidCtrl = TextEditingController();
     _checkInCtrl = TextEditingController(
       text: _fromSearch ? widget.searchContext!.checkInIso : '',
     );
     _checkOutCtrl = TextEditingController(
       text: _fromSearch ? widget.searchContext!.checkOutIso : '',
     );
-    _bootstrapGuestContact();
+    _bootstrapForm();
   }
 
-  Future<void> _bootstrapGuestContact() async {
+  Future<void> _bootstrapForm() async {
     final saved = await AuthStorage.customerGuestContact();
     if (!mounted) return;
     _nameCtrl.text = saved?.name ?? '';
     _emailCtrl.text = saved?.email ?? '';
     _phoneCtrl.text = saved?.phone ?? '';
-    setState(() => _guestFieldsReady = true);
+
+    var loggedIn = false;
+    var shid = '';
+    var displayName = '';
+    var percent = 0.0;
+
+    final token = await AuthStorage.memberToken();
+    if ((token ?? '').isNotEmpty) {
+      try {
+        final res =
+            await memberDio().get<Map<String, dynamic>>('/member/dashboard');
+        final member = res.data?['member'];
+        if (member is Map) {
+          final map = Map<String, dynamic>.from(member);
+          await AuthStorage.setMemberProfile(
+            shidId: (map['member_shid_id'] ?? '').toString(),
+            fullName: (map['full_name'] ?? '').toString(),
+            discountPercent:
+                (map['member_discount_percent'] as num?)?.toDouble() ?? 0,
+          );
+          shid = (map['member_shid_id'] ?? '').toString().toUpperCase();
+          displayName = (map['full_name'] ?? '').toString().trim();
+          percent =
+              (map['member_discount_percent'] as num?)?.toDouble() ?? 0;
+          loggedIn = shid.isNotEmpty;
+        }
+      } on DioException catch (e) {
+        if (e.response?.statusCode == 401) {
+          await AuthStorage.clearMemberAuth();
+        } else {
+          // Offline / transient: fall back to cached profile if available.
+          shid = ((await AuthStorage.memberShidId()) ?? '').toUpperCase();
+          displayName = (await AuthStorage.memberFullName()) ?? '';
+          percent = await AuthStorage.memberDiscountPercent();
+          loggedIn = shid.isNotEmpty;
+        }
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _guestFieldsReady = true;
+      _memberLoggedIn = loggedIn;
+      _memberShid = shid;
+      _memberDisplayName = displayName;
+      _memberDiscountPercent = loggedIn ? percent : 0;
+      if (loggedIn && percent > 0) {
+        _discountType = 'none';
+        _discountIdFile = null;
+      }
+    });
   }
 
   @override
@@ -111,7 +163,6 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
-    _memberShidCtrl.dispose();
     _checkInCtrl.dispose();
     _checkOutCtrl.dispose();
     super.dispose();
@@ -226,6 +277,13 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
       showAppMessage(context, 'Upload a photo of your discount ID.');
       return;
     }
+    if (_hasMemberDiscount && _discountType != 'none') {
+      showAppMessage(
+        context,
+        'Member discount is already applied. Clear PWD/senior to continue.',
+      );
+      return;
+    }
     if (_checkInCtrl.text.trim().isEmpty || _checkOutCtrl.text.trim().isEmpty) {
       showAppMessage(context, 'Select check-in and check-out.');
       return;
@@ -237,7 +295,7 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
       'guest_phone': phone,
       'check_in': _checkInCtrl.text.trim(),
       'check_out': _checkOutCtrl.text.trim(),
-      'discount_type': _discountType,
+      'discount_type': _hasMemberDiscount ? 'none' : _discountType,
       'payment_method': _paymentMethod,
       'hotel_id': widget.hotelId,
       'adults': _adults,
@@ -246,9 +304,6 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
       'guests_female': _guestsFemale,
     };
     if (email.isNotEmpty) payload['guest_email'] = email;
-    if (_memberDiscountPercent > 0 && _memberShidCtrl.text.trim().isNotEmpty) {
-      payload['member_shid_id'] = _memberShidCtrl.text.trim().toUpperCase();
-    }
     if (widget.searchContext != null) {
       payload['rooms'] = widget.searchContext!.rooms;
     }
@@ -262,9 +317,10 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
       );
 
       const path = '/customer/reservations';
-      final discount = _discountType;
+      final discount = _hasMemberDiscount ? 'none' : _discountType;
       final hasDiscountFile = discount != 'none' && _discountIdFile != null;
       final hasGuestId = _guestIdFile != null;
+      final dio = customerBookingDio();
 
       final Response<Map<String, dynamic>> res;
       if (hasDiscountFile || hasGuestId) {
@@ -292,12 +348,12 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
                 : 'discount_id.jpg',
           );
         }
-        res = await publicDio().post<Map<String, dynamic>>(
+        res = await dio.post<Map<String, dynamic>>(
           path,
           data: FormData.fromMap(map),
         );
       } else {
-        res = await publicDio().post<Map<String, dynamic>>(path, data: payload);
+        res = await dio.post<Map<String, dynamic>>(path, data: payload);
       }
 
       if (!mounted) return;
@@ -584,65 +640,80 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
               keyboardType: TextInputType.phone,
             ),
             const SizedBox(height: 12),
-            Text(
-              'MADYAWPH membership (optional)',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: AppInput(
-                    controller: _memberShidCtrl,
-                    label: 'Member SHID ID',
-                  ),
+            if (_memberLoggedIn) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: scheme.primaryContainer.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: scheme.primary.withValues(alpha: 0.35)),
                 ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: _memberValidating
-                      ? null
-                      : () async {
-                          setState(() => _memberValidating = true);
-                          final info = await validateMemberShidInput(
-                            context,
-                            _memberShidCtrl.text,
-                          );
-                          if (!mounted) return;
-                          setState(() {
-                            _memberValidating = false;
-                            if (info != null) {
-                              _memberShidCtrl.text = info.shid;
-                              _memberDiscountPercent = info.percent;
-                              _discountType = 'none';
-                              _discountIdFile = null;
-                            } else {
-                              _memberDiscountPercent = 0;
-                            }
-                          });
-                        },
-                  child: _memberValidating
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Apply'),
-                ),
-              ],
-            ),
-            if (_memberDiscountPercent > 0)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(
-                  '${_memberDiscountPercent.toStringAsFixed(0)}% member discount applied',
-                  style: TextStyle(
-                    color: scheme.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _memberDisplayName.isNotEmpty
+                          ? 'Signed in as $_memberDisplayName'
+                          : 'MADYAWPH member signed in',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _hasMemberDiscount
+                          ? '${_memberDiscountPercent.toStringAsFixed(0)}% member discount applies automatically — no membership ID needed.'
+                          : 'Your membership is linked. Member rates apply when active on the platform.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                            height: 1.35,
+                          ),
+                    ),
+                    if (_memberShid.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        _memberShid,
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.4,
+                            ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
+            ] else ...[
+              Text(
+                'MADYAWPH membership',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Sign in as a member to apply your discount automatically. Guests cannot enter a membership ID here.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      height: 1.35,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const MemberLoginScreen(
+                        popOnSuccess: true,
+                      ),
+                    ),
+                  );
+                  if (mounted) await _bootstrapForm();
+                },
+                icon: const Icon(Icons.card_membership_outlined),
+                label: const Text('Member sign in'),
+              ),
+            ],
             const SizedBox(height: 8),
             OutlinedButton.icon(
               onPressed: () async {
@@ -658,43 +729,49 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
                     : 'ID attached — tap to replace',
               ),
             ),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              value: _discountType,
-              decoration: const InputDecoration(
-                labelText: 'Discount (optional)',
-                border: OutlineInputBorder(),
+            if (!_hasMemberDiscount) ...[
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _discountType,
+                decoration: const InputDecoration(
+                  labelText: 'Discount (optional)',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'none', child: Text('No discount')),
+                  DropdownMenuItem(value: 'pwd', child: Text('PWD (20% off)')),
+                  DropdownMenuItem(
+                    value: 'senior',
+                    child: Text('Senior citizen (20% off)'),
+                  ),
+                ],
+                onChanged: (v) => setState(() {
+                  _discountType = v ?? 'none';
+                  if (_discountType == 'none') _discountIdFile = null;
+                }),
               ),
-              items: const [
-                DropdownMenuItem(value: 'none', child: Text('No discount')),
-                DropdownMenuItem(value: 'pwd', child: Text('PWD (20% off)')),
-                DropdownMenuItem(
-                  value: 'senior',
-                  child: Text('Senior citizen (20% off)'),
+              if (_discountType != 'none') ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final file = await ChatAttachment.pick(context);
+                    if (file != null) setState(() => _discountIdFile = file);
+                  },
+                  icon: const Icon(Icons.badge_outlined),
+                  label: Text(
+                    _discountIdFile == null
+                        ? 'Upload discount ID photo'
+                        : 'Discount ID attached — tap to replace',
+                  ),
                 ),
               ],
-              onChanged: (v) => setState(() {
-                _discountType = v ?? 'none';
-                if (_discountType == 'none') _discountIdFile = null;
-                if (_discountType != 'none') {
-                  _memberDiscountPercent = 0;
-                  _memberShidCtrl.clear();
-                }
-              }),
-            ),
-            if (_discountType != 'none') ...[
+            ] else ...[
               const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: () async {
-                  final file = await ChatAttachment.pick(context);
-                  if (file != null) setState(() => _discountIdFile = file);
-                },
-                icon: const Icon(Icons.badge_outlined),
-                label: Text(
-                  _discountIdFile == null
-                      ? 'Upload discount ID photo'
-                      : 'Discount ID attached — tap to replace',
-                ),
+              Text(
+                'PWD / senior citizen options are hidden while your member rate is active.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
               ),
             ],
             const SizedBox(height: 8),

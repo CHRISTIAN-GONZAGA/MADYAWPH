@@ -24,6 +24,9 @@ class AuthStorage {
   static const _kPortalRole = 'portal_role';
   static const _kGuestToken = 'guest_token';
   static const _kMemberToken = 'member_token';
+  static const _kMemberShidId = 'member_shid_id';
+  static const _kMemberFullName = 'member_full_name';
+  static const _kMemberDiscountPercent = 'member_discount_percent';
   static const _kUiSeedColor = 'ui_seed_color';
   static const _kThemeMode = 'ui_theme_mode';
   static const _kThemeFabDx = 'theme_fab_dx';
@@ -94,6 +97,58 @@ class AuthStorage {
   static Future<String?> guestToken() => _secure.read(key: _kGuestToken);
 
   static Future<String?> memberToken() => _secure.read(key: _kMemberToken);
+
+  static Future<String?> memberShidId() async {
+    await _ensureMigrated();
+    return (await _preferences()).getString(_kMemberShidId);
+  }
+
+  static Future<String?> memberFullName() async {
+    await _ensureMigrated();
+    return (await _preferences()).getString(_kMemberFullName);
+  }
+
+  static Future<double> memberDiscountPercent() async {
+    await _ensureMigrated();
+    return (await _preferences()).getDouble(_kMemberDiscountPercent) ?? 0;
+  }
+
+  /// Persist member identity used to auto-apply discounts on customer bookings.
+  static Future<void> setMemberProfile({
+    required String shidId,
+    String? fullName,
+    double? discountPercent,
+  }) async {
+    await _ensureMigrated();
+    final prefs = await _preferences();
+    final shid = shidId.trim().toUpperCase();
+    if (shid.isEmpty) {
+      await prefs.remove(_kMemberShidId);
+      await prefs.remove(_kMemberFullName);
+      await prefs.remove(_kMemberDiscountPercent);
+      return;
+    }
+    await prefs.setString(_kMemberShidId, shid);
+    if (fullName != null && fullName.trim().isNotEmpty) {
+      await prefs.setString(_kMemberFullName, fullName.trim());
+    }
+    if (discountPercent != null) {
+      await prefs.setDouble(_kMemberDiscountPercent, discountPercent);
+    }
+  }
+
+  static Future<void> setMemberSession({
+    required String token,
+    required Map<String, dynamic> member,
+  }) async {
+    await setMemberToken(token);
+    await setMemberProfile(
+      shidId: (member['member_shid_id'] ?? '').toString(),
+      fullName: (member['full_name'] ?? '').toString(),
+      discountPercent:
+          (member['member_discount_percent'] as num?)?.toDouble() ?? 0,
+    );
+  }
 
   static Future<String?> appLocaleCode() async {
     await _ensureMigrated();
@@ -246,7 +301,14 @@ class AuthStorage {
 
   static Future<void> clearGuestAuth() => _secure.delete(key: _kGuestToken);
 
-  static Future<void> clearMemberAuth() => _secure.delete(key: _kMemberToken);
+  static Future<void> clearMemberAuth() async {
+    await _secure.delete(key: _kMemberToken);
+    await _ensureMigrated();
+    final prefs = await _preferences();
+    await prefs.remove(_kMemberShidId);
+    await prefs.remove(_kMemberFullName);
+    await prefs.remove(_kMemberDiscountPercent);
+  }
 
   static Future<void> setUiSeedColorHex(String hex) async {
     await _ensureMigrated();

@@ -11,6 +11,8 @@ final class BillingChargeTypes
 
     public const MEMBER_POINTS = 'member_points';
 
+    public const MEMBER_DISCOUNT = 'member_discount';
+
     public const PARTIAL_PAYMENT = 'partial_payment';
 
     /**
@@ -21,6 +23,7 @@ final class BillingChargeTypes
         return [
             self::REFUND,
             self::MEMBER_POINTS,
+            self::MEMBER_DISCOUNT,
             self::PARTIAL_PAYMENT,
         ];
     }

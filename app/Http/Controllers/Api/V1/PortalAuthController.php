@@ -709,6 +709,7 @@ class PortalAuthController extends Controller
             'welcome_credits' => [
                 'total_rooms' => $totalRooms,
                 'free_credits' => $freeCredits,
+                'max_free_credits' => HotelRegistrationCredits::MAX_FREE_CREDITS,
                 'tier_label' => HotelRegistrationCredits::tierRangeLabel($totalRooms),
                 'credits_per_tier' => HotelRegistrationCredits::CREDITS_PER_TIER,
                 'rooms_per_tier' => HotelRegistrationCredits::ROOMS_PER_TIER,

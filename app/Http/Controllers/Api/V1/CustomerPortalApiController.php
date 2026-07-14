@@ -12,6 +12,7 @@ use App\Models\BillingCharge;
 use App\Models\Booking;
 use App\Models\ExternalReservation;
 use App\Models\Hotel;
+use App\Models\MemberSubscriptionRequest;
 use App\Models\Room;
 use App\Models\RoomCategory;
 use App\Models\SystemSetting;
@@ -26,6 +27,7 @@ use App\Services\SmsService;
 use App\Support\ChatAttachmentUrl;
 use App\Support\CustomerStayPricing;
 use App\Support\EnumHelper;
+use App\Support\MemberPortalStore;
 use App\Support\PriceRounding;
 use App\Support\PublicUploadStorage;
 use App\Support\RoomBillingSupport;
@@ -820,30 +822,97 @@ class CustomerPortalApiController extends Controller
     }
 
     /**
+     * Resolve an active member from a Bearer member portal token (mbr_…).
+     * Public customer bookings must not accept a typed SHID without this session.
+     *
+     * @throws ValidationException when a member Bearer token is present but invalid/expired
+     */
+    private function resolveAuthenticatedMember(Request $request): ?MemberSubscriptionRequest
+    {
+        $token = $request->bearerToken();
+        $looksLikeMemberToken = is_string($token) && str_starts_with($token, 'mbr_');
+        $session = MemberPortalStore::read($token);
+
+        if ($session === null) {
+            if ($looksLikeMemberToken) {
+                throw new HttpResponseException(response()->json([
+                    'message' => 'Your member session expired. Sign in again to apply membership benefits.',
+                    'errors' => [
+                        'member' => ['Your member session expired. Sign in again to apply membership benefits.'],
+                    ],
+                ], 401));
+            }
+
+            return null;
+        }
+
+        $member = MemberSubscriptionRequest::query()->find((string) ($session['member_id'] ?? ''));
+        if ($member === null || (string) ($member->status ?? '') !== 'approved') {
+            MemberPortalStore::forget($token);
+            throw new HttpResponseException(response()->json([
+                'message' => 'Your membership is not active. Sign in again or contact support.',
+                'errors' => [
+                    'member' => ['Your membership is not active. Sign in again or contact support.'],
+                ],
+            ], 401));
+        }
+
+        $until = $member->member_valid_until;
+        if ($until !== null && $until->isPast()) {
+            MemberPortalStore::forget($token);
+            throw new HttpResponseException(response()->json([
+                'message' => 'Your membership has expired. Renew to continue using member benefits.',
+                'errors' => [
+                    'member' => ['Your membership has expired. Renew to continue using member benefits.'],
+                ],
+            ], 401));
+        }
+
+        if (! filled($member->member_shid_id)) {
+            throw ValidationException::withMessages([
+                'member' => ['Your membership ID is not ready yet. Contact support.'],
+            ]);
+        }
+
+        return $member;
+    }
+
+    /**
      * @param  array<string, mixed>  $validated
      * @return array<string, mixed>
      */
     private function mergeDiscountIntoValidated(Request $request, array $validated): array
     {
-        $memberInput = trim((string) ($validated['member_shid_id'] ?? ''));
-        if ($memberInput !== '') {
-            $memberDiscount = $this->memberSubscriptionService->resolveBookingMemberDiscount($memberInput);
+        $authedMember = $this->resolveAuthenticatedMember($request);
+        if ($authedMember !== null) {
+            $memberDiscount = $this->memberSubscriptionService->resolveBookingMemberDiscount(
+                (string) $authedMember->member_shid_id
+            );
             if ($memberDiscount['member_shid_id'] === null) {
                 throw ValidationException::withMessages([
-                    'member_shid_id' => ['Membership not found or expired.'],
+                    'member_shid_id' => ['Your membership could not be applied. Sign in again or contact support.'],
                 ]);
             }
-            if ($memberDiscount['percent'] <= 0) {
-                throw ValidationException::withMessages([
-                    'member_shid_id' => ['Member discount is not active right now.'],
-                ]);
-            }
-            $validated['discount_type'] = 'member';
-            $validated['discount_percent'] = $memberDiscount['percent'];
+
             $validated['member_shid_id'] = $memberDiscount['member_shid_id'];
+            if ($memberDiscount['percent'] > 0) {
+                $validated['discount_type'] = 'member';
+                $validated['discount_percent'] = $memberDiscount['percent'];
+
+                return $validated;
+            }
+
+            // Membership still links for points; guest may use PWD/senior when % is 0.
+            $discount = $this->resolveDiscount($request, $validated);
+            $validated['discount_type'] = $discount['type'];
+            $validated['discount_percent'] = $discount['percent'];
+            $validated['discount_id_url'] = $discount['id_url'];
 
             return $validated;
         }
+
+        // Guests (no member session) cannot claim a member discount via SHID alone.
+        unset($validated['member_shid_id']);
 
         $discount = $this->resolveDiscount($request, $validated);
         $validated['discount_type'] = $discount['type'];
@@ -897,6 +966,10 @@ class CustomerPortalApiController extends Controller
             $attributes['discount_percent'] = round($discountPercent, 2);
             $attributes['discount_id_url'] = $validated['discount_id_url'] ?? null;
             $attributes['discount_id_verified'] = false;
+        }
+
+        if (filled($validated['member_shid_id'] ?? null)) {
+            $attributes['member_shid_id'] = (string) $validated['member_shid_id'];
         }
 
         return EnumHelper::withoutEmptyDecimals($attributes, 'discount_percent', 'total_amount');

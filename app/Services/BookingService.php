@@ -218,6 +218,15 @@ class BookingService
                 );
             }
 
+            try {
+                app(MemberPointsService::class)->awardBookingPoints($booking, $actor);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Member booking points award failed', [
+                    'booking_id' => (string) $booking->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
             return $booking;
         });
     }
@@ -258,7 +267,17 @@ class BookingService
                 ]
             );
 
-            return $booking->fresh();
+            $cancelled = $booking->fresh();
+            try {
+                app(MemberPointsService::class)->reverseBookingPoints($cancelled, $actor);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Member booking points reverse failed', [
+                    'booking_id' => (string) $booking->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            return $cancelled;
         });
     }
 
@@ -451,7 +470,17 @@ class BookingService
                 $actor ? (string) $actor->id : null,
             );
 
-            return $booking->fresh();
+            $cancelled = $booking->fresh();
+            try {
+                app(MemberPointsService::class)->reverseBookingPoints($cancelled, $actor);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Member booking points reverse failed', [
+                    'booking_id' => (string) $booking->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            return $cancelled;
         });
     }
 

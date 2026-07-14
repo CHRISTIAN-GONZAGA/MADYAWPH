@@ -32,6 +32,7 @@ String formatBillLineAmount(Map<dynamic, dynamic> line) {
       type == 'refund' ||
       type == 'partial_payment' ||
       type == 'member_points' ||
+      type == 'member_discount' ||
       amount < 0;
   final display = amount.abs();
   if (isCredit) {

@@ -163,6 +163,15 @@ class ReservationActivationService
             ['booking_id' => (string) $booking->id, 'room_id' => (string) $room->id]
         );
 
+        try {
+            app(MemberPointsService::class)->awardBookingPoints($booking);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Member booking points award failed on activation', [
+                'booking_id' => (string) $booking->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         return $booking;
     }
 }

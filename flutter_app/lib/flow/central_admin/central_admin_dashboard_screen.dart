@@ -1575,7 +1575,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     final checkIn = double.tryParse(_pointsPerCheckInCtrl.text.trim());
     final perPeso = double.tryParse(_pointsPerPesoCtrl.text.trim());
     if (checkIn == null || checkIn < 0) {
-      showAppMessage(context, 'Enter a valid check-in points amount.');
+      showAppMessage(context, 'Enter a valid booking points amount.');
       return;
     }
     if (perPeso == null || perPeso <= 0) {
@@ -1718,7 +1718,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Applied when a guest scans their membership QR or enters their SHID ID during booking.',
+                        'Applied when a signed-in member books in the customer app, or when hotel staff scan a membership QR / enter SHID on a walk-in.',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       const SizedBox(height: 12),
@@ -1772,7 +1772,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Members earn points on check-in. Hotels can redeem points when scanning a member QR; the peso value is added to that hotel’s credit wallet.',
+                        'Members earn points on every successful booking. Hotels can redeem points when scanning a member QR; the peso value is added to that hotel’s credit wallet.',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       const SizedBox(height: 12),
@@ -1780,7 +1780,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                         controller: _pointsPerCheckInCtrl,
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(
-                          labelText: 'Points per check-in',
+                          labelText: 'Points per successful booking',
                           border: OutlineInputBorder(),
                         ),
                       ),

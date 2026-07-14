@@ -148,5 +148,32 @@ Dio guestDio() => _authedDio(_AuthKind.guest);
 
 Dio memberDio() => _authedDio(_AuthKind.member);
 
+/// Customer booking calls: public API with optional member Bearer so logged-in
+/// members get discount automatically (server resolves SHID from the token).
+Dio customerBookingDio() {
+  final dio = _baseDio(
+    connectTimeout: kPublicConnectTimeout,
+    receiveTimeout: kPublicReceiveTimeout,
+  );
+  dio.interceptors.add(
+    InterceptorsWrapper(
+      onRequest: (options, handler) async {
+        final t = await AuthStorage.memberToken();
+        if (t != null && t.isNotEmpty) {
+          options.headers['Authorization'] = 'Bearer $t';
+        }
+        handler.next(options);
+      },
+      onError: (error, handler) async {
+        if (error.response?.statusCode == 401) {
+          await AuthStorage.clearMemberAuth();
+        }
+        handler.next(error);
+      },
+    ),
+  );
+  return dio;
+}
+
 /// Widget tests set this to mock walk-in calendar / amenity API calls.
 Dio Function()? portalDioTestOverride;

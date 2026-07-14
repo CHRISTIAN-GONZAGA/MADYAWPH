@@ -1840,7 +1840,8 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
   int _estimatedWelcomeCredits() {
     final n = int.tryParse(_totalRooms.text.trim()) ?? 0;
     if (n < 1) return 0;
-    return ((n + 19) ~/ 20) * 10000;
+    final uncapped = ((n + 19) ~/ 20) * 10000;
+    return uncapped > 20000 ? 20000 : uncapped;
   }
 
   @override
@@ -2244,8 +2245,8 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
           labelText: 'Total number of rooms *',
           border: const OutlineInputBorder(),
           helperText:
-              'Welcome credits: 1–20 rooms → ₱10,000; 21–40 → ₱20,000; '
-              '41–60 → ₱30,000 (+₱10,000 per 20 rooms). '
+              'Welcome credits: 1–20 rooms → ₱10,000; 21+ rooms → ₱20,000 '
+              '(maximum free credits). '
               'Estimated: ₱${_estimatedWelcomeCredits()}.',
         ),
         keyboardType: TextInputType.number,

@@ -621,15 +621,11 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
                     'errors' => ['member_shid_id' => ['Invalid or expired membership.']],
                 ], 422);
             }
-            if ($memberDiscount['percent'] <= 0) {
-                return response()->json([
-                    'message' => 'Member discount is not active right now.',
-                    'errors' => ['member_shid_id' => ['Member discount unavailable.']],
-                ], 422);
-            }
-            $discountType = 'member';
-            $discountPercent = (float) $memberDiscount['percent'];
             $validated['member_shid_id'] = $memberDiscount['member_shid_id'];
+            if ($memberDiscount['percent'] > 0) {
+                $discountType = 'member';
+                $discountPercent = (float) $memberDiscount['percent'];
+            }
         } elseif (in_array($discountType, ['pwd', 'senior'], true)) {
             $discountPercent = 20.0;
         }
@@ -788,15 +784,11 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
                     'errors' => ['member_shid_id' => ['Invalid or expired membership.']],
                 ], 422);
             }
-            if ($memberDiscount['percent'] <= 0) {
-                return response()->json([
-                    'message' => 'Member discount is not active right now.',
-                    'errors' => ['member_shid_id' => ['Member discount unavailable.']],
-                ], 422);
-            }
-            $discountType = 'member';
-            $discountPercent = (float) $memberDiscount['percent'];
             $validated['member_shid_id'] = $memberDiscount['member_shid_id'];
+            if ($memberDiscount['percent'] > 0) {
+                $discountType = 'member';
+                $discountPercent = (float) $memberDiscount['percent'];
+            }
         } elseif (in_array($discountType, ['pwd', 'senior'], true)) {
             $discountPercent = 20.0;
         }
@@ -1097,7 +1089,8 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
         $validated = $request->validate([
             'member_shid_id' => ['nullable', 'string', 'max:40'],
             'qr_payload' => ['nullable', 'string', 'max:255'],
-            'points' => ['required', 'integer', 'min:1', 'max:10000000'],
+            'points' => ['nullable', 'integer', 'min:1', 'max:10000000'],
+            'pay_full_balance' => ['nullable', 'boolean'],
             'booking_id' => ['nullable', 'string', 'max:64'],
         ]);
         $hotelId = (string) $request->user()->hotel_id;
@@ -1121,8 +1114,28 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             StayManagementPolicy::denyUnlessCanManage($booking);
         }
 
+        $pointsService = app(\App\Services\MemberPointsService::class);
+        if (! empty($validated['pay_full_balance'])) {
+            if ($booking === null) {
+                return response()->json(['message' => 'A booking is required to pay the full balance with points.'], 422);
+            }
+
+            return response()->json(
+                $pointsService->payBookingInFullWithPoints(
+                    hotelId: $hotelId,
+                    shidOrPayload: $input,
+                    booking: $booking,
+                    actor: $request->user(),
+                )
+            );
+        }
+
+        if (! isset($validated['points'])) {
+            return response()->json(['message' => 'Enter points to redeem, or pay the full balance.'], 422);
+        }
+
         return response()->json(
-            app(\App\Services\MemberPointsService::class)->redeemPoints(
+            $pointsService->redeemPoints(
                 hotelId: $hotelId,
                 shidOrPayload: $input,
                 points: (int) $validated['points'],
@@ -1131,6 +1144,34 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             )
         );
     })->middleware('role:admin,frontdesk,super_admin')->name('api.v1.admin.member.redeem-points');
+
+    Route::post('/admin/bookings/{booking}/apply-member', function (Request $request, Booking $booking) {
+        $validated = $request->validate([
+            'member_shid_id' => ['nullable', 'string', 'max:40'],
+            'qr_payload' => ['nullable', 'string', 'max:255'],
+        ]);
+        $hotelId = (string) $request->user()->hotel_id;
+        if ((string) $booking->hotel_id !== $hotelId) {
+            return response()->json(['message' => 'Booking outside hotel scope.'], 403);
+        }
+        StayManagementPolicy::denyUnlessCanManage($booking);
+
+        $input = trim((string) ($validated['member_shid_id'] ?? ''));
+        if ($input === '') {
+            $input = trim((string) ($validated['qr_payload'] ?? ''));
+        }
+        if ($input === '') {
+            return response()->json(['message' => 'Scan a member QR or enter a membership ID.'], 422);
+        }
+
+        return response()->json(
+            app(\App\Services\MemberPointsService::class)->applyMemberDiscountToBooking(
+                $booking,
+                $input,
+                $request->user(),
+            )
+        );
+    })->middleware('role:admin,frontdesk,staff')->name('api.v1.admin.bookings.apply-member');
 
     Route::post('/admin/bookings/{booking}/refund', function (Request $request, Booking $booking) {
         $validated = $request->validate([
