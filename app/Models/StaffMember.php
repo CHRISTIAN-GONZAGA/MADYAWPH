@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use App\Casts\FlexibleStaffRoleCast;
-use App\Enums\StaffRole;
 use App\Models\Concerns\BelongsToHotel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;

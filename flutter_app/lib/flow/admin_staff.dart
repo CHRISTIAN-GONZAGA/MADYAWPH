@@ -55,6 +55,7 @@ class _AdminStaffScreenState extends State<AdminStaffScreen> {
     final nameCtrl = TextEditingController();
     final userCtrl = TextEditingController();
     final passCtrl = TextEditingController();
+    final customRoleCtrl = TextEditingController();
     var role = 'receptionist';
 
     final ok = await showDialog<bool>(
@@ -85,13 +86,29 @@ class _AdminStaffScreenState extends State<AdminStaffScreen> {
                   items: const [
                     DropdownMenuItem(value: 'janitor', child: Text('Janitor')),
                     DropdownMenuItem(
-                        value: 'receptionist', child: Text('Receptionist')),
+                      value: 'receptionist',
+                      child: Text('Receptionist'),
+                    ),
                     DropdownMenuItem(
-                        value: 'maintenance', child: Text('Maintenance')),
+                      value: 'maintenance',
+                      child: Text('Maintenance'),
+                    ),
                     DropdownMenuItem(value: 'manager', child: Text('Manager')),
+                    DropdownMenuItem(
+                      value: '_custom',
+                      child: Text('Custom…'),
+                    ),
                   ],
                   onChanged: (v) => setLocal(() => role = v ?? role),
                 ),
+                if (role == '_custom') ...[
+                  const SizedBox(height: 8),
+                  AppInput(
+                    controller: customRoleCtrl,
+                    label: 'Custom role title',
+                    hint: 'e.g. Housekeeping Lead, Chef',
+                  ),
+                ],
               ],
             ),
           ),
@@ -101,7 +118,18 @@ class _AdminStaffScreenState extends State<AdminStaffScreen> {
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
+              onPressed: () {
+                if (role == '_custom' &&
+                    customRoleCtrl.text.trim().isEmpty) {
+                  showAppMessage(
+                    ctx,
+                    'Enter a custom role title.',
+                    isError: true,
+                  );
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
               child: const Text('Create'),
             ),
           ],
@@ -110,12 +138,17 @@ class _AdminStaffScreenState extends State<AdminStaffScreen> {
     );
     if (ok != true) return;
 
+    final roleValue = role == '_custom'
+        ? customRoleCtrl.text.trim()
+        : role;
+    if (roleValue.isEmpty) return;
+
     try {
       await portalDio().post('/staff', data: {
         'name': nameCtrl.text.trim(),
         'username': userCtrl.text.trim(),
         'password': passCtrl.text,
-        'role': role,
+        'role': roleValue,
       });
       if (!mounted) return;
       showAppMessage(context, 'Staff account created.');
@@ -123,6 +156,11 @@ class _AdminStaffScreenState extends State<AdminStaffScreen> {
     } on DioException catch (e) {
       if (!mounted) return;
       showAppMessage(context, dioErrorMessage(e), isError: true);
+    } finally {
+      nameCtrl.dispose();
+      userCtrl.dispose();
+      passCtrl.dispose();
+      customRoleCtrl.dispose();
     }
   }
 

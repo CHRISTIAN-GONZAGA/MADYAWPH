@@ -32,10 +32,17 @@ class StaffController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'username' => ['required', 'string', 'max:255'],
             'password' => ['required', 'string', 'min:6'],
-            'role' => ['required', 'in:janitor,receptionist,maintenance,manager'],
+            'role' => ['required', 'string', 'max:60'],
             'performance_score' => ['nullable', 'integer', 'between:0,100'],
             'daily_tasks' => ['nullable', 'array'],
         ]);
+        $validated['role'] = trim((string) $validated['role']);
+        if ($validated['role'] === '') {
+            return response()->json([
+                'message' => 'Role is required.',
+                'errors' => ['role' => ['Enter a staff role or choose a preset.']],
+            ], 422);
+        }
         $hotelId = (string) $request->user()->hotel_id;
         $existingUser = User::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
@@ -70,10 +77,19 @@ class StaffController extends Controller
     {
         $validated = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
-            'role' => ['sometimes', 'in:janitor,receptionist,maintenance,manager'],
+            'role' => ['sometimes', 'string', 'max:60'],
             'performance_score' => ['sometimes', 'integer', 'between:0,100'],
             'daily_tasks' => ['nullable', 'array'],
         ]);
+        if (array_key_exists('role', $validated)) {
+            $validated['role'] = trim((string) $validated['role']);
+            if ($validated['role'] === '') {
+                return response()->json([
+                    'message' => 'Role is required.',
+                    'errors' => ['role' => ['Enter a staff role or choose a preset.']],
+                ], 422);
+            }
+        }
 
         $staff->update($validated);
         return response()->json($this->staffPayload($staff->fresh() ?? $staff));
