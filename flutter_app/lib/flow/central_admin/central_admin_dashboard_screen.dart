@@ -908,8 +908,8 @@ class _RevenueSection extends StatelessWidget {
     final from = (revenue['from'] ?? '').toString();
     final to = (revenue['to'] ?? '').toString();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 24),
       children: [
         _PlatformSectionHeader(
           icon: Icons.insights_outlined,
@@ -918,16 +918,10 @@ class _RevenueSection extends StatelessWidget {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(value: 'day', label: Text('Today')),
-                  ButtonSegment(value: 'week', label: Text('Week')),
-                  ButtonSegment(value: 'month', label: Text('Month')),
-                  ButtonSegment(value: 'year', label: Text('Year')),
-                ],
-                selected: {period},
-                onSelectionChanged: (s) => onPeriodChanged(s.first),
-              ),
+          child: _PeriodSegmentedButton(
+            period: period,
+            onPeriodChanged: onPeriodChanged,
+          ),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -957,62 +951,62 @@ class _RevenueSection extends StatelessWidget {
                 ),
           ),
         ),
-        Expanded(
-          child: hotels.isEmpty
-              ? const Center(child: Text('No hotel revenue in this period.'))
-              : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                  itemCount: hotels.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (_, i) {
-                    final h = hotels[i] as Map<String, dynamic>;
-                    return Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              (h['hotel_name'] ?? 'Hotel').toString(),
-                              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                  ),
+        if (hotels.isEmpty)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 24, 16, 24),
+            child: Center(child: Text('No hotel revenue in this period.')),
+          )
+        else
+          ...List.generate(hotels.length, (i) {
+            final h = hotels[i] as Map<String, dynamic>;
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        (h['hotel_name'] ?? 'Hotel').toString(),
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
                             ),
-                            if ((h['city'] ?? '').toString().isNotEmpty)
-                              Text(
-                                (h['city'] ?? '').toString(),
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _MiniStat(
-                                    label: 'Net',
-                                    value: '₱${h['net_revenue']}',
-                                  ),
-                                ),
-                                Expanded(
-                                  child: _MiniStat(
-                                    label: 'Room',
-                                    value: '₱${h['room_revenue']}',
-                                  ),
-                                ),
-                                Expanded(
-                                  child: _MiniStat(
-                                    label: 'Bookings',
-                                    value: '${h['paid_bookings']}',
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
                       ),
-                    );
-                  },
+                      if ((h['city'] ?? '').toString().isNotEmpty)
+                        Text(
+                          (h['city'] ?? '').toString(),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _MiniStat(
+                              label: 'Net',
+                              value: '₱${h['net_revenue']}',
+                            ),
+                          ),
+                          Expanded(
+                            child: _MiniStat(
+                              label: 'Room',
+                              value: '₱${h['room_revenue']}',
+                            ),
+                          ),
+                          Expanded(
+                            child: _MiniStat(
+                              label: 'Bookings',
+                              value: '${h['paid_bookings']}',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-        ),
+              ),
+            );
+          }),
       ],
     );
   }
@@ -1037,8 +1031,8 @@ class _GuestsSection extends StatelessWidget {
     final from = (guests['from'] ?? '').toString();
     final to = (guests['to'] ?? '').toString();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 24),
       children: [
         _PlatformSectionHeader(
           icon: Icons.groups_outlined,
@@ -1047,15 +1041,9 @@ class _GuestsSection extends StatelessWidget {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(value: 'day', label: Text('Today')),
-              ButtonSegment(value: 'week', label: Text('Week')),
-              ButtonSegment(value: 'month', label: Text('Month')),
-              ButtonSegment(value: 'year', label: Text('Year')),
-            ],
-            selected: {period},
-            onSelectionChanged: (s) => onPeriodChanged(s.first),
+          child: _PeriodSegmentedButton(
+            period: period,
+            onPeriodChanged: onPeriodChanged,
           ),
         ),
         Padding(
@@ -1119,78 +1107,78 @@ class _GuestsSection extends StatelessWidget {
                 ),
           ),
         ),
-        Expanded(
-          child: hotels.isEmpty
-              ? const Center(child: Text('No guest data in this period.'))
-              : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                  itemCount: hotels.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (_, i) {
-                    final h = hotels[i] as Map<String, dynamic>;
-                    final hotelNats =
-                        (h['nationalities'] as List<dynamic>?) ?? const [];
-                    final topNats = hotelNats
-                        .whereType<Map<String, dynamic>>()
-                        .take(3)
-                        .map((n) =>
-                            '${n['label'] ?? 'Unknown'} (${n['guests'] ?? 0})')
-                        .join(' · ');
-                    return Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              (h['hotel_name'] ?? 'Hotel').toString(),
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleSmall
-                                  ?.copyWith(fontWeight: FontWeight.w800),
-                            ),
-                            if ((h['city'] ?? '').toString().isNotEmpty)
-                              Text(
-                                (h['city'] ?? '').toString(),
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _MiniStat(
-                                    label: 'Male',
-                                    value: '${h['male'] ?? 0}',
-                                  ),
-                                ),
-                                Expanded(
-                                  child: _MiniStat(
-                                    label: 'Female',
-                                    value: '${h['female'] ?? 0}',
-                                  ),
-                                ),
-                                Expanded(
-                                  child: _MiniStat(
-                                    label: 'Total',
-                                    value: '${h['total_guests'] ?? 0}',
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if (topNats.isNotEmpty) ...[
-                              const SizedBox(height: 10),
-                              Text(
-                                topNats,
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ],
-                          ],
-                        ),
+        if (hotels.isEmpty)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 24, 16, 24),
+            child: Center(child: Text('No guest data in this period.')),
+          )
+        else
+          ...List.generate(hotels.length, (i) {
+            final h = hotels[i] as Map<String, dynamic>;
+            final hotelNats =
+                (h['nationalities'] as List<dynamic>?) ?? const [];
+            final topNats = hotelNats
+                .whereType<Map<String, dynamic>>()
+                .take(3)
+                .map((n) =>
+                    '${n['label'] ?? 'Unknown'} (${n['guests'] ?? 0})')
+                .join(' · ');
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        (h['hotel_name'] ?? 'Hotel').toString(),
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w800),
                       ),
-                    );
-                  },
+                      if ((h['city'] ?? '').toString().isNotEmpty)
+                        Text(
+                          (h['city'] ?? '').toString(),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _MiniStat(
+                              label: 'Male',
+                              value: '${h['male'] ?? 0}',
+                            ),
+                          ),
+                          Expanded(
+                            child: _MiniStat(
+                              label: 'Female',
+                              value: '${h['female'] ?? 0}',
+                            ),
+                          ),
+                          Expanded(
+                            child: _MiniStat(
+                              label: 'Total',
+                              value: '${h['total_guests'] ?? 0}',
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (topNats.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          topNats,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
-        ),
+              ),
+            );
+          }),
       ],
     );
   }
@@ -1941,7 +1929,8 @@ class _HotelsSectionState extends State<_HotelsSection> {
         .where((h) => h['is_depleted'] == true)
         .length;
 
-    return Column(
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 24),
       children: [
         const _PlatformSectionHeader(
           icon: Icons.apartment_outlined,
@@ -1992,119 +1981,118 @@ class _HotelsSectionState extends State<_HotelsSection> {
           ),
         ),
         const SizedBox(height: 8),
-        Expanded(
-          child: filtered.isEmpty
-              ? Center(
-                  child: Text(
-                    widget.hotels.isEmpty
-                        ? 'No hotels registered.'
-                        : 'No hotels match your search.',
-                  ),
-                )
-              : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                  itemCount: filtered.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (_, i) {
-                    final h = filtered[i];
-                    final id = (h['id'] ?? '').toString();
-                    final name = (h['name'] ?? 'Hotel').toString();
-                    final credits =
-                        (h['current_credits'] as num?)?.toDouble() ?? 0;
-                    final isDepleted = h['is_depleted'] == true;
-                    final isLow = h['is_low_balance'] == true;
+        if (filtered.isEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 32, 16, 24),
+            child: Center(
+              child: Text(
+                widget.hotels.isEmpty
+                    ? 'No hotels registered.'
+                    : 'No hotels match your search.',
+              ),
+            ),
+          )
+        else
+          ...filtered.map((h) {
+            final id = (h['id'] ?? '').toString();
+            final name = (h['name'] ?? 'Hotel').toString();
+            final credits =
+                (h['current_credits'] as num?)?.toDouble() ?? 0;
+            final isDepleted = h['is_depleted'] == true;
+            final isLow = h['is_low_balance'] == true;
 
-                    return Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                CircleAvatar(
-                                  backgroundColor:
-                                      _kPlatformNavy.withValues(alpha: 0.12),
-                                  foregroundColor: _kPlatformNavy,
-                                  child: Text(
-                                    name.isNotEmpty ? name[0].toUpperCase() : '?',
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        name,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                      Text(
-                                        (h['city'] ?? h['location'] ?? '')
-                                            .toString(),
-                                        style:
-                                            Theme.of(context).textTheme.bodySmall,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                if (isDepleted)
-                                  _StatusPill(
-                                    label: 'Empty',
-                                    color: Colors.red.shade700,
-                                  )
-                                else if (isLow)
-                                  _StatusPill(
-                                    label: 'Low',
-                                    color: Colors.orange.shade800,
-                                  ),
-                              ],
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          CircleAvatar(
+                            backgroundColor:
+                                _kPlatformNavy.withValues(alpha: 0.12),
+                            foregroundColor: _kPlatformNavy,
+                            child: Text(
+                              name.isNotEmpty ? name[0].toUpperCase() : '?',
                             ),
-                            const SizedBox(height: 12),
-                            Row(
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Icon(Icons.payments_outlined,
-                                    size: 18, color: _kPlatformGold),
-                                const SizedBox(width: 6),
                                 Text(
-                                  '₱${_fmtCredits(credits)} credits',
+                                  name,
                                   style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
+                                    fontWeight: FontWeight.w800,
                                   ),
+                                ),
+                                Text(
+                                  (h['city'] ?? h['location'] ?? '')
+                                      .toString(),
+                                  style:
+                                      Theme.of(context).textTheme.bodySmall,
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    onPressed: () =>
-                                        widget.onGrantCredits(id, name),
-                                    icon: const Icon(Icons.add_circle_outline),
-                                    label: const Text('Add credits'),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                IconButton(
-                                  tooltip: 'Delete hotel',
-                                  onPressed: () => widget.onDelete(id, name),
-                                  icon: const Icon(
-                                    Icons.delete_outline,
-                                    color: Colors.red,
-                                  ),
-                                ),
-                              ],
+                          ),
+                          if (isDepleted)
+                            _StatusPill(
+                              label: 'Empty',
+                              color: Colors.red.shade700,
+                            )
+                          else if (isLow)
+                            _StatusPill(
+                              label: 'Low',
+                              color: Colors.orange.shade800,
                             ),
-                          ],
-                        ),
+                        ],
                       ),
-                    );
-                  },
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Icon(Icons.payments_outlined,
+                              size: 18, color: _kPlatformGold),
+                          const SizedBox(width: 6),
+                          Text(
+                            '₱${_fmtCredits(credits)} credits',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () =>
+                                  widget.onGrantCredits(id, name),
+                              icon: const Icon(Icons.add_circle_outline),
+                              label: const Text('Add credits'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            tooltip: 'Delete hotel',
+                            onPressed: () => widget.onDelete(id, name),
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              color: Colors.red,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-        ),
+              ),
+            );
+          }),
       ],
     );
   }
@@ -2112,6 +2100,45 @@ class _HotelsSectionState extends State<_HotelsSection> {
   static String _fmtCredits(double n) {
     if (n >= 1000) return n.toStringAsFixed(0);
     return n.toStringAsFixed(2);
+  }
+}
+
+class _PeriodSegmentedButton extends StatelessWidget {
+  const _PeriodSegmentedButton({
+    required this.period,
+    required this.onPeriodChanged,
+  });
+
+  final String period;
+  final ValueChanged<String> onPeriodChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minWidth: constraints.maxWidth),
+            child: SegmentedButton<String>(
+              showSelectedIcon: false,
+              style: const ButtonStyle(
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              segments: const [
+                ButtonSegment(value: 'day', label: Text('Today')),
+                ButtonSegment(value: 'week', label: Text('Week')),
+                ButtonSegment(value: 'month', label: Text('Month')),
+                ButtonSegment(value: 'year', label: Text('Year')),
+              ],
+              selected: {period},
+              onSelectionChanged: (s) => onPeriodChanged(s.first),
+            ),
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -2144,9 +2171,16 @@ class _MiniStatChip extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(fontWeight: FontWeight.w800, color: color, fontSize: 13),
           ),
-          Text(label, style: Theme.of(context).textTheme.labelSmall),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelSmall,
+          ),
         ],
       ),
     );

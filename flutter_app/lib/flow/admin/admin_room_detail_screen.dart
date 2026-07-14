@@ -44,6 +44,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   bool _changingStatus = false;
   bool _checkingOut = false;
   bool _issuingRefund = false;
+  bool _recordingPartialPayment = false;
   bool _extendingStay = false;
   late final String _roomId;
 
@@ -458,17 +459,20 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       }
       return 'Cash';
     })();
-    String status = current;
-    var paymentReady = current == 'paid';
-    final billTotalRaw = billSummary?['total_due'];
+    final billTotalRaw = billSummary?['total_due'] ?? billSummary?['balance_due'];
     final totalDue = billTotalRaw != null
         ? parseJsonDouble(billTotalRaw)
         : parseJsonDouble(booking?['total_amount']);
+    final amountPaid = parseJsonDouble(billSummary?['amount_paid']);
+    String status = current == 'paid' ? 'paid' : 'unpaid';
+    var paymentReady = current == 'paid' && totalDue <= 0.009;
+    var remainingDue = totalDue;
+    var paidSoFar = amountPaid;
     final lines = (billSummary?['lines'] as List?) ?? const [];
     final refCtrl =
         TextEditingController(text: (booking?['payment_reference'] ?? '').toString());
     final tenderCtrl = TextEditingController(
-      text: totalDue > 0 ? totalDue.toStringAsFixed(0) : '',
+      text: totalDue > 0 ? totalDue.toStringAsFixed(2) : '',
     );
 
     if (!mounted) return;
@@ -479,9 +483,11 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         builder: (context, setLocal) {
           final tendered = double.tryParse(tenderCtrl.text.trim()) ?? 0;
           final change = status == 'paid' && tendered > 0
-              ? (tendered - totalDue).clamp(0, double.infinity)
+              ? (tendered - remainingDue).clamp(0, double.infinity)
               : 0.0;
-          final canCheckout = paymentReady && status == 'paid';
+          final balanceCleared = remainingDue <= 0.009;
+          final canCheckout =
+              paymentReady && status == 'paid' && balanceCleared;
 
           return AlertDialog(
             title: const Text('Check out guest'),
@@ -498,11 +504,32 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Amount due: ${formatPeso(totalDue)}',
+                    paidSoFar > 0
+                        ? 'Remaining due: ${formatPeso(remainingDue)}'
+                        : 'Amount due: ${formatPeso(remainingDue)}',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w800,
                         ),
                   ),
+                  if (paidSoFar > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        'Already paid: ${formatPeso(paidSoFar)}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  if (!balanceCleared)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        'Checkout is blocked until the full balance is paid.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.error,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ),
                   if (lines.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     ...lines.whereType<Map>().map(
@@ -522,14 +549,16 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                     initialValue: status,
                     items: const [
                       DropdownMenuItem(value: 'unpaid', child: Text('Unpaid')),
-                      DropdownMenuItem(value: 'paid', child: Text('Paid')),
+                      DropdownMenuItem(value: 'paid', child: Text('Paid in full')),
                     ],
-                    onChanged: (v) => setLocal(() {
-                      status = v ?? status;
-                      if (status != 'paid') {
-                        paymentReady = false;
-                      }
-                    }),
+                    onChanged: balanceCleared && paymentReady
+                        ? null
+                        : (v) => setLocal(() {
+                              status = v ?? status;
+                              if (status != 'paid') {
+                                paymentReady = false;
+                              }
+                            }),
                     decoration: const InputDecoration(
                       labelText: 'Payment status',
                       border: OutlineInputBorder(),
@@ -556,22 +585,29 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                   const SizedBox(height: 10),
                   TextField(
                     controller: tenderCtrl,
+                    enabled: !balanceCleared || !paymentReady,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(
-                      labelText: 'Amount given by guest',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: remainingDue > 0
+                          ? 'Amount given by guest (min ${formatPeso(remainingDue)})'
+                          : 'Amount given by guest',
+                      border: const OutlineInputBorder(),
                       prefixText: '₱ ',
                     ),
                     onChanged: (_) => setLocal(() {}),
                   ),
-                  if (status == 'paid' && tendered > 0)
+                  if (status == 'paid' && tendered > 0 && remainingDue > 0)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: Text(
-                        'Change: ${formatPeso(change)}',
+                        tendered + 0.009 < remainingDue
+                            ? 'Need at least ${formatPeso(remainingDue)} to clear the balance.'
+                            : 'Change: ${formatPeso(change)}',
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
-                          color: Theme.of(context).colorScheme.primary,
+                          color: tendered + 0.009 < remainingDue
+                              ? Theme.of(context).colorScheme.error
+                              : Theme.of(context).colorScheme.primary,
                         ),
                       ),
                     ),
@@ -586,9 +622,9 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                   if (!canCheckout) ...[
                     const SizedBox(height: 12),
                     Text(
-                      paymentReady
-                          ? 'Set payment status to Paid to continue.'
-                          : 'Record payment as Paid before checking out.',
+                      !balanceCleared
+                          ? 'Collect the remaining ${formatPeso(remainingDue)} and save payment as Paid in full.'
+                          : 'Confirm payment as Paid in full, then check out.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
@@ -602,37 +638,58 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                 onPressed: () => Navigator.of(dialogContext).pop(false),
                 child: const Text('Cancel'),
               ),
-              if (!paymentReady)
+              if (!paymentReady || !balanceCleared)
                 FilledButton.tonal(
-                  onPressed: status != 'paid'
+                  onPressed: status != 'paid' ||
+                          (remainingDue > 0.009 &&
+                              tendered + 0.009 < remainingDue)
                       ? null
                       : () async {
                           try {
-                            final res = await portalDio().post<Map<String, dynamic>>(
+                            final res =
+                                await portalDio().post<Map<String, dynamic>>(
                               '/admin/bookings/$bookingId/payment-status',
                               data: {
-                                'payment_status': status,
+                                'payment_status': 'paid',
                                 'payment_reference': refCtrl.text.trim(),
                                 'payment_method': method,
-                                'amount_tendered': tendered > 0 ? tendered : null,
+                                'amount_tendered':
+                                    tendered > 0 ? tendered : null,
                               },
                             );
                             if (!context.mounted) return;
+                            final bill = res.data?['bill'];
+                            final billMap = bill is Map
+                                ? Map<String, dynamic>.from(bill)
+                                : const <String, dynamic>{};
                             final changeDue =
                                 parseJsonDouble(res.data?['change_due']);
-                            setLocal(() => paymentReady = true);
+                            setLocal(() {
+                              remainingDue = parseJsonDouble(
+                                billMap['balance_due'] ?? billMap['total_due'],
+                              );
+                              paidSoFar = parseJsonDouble(billMap['amount_paid']);
+                              status = 'paid';
+                              paymentReady = remainingDue <= 0.009;
+                            });
                             showAppMessage(
                               context,
-                              changeDue > 0
-                                  ? 'Payment recorded. Change due: ${formatPeso(changeDue)}'
-                                  : 'Payment recorded.',
+                              remainingDue > 0.009
+                                  ? 'Payment saved, but a balance remains.'
+                                  : (changeDue > 0
+                                      ? 'Payment recorded. Change due: ${formatPeso(changeDue)}'
+                                      : 'Full payment recorded. Ready to check out.'),
                             );
                           } on DioException catch (e) {
                             if (!context.mounted) return;
-                            showAppMessage(context, dioErrorMessage(e), isError: true);
+                            showAppMessage(
+                              context,
+                              dioErrorMessage(e),
+                              isError: true,
+                            );
                           }
                         },
-                  child: const Text('Save payment'),
+                  child: const Text('Save full payment'),
                 ),
               FilledButton(
                 onPressed: canCheckout
@@ -674,10 +731,16 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     final roomId = (room?['id'] ?? _roomId).toString();
     final current = (room?['status'] ?? 'available').toString();
     final paid = (booking?['payment_status'] ?? '').toString() == 'paid';
+    final balanceDue = parseJsonDouble(
+      _data?['balance_due'] ??
+          _asMap(_data?['bill_summary'])?['balance_due'] ??
+          _data?['booking_charges_total'],
+    );
     final hasStay = current == 'checked_in' ||
         current == 'booked' ||
         (room?['current_guest_name'] ?? '').toString().trim().isNotEmpty;
-    final showCheckedOut = hasStay && paid && _canEditGuestStay;
+    final showCheckedOut =
+        hasStay && paid && balanceDue <= 0.009 && _canEditGuestStay;
     String status = current;
     final statusItems = _canEditGuestStay
         ? [
@@ -913,26 +976,28 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Issue refund'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: amountCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Amount (optional, leave blank for max refundable)',
-                border: OutlineInputBorder(),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: amountCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Amount (optional, leave blank for max refundable)',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
               ),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: reasonCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Reason',
-                border: OutlineInputBorder(),
+              const SizedBox(height: 10),
+              TextField(
+                controller: reasonCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Reason',
+                  border: OutlineInputBorder(),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -961,6 +1026,171 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _issuingRefund = false);
+    }
+  }
+
+  Future<void> _recordPartialPayment() async {
+    final booking = _asMap(_data?['active_booking']);
+    final bookingId = (booking?['id'] ?? '').toString();
+    if (bookingId.isEmpty) {
+      if (!mounted) return;
+      showAppMessage(context, 'No active booking for this room.');
+      return;
+    }
+
+    final balanceDue = parseJsonDouble(
+      _data?['balance_due'] ??
+          _asMap(_data?['bill_summary'])?['balance_due'] ??
+          _data?['booking_charges_total'] ??
+          booking?['total_amount'],
+    );
+    if (balanceDue <= 0) {
+      if (!mounted) return;
+      showAppMessage(context, 'No remaining balance on this booking.');
+      return;
+    }
+
+    final amountCtrl = TextEditingController(
+      text: balanceDue.toStringAsFixed(2),
+    );
+    final refCtrl = TextEditingController(
+      text: (booking?['payment_reference'] ?? '').toString(),
+    );
+    final noteCtrl = TextEditingController();
+    var method = (() {
+      final raw = (booking?['payment_method'] ?? 'Cash').toString().trim().toLowerCase();
+      if (raw == 'gcash' || raw == 'g-cash') return 'GCash';
+      if (raw == 'paymaya' || raw == 'maya' || raw == 'pay maya') return 'PayMaya';
+      if (raw == 'credit card' || raw == 'credit_card' || raw == 'card') {
+        return 'Credit Card';
+      }
+      return 'Cash';
+    })();
+
+    final payload = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setLocal) {
+          final amount = double.tryParse(amountCtrl.text.trim()) ?? 0;
+          final remainingAfter = (balanceDue - amount).clamp(0, double.infinity);
+          return AlertDialog(
+            title: const Text('Partial payment'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Remaining balance: ${formatPeso(balanceDue)}',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: amountCtrl,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Amount received',
+                      border: OutlineInputBorder(),
+                      prefixText: '₱ ',
+                    ),
+                    onChanged: (_) => setLocal(() {}),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    initialValue: method,
+                    items: const [
+                      DropdownMenuItem(value: 'Cash', child: Text('Cash')),
+                      DropdownMenuItem(value: 'GCash', child: Text('GCash')),
+                      DropdownMenuItem(value: 'PayMaya', child: Text('PayMaya')),
+                      DropdownMenuItem(
+                        value: 'Credit Card',
+                        child: Text('Credit Card'),
+                      ),
+                    ],
+                    onChanged: (v) => setLocal(() => method = v ?? method),
+                    decoration: const InputDecoration(
+                      labelText: 'Payment method',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: refCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Payment reference (optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: noteCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Note (optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  if (amount > 0) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      amount >= balanceDue
+                          ? 'This clears the balance in full.'
+                          : 'Balance after payment: ${formatPeso(remainingAfter)}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: amount <= 0 || amount > balanceDue + 0.009
+                    ? null
+                    : () => Navigator.of(context).pop({
+                          'amount': amount,
+                          'payment_method': method,
+                          'payment_reference': refCtrl.text.trim(),
+                          'note': noteCtrl.text.trim(),
+                        }),
+                child: const Text('Record payment'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (payload == null || _recordingPartialPayment) return;
+    setState(() => _recordingPartialPayment = true);
+    try {
+      final res = await portalDio().post<Map<String, dynamic>>(
+        '/admin/bookings/$bookingId/partial-payment',
+        data: payload,
+      );
+      if (!mounted) return;
+      final paid = parseJsonDouble(res.data?['amount']);
+      final remaining = parseJsonDouble(res.data?['balance_due']);
+      final status = (res.data?['payment_status'] ?? '').toString();
+      showAppMessage(
+        context,
+        status == 'paid'
+            ? 'Payment of ${formatPeso(paid)} recorded. Balance cleared.'
+            : 'Partial payment of ${formatPeso(paid)} recorded. Remaining ${formatPeso(remaining)}.',
+      );
+      await _load();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    } finally {
+      if (mounted) setState(() => _recordingPartialPayment = false);
     }
   }
 
@@ -1082,6 +1312,16 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     final booking = _asMap(_data!['active_booking']);
     final charges = _chargesList();
     final chargesTotal = parseJsonDouble(_data!['booking_charges_total']);
+    final amountPaid = parseJsonDouble(
+      _data!['amount_paid'] ?? _asMap(_data!['bill_summary'])?['amount_paid'],
+    );
+    final balanceDue = parseJsonDouble(
+      _data!['balance_due'] ??
+          _asMap(_data!['bill_summary'])?['balance_due'] ??
+          chargesTotal,
+    );
+    final paymentStatus =
+        (booking?['payment_status'] ?? 'unpaid').toString().toLowerCase();
 
     final roomNo = (room['room_number'] ?? '').toString();
     final status = AdminDashboardModels.statusOf(room);
@@ -1221,6 +1461,25 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                           'Departure: ${AdminDashboardModels.cleanStayDisplay((booking['check_out_display'] ?? '').toString())}',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Payment: ${paymentStatus == 'partial' ? 'Partial' : paymentStatus == 'paid' ? 'Paid' : 'Unpaid'}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                      if (amountPaid > 0)
+                        Text(
+                          'Paid so far: ${formatPeso(amountPaid)}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      Text(
+                        'Balance due: ${formatPeso(balanceDue)}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: accent,
+                            ),
+                      ),
                     ],
                   ),
                 ),
@@ -1243,6 +1502,27 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
               ),
               icon: const Icon(Icons.add),
               label: const Text('+ Add fee'),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonalIcon(
+              onPressed: (_recordingPartialPayment || balanceDue <= 0)
+                  ? null
+                  : _recordPartialPayment,
+              icon: _recordingPartialPayment
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.payments_outlined),
+              label: Text(
+                _recordingPartialPayment
+                    ? 'Recording…'
+                    : 'Partial payment',
+              ),
             ),
           ),
           const SizedBox(height: 10),
@@ -1367,6 +1647,14 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         ),
         const SizedBox(height: 4),
         Text('Total fee: ${formatPeso(chargesTotal)}'),
+        if (amountPaid > 0 || paymentStatus == 'partial') ...[
+          const SizedBox(height: 2),
+          Text('Paid so far: ${formatPeso(amountPaid)}'),
+          Text(
+            'Balance due: ${formatPeso(balanceDue)}',
+            style: TextStyle(fontWeight: FontWeight.w700, color: accent),
+          ),
+        ],
         const SizedBox(height: 8),
         if (charges.isEmpty)
           const Text('No charges yet.')

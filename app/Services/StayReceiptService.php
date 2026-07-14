@@ -24,7 +24,7 @@ class StayReceiptService
             ->get();
 
         $subtotal = (float) $charges
-            ->reject(fn ($c) => (string) ($c->type ?? '') === 'refund')
+            ->reject(fn ($c) => \App\Support\BillingChargeTypes::isCredit($c->type ?? ''))
             ->sum(fn ($c) => (float) ($c->amount ?? 0));
 
         $pdf = Pdf::loadView('pdf.stay-receipt', [
@@ -60,7 +60,7 @@ class StayReceiptService
             'label' => (string) ($c->label ?? ''),
             'amount' => (float) ($c->amount ?? 0),
             'type' => (string) ($c->type ?? ''),
-            'is_credit' => (string) ($c->type ?? '') === 'refund',
+            'is_credit' => \App\Support\BillingChargeTypes::isCredit($c->type ?? ''),
         ])->values()->all();
 
         if ($lines === []) {
@@ -73,11 +73,11 @@ class StayReceiptService
         }
 
         $subtotal = (float) $charges
-            ->reject(fn ($c) => (string) ($c->type ?? '') === 'refund')
+            ->reject(fn ($c) => \App\Support\BillingChargeTypes::isCredit($c->type ?? ''))
             ->sum(fn ($c) => (float) ($c->amount ?? 0));
 
         $refundSum = (float) $charges
-            ->filter(fn ($c) => (string) ($c->type ?? '') === 'refund')
+            ->filter(fn ($c) => \App\Support\BillingChargeTypes::isCredit($c->type ?? ''))
             ->sum(fn ($c) => (float) ($c->amount ?? 0));
 
         return [

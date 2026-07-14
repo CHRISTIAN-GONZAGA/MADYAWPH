@@ -7,6 +7,7 @@ use App\Enums\RoomStatus;
 use App\Enums\UserRole;
 use App\Mail\GuestCheckInWelcomeMail;
 use App\Mail\StaffGuestCheckInMail;
+use App\Models\BillingCharge;
 use App\Models\Booking;
 use App\Models\ExternalReservation;
 use App\Models\GuestMessage;
@@ -234,6 +235,82 @@ class RoomCheckoutTest extends TestCase
 
         $this->postJson('/api/v1/rooms/'.$room->id.'/checkout')
             ->assertStatus(422);
+    }
+
+    public function test_checkout_blocked_when_partial_balance_remains(): void
+    {
+        $hotel = Hotel::create(['name' => 'Partial Balance Hotel', 'location' => 'Loc']);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'partial_balance_admin',
+            'email' => 'partial-balance-admin@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '303',
+            'room_type' => 'Deluxe',
+            'price_per_night' => 3000,
+            'status' => RoomStatus::CHECKED_IN->value,
+            'current_guest_name' => 'Partial Guest',
+        ]);
+        $booking = Booking::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'booking_reference' => 'BK-PARTIAL-BAL-1',
+            'guest_name' => 'Partial Guest',
+            'check_in_date' => now()->toDateString(),
+            'check_out_date' => now()->addDay()->toDateString(),
+            'nights' => 1,
+            'total_amount' => 2000,
+            'payment_status' => 'partial',
+            'status' => BookingStatus::CONFIRMED,
+        ]);
+        BillingCharge::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'booking_id' => (string) $booking->id,
+            'room_id' => (string) $room->id,
+            'type' => 'room',
+            'label' => 'Room stay',
+            'amount' => 3000,
+            'quantity' => 1,
+            'is_manual' => false,
+            'created_by' => (string) $admin->id,
+        ]);
+        BillingCharge::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'booking_id' => (string) $booking->id,
+            'room_id' => (string) $room->id,
+            'type' => 'partial_payment',
+            'label' => 'Partial payment',
+            'amount' => -1000,
+            'quantity' => 1,
+            'is_manual' => true,
+            'created_by' => (string) $admin->id,
+        ]);
+
+        Sanctum::actingAs($admin);
+
+        $this->postJson('/api/v1/rooms/'.$room->id.'/checkout')
+            ->assertStatus(422)
+            ->assertJsonFragment(['message' => 'Cannot check out while a balance remains (₱2,000.00). Collect the full payment first.']);
+
+        // Fake "paid" status without clearing balance must still fail.
+        $booking->update(['payment_status' => 'paid']);
+        $this->postJson('/api/v1/rooms/'.$room->id.'/checkout')
+            ->assertStatus(422);
+
+        // Settle remaining, then checkout succeeds.
+        $this->postJson("/api/v1/admin/bookings/{$booking->id}/payment-status", [
+            'payment_status' => 'paid',
+            'payment_method' => 'Cash',
+            'amount_tendered' => 2000,
+        ])->assertOk()
+            ->assertJsonPath('bill.balance_due', 0);
+
+        $this->postJson('/api/v1/rooms/'.$room->id.'/checkout')
+            ->assertOk();
     }
 
     public function test_check_in_sends_welcome_email_with_room_password(): void

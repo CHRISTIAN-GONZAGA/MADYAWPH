@@ -298,10 +298,24 @@ class RoomCheckoutService
         $hotelId = (string) $room->hotel_id;
         $booking = $this->findActiveBooking($hotelId, (string) $room->id);
 
-        if ($requirePaid && $booking && (string) ($booking->getAttributes()['payment_status'] ?? 'unpaid') !== 'paid') {
-            throw ValidationException::withMessages([
-                'payment_status' => ['Mark the stay as paid in room details before checkout.'],
-            ]);
+        if ($requirePaid && $booking) {
+            $bill = app(BookingPaymentService::class)->billSummary($booking);
+            $balanceDue = (float) ($bill['balance_due'] ?? $bill['total_due'] ?? 0);
+            $paymentStatus = strtolower((string) ($booking->getAttributes()['payment_status'] ?? 'unpaid'));
+
+            if ($balanceDue > 0.009) {
+                throw ValidationException::withMessages([
+                    'payment_status' => [
+                        'Cannot check out while a balance remains (₱'.number_format($balanceDue, 2).'). Collect the full payment first.',
+                    ],
+                ]);
+            }
+
+            if ($paymentStatus !== 'paid') {
+                throw ValidationException::withMessages([
+                    'payment_status' => ['Mark the stay as fully paid before checkout.'],
+                ]);
+            }
         }
 
         return $this->finalizeStay($room, $actor, $booking);

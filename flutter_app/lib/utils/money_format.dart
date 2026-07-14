@@ -24,12 +24,15 @@ String formatPeso(num amount, {bool signed = false}) {
   return body;
 }
 
-/// Formats a bill/receipt line (charges positive, refunds as −₱).
+/// Formats a bill/receipt line (charges positive, refunds/partial payments as −₱).
 String formatBillLineAmount(Map<dynamic, dynamic> line) {
   final amount = parseJsonDouble(line['amount']);
   final type = (line['type'] ?? '').toString();
-  final isCredit =
-      line['is_credit'] == true || type == 'refund' || amount < 0;
+  final isCredit = line['is_credit'] == true ||
+      type == 'refund' ||
+      type == 'partial_payment' ||
+      type == 'member_points' ||
+      amount < 0;
   final display = amount.abs();
   if (isCredit) {
     return '−₱${display.toStringAsFixed(2)}';

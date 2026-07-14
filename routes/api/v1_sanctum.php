@@ -1039,7 +1039,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
 
     Route::post('/admin/bookings/{booking}/payment-status', function (Request $request, Booking $booking) {
         $validated = $request->validate([
-            'payment_status' => ['required', 'in:paid,unpaid'],
+            'payment_status' => ['required', 'in:paid,unpaid,partial'],
             'payment_reference' => ['nullable', 'string', 'max:120'],
             'payment_method' => ['nullable', 'string', 'max:40'],
             'amount_tendered' => ['nullable', 'numeric', 'min:0'],
@@ -1050,15 +1050,9 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
         }
         StayManagementPolicy::denyUnlessCanManage($booking);
 
+        $paymentService = app(BookingPaymentService::class);
         $methodRaw = trim((string) ($validated['payment_method'] ?? ''));
-        $normalizedMethod = match (strtolower($methodRaw)) {
-            '', 'cash' => 'Cash',
-            'gcash', 'g-cash' => 'GCash',
-            'paymaya', 'maya', 'pay maya' => 'PayMaya',
-            'credit card', 'credit_card', 'card' => 'Credit Card',
-            'member points', 'member_points', 'points' => 'Member Points',
-            default => null,
-        };
+        $normalizedMethod = $paymentService->normalizePaymentMethod($methodRaw);
         if ($methodRaw !== '' && $normalizedMethod === null) {
             return response()->json(['message' => 'Unsupported payment method.'], 422);
         }
@@ -1067,9 +1061,37 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
         }
 
         return response()->json(
-            app(BookingPaymentService::class)->applyPayment($booking, $request->user(), $validated)
+            $paymentService->applyPayment($booking, $request->user(), $validated)
         );
     })->name('api.v1.admin.bookings.payment-status');
+
+    Route::post('/admin/bookings/{booking}/partial-payment', function (Request $request, Booking $booking) {
+        $validated = $request->validate([
+            'amount' => ['required', 'numeric', 'min:0.01'],
+            'payment_method' => ['nullable', 'string', 'max:40'],
+            'payment_reference' => ['nullable', 'string', 'max:120'],
+            'note' => ['nullable', 'string', 'max:255'],
+        ]);
+        $hotelId = (string) $request->user()->hotel_id;
+        if ((string) $booking->hotel_id !== $hotelId) {
+            return response()->json(['message' => 'Booking outside hotel scope.'], 403);
+        }
+        StayManagementPolicy::denyUnlessCanManage($booking);
+
+        $paymentService = app(BookingPaymentService::class);
+        $methodRaw = trim((string) ($validated['payment_method'] ?? ''));
+        if ($methodRaw !== '') {
+            $normalizedMethod = $paymentService->normalizePaymentMethod($methodRaw);
+            if ($normalizedMethod === null) {
+                return response()->json(['message' => 'Unsupported payment method.'], 422);
+            }
+            $validated['payment_method'] = $normalizedMethod;
+        }
+
+        return response()->json(
+            $paymentService->applyPartialPayment($booking, $request->user(), $validated)
+        );
+    })->middleware('role:admin,frontdesk,staff')->name('api.v1.admin.bookings.partial-payment');
 
     Route::post('/admin/member/redeem-points', function (Request $request) {
         $validated = $request->validate([
@@ -1126,7 +1148,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             ->where('booking_id', (string) $booking->id)
             ->get();
         $paidGross = (float) $charges
-            ->reject(fn ($charge) => (string) ($charge->type ?? '') === 'refund')
+            ->reject(fn ($charge) => \App\Support\BillingChargeTypes::isCredit($charge->type ?? ''))
             ->sum(fn ($charge) => (float) ($charge->amount ?? 0));
         if ($paidGross <= 0) {
             $paidGross = (float) ($booking->total_amount ?? 0);
@@ -2532,6 +2554,9 @@ Route::get('/admin/rooms/{id}', function (Request $request, string $id, RoomChec
         ? BillingCharge::withoutGlobalScopes()->where('hotel_id', $hotelId)->where('booking_id', (string) $booking->id)->latest()->limit(50)->get()
         : collect();
     $chargesTotal = (float) $charges->sum(fn ($charge) => (float) ($charge->amount ?? 0));
+    $billSummary = $booking
+        ? app(BookingPaymentService::class)->billSummary($booking)
+        : null;
 
     $bookingPayload = null;
     if ($booking) {
@@ -2566,6 +2591,9 @@ Route::get('/admin/rooms/{id}', function (Request $request, string $id, RoomChec
         'active_booking' => $bookingPayload,
         'booking_charges' => $charges,
         'booking_charges_total' => $chargesTotal,
+        'bill_summary' => $billSummary,
+        'amount_paid' => (float) ($billSummary['amount_paid'] ?? 0),
+        'balance_due' => (float) ($billSummary['balance_due'] ?? $chargesTotal),
         'refund_total' => (float) $charges
             ->filter(fn ($charge) => (string) ($charge->type ?? '') === 'refund')
             ->sum(fn ($charge) => abs((float) ($charge->amount ?? 0))),

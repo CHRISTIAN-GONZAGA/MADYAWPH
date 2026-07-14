@@ -172,127 +172,137 @@ class _MembershipPanel extends StatelessWidget {
 
     return RefreshIndicator(
       onRefresh: onRetry,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-        children: [
-          Text(
-            name.isEmpty ? 'Member' : name,
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-          ),
-          if (username.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              '@$username',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-            ),
-          ],
-          const SizedBox(height: 16),
-          _PointsWalletCard(member: m),
-          const SizedBox(height: 20),
-          if (discount > 0)
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: scheme.primaryContainer.withValues(alpha: 0.45),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Text(
-                '${discount.toStringAsFixed(0)}% off room bookings when hotels scan your QR or enter your membership ID.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final qrSize = (constraints.maxWidth - 72).clamp(160.0, 240.0);
+          return ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+            children: [
+              Text(
+                name.isEmpty ? 'Member' : name,
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
                     ),
               ),
-            ),
-          const SizedBox(height: 20),
-          Text(
-            'Membership ID',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: SelectableText(
-                  shid.isEmpty ? '—' : shid,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.1,
+              if (username.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '@$username',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
                       ),
                 ),
-              ),
-              if (shid.isNotEmpty)
-                IconButton(
-                  tooltip: 'Copy membership ID',
-                  onPressed: () {
-                    Clipboard.setData(ClipboardData(text: shid));
-                    showAppMessage(context, 'Membership ID copied.');
-                  },
-                  icon: const Icon(Icons.copy_outlined),
-                ),
-            ],
-          ),
-          if (validUntil.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(
-              'Valid until $validUntil',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
+              ],
+              const SizedBox(height: 16),
+              _PointsWalletCard(member: m),
+              const SizedBox(height: 20),
+              if (discount > 0)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer.withValues(alpha: 0.45),
+                    borderRadius: BorderRadius.circular(14),
                   ),
-            ),
-          ],
-          const SizedBox(height: 24),
-          Text(
-            'Your member QR',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
+                  child: Text(
+                    '${discount.toStringAsFixed(0)}% off room bookings when hotels scan your QR or enter your membership ID.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          height: 1.35,
+                        ),
+                  ),
                 ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Show this QR at the front desk when you pay so they can apply your member discount.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-          ),
-          const SizedBox(height: 16),
-          if (qr.isNotEmpty)
-            Center(
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: scheme.outlineVariant),
-                ),
-                child: QrImageView(
-                  data: qr,
-                  size: 240,
-                  backgroundColor: Colors.white,
-                ),
+              const SizedBox(height: 20),
+              Text(
+                'Membership ID',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
               ),
-            )
-          else
-            Text(
-              'QR is not available yet.',
-              style: TextStyle(color: scheme.error),
-            ),
-          const SizedBox(height: 28),
-          Text(
-            'Account details',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
+              const SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: SelectableText(
+                      shid.isEmpty ? '—' : shid,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.1,
+                          ),
+                    ),
+                  ),
+                  if (shid.isNotEmpty)
+                    IconButton(
+                      tooltip: 'Copy membership ID',
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: shid));
+                        showAppMessage(context, 'Membership ID copied.');
+                      },
+                      icon: const Icon(Icons.copy_outlined),
+                    ),
+                ],
+              ),
+              if (validUntil.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Valid until $validUntil',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
                 ),
-          ),
-          const SizedBox(height: 8),
-          if (email.isNotEmpty) _DetailRow(label: 'Email', value: email),
-          if (phone.isNotEmpty) _DetailRow(label: 'Phone', value: phone),
-        ],
+              ],
+              const SizedBox(height: 24),
+              Text(
+                'Your member QR',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Show this QR at the front desk when you pay so they can apply your member discount.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      height: 1.35,
+                    ),
+              ),
+              const SizedBox(height: 16),
+              if (qr.isNotEmpty)
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: scheme.outlineVariant),
+                    ),
+                    child: QrImageView(
+                      data: qr,
+                      size: qrSize,
+                      backgroundColor: Colors.white,
+                    ),
+                  ),
+                )
+              else
+                Text(
+                  'QR is not available yet.',
+                  style: TextStyle(color: scheme.error),
+                ),
+              const SizedBox(height: 28),
+              Text(
+                'Account details',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              if (email.isNotEmpty) _DetailRow(label: 'Email', value: email),
+              if (phone.isNotEmpty) _DetailRow(label: 'Phone', value: phone),
+            ],
+          );
+        },
       ),
     );
   }

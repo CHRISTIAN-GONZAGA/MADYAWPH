@@ -698,62 +698,7 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
               ],
             ),
           )
-        else ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
-            child: Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: scheme.primaryContainer.withValues(alpha: 0.65),
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(
-                      color: scheme.primary.withValues(alpha: 0.2),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.travel_explore,
-                          size: 18, color: scheme.primary),
-                      const SizedBox(width: 8),
-                      Text(
-                        context.tr('book_a_stay'),
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: scheme.onPrimaryContainer,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  context.tr('where_to_go'),
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.5,
-                        height: 1.15,
-                      ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  context.tr('search_stays_sub'),
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                        height: 1.35,
-                      ),
-                ),
-              ],
-            ),
-          ),
+        else
           Expanded(
             child: RefreshIndicator(
               onRefresh: _loadHotels,
@@ -761,17 +706,83 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                 physics: const AlwaysScrollableScrollPhysics(),
                 keyboardDismissBehavior:
                     ScrollViewKeyboardDismissBehavior.onDrag,
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
-                child: _buildSearchScrollContent(
-                  context,
-                  scheme,
-                  visual,
-                  showMemberLogin: !embedded,
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(4, 0, 4, 14),
+                      child: Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: scheme.primaryContainer
+                                  .withValues(alpha: 0.65),
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: scheme.primary.withValues(alpha: 0.2),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.travel_explore,
+                                    size: 18, color: scheme.primary),
+                                const SizedBox(width: 8),
+                                Text(
+                                  context.tr('book_a_stay'),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: scheme.onPrimaryContainer,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          Text(
+                            context.tr('where_to_go'),
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context)
+                                .textTheme
+                                .headlineMedium
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -0.5,
+                                  height: 1.15,
+                                ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            context.tr('search_stays_sub'),
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                  height: 1.35,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _buildSearchScrollContent(
+                      context,
+                      scheme,
+                      visual,
+                      showMemberLogin: !embedded,
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-        ],
       ],
     );
 
