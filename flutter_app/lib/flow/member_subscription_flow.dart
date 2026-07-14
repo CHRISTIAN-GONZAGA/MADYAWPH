@@ -29,6 +29,9 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
   final _refCtrl = TextEditingController();
   String _memberQrRaw = '';
   double _fee = 300;
+  double _discountPercent = 10;
+  int _pointsPerBooking = 1000;
+  double _pointsPerPeso = 10;
   bool _loading = true;
   bool _submitting = false;
 
@@ -61,6 +64,16 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
       final raw = res.data?['member_subscription_qr_url'];
       setState(() {
         _fee = (res.data?['member_monthly_fee'] as num?)?.toDouble() ?? 300;
+        _discountPercent =
+            (res.data?['member_booking_discount_percent'] as num?)
+                    ?.toDouble() ??
+                10;
+        _pointsPerBooking =
+            ((res.data?['member_points_per_check_in'] as num?)?.toDouble() ??
+                    1000)
+                .round();
+        _pointsPerPeso =
+            (res.data?['member_points_per_peso'] as num?)?.toDouble() ?? 10;
         _memberQrRaw = raw == null ? '' : '$raw'.trim();
         _loading = false;
       });
@@ -192,10 +205,17 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '₱${_fee.toStringAsFixed(0)} / month — exclusive deals and priority support.',
+                    '₱${_fee.toStringAsFixed(0)} / month — unlock member rates, points, and your digital membership ID.',
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                           color: scheme.onSurfaceVariant,
                         ),
+                  ),
+                  const SizedBox(height: 20),
+                  _MemberBenefitsCard(
+                    fee: _fee,
+                    discountPercent: _discountPercent,
+                    pointsPerBooking: _pointsPerBooking,
+                    pointsPerPeso: _pointsPerPeso,
                   ),
                   const SizedBox(height: 20),
                   _MemberQrPhPaymentCard(
@@ -260,6 +280,138 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
                 ],
               ),
             ),
+    );
+  }
+}
+
+class _MemberBenefitsCard extends StatelessWidget {
+  const _MemberBenefitsCard({
+    required this.fee,
+    required this.discountPercent,
+    required this.pointsPerBooking,
+    required this.pointsPerPeso,
+  });
+
+  final double fee;
+  final double discountPercent;
+  final int pointsPerBooking;
+  final double pointsPerPeso;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final discountLabel = discountPercent > 0
+        ? '${discountPercent.toStringAsFixed(discountPercent % 1 == 0 ? 0 : 1)}% off room bookings'
+        : 'Member booking rates when the platform discount is active';
+    final pointsRate = pointsPerPeso % 1 == 0
+        ? pointsPerPeso.toStringAsFixed(0)
+        : pointsPerPeso.toStringAsFixed(1);
+
+    final benefits = <({IconData icon, String title, String detail})>[
+      (
+        icon: Icons.percent_outlined,
+        title: discountLabel,
+        detail:
+            'Sign in as a member when you book — your discount applies automatically. No membership ID typing needed.',
+      ),
+      (
+        icon: Icons.stars_outlined,
+        title: 'Earn $pointsPerBooking points per successful booking',
+        detail:
+            'Points go to your wallet after each successful member booking ($pointsRate pts = ₱1).',
+      ),
+      (
+        icon: Icons.payments_outlined,
+        title: 'Pay stays with points',
+        detail:
+            'Hotels can scan your QR and redeem points toward your bill; peso value credits the hotel wallet.',
+      ),
+      (
+        icon: Icons.qr_code_2_outlined,
+        title: 'Personal membership QR & SHID',
+        detail:
+            'Show your unique QR or membership ID at the front desk for member rates and points payment.',
+      ),
+      (
+        icon: Icons.travel_explore_outlined,
+        title: 'Member dashboard',
+        detail:
+            'Browse hotels, manage your membership, and keep your QR ready from one place.',
+      ),
+      (
+        icon: Icons.verified_user_outlined,
+        title: 'Active monthly membership',
+        detail:
+            '₱${fee.toStringAsFixed(0)} / month after platform approval of your registration payment.',
+      ),
+    ];
+
+    return Card(
+      elevation: 0,
+      color: scheme.secondaryContainer.withValues(alpha: 0.4),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'What you get as a member',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Benefits use the current platform settings and apply while your membership is active.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    height: 1.35,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            for (final b in benefits)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(b.icon, color: scheme.primary, size: 22),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            b.title,
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            b.detail,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                  height: 1.35,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
