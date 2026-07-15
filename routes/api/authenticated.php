@@ -39,6 +39,7 @@ Route::get('/rooms/available', [RoomController::class, 'available']);
 Route::post('/rooms', [RoomController::class, 'store'])->middleware('role:admin');
 Route::put('/rooms/{room}', [RoomController::class, 'update'])->middleware('role:admin');
 Route::put('/rooms/{room}/status', [RoomController::class, 'updateStatus'])->middleware('role:admin,staff');
+Route::post('/rooms/{room}/assign-cleaning', [RoomController::class, 'assignCleaning'])->middleware('role:admin,staff,frontdesk');
 Route::delete('/rooms/{room}', [RoomController::class, 'destroy'])->middleware('role:admin');
 Route::get('/room-categories', [RoomCategoryController::class, 'index'])->middleware('role:admin,staff');
 Route::post('/room-categories', [RoomCategoryController::class, 'store'])->middleware('role:admin');

@@ -7,6 +7,7 @@ import '../dio_client.dart';
 import '../widgets/app_input.dart';
 import '../widgets/app_scaffold.dart';
 import 'member_dashboard_flow.dart';
+import 'member_subscription_flow.dart';
 
 /// Member sign-in (username + password set during membership application).
 class MemberLoginScreen extends StatefulWidget {
@@ -151,6 +152,19 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Text('Log in'),
+          ),
+          const SizedBox(height: 12),
+          TextButton(
+            onPressed: _busy
+                ? null
+                : () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const MemberRegistrationScreen(),
+                      ),
+                    );
+                  },
+            child: const Text('Sign up / Become a member'),
           ),
         ],
       ),

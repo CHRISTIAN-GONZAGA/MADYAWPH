@@ -1358,6 +1358,7 @@ Route::middleware(['hotel.staff', 'role:admin,staff,frontdesk'])->group(function
     Route::put('/rooms/{room}', [RoomController::class, 'update'])->middleware('role:admin');
     Route::put('/rooms/{room}/status', [RoomController::class, 'updateStatus']);
     Route::post('/rooms/{room}/checkout', [RoomController::class, 'checkout']);
+    Route::post('/rooms/{room}/assign-cleaning', [RoomController::class, 'assignCleaning']);
     Route::delete('/rooms/{room}', [RoomController::class, 'destroy'])->middleware('role:admin');
 });
 

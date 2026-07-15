@@ -41,21 +41,21 @@ class RoomCheckoutService
         $from = $this->normalizedStatus($room);
         $to = strtolower(trim($toStatus));
 
+        // Guest still in the room: only full checkout may clear them (requires paid in full).
+        if ($this->roomIsOccupiedByGuest($room) && $to !== RoomStatus::CHECKED_OUT->value) {
+            throw ValidationException::withMessages([
+                'status' => [
+                    'This room still has a guest inside. Collect full payment and check out before changing status.',
+                ],
+            ]);
+        }
+
         if ($to === RoomStatus::CHECKED_OUT->value) {
             $room = $this->checkoutGuest($room, $actor);
 
             return [
                 'room' => $room,
                 'message' => 'Guest checked out. Room is in maintenance; stay moved to guest history; chat cleared.',
-            ];
-        }
-
-        if ($to === RoomStatus::MAINTENANCE->value && $this->roomHasActiveStay($room)) {
-            $room = $this->finalizeStay($room, $actor);
-
-            return [
-                'room' => $room,
-                'message' => 'Guest cleared and room set to maintenance.',
             ];
         }
 
@@ -419,6 +419,121 @@ class RoomCheckoutService
         return $this->findActiveBooking((string) $room->hotel_id, (string) $room->id) !== null;
     }
 
+    /**
+     * Guest is physically using the room (checked in or guest name still on the tile).
+     */
+    public function roomIsOccupiedByGuest(Room $room): bool
+    {
+        if ($this->normalizedStatus($room) === RoomStatus::CHECKED_IN->value) {
+            return true;
+        }
+
+        return trim((string) ($room->getAttributes()['current_guest_name'] ?? '')) !== '';
+    }
+
+    /**
+     * Create or reuse a cleaning/maintenance task for a room in housekeeping.
+     *
+     * @return array{task: Task, assigned_staff: ?StaffMember, created: bool}
+     */
+    public function assignCleaningToStaff(Room $room, User $actor): array
+    {
+        $status = $this->normalizedStatus($room);
+        if ($status !== RoomStatus::MAINTENANCE->value) {
+            throw ValidationException::withMessages([
+                'status' => ['Assign cleaning only when the room is in maintenance / cleaning.'],
+            ]);
+        }
+
+        $hotelId = (string) $room->hotel_id;
+        $roomNumber = (string) $room->room_number;
+        $existing = Task::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->whereIn('status', ['pending', 'in_progress'])
+            ->where(function ($q) use ($roomNumber) {
+                $q->where('title', 'like', '%'.$roomNumber.'%')
+                    ->orWhere('description', 'like', '%'.$roomNumber.'%');
+            })
+            ->orderBy('created_at')
+            ->first();
+
+        if ($existing !== null) {
+            $staff = filled($existing->assigned_to)
+                ? StaffMember::withoutGlobalScopes()->find((string) $existing->assigned_to)
+                : null;
+            if ($staff === null) {
+                $staff = $this->pickCleaningStaff($hotelId);
+                if ($staff !== null) {
+                    $existing->update(['assigned_to' => (string) $staff->id]);
+                    $existing = $existing->fresh() ?? $existing;
+                }
+            }
+
+            return [
+                'task' => $existing,
+                'assigned_staff' => $staff,
+                'created' => false,
+            ];
+        }
+
+        $staff = $this->pickCleaningStaff($hotelId);
+        if ($staff === null) {
+            throw ValidationException::withMessages([
+                'staff' => ['Add a staff account first so cleaning can be assigned.'],
+            ]);
+        }
+
+        $task = Task::withoutGlobalScopes()->create([
+            'hotel_id' => $hotelId,
+            'title' => "Clean room {$roomNumber}",
+            'description' => 'Auto-assigned housekeeping for this room. Clean and inspect, then set the room to available.',
+            'assigned_to' => (string) $staff->id,
+            'created_by' => (string) $actor->id,
+            'status' => 'pending',
+            'priority' => 'high',
+        ]);
+
+        $this->activityLogService->log(
+            $hotelId,
+            $actor,
+            "Assigned cleaning of room {$roomNumber} to {$staff->name}",
+            ['task_id' => (string) $task->id, 'room_id' => (string) $room->id, 'staff_id' => (string) $staff->id]
+        );
+
+        return [
+            'task' => $task,
+            'assigned_staff' => $staff,
+            'created' => true,
+        ];
+    }
+
+    private function pickCleaningStaff(string $hotelId): ?StaffMember
+    {
+        $staff = StaffMember::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->orderBy('created_at')
+            ->get();
+
+        if ($staff->isEmpty()) {
+            return null;
+        }
+
+        $preferred = $staff->first(function (StaffMember $member) {
+            $role = strtolower(trim((string) (
+                $member->role?->value
+                ?? $member->getAttributes()['role']
+                ?? ''
+            )));
+
+            return str_contains($role, 'janitor')
+                || str_contains($role, 'clean')
+                || str_contains($role, 'housekeep')
+                || str_contains($role, 'maintenance');
+        });
+
+        return $preferred ?? $staff->first();
+    }
+
     public function findActiveBooking(string $hotelId, string $roomId): ?Booking
     {
         return Booking::withoutGlobalScopes()
@@ -672,10 +787,7 @@ class RoomCheckoutService
 
     private function createAutoMaintenanceTask(User $actor, Room $room): void
     {
-        $staff = StaffMember::query()
-            ->where('hotel_id', (string) $room->hotel_id)
-            ->orderBy('created_at')
-            ->first();
+        $staff = $this->pickCleaningStaff((string) $room->hotel_id);
 
         $task = Task::withoutGlobalScopes()->create([
             'hotel_id' => (string) $room->hotel_id,

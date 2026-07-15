@@ -44,6 +44,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   bool _busy = false;
   bool _changingStatus = false;
   bool _checkingOut = false;
+  bool _assigningCleaning = false;
   bool _issuingRefund = false;
   bool _recordingPartialPayment = false;
   bool _scanningMember = false;
@@ -738,9 +739,25 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
           _asMap(_data?['bill_summary'])?['balance_due'] ??
           _data?['booking_charges_total'],
     );
+    final guestName = (room?['current_guest_name'] ?? '').toString().trim();
+    final occupied = current == 'checked_in' || guestName.isNotEmpty;
+
+    if (occupied) {
+      if (!mounted) return;
+      final unpaid = !paid || balanceDue > 0.009;
+      showAppMessage(
+        context,
+        unpaid
+            ? 'A guest is still in this room with an unpaid balance. Collect full payment, then use Check out guest.'
+            : 'A guest is still in this room. Use Check out guest to clear the stay — status cannot be changed manually while occupied.',
+        isError: true,
+      );
+      return;
+    }
+
     final hasStay = current == 'checked_in' ||
         current == 'booked' ||
-        (room?['current_guest_name'] ?? '').toString().trim().isNotEmpty;
+        guestName.isNotEmpty;
     final showCheckedOut =
         hasStay && paid && balanceDue <= 0.009 && _canEditGuestStay;
     String status = current;
@@ -780,9 +797,13 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       ),
     );
     if (chosen == null) return;
-    if (chosen == 'checked_out' && hasStay && !paid) {
+    if (chosen == 'checked_out' && hasStay && (!paid || balanceDue > 0.009)) {
       if (!mounted) return;
-      showAppMessage(context, 'Mark payment as paid before checking out this guest.');
+      showAppMessage(
+        context,
+        'Collect the full remaining balance before checking out this guest.',
+        isError: true,
+      );
       return;
     }
     if (_changingStatus) return;
@@ -804,10 +825,10 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       if (chosen == 'checked_out') {
         setState(_clearActiveStayFromState);
         final receipt = res.data?['receipt'] as Map<String, dynamic>?;
-        if (context.mounted) {
-          await showStayReceiptDialog(context, receipt: receipt);
-        }
+        if (!mounted) return;
+        await showStayReceiptDialog(context, receipt: receipt);
       }
+      if (!mounted) return;
       showAppMessage(context, msg);
       await _load();
     } on DioException catch (e) {
@@ -815,6 +836,28 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _changingStatus = false);
+    }
+  }
+
+  Future<void> _assignCleaning() async {
+    if (_assigningCleaning) return;
+    final room = _asMap(_data?['room']);
+    final roomId = (room?['id'] ?? _roomId).toString();
+    setState(() => _assigningCleaning = true);
+    try {
+      final res = await portalDio().post<Map<String, dynamic>>(
+        '/rooms/$roomId/assign-cleaning',
+      );
+      if (!mounted) return;
+      showAppMessage(
+        context,
+        (res.data?['message'] ?? 'Cleaning assigned.').toString(),
+      );
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    } finally {
+      if (mounted) setState(() => _assigningCleaning = false);
     }
   }
 
@@ -1360,6 +1403,9 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     final roomNo = (room['room_number'] ?? '').toString();
     final status = AdminDashboardModels.statusOf(room);
     final guest = (room['current_guest_name'] ?? booking?['guest_name'] ?? '').toString();
+    final guestOnRoom = (room['current_guest_name'] ?? '').toString().trim();
+    final occupied = status == 'checked_in' || guestOnRoom.isNotEmpty;
+    final isMaintenance = status == 'maintenance';
     final pwd = (room['room_access_password'] ?? '').toString();
     const roomCardColor = Color(0xFFF3EDE3);
     final accent = Theme.of(context).colorScheme.primary;
@@ -1635,21 +1681,33 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
               ),
             ),
           ],
+          if (occupied) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Status cannot be changed while a guest is in this room. '
+              'Collect full payment, then check out.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    height: 1.35,
+                  ),
+            ),
+          ],
           const SizedBox(height: 10),
           Row(
             children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _changingStatus ? null : _changeStatus,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: accent,
-                    side: BorderSide(color: accent),
+              if (!occupied)
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _changingStatus ? null : _changeStatus,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: accent,
+                      side: BorderSide(color: accent),
+                    ),
+                    icon: const Icon(Icons.toggle_on_outlined),
+                    label: const Text('Change status'),
                   ),
-                  icon: const Icon(Icons.toggle_on_outlined),
-                  label: const Text('Change status'),
                 ),
-              ),
-              const SizedBox(width: 10),
+              if (!occupied) const SizedBox(width: 10),
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: _transferRoom,
@@ -1664,12 +1722,33 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
             ],
           ),
         ] else ...[
+          if (isMaintenance) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _assigningCleaning ? null : _assignCleaning,
+                icon: _assigningCleaning
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.cleaning_services_outlined),
+                label: Text(
+                  _assigningCleaning
+                      ? 'Assigning…'
+                      : 'Assign cleaning to staff',
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: _changingStatus ? null : _changeStatus,
+                  onPressed: (occupied || _changingStatus) ? null : _changeStatus,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: accent,
                     side: BorderSide(color: accent),

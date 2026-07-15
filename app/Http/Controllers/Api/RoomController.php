@@ -150,6 +150,23 @@ class RoomController extends Controller
             $this->assertValidFloorForCategory($payload, $category);
         }
 
+        if (array_key_exists('status', $payload)) {
+            $newStatus = strtolower(trim((string) $payload['status']));
+            $currentStatus = strtolower(trim((string) (
+                $room->status?->value ?? $room->getAttributes()['status'] ?? ''
+            )));
+            if ($newStatus !== $currentStatus && $this->roomCheckoutService->roomIsOccupiedByGuest($room)) {
+                return response()->json([
+                    'message' => 'This room still has a guest inside. Collect full payment and check out before changing status.',
+                    'errors' => [
+                        'status' => [
+                            'This room still has a guest inside. Collect full payment and check out before changing status.',
+                        ],
+                    ],
+                ], 422);
+            }
+        }
+
         $room->update($payload);
 
         return response()->json($this->serializeRoom($room->fresh()));
@@ -219,6 +236,37 @@ class RoomController extends Controller
             'receipt_url' => $receipt['receipt_url'] ?? null,
             'receipt' => $receipt,
             'message' => 'Guest checked out. Room is in maintenance; stay moved to guest history; chat cleared.',
+        ]);
+    }
+
+    public function assignCleaning(Request $request, Room $room)
+    {
+        $result = $this->roomCheckoutService->assignCleaningToStaff($room, $request->user());
+        $staff = $result['assigned_staff'];
+
+        return response()->json([
+            'ok' => true,
+            'created' => $result['created'],
+            'task' => [
+                'id' => (string) $result['task']->id,
+                'title' => (string) $result['task']->title,
+                'status' => (string) ($result['task']->status?->value ?? $result['task']->status ?? ''),
+                'assigned_to' => (string) ($result['task']->assigned_to ?? ''),
+            ],
+            'assigned_staff' => $staff ? [
+                'id' => (string) $staff->id,
+                'name' => (string) $staff->name,
+                'role' => (string) (
+                    $staff->role?->value
+                    ?? $staff->getAttributes()['role']
+                    ?? ''
+                ),
+            ] : null,
+            'message' => $staff
+                ? ($result['created']
+                    ? "Cleaning assigned to {$staff->name}."
+                    : "Cleaning already assigned to {$staff->name}.")
+                : 'Cleaning task ready, but no staff account was found.',
         ]);
     }
 
