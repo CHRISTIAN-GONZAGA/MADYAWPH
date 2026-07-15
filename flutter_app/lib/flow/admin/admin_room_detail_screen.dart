@@ -843,15 +843,102 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     if (_assigningCleaning) return;
     final room = _asMap(_data?['room']);
     final roomId = (room?['id'] ?? _roomId).toString();
+    final roomNo = (room?['room_number'] ?? '').toString();
+
+    List<Map<String, dynamic>> staffRows = const [];
+    try {
+      final staffRes = await portalDio().get<Map<String, dynamic>>('/staff');
+      final staffData = staffRes.data?['data'];
+      if (staffData is List) {
+        staffRows = staffData
+            .whereType<Map>()
+            .map((m) => Map<String, dynamic>.from(m))
+            .toList();
+      }
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+      return;
+    }
+
+    if (staffRows.isEmpty) {
+      if (!mounted) return;
+      showAppMessage(
+        context,
+        'Add staff accounts in Settings → Staff management first.',
+        isError: true,
+      );
+      return;
+    }
+
+    String selectedId = (staffRows.first['id'] ?? '').toString();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: Text('Assign room ${roomNo.isEmpty ? '' : roomNo}'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Choose who will clean this room. The task appears on their staff dashboard.',
+                  style: Theme.of(ctx).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: selectedId.isEmpty ? null : selectedId,
+                  decoration: const InputDecoration(
+                    labelText: 'Staff member',
+                    border: OutlineInputBorder(),
+                  ),
+                  isExpanded: true,
+                  items: staffRows.map((s) {
+                    final id = (s['id'] ?? '').toString();
+                    final name = (s['name'] ?? 'Staff').toString();
+                    final role = (s['role'] ?? '').toString();
+                    final roleLabel = role.isEmpty ? '' : ' · $role';
+                    return DropdownMenuItem(
+                      value: id,
+                      child: Text('$name$roleLabel'),
+                    );
+                  }).toList(),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setLocal(() => selectedId = v);
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: selectedId.isEmpty
+                  ? null
+                  : () => Navigator.pop(ctx, true),
+              child: const Text('Assign'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || selectedId.isEmpty) return;
+
     setState(() => _assigningCleaning = true);
     try {
       final res = await portalDio().post<Map<String, dynamic>>(
         '/rooms/$roomId/assign-cleaning',
+        data: {'assigned_to': selectedId},
       );
       if (!mounted) return;
       showAppMessage(
         context,
-        (res.data?['message'] ?? 'Cleaning assigned.').toString(),
+        (res.data?['message'] ?? 'Maintenance assigned.').toString(),
       );
     } on DioException catch (e) {
       if (!mounted) return;
@@ -1738,7 +1825,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                 label: Text(
                   _assigningCleaning
                       ? 'Assigning…'
-                      : 'Assign cleaning to staff',
+                      : 'Assign to staff member',
                 ),
               ),
             ),

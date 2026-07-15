@@ -115,6 +115,67 @@ class RoomOccupiedStatusAndCleaningTest extends TestCase
         $this->assertSame((string) $staff->id, (string) $task->assigned_to);
     }
 
+    public function test_assign_cleaning_to_specific_staff_member(): void
+    {
+        $hotel = Hotel::create(['name' => 'Pick Staff Hotel', 'location' => 'Loc']);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'pick_admin',
+            'email' => 'pick-admin@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '308',
+            'room_type' => 'Deluxe',
+            'price_per_night' => 1800,
+            'status' => RoomStatus::MAINTENANCE->value,
+        ]);
+
+        $staffUserA = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'staff_a',
+            'email' => 'staff-a@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::STAFF,
+        ]);
+        $staffUserB = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'staff_b',
+            'email' => 'staff-b@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::STAFF,
+        ]);
+        $staffA = StaffMember::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'user_id' => (string) $staffUserA->id,
+            'name' => 'Housekeeper Alpha',
+            'role' => 'janitor',
+        ]);
+        StaffMember::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'user_id' => (string) $staffUserB->id,
+            'name' => 'Housekeeper Beta',
+            'role' => 'receptionist',
+        ]);
+
+        Sanctum::actingAs($admin);
+
+        $this->postJson('/api/v1/rooms/'.$room->id.'/assign-cleaning', [
+            'assigned_to' => (string) $staffA->id,
+        ])
+            ->assertOk()
+            ->assertJsonPath('assigned_staff.name', 'Housekeeper Alpha');
+
+        $task = Task::withoutGlobalScopes()
+            ->where('hotel_id', (string) $hotel->id)
+            ->where('title', 'like', '%308%')
+            ->first();
+        $this->assertNotNull($task);
+        $this->assertSame((string) $staffA->id, (string) $task->assigned_to);
+    }
+
     public function test_checkout_still_blocked_when_balance_remains(): void
     {
         $hotel = Hotel::create(['name' => 'Unpaid Hotel', 'location' => 'Loc']);

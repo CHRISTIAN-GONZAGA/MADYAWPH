@@ -434,9 +434,9 @@ class RoomCheckoutService
     /**
      * Create or reuse a cleaning/maintenance task for a room in housekeeping.
      *
-     * @return array{task: Task, assigned_staff: ?StaffMember, created: bool}
+     * @return array{task: Task, assigned_staff: StaffMember, created: bool}
      */
-    public function assignCleaningToStaff(Room $room, User $actor): array
+    public function assignCleaningToStaff(Room $room, User $actor, ?string $staffMemberId = null): array
     {
         $status = $this->normalizedStatus($room);
         if ($status !== RoomStatus::MAINTENANCE->value) {
@@ -447,6 +447,9 @@ class RoomCheckoutService
 
         $hotelId = (string) $room->hotel_id;
         $roomNumber = (string) $room->room_number;
+
+        $staff = $this->resolveCleaningStaff($hotelId, $staffMemberId);
+
         $existing = Task::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
             ->whereIn('status', ['pending', 'in_progress'])
@@ -458,16 +461,19 @@ class RoomCheckoutService
             ->first();
 
         if ($existing !== null) {
-            $staff = filled($existing->assigned_to)
-                ? StaffMember::withoutGlobalScopes()->find((string) $existing->assigned_to)
-                : null;
-            if ($staff === null) {
-                $staff = $this->pickCleaningStaff($hotelId);
-                if ($staff !== null) {
-                    $existing->update(['assigned_to' => (string) $staff->id]);
-                    $existing = $existing->fresh() ?? $existing;
-                }
-            }
+            $existing->update(['assigned_to' => (string) $staff->id]);
+            $existing = $existing->fresh() ?? $existing;
+
+            $this->activityLogService->log(
+                $hotelId,
+                $actor,
+                "Reassigned cleaning of room {$roomNumber} to {$staff->name}",
+                [
+                    'task_id' => (string) $existing->id,
+                    'room_id' => (string) $room->id,
+                    'staff_id' => (string) $staff->id,
+                ]
+            );
 
             return [
                 'task' => $existing,
@@ -476,17 +482,10 @@ class RoomCheckoutService
             ];
         }
 
-        $staff = $this->pickCleaningStaff($hotelId);
-        if ($staff === null) {
-            throw ValidationException::withMessages([
-                'staff' => ['Add a staff account first so cleaning can be assigned.'],
-            ]);
-        }
-
         $task = Task::withoutGlobalScopes()->create([
             'hotel_id' => $hotelId,
             'title' => "Clean room {$roomNumber}",
-            'description' => 'Auto-assigned housekeeping for this room. Clean and inspect, then set the room to available.',
+            'description' => 'Housekeeping task for this room. Clean and inspect, then set the room to available.',
             'assigned_to' => (string) $staff->id,
             'created_by' => (string) $actor->id,
             'status' => 'pending',
@@ -505,6 +504,33 @@ class RoomCheckoutService
             'assigned_staff' => $staff,
             'created' => true,
         ];
+    }
+
+    private function resolveCleaningStaff(string $hotelId, ?string $staffMemberId): StaffMember
+    {
+        $staffMemberId = trim((string) ($staffMemberId ?? ''));
+        if ($staffMemberId !== '') {
+            $staff = StaffMember::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
+                ->where('id', $staffMemberId)
+                ->first();
+            if ($staff === null) {
+                throw ValidationException::withMessages([
+                    'assigned_to' => ['Choose a staff member from your hotel.'],
+                ]);
+            }
+
+            return $staff;
+        }
+
+        $staff = $this->pickCleaningStaff($hotelId);
+        if ($staff === null) {
+            throw ValidationException::withMessages([
+                'assigned_to' => ['Add a staff account first, or choose who should handle this room.'],
+            ]);
+        }
+
+        return $staff;
     }
 
     private function pickCleaningStaff(string $hotelId): ?StaffMember

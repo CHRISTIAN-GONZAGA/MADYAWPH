@@ -241,7 +241,15 @@ class RoomController extends Controller
 
     public function assignCleaning(Request $request, Room $room)
     {
-        $result = $this->roomCheckoutService->assignCleaningToStaff($room, $request->user());
+        $validated = $request->validate([
+            'assigned_to' => ['nullable', 'string', 'max:64'],
+        ]);
+
+        $result = $this->roomCheckoutService->assignCleaningToStaff(
+            $room,
+            $request->user(),
+            $validated['assigned_to'] ?? null,
+        );
         $staff = $result['assigned_staff'];
 
         return response()->json([
@@ -253,7 +261,7 @@ class RoomController extends Controller
                 'status' => (string) ($result['task']->status?->value ?? $result['task']->status ?? ''),
                 'assigned_to' => (string) ($result['task']->assigned_to ?? ''),
             ],
-            'assigned_staff' => $staff ? [
+            'assigned_staff' => [
                 'id' => (string) $staff->id,
                 'name' => (string) $staff->name,
                 'role' => (string) (
@@ -261,12 +269,10 @@ class RoomController extends Controller
                     ?? $staff->getAttributes()['role']
                     ?? ''
                 ),
-            ] : null,
-            'message' => $staff
-                ? ($result['created']
-                    ? "Cleaning assigned to {$staff->name}."
-                    : "Cleaning already assigned to {$staff->name}.")
-                : 'Cleaning task ready, but no staff account was found.',
+            ],
+            'message' => $result['created']
+                ? "Maintenance assigned to {$staff->name}."
+                : "Maintenance reassigned to {$staff->name}.",
         ]);
     }
 
