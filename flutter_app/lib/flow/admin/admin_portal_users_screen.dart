@@ -88,111 +88,154 @@ class _AdminPortalUsersScreenState extends State<AdminPortalUsersScreen> {
     final emailCtrl = TextEditingController();
     final passCtrl = TextEditingController();
     final confirmCtrl = TextEditingController();
-    var role = widget.canManageAdmins ? 'frontdesk' : 'frontdesk';
+    var role = 'frontdesk';
+    var submitting = false;
+    var created = false;
 
-    final ok = await showDialog<bool>(
+    await showDialog<void>(
       context: context,
+      barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          title: Text(
-            widget.canManageAdmins
-                ? 'Add portal account'
-                : 'Add front desk account',
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (widget.canManageAdmins) ...[
-                  DropdownButtonFormField<String>(
-                    value: role,
+        builder: (ctx, setLocal) {
+          Future<void> submit() async {
+            if (submitting) return;
+            String? validationError;
+            if (nameCtrl.text.trim().isEmpty) {
+              validationError = 'Username is required.';
+            } else if (passCtrl.text.isEmpty) {
+              validationError = 'Password is required.';
+            } else if (passCtrl.text != confirmCtrl.text) {
+              validationError = 'Passwords do not match.';
+            }
+            if (validationError != null) {
+              await showAppMessage(
+                ctx,
+                validationError,
+                isError: true,
+                confirmLabel: 'Try again',
+              );
+              return;
+            }
+            setLocal(() => submitting = true);
+            try {
+              await portalDio().post('/admin/portal-users', data: {
+                'name': nameCtrl.text.trim(),
+                if (emailCtrl.text.trim().isNotEmpty)
+                  'email': emailCtrl.text.trim(),
+                'password': passCtrl.text,
+                'role': role,
+              });
+              created = true;
+              if (ctx.mounted) Navigator.pop(ctx);
+            } on DioException catch (e) {
+              if (!ctx.mounted) return;
+              setLocal(() => submitting = false);
+              // Form dialog stays open underneath — "Try again" returns to it
+              // with all inputs intact.
+              await showAppMessage(
+                ctx,
+                dioErrorMessage(e),
+                isError: true,
+                confirmLabel: 'Try again',
+              );
+            }
+          }
+
+          return AlertDialog(
+            title: Text(
+              widget.canManageAdmins
+                  ? 'Add portal account'
+                  : 'Add front desk account',
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (widget.canManageAdmins) ...[
+                    DropdownButtonFormField<String>(
+                      value: role,
+                      decoration: const InputDecoration(
+                        labelText: 'Account type',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'frontdesk',
+                          child: Text('Front desk'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'admin',
+                          child: Text('Administrator'),
+                        ),
+                      ],
+                      onChanged: submitting
+                          ? null
+                          : (v) {
+                              if (v != null) setLocal(() => role = v);
+                            },
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  TextField(
+                    controller: nameCtrl,
+                    enabled: !submitting,
                     decoration: const InputDecoration(
-                      labelText: 'Account type',
+                      labelText: 'Username *',
                       border: OutlineInputBorder(),
                     ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'frontdesk',
-                        child: Text('Front desk'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'admin',
-                        child: Text('Administrator'),
-                      ),
-                    ],
-                    onChanged: (v) {
-                      if (v != null) setLocal(() => role = v);
-                    },
                   ),
                   const SizedBox(height: 10),
+                  TextField(
+                    controller: emailCtrl,
+                    enabled: !submitting,
+                    decoration: const InputDecoration(
+                      labelText: 'Email (optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  AppInput(
+                    controller: passCtrl,
+                    label: 'Password *',
+                    obscureText: true,
+                  ),
+                  const SizedBox(height: 10),
+                  AppInput(
+                    controller: confirmCtrl,
+                    label: 'Confirm password *',
+                    obscureText: true,
+                  ),
                 ],
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Username *',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: emailCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Email (optional)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                AppInput(
-                  controller: passCtrl,
-                  label: 'Password *',
-                  obscureText: true,
-                ),
-                const SizedBox(height: 10),
-                AppInput(
-                  controller: confirmCtrl,
-                  label: 'Confirm password *',
-                  obscureText: true,
-                ),
-              ],
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Create'),
-            ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: submitting ? null : () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: submitting ? null : submit,
+                child: submitting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Create'),
+              ),
+            ],
+          );
+        },
       ),
     );
-    if (ok != true) return;
-    if (passCtrl.text != confirmCtrl.text) {
-      if (!mounted) return;
-      showAppMessage(context, 'Passwords do not match.');
-      return;
-    }
 
-    setState(() => _busy = true);
-    try {
-      await portalDio().post('/admin/portal-users', data: {
-        'name': nameCtrl.text.trim(),
-        if (emailCtrl.text.trim().isNotEmpty) 'email': emailCtrl.text.trim(),
-        'password': passCtrl.text,
-        'role': role,
-      });
-      if (!mounted) return;
-      showAppMessage(context, 'Account created.');
-      await _load();
-    } on DioException catch (e) {
-      if (!mounted) return;
-      showAppMessage(context, dioErrorMessage(e), isError: true);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    nameCtrl.dispose();
+    emailCtrl.dispose();
+    passCtrl.dispose();
+    confirmCtrl.dispose();
+    if (!created || !mounted) return;
+    showAppMessage(context, 'Account created.');
+    await _load();
   }
 
   Future<void> _deleteUser(Map<String, dynamic> user) async {
