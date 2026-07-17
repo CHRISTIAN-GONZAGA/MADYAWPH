@@ -439,10 +439,14 @@ class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
       padding: const EdgeInsets.all(12),
       itemCount: _messages.length,
       itemBuilder: (context, i) {
-        final m = _messages[i] as Map<String, dynamic>;
-        final role = (m['sender_role'] ?? '').toString();
-        final isAdmin = role == 'admin' || role == 'super_admin';
-        return ChatMessageBubble.fromMap(m, isMine: isAdmin);
+        return ChatMessageBubble.listItem(
+          messages: _messages,
+          index: i,
+          isMineOf: (m) {
+            final role = (m['sender_role'] ?? '').toString();
+            return role == 'admin' || role == 'super_admin';
+          },
+        );
       },
     );
   }

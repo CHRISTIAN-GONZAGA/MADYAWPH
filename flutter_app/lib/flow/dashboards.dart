@@ -1816,9 +1816,11 @@ class _StaffAdminMessagesScreenState extends State<StaffAdminMessagesScreen> {
       padding: const EdgeInsets.all(12),
       itemCount: _messages.length,
       itemBuilder: (context, i) {
-        final m = _messages[i] as Map<String, dynamic>;
-        final role = (m['sender_role'] ?? '').toString();
-        return ChatMessageBubble.fromMap(m, isMine: role == 'staff');
+        return ChatMessageBubble.listItem(
+          messages: _messages,
+          index: i,
+          isMineOf: (m) => (m['sender_role'] ?? '').toString() == 'staff',
+        );
       },
     );
   }
@@ -2617,14 +2619,10 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
                                   horizontal: 12, vertical: 10),
                               itemCount: _chatMessages.length,
                               itemBuilder: (context, i) {
-                                final raw = _chatMessages[i];
-                                final m = raw is Map<String, dynamic>
-                                    ? raw
-                                    : <String, dynamic>{};
-                                final guestSide = _isGuestMessage(m);
-                                return ChatMessageBubble.fromMap(
-                                  m,
-                                  isMine: guestSide,
+                                return ChatMessageBubble.listItem(
+                                  messages: _chatMessages,
+                                  index: i,
+                                  isMineOf: _isGuestMessage,
                                 );
                               },
                             ),

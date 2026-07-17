@@ -191,7 +191,11 @@ class NetworkMediaImage extends StatelessWidget {
 }
 
 /// Renders chat text plus optional image attachment from API payload.
-class ChatMessageBubble extends StatelessWidget {
+///
+/// Messenger-style: my messages are primary-colored on the right, others are
+/// grey on the left. Consecutive messages from the same side are visually
+/// grouped, and tapping a bubble reveals its exact send time.
+class ChatMessageBubble extends StatefulWidget {
   const ChatMessageBubble({
     super.key,
     required this.message,
@@ -201,6 +205,8 @@ class ChatMessageBubble extends StatelessWidget {
     this.showTranslation = false,
     this.detectedLang,
     this.sentAt,
+    this.isFirstInGroup = true,
+    this.isLastInGroup = true,
   });
 
   final String message;
@@ -210,10 +216,14 @@ class ChatMessageBubble extends StatelessWidget {
   final bool showTranslation;
   final String? detectedLang;
   final DateTime? sentAt;
+  final bool isFirstInGroup;
+  final bool isLastInGroup;
 
   factory ChatMessageBubble.fromMap(
     Map<String, dynamic> m, {
     required bool isMine,
+    bool isFirstInGroup = true,
+    bool isLastInGroup = true,
   }) {
     final url = (m['attachment_url'] ?? '').toString();
     final display = (m['display_message'] ?? m['message'] ?? '').toString();
@@ -227,11 +237,13 @@ class ChatMessageBubble extends StatelessWidget {
       originalMessage: show ? original : null,
       showTranslation: show,
       detectedLang: (m['detected_lang'] ?? '').toString(),
-      sentAt: _parseSentAt(m),
+      sentAt: sentAtOf(m),
+      isFirstInGroup: isFirstInGroup,
+      isLastInGroup: isLastInGroup,
     );
   }
 
-  static DateTime? _parseSentAt(Map<String, dynamic> m) {
+  static DateTime? sentAtOf(Map<String, dynamic> m) {
     for (final key in ['sent_at', 'created_at', 'latest_sent_at']) {
       final raw = m[key];
       if (raw == null) continue;
@@ -241,104 +253,296 @@ class ChatMessageBubble extends StatelessWidget {
     return null;
   }
 
+  static String _time12(DateTime local) {
+    final h24 = local.hour;
+    final h = h24 % 12 == 0 ? 12 : h24 % 12;
+    final mm = local.minute.toString().padLeft(2, '0');
+    final ampm = h24 < 12 ? 'AM' : 'PM';
+    return '$h:$mm $ampm';
+  }
+
+  static const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  static const _months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  /// Short label used in thread lists (e.g. "9:41 PM", "Yesterday 9:41 PM").
   static String formatTimestamp(DateTime at) {
     final local = at.toLocal();
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final day = DateTime(local.year, local.month, local.day);
-    final hh = local.hour.toString().padLeft(2, '0');
-    final mm = local.minute.toString().padLeft(2, '0');
-    final time = '$hh:$mm';
+    final time = _time12(local);
     if (day == today) return time;
     final yesterday = today.subtract(const Duration(days: 1));
     if (day == yesterday) return 'Yesterday $time';
-    final mon = local.month.toString().padLeft(2, '0');
-    final dd = local.day.toString().padLeft(2, '0');
-    if (local.year == now.year) return '$mon/$dd $time';
-    return '$mon/$dd/${local.year} $time';
+    if (local.year == now.year) {
+      return '${_months[local.month - 1]} ${local.day} $time';
+    }
+    return '${_months[local.month - 1]} ${local.day}, ${local.year} $time';
+  }
+
+  /// Messenger-style centered divider label (e.g. "Wed at 9:41 AM").
+  static String formatDividerLabel(DateTime at) {
+    final local = at.toLocal();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(local.year, local.month, local.day);
+    final time = _time12(local);
+    if (day == today) return time;
+    final yesterday = today.subtract(const Duration(days: 1));
+    if (day == yesterday) return 'Yesterday at $time';
+    if (today.difference(day).inDays < 7) {
+      return '${_weekdays[local.weekday - 1]} at $time';
+    }
+    if (local.year == now.year) {
+      return '${_months[local.month - 1]} ${local.day} at $time';
+    }
+    return '${_months[local.month - 1]} ${local.day}, ${local.year} at $time';
+  }
+
+  /// A centered time divider is shown before the first message and whenever
+  /// there is a gap of 20+ minutes between messages (like Messenger).
+  static bool shouldShowDivider(DateTime? previous, DateTime? current) {
+    if (current == null) return false;
+    if (previous == null) return true;
+    return current.difference(previous).abs() >= const Duration(minutes: 20);
+  }
+
+  /// Builds one thread item (divider + bubble) for a chat ListView.
+  ///
+  /// Handles Messenger-style grouping: consecutive messages from the same
+  /// side sent close together share tight spacing and flattened corners.
+  static Widget listItem({
+    required List<dynamic> messages,
+    required int index,
+    required bool Function(Map<String, dynamic> message) isMineOf,
+  }) {
+    Map<String, dynamic> mapAt(int i) {
+      final raw = messages[i];
+      if (raw is Map<String, dynamic>) return raw;
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+      return const <String, dynamic>{};
+    }
+
+    bool sameGroup(int a, int b) {
+      final ma = mapAt(a);
+      final mb = mapAt(b);
+      if (isMineOf(ma) != isMineOf(mb)) return false;
+      final ta = sentAtOf(ma);
+      final tb = sentAtOf(mb);
+      if (ta == null || tb == null) return true;
+      return tb.difference(ta).abs() <= const Duration(minutes: 3);
+    }
+
+    final m = mapAt(index);
+    final at = sentAtOf(m);
+    final prevAt = index > 0 ? sentAtOf(mapAt(index - 1)) : null;
+    final showDivider =
+        index == 0 ? at != null : shouldShowDivider(prevAt, at);
+
+    final isFirst = index == 0 || showDivider || !sameGroup(index - 1, index);
+    var isLast = index == messages.length - 1;
+    if (!isLast) {
+      final nextAt = sentAtOf(mapAt(index + 1));
+      isLast = shouldShowDivider(at, nextAt) || !sameGroup(index, index + 1);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (showDivider && at != null) ChatTimestampDivider(at: at),
+        Padding(
+          padding: EdgeInsets.only(
+            top: isFirst && !showDivider && index != 0 ? 10 : 0,
+          ),
+          child: ChatMessageBubble.fromMap(
+            m,
+            isMine: isMineOf(m),
+            isFirstInGroup: isFirst,
+            isLastInGroup: isLast,
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  State<ChatMessageBubble> createState() => _ChatMessageBubbleState();
+}
+
+class _ChatMessageBubbleState extends State<ChatMessageBubble> {
+  bool _showTime = false;
+
+  BorderRadius _bubbleRadius() {
+    const full = Radius.circular(18);
+    const flat = Radius.circular(4);
+    if (widget.isMine) {
+      return BorderRadius.only(
+        topLeft: full,
+        bottomLeft: full,
+        topRight: widget.isFirstInGroup ? full : flat,
+        bottomRight: widget.isLastInGroup ? full : flat,
+      );
+    }
+    return BorderRadius.only(
+      topRight: full,
+      bottomRight: full,
+      topLeft: widget.isFirstInGroup ? full : flat,
+      bottomLeft: widget.isLastInGroup ? full : flat,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final bubbleColor = isMine
-        ? scheme.primaryContainer
-        : scheme.surfaceContainerHighest;
+    final mine = widget.isMine;
+    final bubbleColor = mine ? scheme.primary : scheme.surfaceContainerHighest;
+    final fg = mine ? scheme.onPrimary : scheme.onSurface;
+    final fgMuted = mine
+        ? scheme.onPrimary.withValues(alpha: 0.8)
+        : scheme.onSurfaceVariant;
+    final maxWidth =
+        (MediaQuery.sizeOf(context).width * 0.78).clamp(200.0, 340.0);
+    final hasAttachment =
+        widget.attachmentUrl != null && widget.attachmentUrl!.isNotEmpty;
 
-    return Align(
-      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.all(12),
-        constraints: const BoxConstraints(maxWidth: 320),
-        decoration: BoxDecoration(
-          color: bubbleColor,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (attachmentUrl != null && attachmentUrl!.isNotEmpty) ...[
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Image.network(
-                  attachmentUrl!,
-                  width: 260,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (_, child, progress) {
-                    if (progress == null) return child;
-                    return SizedBox(
-                      width: 260,
-                      height: 140,
-                      child: Center(
-                        child: CircularProgressIndicator(
-                          value: progress.expectedTotalBytes != null
-                              ? progress.cumulativeBytesLoaded /
-                                  progress.expectedTotalBytes!
-                              : null,
+    return Column(
+      crossAxisAlignment:
+          mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        Align(
+          alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+          child: GestureDetector(
+            onTap: widget.sentAt == null
+                ? null
+                : () => setState(() => _showTime = !_showTime),
+            child: Container(
+              margin: const EdgeInsets.symmetric(vertical: 1),
+              padding: EdgeInsets.symmetric(
+                horizontal: hasAttachment ? 6 : 14,
+                vertical: hasAttachment ? 6 : 9,
+              ),
+              constraints: BoxConstraints(maxWidth: maxWidth),
+              decoration: BoxDecoration(
+                color: bubbleColor,
+                borderRadius: _bubbleRadius(),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (hasAttachment) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(13),
+                      child: Image.network(
+                        widget.attachmentUrl!,
+                        width: 260,
+                        fit: BoxFit.cover,
+                        loadingBuilder: (_, child, progress) {
+                          if (progress == null) return child;
+                          return SizedBox(
+                            width: 260,
+                            height: 140,
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                value: progress.expectedTotalBytes != null
+                                    ? progress.cumulativeBytesLoaded /
+                                        progress.expectedTotalBytes!
+                                    : null,
+                              ),
+                            ),
+                          );
+                        },
+                        errorBuilder: (_, __, ___) => const SizedBox(
+                          width: 260,
+                          height: 80,
+                          child:
+                              Center(child: Icon(Icons.broken_image_outlined)),
                         ),
                       ),
-                    );
-                  },
-                  errorBuilder: (_, __, ___) => const SizedBox(
-                    width: 260,
-                    height: 80,
-                    child: Center(child: Icon(Icons.broken_image_outlined)),
-                  ),
-                ),
-              ),
-              if (message.isNotEmpty) const SizedBox(height: 8),
-            ],
-            if (message.isNotEmpty)
-              Text(message, style: Theme.of(context).textTheme.bodyMedium),
-            if (showTranslation &&
-                originalMessage != null &&
-                originalMessage!.isNotEmpty &&
-                originalMessage != message) ...[
-              const SizedBox(height: 6),
-              Text(
-                '${AppStrings.t(appLocaleNotifier.value, 'translated_from')}: $originalMessage',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontStyle: FontStyle.italic,
-                      color: scheme.onSurfaceVariant,
                     ),
-              ),
-            ],
-            if (sentAt != null) ...[
-              const SizedBox(height: 6),
-              Align(
-                alignment:
-                    isMine ? Alignment.centerRight : Alignment.centerLeft,
-                child: Text(
-                  formatTimestamp(sentAt!),
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w500,
+                    if (widget.message.isNotEmpty) const SizedBox(height: 6),
+                  ],
+                  if (widget.message.isNotEmpty)
+                    Padding(
+                      padding: hasAttachment
+                          ? const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3)
+                          : EdgeInsets.zero,
+                      child: Text(
+                        widget.message,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodyMedium
+                            ?.copyWith(color: fg, height: 1.25),
                       ),
-                ),
+                    ),
+                  if (widget.showTranslation &&
+                      widget.originalMessage != null &&
+                      widget.originalMessage!.isNotEmpty &&
+                      widget.originalMessage != widget.message) ...[
+                    const SizedBox(height: 4),
+                    Padding(
+                      padding: hasAttachment
+                          ? const EdgeInsets.symmetric(horizontal: 8)
+                          : EdgeInsets.zero,
+                      child: Text(
+                        '${AppStrings.t(appLocaleNotifier.value, 'translated_from')}: ${widget.originalMessage}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              fontStyle: FontStyle.italic,
+                              color: fgMuted,
+                            ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
-            ],
-          ],
+            ),
+          ),
+        ),
+        // Tap-to-reveal exact send time, like Messenger.
+        AnimatedSize(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOut,
+          alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+          child: (_showTime && widget.sentAt != null)
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 2, bottom: 4),
+                  child: Text(
+                    ChatMessageBubble.formatTimestamp(widget.sentAt!),
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w500,
+                        ),
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
+      ],
+    );
+  }
+}
+
+/// Centered grey timestamp shown between message groups, like Messenger.
+class ChatTimestampDivider extends StatelessWidget {
+  const ChatTimestampDivider({super.key, required this.at});
+
+  final DateTime at;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Center(
+        child: Text(
+          ChatMessageBubble.formatDividerLabel(at),
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.2,
+              ),
         ),
       ),
     );
