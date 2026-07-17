@@ -12,6 +12,7 @@ class PlatformSetting extends Model
         'member_subscription_qr_url',
         'member_monthly_fee',
         'booking_confirm_fee_percent',
+        'min_check_in_payment_percent',
         'member_booking_discount_percent',
         'member_points_per_check_in',
         'member_points_per_peso',
@@ -22,6 +23,7 @@ class PlatformSetting extends Model
         return [
             'member_monthly_fee' => 'float',
             'booking_confirm_fee_percent' => 'float',
+            'min_check_in_payment_percent' => 'float',
             'member_booking_discount_percent' => 'float',
             'member_points_per_check_in' => 'float',
             'member_points_per_peso' => 'float',

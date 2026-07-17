@@ -176,6 +176,7 @@ class RoomController extends Controller
     {
         $validated = $request->validate([
             'status' => ['required', 'in:available,booked,checked_in,checked_out,maintenance,reserved'],
+            'maintenance_reason' => ['nullable', 'string', 'max:255'],
         ]);
 
         $bookingBefore = $this->roomCheckoutService->findActiveBooking(
@@ -192,7 +193,8 @@ class RoomController extends Controller
         $result = $this->roomCheckoutService->applyStatusChange(
             $room,
             $request->user(),
-            (string) $validated['status']
+            (string) $validated['status'],
+            $validated['maintenance_reason'] ?? null,
         );
 
         $completedBooking = $bookingId && $validated['status'] === RoomStatus::CHECKED_OUT->value

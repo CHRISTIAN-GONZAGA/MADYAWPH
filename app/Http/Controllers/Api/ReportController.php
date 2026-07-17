@@ -983,6 +983,105 @@ class ReportController extends Controller
         );
     }
 
+    public function frontDeskSalesSummary(Request $request, \App\Services\FrontDeskSalesReportService $frontDeskSales)
+    {
+        $validated = $request->validate([
+            'granularity' => ['nullable', 'in:day,week,month,year'],
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date'],
+            'anchor_date' => ['nullable', 'date'],
+        ]);
+
+        $granularity = (string) ($validated['granularity'] ?? 'day');
+        [$from, $to] = $this->resolveFrontDeskSalesRange($validated, $granularity);
+
+        return response()->json(
+            $frontDeskSales->summarizeAccounts(
+                (string) $request->user()->hotel_id,
+                $granularity,
+                $from,
+                $to,
+            )
+        );
+    }
+
+    public function frontDeskSalesCalendar(Request $request, \App\Services\FrontDeskSalesReportService $frontDeskSales)
+    {
+        $validated = $request->validate([
+            'user_id' => ['required', 'string', 'max:120'],
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date'],
+            'month' => ['nullable', 'date'],
+        ]);
+
+        if (isset($validated['month'])) {
+            $month = Carbon::parse($validated['month'])->startOfMonth();
+            $from = $month->copy()->startOfDay();
+            $to = $month->copy()->endOfMonth()->endOfDay();
+        } else {
+            $from = isset($validated['from'])
+                ? Carbon::parse($validated['from'])->startOfDay()
+                : now()->startOfMonth()->startOfDay();
+            $to = isset($validated['to'])
+                ? Carbon::parse($validated['to'])->endOfDay()
+                : now()->endOfMonth()->endOfDay();
+        }
+
+        return response()->json(
+            $frontDeskSales->accountCalendar(
+                (string) $request->user()->hotel_id,
+                (string) $validated['user_id'],
+                $from,
+                $to,
+            )
+        );
+    }
+
+    public function frontDeskSalesDay(Request $request, \App\Services\FrontDeskSalesReportService $frontDeskSales)
+    {
+        $validated = $request->validate([
+            'user_id' => ['required', 'string', 'max:120'],
+            'date' => ['required', 'date'],
+        ]);
+
+        return response()->json(
+            $frontDeskSales->accountDayDetail(
+                (string) $request->user()->hotel_id,
+                (string) $validated['user_id'],
+                Carbon::parse($validated['date']),
+            )
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return array{0: Carbon, 1: Carbon}
+     */
+    private function resolveFrontDeskSalesRange(array $validated, string $granularity): array
+    {
+        if (isset($validated['from']) || isset($validated['to'])) {
+            $from = isset($validated['from'])
+                ? Carbon::parse($validated['from'])->startOfDay()
+                : now()->startOfDay();
+            $to = isset($validated['to'])
+                ? Carbon::parse($validated['to'])->endOfDay()
+                : now()->endOfDay();
+
+            return [$from, $to];
+        }
+
+        $anchor = isset($validated['anchor_date'])
+            ? Carbon::parse($validated['anchor_date'])
+            : now();
+
+        return match ($granularity) {
+            'week' => [$anchor->copy()->startOfWeek()->startOfDay(), $anchor->copy()->endOfWeek()->endOfDay()],
+            'month' => [$anchor->copy()->startOfMonth()->startOfDay(), $anchor->copy()->endOfMonth()->endOfDay()],
+            'year' => [$anchor->copy()->startOfYear()->startOfDay(), $anchor->copy()->endOfYear()->endOfDay()],
+            default => [$anchor->copy()->startOfDay(), $anchor->copy()->endOfDay()],
+        };
+    }
+
     public function frontDeskActivityRooms(Request $request, FrontDeskActivityReportService $frontDeskActivity)
     {
         $validated = $request->validate([

@@ -28,14 +28,24 @@ Future<bool> showChargeAmenityToRoomDialog({
     final name = (menuItem['name'] ?? 'Item').toString();
     final unitPrice = parseJsonDouble(menuItem['price']);
 
-    if (itemId.isEmpty || unitPrice <= 0) {
+    if (itemId.isEmpty) {
       await _showChargeDiagnosticDialog(
         dialogCtx,
         title: 'Cannot charge product',
         isError: true,
-        summary: itemId.isEmpty
-            ? 'This product has no ID in the menu data.'
-            : 'This product has no price set (price must be greater than 0).',
+        summary: 'This product has no ID in the menu data.',
+        details: _menuItemDiagnostics(menuItem, itemId: itemId, unitPrice: unitPrice),
+      );
+      return false;
+    }
+
+    if (menuItem['is_active'] == false) {
+      await _showChargeDiagnosticDialog(
+        dialogCtx,
+        title: 'Product unavailable',
+        isError: true,
+        summary:
+            'This product is marked unavailable and cannot be charged to a room.',
         details: _menuItemDiagnostics(menuItem, itemId: itemId, unitPrice: unitPrice),
       );
       return false;
@@ -88,7 +98,10 @@ Future<bool> showChargeAmenityToRoomDialog({
     if (picked == null || !dialogCtx.mounted) return false;
 
     final quantity = (picked['_quantity'] as int?) ?? 1;
-    final room = Map<String, dynamic>.from(picked)..remove('_quantity');
+    final complimentary = picked['_complimentary'] == true;
+    final room = Map<String, dynamic>.from(picked)
+      ..remove('_quantity')
+      ..remove('_complimentary');
 
     final roomId = AdminDashboardModels.roomIdOf(room);
     final booking = room['latest_booking'] as Map?;
@@ -101,17 +114,20 @@ Future<bool> showChargeAmenityToRoomDialog({
     );
     final roomNo = (room['room_number'] ?? '—').toString();
     final guest = AdminDashboardModels.guestName(room);
-    final lineTotal = unitPrice * quantity;
+    final lineTotal = complimentary ? 0.0 : unitPrice * quantity;
 
     final confirmed = await showDialog<bool>(
       context: dialogCtx,
       useRootNavigator: true,
       builder: (ctx) => AlertDialog(
-        title: const Text('Confirm charge'),
+        title: Text(complimentary ? 'Confirm complimentary' : 'Confirm charge'),
         content: Text(
-          'Add $name × $quantity to room $roomNo'
-          '${guest != '—' ? ' ($guest)' : ''}?\n\n'
-          'Total: ₱${lineTotal.toStringAsFixed(2)}',
+          complimentary
+              ? 'Add $name × $quantity to room $roomNo'
+                  '${guest != '—' ? ' ($guest)' : ''} as complimentary (no charge)?'
+              : 'Add $name × $quantity to room $roomNo'
+                  '${guest != '—' ? ' ($guest)' : ''}?\n\n'
+                  'Total: ₱${lineTotal.toStringAsFixed(2)}',
         ),
         actions: [
           TextButton(
@@ -120,7 +136,7 @@ Future<bool> showChargeAmenityToRoomDialog({
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Charge to room'),
+            child: Text(complimentary ? 'Add complimentary' : 'Charge to room'),
           ),
         ],
       ),
@@ -153,11 +169,15 @@ Future<bool> showChargeAmenityToRoomDialog({
         'amount': unitPrice,
         'quantity': quantity,
         'is_manual': false,
+        'complimentary': complimentary,
+        'amenity_menu_item_id': itemId,
       });
       if (!dialogCtx.mounted) return false;
       await showAppMessage(
         dialogCtx,
-        'Charged $name × $quantity to room $roomNo.',
+        complimentary
+            ? 'Added complimentary $name × $quantity to room $roomNo.'
+            : 'Charged $name × $quantity to room $roomNo.',
       );
       return true;
     } on DioException catch (e) {
@@ -555,12 +575,15 @@ class _InHouseRoomPickerDialog extends StatefulWidget {
 
 class _InHouseRoomPickerDialogState extends State<_InHouseRoomPickerDialog> {
   var _quantity = 1;
+  var _complimentary = false;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final listHeight =
-        (widget.rooms.length * 72.0 + 140).clamp(200.0, 420.0).toDouble();
+        (widget.rooms.length * 72.0 + 200).clamp(240.0, 480.0).toDouble();
+    final lineTotal =
+        _complimentary ? 0.0 : widget.unitPrice * _quantity;
 
     return AlertDialog(
       title: const Text('Charge to room'),
@@ -576,7 +599,14 @@ class _InHouseRoomPickerDialogState extends State<_InHouseRoomPickerDialog> {
                     color: scheme.onSurfaceVariant,
                   ),
             ),
-            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Complimentary (no charge)'),
+              subtitle: const Text('Adds the item to the room bill at ₱0'),
+              value: _complimentary,
+              onChanged: (v) => setState(() => _complimentary = v),
+            ),
+            const SizedBox(height: 4),
             Text(
               'In-house guests (${widget.rooms.length})',
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -623,7 +653,11 @@ class _InHouseRoomPickerDialogState extends State<_InHouseRoomPickerDialog> {
                           trailing: const Icon(Icons.chevron_right),
                           onTap: () => Navigator.pop(
                             context,
-                            {...room, '_quantity': _quantity},
+                            {
+                              ...room,
+                              '_quantity': _quantity,
+                              '_complimentary': _complimentary,
+                            },
                           ),
                         );
                       },
@@ -651,7 +685,9 @@ class _InHouseRoomPickerDialogState extends State<_InHouseRoomPickerDialog> {
               ],
             ),
             Text(
-              'Line total: ₱${(widget.unitPrice * _quantity).toStringAsFixed(2)}',
+              _complimentary
+                  ? 'Line total: Complimentary (₱0.00)'
+                  : 'Line total: ₱${lineTotal.toStringAsFixed(2)}',
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w800,
                   ),

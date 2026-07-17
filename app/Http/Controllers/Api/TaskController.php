@@ -37,7 +37,14 @@ class TaskController extends Controller
 
     public function updateStatus(UpdateTaskStatusRequest $request, Task $task)
     {
-        $updated = $this->taskService->updateStatus($task, $request->validated()['status'], $request->user());
+        $validated = $request->validated();
+        $updated = $this->taskService->updateStatus(
+            $task,
+            $validated['status'],
+            $request->user(),
+            $validated
+        );
+
         return response()->json($updated);
     }
 

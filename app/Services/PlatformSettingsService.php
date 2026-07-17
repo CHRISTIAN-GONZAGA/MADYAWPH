@@ -18,6 +18,7 @@ class PlatformSettingsService
                 'member_subscription_qr_url' => null,
                 'member_monthly_fee' => (float) config('platform.member_monthly_fee', 300),
                 'booking_confirm_fee_percent' => (float) config('services.hotel_credits.booking_confirm_fee_percent', 8),
+                'min_check_in_payment_percent' => (float) config('platform.min_check_in_payment_percent', 50),
                 'member_booking_discount_percent' => (float) config('platform.member_booking_discount_percent', 10),
                 'member_points_per_check_in' => (float) config('platform.member_points_per_check_in', 1000),
                 'member_points_per_peso' => (float) config('platform.member_points_per_peso', 10),
@@ -69,6 +70,17 @@ class PlatformSettingsService
         return (float) config('services.hotel_credits.booking_confirm_fee_percent', 8);
     }
 
+    public function minCheckInPaymentPercent(): float
+    {
+        $row = $this->row();
+        $fromDb = $row->min_check_in_payment_percent ?? null;
+        if ($fromDb !== null && (float) $fromDb >= 0) {
+            return min(100.0, (float) $fromDb);
+        }
+
+        return min(100.0, (float) config('platform.min_check_in_payment_percent', 50));
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -80,6 +92,7 @@ class PlatformSettingsService
         return [
             'member_monthly_fee' => $fee,
             'booking_confirm_fee_percent' => $this->bookingConfirmFeePercent(),
+            'min_check_in_payment_percent' => $this->minCheckInPaymentPercent(),
             'member_booking_discount_percent' => $this->memberBookingDiscountPercent(),
             'member_points_per_check_in' => $this->memberPointsPerCheckIn(),
             'member_points_per_peso' => $this->memberPointsPerPeso(),

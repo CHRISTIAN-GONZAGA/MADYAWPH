@@ -381,6 +381,25 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
         return response()->json($item->fresh());
     })->middleware('role:admin')->name('api.v1.admin.amenity.menu.update');
 
+    Route::patch('/admin/amenity-menu/{id}/availability', function (Request $request, string $id) {
+        $validated = $request->validate([
+            'is_active' => ['required', 'boolean'],
+        ]);
+        $item = AmenityMenuItem::withoutGlobalScopes()
+            ->where('hotel_id', (string) $request->user()->hotel_id)
+            ->findOrFail($id);
+        $item->update(['is_active' => (bool) $validated['is_active']]);
+        $fresh = $item->fresh() ?? $item;
+
+        return response()->json([
+            'ok' => true,
+            'item' => $fresh,
+            'message' => $fresh->is_active
+                ? 'Product is available to charge to rooms.'
+                : 'Product marked unavailable and cannot be charged to rooms.',
+        ]);
+    })->middleware('role:admin,frontdesk')->name('api.v1.admin.amenity.menu.availability');
+
     Route::delete('/admin/amenity-menu/{id}', function (Request $request, string $id) {
         AmenityMenuItem::withoutGlobalScopes()
             ->where('hotel_id', (string) $request->user()->hotel_id)
@@ -390,11 +409,20 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
         return response()->json(['ok' => true]);
     })->middleware('role:admin')->name('api.v1.admin.amenity.menu.delete');
 
-    Route::patch('/admin/rooms/{id}/status', function (Request $request, string $id, RoomCheckoutService $roomCheckoutService) {
+    Route::patch('/admin/rooms/{id}/status', function (
+        Request $request,
+        string $id,
+        RoomCheckoutService $roomCheckoutService,
+        \App\Services\BookingPaymentService $bookingPaymentService,
+        \App\Services\PlatformSettingsService $platformSettings,
+    ) {
         $validated = $request->validate([
             'status' => ['required', 'in:available,booked,checked_in,checked_out,maintenance,reserved'],
             'check_in_at' => ['nullable', 'date'],
             'check_out_at' => ['nullable', 'date', 'after_or_equal:check_in_at'],
+            'maintenance_reason' => ['nullable', 'string', 'max:255'],
+            'check_in_payment_amount' => ['nullable', 'numeric', 'min:0'],
+            'payment_method' => ['nullable', 'string', 'max:50'],
             'free_breakfast_options' => ['nullable', 'array'],
             'free_breakfast_options.*.menu_item_id' => ['nullable', 'string', 'max:64'],
             'free_breakfast_options.*.name' => ['required_with:free_breakfast_options', 'string', 'max:255'],
@@ -419,6 +447,32 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             $checkOut = isset($validated['check_out_at'])
                 ? Carbon::parse($validated['check_out_at'])
                 : null;
+
+            $paymentInfo = null;
+            $payAmount = isset($validated['check_in_payment_amount'])
+                ? round((float) $validated['check_in_payment_amount'], 2)
+                : 0.0;
+            if ($activeBooking) {
+                $bill = $bookingPaymentService->billSummary($activeBooking);
+                $balanceDue = (float) ($bill['balance_due'] ?? 0);
+                $minPercent = $platformSettings->minCheckInPaymentPercent();
+                $minDue = round($balanceDue * ($minPercent / 100), 2);
+
+                if ($minPercent > 0 && $balanceDue > 0 && $payAmount + 0.009 < $minDue) {
+                    return response()->json([
+                        'message' => "Check-in requires at least {$minPercent}% payment (₱".number_format($minDue, 2).').',
+                        'errors' => [
+                            'check_in_payment_amount' => [
+                                "Enter at least ₱".number_format($minDue, 2)." ({$minPercent}% of the remaining balance).",
+                            ],
+                        ],
+                        'min_check_in_payment_percent' => $minPercent,
+                        'min_payment_amount' => $minDue,
+                        'balance_due' => $balanceDue,
+                    ], 422);
+                }
+            }
+
             $room = $roomCheckoutService->checkInRoom($room, $request->user(), $checkIn, $checkOut);
             if ($activeBooking && ! empty($validated['free_breakfast_options'])) {
                 $activeBooking->update([
@@ -427,9 +481,34 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
                     ),
                 ]);
             }
-            $result = ['room' => $room, 'message' => 'Guest checked in.'];
+
+            $bookingForPay = $roomCheckoutService->resolveActiveBookingForRoom($hotelId, $room) ?? $activeBooking;
+            if ($bookingForPay && $payAmount > 0) {
+                $paymentInfo = $bookingPaymentService->applyPartialPayment(
+                    $bookingForPay,
+                    $request->user(),
+                    [
+                        'amount' => $payAmount,
+                        'payment_method' => $validated['payment_method'] ?? 'Cash',
+                        'note' => 'Check-in payment',
+                    ]
+                );
+            }
+
+            $result = [
+                'room' => $room,
+                'message' => $paymentInfo
+                    ? 'Guest checked in. Payment recorded and deducted from the room bill.'
+                    : 'Guest checked in.',
+                'check_in_payment' => $paymentInfo,
+            ];
         } else {
-            $result = $roomCheckoutService->applyStatusChange($room, $request->user(), $nextStatus);
+            $result = $roomCheckoutService->applyStatusChange(
+                $room,
+                $request->user(),
+                $nextStatus,
+                $validated['maintenance_reason'] ?? null,
+            );
         }
 
         app(ActivityLogService::class)->log(
@@ -1383,6 +1462,9 @@ Route::post('/billing/charges', function (Request $request, FinancialComputation
         'amount' => ['required', 'numeric', 'min:0'],
         'quantity' => ['nullable', 'integer', 'min:1'],
         'is_manual' => ['nullable', 'boolean'],
+        'complimentary' => ['nullable', 'boolean'],
+        'metadata' => ['nullable', 'array'],
+        'amenity_menu_item_id' => ['nullable', 'string', 'max:64'],
     ]);
     $hotelId = (string) $request->user()->hotel_id;
     $booking = Booking::withoutGlobalScopes()
@@ -1395,17 +1477,61 @@ Route::post('/billing/charges', function (Request $request, FinancialComputation
         return response()->json(['message' => 'Invalid booking or room for your hotel.'], 403);
     }
     StayManagementPolicy::denyUnlessCanManage($booking, $room);
+
+    $menuItemId = trim((string) ($validated['amenity_menu_item_id'] ?? ''));
+    if ($menuItemId !== '') {
+        $menuItem = AmenityMenuItem::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->find($menuItemId);
+        if ($menuItem === null) {
+            return response()->json([
+                'message' => 'Product not found on the amenities menu.',
+                'errors' => ['amenity_menu_item_id' => ['Unknown product.']],
+            ], 422);
+        }
+        if (! (bool) ($menuItem->is_active ?? true)) {
+            return response()->json([
+                'message' => 'This product is unavailable and cannot be charged to a room.',
+                'errors' => ['amenity_menu_item_id' => ['Product is marked unavailable.']],
+            ], 422);
+        }
+    }
+
     $quantity = (int) ($validated['quantity'] ?? 1);
-    $lineTotal = $financialComputationService->computeRoomCharge((float) $validated['amount'], $quantity);
+    $complimentary = (bool) ($validated['complimentary'] ?? false);
+    $unitAmount = $complimentary ? 0.0 : (float) $validated['amount'];
+    $lineTotal = $financialComputationService->computeRoomCharge($unitAmount, $quantity);
+    $metadata = is_array($validated['metadata'] ?? null) ? $validated['metadata'] : [];
+    if ($menuItemId !== '') {
+        $metadata['amenity_menu_item_id'] = $menuItemId;
+    }
+    if ($complimentary) {
+        $metadata['complimentary'] = true;
+        $metadata['catalog_unit_price'] = (float) $validated['amount'];
+        if (! str_contains(strtolower((string) $validated['label']), 'complimentary')) {
+            $validated['label'] = $validated['label'].' (Complimentary)';
+        }
+    }
     $charge = BillingCharge::withoutGlobalScopes()->create([
-        ...$validated,
+        'booking_id' => $validated['booking_id'],
+        'room_id' => $validated['room_id'],
+        'type' => $validated['type'],
+        'label' => $validated['label'],
         'hotel_id' => $hotelId,
         'amount' => $lineTotal,
         'quantity' => $quantity,
         'is_manual' => (bool) ($validated['is_manual'] ?? true),
         'created_by' => (string) $request->user()->id,
+        'metadata' => $metadata === [] ? null : $metadata,
     ]);
-    $activityLogService->log((string) $request->user()->hotel_id, $request->user(), "Added charge {$charge->label}", ['charge_id' => (string) $charge->id, 'amount' => $lineTotal]);
+    $activityLogService->log(
+        (string) $request->user()->hotel_id,
+        $request->user(),
+        $complimentary
+            ? "Added complimentary charge {$charge->label}"
+            : "Added charge {$charge->label}",
+        ['charge_id' => (string) $charge->id, 'amount' => $lineTotal, 'complimentary' => $complimentary]
+    );
 
     app(\App\Services\BookingPaymentService::class)->syncBookingTotalFromCharges($booking->fresh());
 
@@ -1862,6 +1988,9 @@ Route::get('/reports/shift-summary/pdf', [ReportController::class, 'shiftSummary
 Route::post('/reports/shift-summary/email', [ReportController::class, 'shiftSummaryEmail'])->middleware('role:admin,frontdesk,staff');
 Route::get('/reports/frontdesk-activity', [ReportController::class, 'frontDeskActivitySummary'])->middleware('role:admin,frontdesk');
 Route::get('/reports/frontdesk-activity/rooms', [ReportController::class, 'frontDeskActivityRooms'])->middleware('role:admin,frontdesk');
+Route::get('/reports/frontdesk-sales/summary', [ReportController::class, 'frontDeskSalesSummary'])->middleware('role:admin,frontdesk');
+Route::get('/reports/frontdesk-sales/calendar', [ReportController::class, 'frontDeskSalesCalendar'])->middleware('role:admin,frontdesk');
+Route::get('/reports/frontdesk-sales/day', [ReportController::class, 'frontDeskSalesDay'])->middleware('role:admin,frontdesk');
 Route::get('/reports/sales', [ReportController::class, 'sales'])->middleware('role:admin,frontdesk');
 Route::get('/reports/sales/timeseries', [ReportController::class, 'salesTimeseries'])->middleware('role:admin,frontdesk');
 Route::get('/reports/paid-transactions', [ReportController::class, 'paidTransactions'])->middleware('role:admin,frontdesk');
@@ -2825,6 +2954,7 @@ Route::middleware('role:central_admin')->prefix('platform')->group(function () {
     Route::post('/settings/credit-wallet-qr', [$platform, 'uploadCreditWalletQr']);
     Route::post('/settings/member-qr', [$platform, 'uploadMemberQr']);
     Route::patch('/settings/booking-fee-percent', [$platform, 'updateBookingFeePercent']);
+    Route::patch('/settings/min-check-in-payment-percent', [$platform, 'updateMinCheckInPaymentPercent']);
     Route::patch('/settings/member-booking-discount-percent', [$platform, 'updateMemberBookingDiscountPercent']);
     Route::patch('/settings/member-points', [$platform, 'updateMemberPointsSettings']);
     Route::get('/hotels', [$platform, 'hotels']);

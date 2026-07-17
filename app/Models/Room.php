@@ -27,6 +27,7 @@ class Room extends Model
         'block_hours',
         'price_per_extra_hour',
         'status',
+        'maintenance_reason',
         'amenities',
         'image_url',
         'current_guest_name',

@@ -27,6 +27,12 @@ return [
     /** How many member points equal ₱1 (default 10 → 1000 pts = ₱100). */
     'member_points_per_peso' => (float) env('PLATFORM_MEMBER_POINTS_PER_PESO', 10),
 
+    /**
+     * Minimum % of the room bill that must be paid at check-in (0–100).
+     * Example: 50 means guests must pay at least half before check-in completes.
+     */
+    'min_check_in_payment_percent' => (float) env('PLATFORM_MIN_CHECK_IN_PAYMENT_PERCENT', 50),
+
     /** Direct HTTPS link to the Android APK (used in app install QR on the landing screen). */
     'app_install_url' => env('APP_INSTALL_URL', ''),
 

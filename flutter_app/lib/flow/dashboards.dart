@@ -1303,14 +1303,26 @@ class _StaffAssignedTasksScreenState extends State<StaffAssignedTasksScreen> {
     }
   }
 
-  Future<void> _updateTaskStatus(Map<String, dynamic> task, String status) async {
+  Future<void> _updateTaskStatus(
+    Map<String, dynamic> task,
+    String status, {
+    List<Map<String, dynamic>>? checklist,
+  }) async {
     final taskId = (task['id'] ?? '').toString();
     if (taskId.isEmpty || _savingIds.contains(taskId)) return;
     setState(() => _savingIds.add(taskId));
     try {
-      await portalDio().put('/tasks/$taskId/status', data: {'status': status});
+      await portalDio().put('/tasks/$taskId/status', data: {
+        'status': status,
+        if (checklist != null) 'checklist': checklist,
+      });
       if (!mounted) return;
-      showAppMessage(context, 'Task updated to $status.');
+      showAppMessage(
+        context,
+        status == 'completed'
+            ? 'Task completed. Room set to available if cleaning was finished.'
+            : 'Task updated to $status.',
+      );
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
@@ -1320,6 +1332,55 @@ class _StaffAssignedTasksScreenState extends State<StaffAssignedTasksScreen> {
         setState(() => _savingIds.remove(taskId));
       }
     }
+  }
+
+  List<Map<String, dynamic>> _checklistOf(Map<String, dynamic> task) {
+    final raw = task['checklist'];
+    if (raw is! List || raw.isEmpty) {
+      final title = (task['title'] ?? '').toString().toLowerCase();
+      final type = (task['task_type'] ?? '').toString().toLowerCase();
+      if (type == 'cleaning' || title.startsWith('clean room')) {
+        return const [
+          {'key': 'bathroom_cleaning', 'label': 'Bathroom cleaned', 'done': false},
+          {
+            'key': 'bathroom_accessories',
+            'label': 'Bathroom accessories restocked',
+            'done': false
+          },
+          {
+            'key': 'bed_preparation',
+            'label': 'Bed prepared / linens changed',
+            'done': false
+          },
+          {
+            'key': 'room_appliances',
+            'label': 'Room appliances functional and cleaned',
+            'done': false
+          },
+          {
+            'key': 'floor_surfaces',
+            'label': 'Floors and surfaces cleaned',
+            'done': false
+          },
+          {'key': 'trash_removed', 'label': 'Trash emptied', 'done': false},
+          {
+            'key': 'final_inspection',
+            'label': 'Final room inspection',
+            'done': false
+          },
+        ];
+      }
+      return const [];
+    }
+    return raw
+        .whereType<Map>()
+        .map((m) => Map<String, dynamic>.from(m))
+        .toList();
+  }
+
+  bool _checklistComplete(List<Map<String, dynamic>> checklist) {
+    if (checklist.isEmpty) return true;
+    return checklist.every((item) => item['done'] == true);
   }
 
   @override
@@ -1384,12 +1445,14 @@ class _StaffAssignedTasksScreenState extends State<StaffAssignedTasksScreen> {
               ),
             ),
           ...filtered.map((raw) {
-            final task = raw as Map<String, dynamic>;
+            final task = Map<String, dynamic>.from(raw as Map);
             final taskId = (task['id'] ?? '').toString();
             final title = (task['title'] ?? 'Task').toString();
             final desc = (task['description'] ?? '').toString();
             final current = (task['status'] ?? 'pending').toString();
             final saving = _savingIds.contains(taskId);
+            final checklist = _checklistOf(task);
+            final allDone = _checklistComplete(checklist);
             return Card(
               child: Padding(
                 padding: const EdgeInsets.all(12),
@@ -1401,12 +1464,86 @@ class _StaffAssignedTasksScreenState extends State<StaffAssignedTasksScreen> {
                       const SizedBox(height: 6),
                       Text(desc),
                     ],
+                    if (checklist.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        'Cleaning checklist',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        allDone
+                            ? 'All items done — you can mark this task completed.'
+                            : 'Check every item before marking the task done. Completing sets the room to available.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 6),
+                      ...checklist.asMap().entries.map((entry) {
+                        final i = entry.key;
+                        final item = entry.value;
+                        final label = (item['label'] ?? item['key'] ?? 'Item')
+                            .toString();
+                        final done = item['done'] == true;
+                        return CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          value: done,
+                          title: Text(label),
+                          controlAffinity: ListTileControlAffinity.leading,
+                          onChanged: saving || current == 'completed'
+                              ? null
+                              : (v) {
+                                  setState(() {
+                                    final updated = checklist
+                                        .map((e) => Map<String, dynamic>.from(e))
+                                        .toList();
+                                    updated[i] = {
+                                      ...updated[i],
+                                      'done': v == true,
+                                    };
+                                    task['checklist'] = updated;
+                                    final idx = _tasks.indexWhere((t) =>
+                                        (t as Map)['id']?.toString() == taskId);
+                                    if (idx >= 0) {
+                                      final copy = List<dynamic>.from(_tasks);
+                                      copy[idx] = {
+                                        ...Map<String, dynamic>.from(
+                                            copy[idx] as Map),
+                                        'checklist': updated,
+                                      };
+                                      _tasks = copy;
+                                    }
+                                  });
+                                },
+                        );
+                      }),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: saving
+                              ? null
+                              : () => _updateTaskStatus(
+                                    task,
+                                    current == 'completed'
+                                        ? 'in-progress'
+                                        : (current == 'pending'
+                                            ? 'in-progress'
+                                            : current),
+                                    checklist: checklist,
+                                  ),
+                          icon: const Icon(Icons.save_outlined, size: 18),
+                          label: const Text('Save checklist progress'),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 10),
                     Row(
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: current,
+                            initialValue: current,
                             items: const [
                               DropdownMenuItem(
                                   value: 'pending', child: Text('pending')),
@@ -1421,7 +1558,23 @@ class _StaffAssignedTasksScreenState extends State<StaffAssignedTasksScreen> {
                                 : (v) {
                                     final next = (v ?? current).trim();
                                     if (next.isEmpty || next == current) return;
-                                    _updateTaskStatus(task, next);
+                                    if (next == 'completed' &&
+                                        checklist.isNotEmpty &&
+                                        !allDone) {
+                                      showAppMessage(
+                                        context,
+                                        'Complete every checklist item first.',
+                                        isError: true,
+                                      );
+                                      return;
+                                    }
+                                    _updateTaskStatus(
+                                      task,
+                                      next,
+                                      checklist: checklist.isEmpty
+                                          ? null
+                                          : checklist,
+                                    );
                                   },
                             decoration: const InputDecoration(
                               labelText: 'Status',

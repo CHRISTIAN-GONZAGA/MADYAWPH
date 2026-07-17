@@ -114,6 +114,23 @@ class PlatformAdminController extends Controller
         ]);
     }
 
+    public function updateMinCheckInPaymentPercent(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'min_check_in_payment_percent' => ['required', 'numeric', 'min:0', 'max:100'],
+        ]);
+
+        $row = $this->settings->row();
+        $row->update([
+            'min_check_in_payment_percent' => (float) $validated['min_check_in_payment_percent'],
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'min_check_in_payment_percent' => $this->settings->minCheckInPaymentPercent(),
+        ]);
+    }
+
     public function updateMemberBookingDiscountPercent(Request $request): JsonResponse
     {
         $validated = $request->validate([

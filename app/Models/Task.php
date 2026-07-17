@@ -21,6 +21,9 @@ class Task extends Model
         'description',
         'assigned_to',
         'created_by',
+        'room_id',
+        'task_type',
+        'checklist',
         'deadline',
         'status',
         'priority',
@@ -30,6 +33,7 @@ class Task extends Model
     {
         return [
             'deadline' => 'datetime',
+            'checklist' => 'array',
             'status' => FlexibleTaskStatusCast::class,
             'priority' => FlexibleTaskPriorityCast::class,
         ];

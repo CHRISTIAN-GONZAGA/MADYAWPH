@@ -151,6 +151,21 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
     }
   }
 
+  Future<void> _updateMinCheckInPaymentPercent(double percent) async {
+    try {
+      await portalDio().patch<Map<String, dynamic>>(
+        '/platform/settings/min-check-in-payment-percent',
+        data: {'min_check_in_payment_percent': percent},
+      );
+      if (!mounted) return;
+      showAppMessage(context, 'Minimum check-in payment percent updated.');
+      await _loadAll();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
   Future<void> _updateMemberBookingDiscountPercent(double percent) async {
     try {
       await portalDio().patch<Map<String, dynamic>>(
@@ -484,6 +499,8 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
                       onUploadCredit: () => _uploadQr(creditWallet: true),
                       onUploadMember: () => _uploadQr(creditWallet: false),
                       onUpdateBookingFeePercent: _updateBookingFeePercent,
+                      onUpdateMinCheckInPaymentPercent:
+                          _updateMinCheckInPaymentPercent,
                       onUpdateMemberBookingDiscountPercent:
                           _updateMemberBookingDiscountPercent,
                       onUpdateMemberPointsSettings: _updateMemberPointsSettings,
@@ -1455,6 +1472,7 @@ class _QrSettingsSection extends StatefulWidget {
     required this.onUploadCredit,
     required this.onUploadMember,
     required this.onUpdateBookingFeePercent,
+    required this.onUpdateMinCheckInPaymentPercent,
     required this.onUpdateMemberBookingDiscountPercent,
     required this.onUpdateMemberPointsSettings,
   });
@@ -1463,6 +1481,7 @@ class _QrSettingsSection extends StatefulWidget {
   final VoidCallback onUploadCredit;
   final VoidCallback onUploadMember;
   final Future<void> Function(double percent) onUpdateBookingFeePercent;
+  final Future<void> Function(double percent) onUpdateMinCheckInPaymentPercent;
   final Future<void> Function(double percent) onUpdateMemberBookingDiscountPercent;
   final Future<void> Function({
     required double pointsPerCheckIn,
@@ -1475,10 +1494,12 @@ class _QrSettingsSection extends StatefulWidget {
 
 class _QrSettingsSectionState extends State<_QrSettingsSection> {
   late final TextEditingController _feePercentCtrl;
+  late final TextEditingController _minCheckInPercentCtrl;
   late final TextEditingController _memberDiscountCtrl;
   late final TextEditingController _pointsPerCheckInCtrl;
   late final TextEditingController _pointsPerPesoCtrl;
   var _savingFee = false;
+  var _savingMinCheckIn = false;
   var _savingMemberDiscount = false;
   var _savingMemberPoints = false;
 
@@ -1487,6 +1508,9 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     super.initState();
     _feePercentCtrl = TextEditingController(
       text: _feePercentText(widget.settings),
+    );
+    _minCheckInPercentCtrl = TextEditingController(
+      text: _minCheckInPercentText(widget.settings),
     );
     _memberDiscountCtrl = TextEditingController(
       text: _memberDiscountText(widget.settings),
@@ -1506,6 +1530,10 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     if (next != _feePercentCtrl.text) {
       _feePercentCtrl.text = next;
     }
+    final minCheckIn = _minCheckInPercentText(widget.settings);
+    if (minCheckIn != _minCheckInPercentCtrl.text) {
+      _minCheckInPercentCtrl.text = minCheckIn;
+    }
     final memberNext = _memberDiscountText(widget.settings);
     if (memberNext != _memberDiscountCtrl.text) {
       _memberDiscountCtrl.text = memberNext;
@@ -1523,6 +1551,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
   @override
   void dispose() {
     _feePercentCtrl.dispose();
+    _minCheckInPercentCtrl.dispose();
     _memberDiscountCtrl.dispose();
     _pointsPerCheckInCtrl.dispose();
     _pointsPerPesoCtrl.dispose();
@@ -1533,6 +1562,13 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     final raw = settings['booking_confirm_fee_percent'];
     if (raw == null) return '8';
     return (raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 8)
+        .toStringAsFixed(raw is num && raw % 1 == 0 ? 0 : 1);
+  }
+
+  static String _minCheckInPercentText(Map<String, dynamic> settings) {
+    final raw = settings['min_check_in_payment_percent'];
+    if (raw == null) return '50';
+    return (raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 50)
         .toStringAsFixed(raw is num && raw % 1 == 0 ? 0 : 1);
   }
 
@@ -1604,6 +1640,20 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
       await widget.onUpdateBookingFeePercent(parsed);
     } finally {
       if (mounted) setState(() => _savingFee = false);
+    }
+  }
+
+  Future<void> _saveMinCheckInPercent() async {
+    final parsed = double.tryParse(_minCheckInPercentCtrl.text.trim());
+    if (parsed == null || parsed < 0 || parsed > 100) {
+      showAppMessage(context, 'Enter a percent between 0 and 100.');
+      return;
+    }
+    setState(() => _savingMinCheckIn = true);
+    try {
+      await widget.onUpdateMinCheckInPaymentPercent(parsed);
+    } finally {
+      if (mounted) setState(() => _savingMinCheckIn = false);
     }
   }
 
@@ -1700,6 +1750,62 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                               )
                             : const Icon(Icons.save_outlined),
                         label: Text(_savingFee ? 'Saving…' : 'Save fee percent'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Minimum check-in payment',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'When front desk checks a guest in, they must collect at least this percent of the remaining room balance (for example 50). The payment is deducted from the room bill.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _minCheckInPercentCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Minimum percent at check-in',
+                          suffixText: '%',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      FilledButton.icon(
+                        onPressed:
+                            _savingMinCheckIn ? null : _saveMinCheckInPercent,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _kPlatformNavy,
+                          foregroundColor: Colors.white,
+                        ),
+                        icon: _savingMinCheckIn
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.save_outlined),
+                        label: Text(
+                          _savingMinCheckIn
+                              ? 'Saving…'
+                              : 'Save check-in payment %',
+                        ),
                       ),
                     ],
                   ),

@@ -10,6 +10,7 @@ import '../widgets/app_state_views.dart';
 import '../widgets/admin_month_calendar.dart';
 import 'admin/widgets/admin_dev_error_panel.dart';
 import 'admin/widgets/admin_reports_ui.dart';
+import 'admin/widgets/front_desk_sales_report_screen.dart';
 import 'admin/widgets/hotel_period_report_screen.dart';
 
 /// Revenue and operations charts with daily / weekly / monthly / annual granularity.
@@ -125,16 +126,28 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       final failures = <String>[];
       String? resellerPaymentsError;
 
-      final reportResults = await Future.wait<Map<String, dynamic>?>([
+      // Load core KPIs first so the screen can paint sooner.
+      final primary = await Future.wait<Map<String, dynamic>?>([
         _safeReportGet('/reports/sales/timeseries', queryParameters: qp),
-        _safeReportGet('/reports/activity/timeline', queryParameters: qp),
-        _safeReportGet('/reports/transfers'),
-        _safeReportGet('/reports/tasks/performance'),
-        _safeReportGet('/reports/room-occupancy'),
         _safeReportGet(
           '/reports/profit-overview',
           queryParameters: {'anchor_date': _fmtDay(_selectedDay)},
         ),
+        _safeReportGet('/reports/room-occupancy'),
+      ]);
+      if (mounted) {
+        setState(() {
+          if (primary[0] != null) _sales = primary[0];
+          if (primary[1] != null) _profitOverview = primary[1];
+          if (primary[2] != null) _occupancy = primary[2];
+          if (!silent) _loading = false;
+        });
+      }
+
+      final secondary = await Future.wait<Map<String, dynamic>?>([
+        _safeReportGet('/reports/activity/timeline', queryParameters: qp),
+        _safeReportGet('/reports/transfers'),
+        _safeReportGet('/reports/tasks/performance'),
         _safeReportGet(
           '/reports/reseller-payments/timeseries',
           queryParameters: commissionQp,
@@ -142,19 +155,19 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         ),
       ]);
 
-      final sales = reportResults[0];
+      final sales = primary[0];
       if (sales == null) failures.add('sales');
-      final timeline = reportResults[1];
-      if (timeline == null) failures.add('activity');
-      final transfers = reportResults[2];
-      if (transfers == null) failures.add('transfers');
-      final tasks = reportResults[3];
-      if (tasks == null) failures.add('tasks');
-      final occupancy = reportResults[4];
-      if (occupancy == null) failures.add('occupancy');
-      final profitOverview = reportResults[5];
+      final profitOverview = primary[1];
       if (profitOverview == null) failures.add('profit overview');
-      final resellerPayments = reportResults[6];
+      final occupancy = primary[2];
+      if (occupancy == null) failures.add('occupancy');
+      final timeline = secondary[0];
+      if (timeline == null) failures.add('activity');
+      final transfers = secondary[1];
+      if (transfers == null) failures.add('transfers');
+      final tasks = secondary[2];
+      if (tasks == null) failures.add('tasks');
+      final resellerPayments = secondary[3];
       if (resellerPayments == null && resellerPaymentsError == null) {
         resellerPaymentsError =
             'Reseller commissions request returned no data.';
@@ -539,6 +552,24 @@ ${subtitleLabel(point)}
               isRefreshing: _refreshing,
             ),
           if (!widget.embedded) const SizedBox(height: 16),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.point_of_sale_outlined),
+              title: const Text('Front desk sales reports'),
+              subtitle: const Text(
+                'Daily, weekly, monthly, and annual sales by front desk account, with calendar drill-down.',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const FrontDeskSalesReportScreen(),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 16),
           if (reportFrom.isNotEmpty || reportTo.isNotEmpty) ...[
             ReportsDataRangeBanner(
               from: reportFrom,

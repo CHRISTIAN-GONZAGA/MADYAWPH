@@ -101,6 +101,8 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
       return;
     }
 
+    final available = item['is_active'] != false;
+
     final action = await showModalBottomSheet<String>(
       context: context,
       useRootNavigator: true,
@@ -118,11 +120,46 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
                       fontWeight: FontWeight.w800,
                     ),
               ),
+              const SizedBox(height: 4),
+              Text(
+                available
+                    ? 'Available — can be charged to rooms'
+                    : 'Unavailable — cannot be charged to rooms',
+                style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                      color: available
+                          ? Colors.green.shade700
+                          : Theme.of(ctx).colorScheme.error,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
               const SizedBox(height: 16),
               FilledButton.icon(
-                onPressed: () => Navigator.pop(ctx, 'charge'),
+                onPressed: available
+                    ? () => Navigator.pop(ctx, 'charge')
+                    : null,
                 icon: const Icon(Icons.hotel_outlined),
-                label: const Text('Charge to room'),
+                label: Text(
+                  available
+                      ? 'Charge to room'
+                      : 'Unavailable to charge',
+                ),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.pop(
+                  ctx,
+                  available ? 'mark_unavailable' : 'mark_available',
+                ),
+                icon: Icon(
+                  available
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                ),
+                label: Text(
+                  available
+                      ? 'Mark as unavailable'
+                      : 'Mark as available',
+                ),
               ),
               if (widget.canManageProducts) ...[
                 const SizedBox(height: 8),
@@ -147,6 +184,14 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
     if (!mounted || action == null) return;
     switch (action) {
       case 'charge':
+        if (!available) {
+          showAppMessage(
+            context,
+            'This product is unavailable and cannot be charged to a room.',
+            isError: true,
+          );
+          return;
+        }
         try {
           final charged = await showChargeAmenityToRoomDialog(
             context: context,
@@ -168,12 +213,45 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
           );
         }
         break;
+      case 'mark_unavailable':
+        await _setAvailability(item, available: false);
+        break;
+      case 'mark_available':
+        await _setAvailability(item, available: true);
+        break;
       case 'edit':
         await _editItem(item);
         break;
       case 'delete':
         await _deleteItem(item);
         break;
+    }
+  }
+
+  Future<void> _setAvailability(
+    Map<String, dynamic> item, {
+    required bool available,
+  }) async {
+    final id = AdminDashboardModels.documentIdOf(item);
+    if (id.isEmpty) return;
+    try {
+      final res = await portalDio().patch<Map<String, dynamic>>(
+        '/admin/amenity-menu/$id/availability',
+        data: {'is_active': available},
+      );
+      await _loadMenu();
+      if (!mounted) return;
+      showAppMessage(
+        context,
+        (res.data?['message'] ??
+                (available
+                    ? 'Product is available.'
+                    : 'Product marked unavailable.'))
+            .toString(),
+      );
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
     }
   }
 
@@ -218,7 +296,10 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
                 SwitchListTile(
                   value: active,
                   onChanged: (v) => setLocal(() => active = v),
-                  title: const Text('Active on menu'),
+                  title: const Text('Available to charge'),
+                  subtitle: const Text(
+                    'Turn off to mark this product unavailable for room charges',
+                  ),
                 ),
               ],
             ),
@@ -332,6 +413,7 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
         final m = items[i];
         final active = m['is_active'] != false;
         return Card(
+          color: active ? null : Colors.grey.shade100,
           child: InkWell(
             onTap: () => _onProductTap(m),
             child: Padding(
@@ -344,28 +426,47 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
                       Expanded(
                         child: Text(
                           (m['name'] ?? '').toString(),
-                          style: const TextStyle(fontWeight: FontWeight.w600),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: active ? null : Colors.grey.shade700,
+                          ),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (widget.canManageProducts)
-                        PopupMenuButton<String>(
-                          onSelected: (v) {
-                            if (v == 'edit') {
-                              _editItem(m);
-                            } else if (v == 'delete') {
-                              _deleteItem(m);
-                            }
-                          },
-                          itemBuilder: (_) => const [
-                            PopupMenuItem(value: 'edit', child: Text('Edit')),
-                            PopupMenuItem(
+                      PopupMenuButton<String>(
+                        onSelected: (v) {
+                          if (v == 'edit') {
+                            _editItem(m);
+                          } else if (v == 'delete') {
+                            _deleteItem(m);
+                          } else if (v == 'unavailable') {
+                            _setAvailability(m, available: false);
+                          } else if (v == 'available') {
+                            _setAvailability(m, available: true);
+                          }
+                        },
+                        itemBuilder: (_) => [
+                          PopupMenuItem(
+                            value: active ? 'unavailable' : 'available',
+                            child: Text(
+                              active
+                                  ? 'Mark unavailable'
+                                  : 'Mark available',
+                            ),
+                          ),
+                          if (widget.canManageProducts) ...[
+                            const PopupMenuItem(
+                              value: 'edit',
+                              child: Text('Edit'),
+                            ),
+                            const PopupMenuItem(
                               value: 'delete',
                               child: Text('Delete'),
                             ),
                           ],
-                        ),
+                        ],
+                      ),
                     ],
                   ),
                   Text(
@@ -378,10 +479,13 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                   Text(
-                    active ? 'Active' : 'Hidden',
+                    active ? 'Available' : 'Unavailable',
                     style: TextStyle(
                       fontSize: 11,
-                      color: active ? Colors.green.shade700 : Colors.grey,
+                      fontWeight: FontWeight.w700,
+                      color: active
+                          ? Colors.green.shade700
+                          : Theme.of(context).colorScheme.error,
                     ),
                   ),
                 ],

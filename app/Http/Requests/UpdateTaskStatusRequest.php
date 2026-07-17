@@ -22,6 +22,10 @@ class UpdateTaskStatusRequest extends FormRequest
     {
         return [
             'status' => ['required', 'in:pending,in-progress,completed'],
+            'checklist' => ['nullable', 'array'],
+            'checklist.*.key' => ['nullable', 'string', 'max:80'],
+            'checklist.*.label' => ['nullable', 'string', 'max:200'],
+            'checklist.*.done' => ['nullable', 'boolean'],
         ];
     }
 }

@@ -775,29 +775,137 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
             DropdownMenuItem(value: 'available', child: Text('available')),
             DropdownMenuItem(value: 'maintenance', child: Text('maintenance')),
           ];
-    final chosen = await showDialog<String>(
+    final chosen = await showDialog<Map<String, String>>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(_canEditGuestStay ? 'Change room status' : 'Housekeeping status'),
-        content: DropdownButtonFormField<String>(
-          initialValue: _canEditGuestStay
-              ? current
-              : (current == 'maintenance' ? 'maintenance' : 'available'),
-          items: statusItems,
-          onChanged: (v) => status = v ?? current,
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.of(context).pop(status),
-              child: const Text('Update')),
-        ],
-      ),
+      builder: (context) {
+        var status = current;
+        var reasonPreset = 'Broken television';
+        final customReasonCtrl = TextEditingController();
+        return StatefulBuilder(
+          builder: (context, setLocal) => AlertDialog(
+            title: Text(
+              _canEditGuestStay ? 'Change room status' : 'Housekeeping status',
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  DropdownButtonFormField<String>(
+                    initialValue: _canEditGuestStay
+                        ? current
+                        : (current == 'maintenance' ? 'maintenance' : 'available'),
+                    items: statusItems,
+                    onChanged: (v) => setLocal(() => status = v ?? current),
+                  ),
+                  if (status == 'maintenance') ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      'Maintenance reason (required)',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      initialValue: reasonPreset,
+                      decoration: const InputDecoration(
+                        labelText: 'Reason',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'Broken television',
+                          child: Text('Broken television'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Clogged toilet',
+                          child: Text('Clogged toilet'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Air conditioning not working',
+                          child: Text('Air conditioning not working'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Electrical issue',
+                          child: Text('Electrical issue'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Plumbing issue',
+                          child: Text('Plumbing issue'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Furniture damage',
+                          child: Text('Furniture damage'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Water leak',
+                          child: Text('Water leak'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Door lock / access problem',
+                          child: Text('Door lock / access problem'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Custom',
+                          child: Text('Custom…'),
+                        ),
+                      ],
+                      onChanged: (v) {
+                        if (v != null) setLocal(() => reasonPreset = v);
+                      },
+                    ),
+                    if (reasonPreset == 'Custom') ...[
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: customReasonCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Custom reason',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ],
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  if (status == 'maintenance') {
+                    final reason = reasonPreset == 'Custom'
+                        ? customReasonCtrl.text.trim()
+                        : reasonPreset;
+                    if (reason.isEmpty) {
+                      showAppMessage(
+                        context,
+                        'Enter a maintenance reason.',
+                        isError: true,
+                      );
+                      return;
+                    }
+                    Navigator.of(context).pop({
+                      'status': status,
+                      'maintenance_reason': reason,
+                    });
+                    return;
+                  }
+                  Navigator.of(context).pop({'status': status});
+                },
+                child: const Text('Update'),
+              ),
+            ],
+          ),
+        );
+      },
     );
     if (chosen == null) return;
-    if (chosen == 'checked_out' && hasStay && (!paid || balanceDue > 0.009)) {
+    final statusChoice = (chosen['status'] ?? '').trim();
+    final maintenanceReason = (chosen['maintenance_reason'] ?? '').trim();
+    if (statusChoice.isEmpty) return;
+    if (statusChoice == 'checked_out' && hasStay && (!paid || balanceDue > 0.009)) {
       if (!mounted) return;
       showAppMessage(
         context,
@@ -810,19 +918,23 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     setState(() => _changingStatus = true);
     try {
       final Response<Map<String, dynamic>> res;
-      if (chosen == 'checked_out') {
+      if (statusChoice == 'checked_out') {
         res = await portalDio().post<Map<String, dynamic>>(
           '/rooms/$roomId/checkout',
         );
       } else {
         res = await portalDio().put<Map<String, dynamic>>(
           '/rooms/$roomId/status',
-          data: {'status': chosen},
+          data: {
+            'status': statusChoice,
+            if (statusChoice == 'maintenance' && maintenanceReason.isNotEmpty)
+              'maintenance_reason': maintenanceReason,
+          },
         );
       }
       if (!mounted) return;
       final msg = (res.data?['message'] ?? 'Status updated.').toString();
-      if (chosen == 'checked_out') {
+      if (statusChoice == 'checked_out') {
         setState(_clearActiveStayFromState);
         final receipt = res.data?['receipt'] as Map<String, dynamic>?;
         if (!mounted) return;
@@ -1516,6 +1628,13 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
               ),
               const SizedBox(height: 8),
               Text('Status: ${roomStatusLabel(status)}'),
+              if (isMaintenance &&
+                  (room['maintenance_reason'] ?? '').toString().trim().isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Maintenance reason: ${(room['maintenance_reason'] ?? '').toString()}',
+                ),
+              ],
               if (guest.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text('Guest: $guest'),

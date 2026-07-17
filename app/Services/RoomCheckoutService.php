@@ -15,10 +15,12 @@ use App\Models\Room;
 use App\Models\StaffMember;
 use App\Models\Task;
 use App\Models\User;
+use App\Support\CleaningChecklistSupport;
 use App\Support\PublicUploadStorage;
 use App\Support\RoomBillingSupport;
 use App\Support\SafeModelAttributes;
 use App\Models\BillingCharge;
+use App\Enums\TaskStatus;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -36,8 +38,12 @@ class RoomCheckoutService
     /**
      * @return array{room: Room, message: string|null}
      */
-    public function applyStatusChange(Room $room, User $actor, string $toStatus): array
-    {
+    public function applyStatusChange(
+        Room $room,
+        User $actor,
+        string $toStatus,
+        ?string $maintenanceReason = null,
+    ): array {
         $from = $this->normalizedStatus($room);
         $to = strtolower(trim($toStatus));
 
@@ -55,7 +61,7 @@ class RoomCheckoutService
 
             return [
                 'room' => $room,
-                'message' => 'Guest checked out. Room is in maintenance; stay moved to guest history; chat cleared.',
+                'message' => 'Guest checked out. Room is in cleaning; stay moved to guest history; chat cleared.',
             ];
         }
 
@@ -79,7 +85,38 @@ class RoomCheckoutService
             ];
         }
 
-        $room->update(['status' => $to]);
+        if ($to === RoomStatus::MAINTENANCE->value) {
+            $reason = trim((string) ($maintenanceReason ?? ''));
+            if ($reason === '') {
+                throw ValidationException::withMessages([
+                    'maintenance_reason' => [
+                        'Select or enter a maintenance reason (for example: broken television, clogged toilet).',
+                    ],
+                ]);
+            }
+            $room->update([
+                'status' => $to,
+                'maintenance_reason' => $reason,
+            ]);
+            $fresh = $room->fresh() ?? $room;
+            $this->notifyRoomStatus($fresh, $from, $to, $actor);
+            $this->activityLogService->log(
+                (string) $fresh->hotel_id,
+                $actor,
+                "Set room {$fresh->room_number} to maintenance: {$reason}",
+                ['room_id' => (string) $fresh->id, 'maintenance_reason' => $reason]
+            );
+
+            return [
+                'room' => $fresh,
+                'message' => "Room set to maintenance ({$reason}).",
+            ];
+        }
+
+        $room->update([
+            'status' => $to,
+            'maintenance_reason' => null,
+        ]);
         $fresh = $room->fresh() ?? $room;
         $this->notifyRoomStatus($fresh, $from, $to, $actor);
 
@@ -336,6 +373,7 @@ class RoomCheckoutService
         $roomNo = (string) ($room->room_number ?? '');
 
         $this->clearRoomGuestFields($room, RoomStatus::AVAILABLE->value);
+        $room->forceFill(['maintenance_reason' => null])->save();
 
         if ($actor) {
             $this->activityLogService->log(
@@ -381,9 +419,10 @@ class RoomCheckoutService
         $chatDeleted = $this->clearGuestChat($hotelId, $roomId);
 
         $this->clearRoomGuestFields($room, RoomStatus::MAINTENANCE->value);
+        $room->forceFill(['maintenance_reason' => null])->save();
 
         $freshRoom = $room->fresh() ?? $room;
-        $this->createAutoMaintenanceTask($actor, $freshRoom);
+        $this->createAutoCleaningTask($actor, $freshRoom);
 
         $this->activityLogService->log(
             $hotelId,
@@ -394,6 +433,7 @@ class RoomCheckoutService
                 'booking_id' => $booking ? (string) $booking->id : null,
                 'chat_messages_cleared' => $chatDeleted,
                 'room_status' => RoomStatus::MAINTENANCE->value,
+                'housekeeping' => 'cleaning',
             ]
         );
 
@@ -447,21 +487,31 @@ class RoomCheckoutService
 
         $hotelId = (string) $room->hotel_id;
         $roomNumber = (string) $room->room_number;
+        $roomId = (string) $room->id;
 
         $staff = $this->resolveCleaningStaff($hotelId, $staffMemberId);
 
         $existing = Task::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
-            ->whereIn('status', ['pending', 'in_progress'])
-            ->where(function ($q) use ($roomNumber) {
-                $q->where('title', 'like', '%'.$roomNumber.'%')
+            ->whereIn('status', [TaskStatus::PENDING->value, TaskStatus::IN_PROGRESS->value])
+            ->where(function ($q) use ($roomNumber, $roomId) {
+                $q->where('room_id', $roomId)
+                    ->orWhere('title', 'like', '%'.$roomNumber.'%')
                     ->orWhere('description', 'like', '%'.$roomNumber.'%');
             })
             ->orderBy('created_at')
             ->first();
 
         if ($existing !== null) {
-            $existing->update(['assigned_to' => (string) $staff->id]);
+            $checklist = CleaningChecklistSupport::normalize(
+                is_array($existing->checklist) ? $existing->checklist : null
+            );
+            $existing->update([
+                'assigned_to' => (string) $staff->id,
+                'room_id' => $roomId,
+                'task_type' => 'cleaning',
+                'checklist' => $checklist,
+            ]);
             $existing = $existing->fresh() ?? $existing;
 
             $this->activityLogService->log(
@@ -470,7 +520,7 @@ class RoomCheckoutService
                 "Reassigned cleaning of room {$roomNumber} to {$staff->name}",
                 [
                     'task_id' => (string) $existing->id,
-                    'room_id' => (string) $room->id,
+                    'room_id' => $roomId,
                     'staff_id' => (string) $staff->id,
                 ]
             );
@@ -485,10 +535,13 @@ class RoomCheckoutService
         $task = Task::withoutGlobalScopes()->create([
             'hotel_id' => $hotelId,
             'title' => "Clean room {$roomNumber}",
-            'description' => 'Housekeeping task for this room. Clean and inspect, then set the room to available.',
+            'description' => 'Housekeeping checklist for this room. Complete all items, then mark the task done to set the room available.',
             'assigned_to' => (string) $staff->id,
             'created_by' => (string) $actor->id,
-            'status' => 'pending',
+            'room_id' => $roomId,
+            'task_type' => 'cleaning',
+            'checklist' => CleaningChecklistSupport::defaultItems(),
+            'status' => TaskStatus::PENDING->value,
             'priority' => 'high',
         ]);
 
@@ -496,7 +549,7 @@ class RoomCheckoutService
             $hotelId,
             $actor,
             "Assigned cleaning of room {$roomNumber} to {$staff->name}",
-            ['task_id' => (string) $task->id, 'room_id' => (string) $room->id, 'staff_id' => (string) $staff->id]
+            ['task_id' => (string) $task->id, 'room_id' => $roomId, 'staff_id' => (string) $staff->id]
         );
 
         return [
@@ -811,25 +864,62 @@ class RoomCheckoutService
         $booking->refresh();
     }
 
-    private function createAutoMaintenanceTask(User $actor, Room $room): void
+    private function createAutoCleaningTask(User $actor, Room $room): void
     {
-        $staff = $this->pickCleaningStaff((string) $room->hotel_id);
+        $hotelId = (string) $room->hotel_id;
+        $roomId = (string) $room->id;
+        $roomNumber = (string) $room->room_number;
+
+        $existing = Task::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->whereIn('status', [TaskStatus::PENDING->value, TaskStatus::IN_PROGRESS->value])
+            ->where(function ($q) use ($roomNumber, $roomId) {
+                $q->where('room_id', $roomId)
+                    ->orWhere('title', 'like', '%Clean room '.$roomNumber.'%')
+                    ->orWhere('title', 'like', '%room '.$roomNumber.'%');
+            })
+            ->first();
+
+        if ($existing !== null) {
+            $staff = $this->pickCleaningStaff($hotelId);
+            $existing->update([
+                'room_id' => $roomId,
+                'task_type' => 'cleaning',
+                'checklist' => CleaningChecklistSupport::normalize(
+                    is_array($existing->checklist) ? $existing->checklist : null
+                ),
+                'assigned_to' => filled($existing->assigned_to)
+                    ? (string) $existing->assigned_to
+                    : (string) ($staff?->id ?? ''),
+            ]);
+
+            return;
+        }
+
+        $staff = $this->pickCleaningStaff($hotelId);
 
         $task = Task::withoutGlobalScopes()->create([
-            'hotel_id' => (string) $room->hotel_id,
-            'title' => "Post checkout maintenance for room {$room->room_number}",
-            'description' => 'Auto-generated after guest checkout. Inspect, clean, then set the room to available.',
+            'hotel_id' => $hotelId,
+            'title' => "Clean room {$roomNumber}",
+            'description' => 'Auto-assigned after guest checkout. Complete the cleaning checklist, then mark done to set the room available.',
             'assigned_to' => (string) ($staff?->id ?? ''),
             'created_by' => (string) $actor->id,
-            'status' => 'pending',
+            'room_id' => $roomId,
+            'task_type' => 'cleaning',
+            'checklist' => CleaningChecklistSupport::defaultItems(),
+            'status' => TaskStatus::PENDING->value,
             'priority' => 'high',
         ]);
 
         $this->activityLogService->log(
-            (string) $room->hotel_id,
+            $hotelId,
             $actor,
-            "Auto-created maintenance task for room {$room->room_number}",
-            ['task_id' => (string) $task->id, 'room_id' => (string) $room->id]
+            "Auto-created cleaning task for room {$roomNumber}",
+            [
+                'task_id' => (string) $task->id,
+                'room_id' => $roomId,
+                'staff_id' => (string) ($staff?->id ?? ''),
+            ]
         );
     }
 }

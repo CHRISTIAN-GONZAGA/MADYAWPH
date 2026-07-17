@@ -15,10 +15,13 @@ class WalkInComplimentaryPicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (menuItems.isEmpty) return const SizedBox.shrink();
+    final activeItems = menuItems
+        .where((item) => item['is_active'] != false)
+        .toList();
+    if (activeItems.isEmpty) return const SizedBox.shrink();
 
     return _WalkInComplimentaryPickerBody(
-      menuItems: menuItems,
+      menuItems: activeItems,
       quantitiesById: quantitiesById,
       onChanged: onChanged,
     );
