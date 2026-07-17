@@ -55,6 +55,7 @@ class AdminDashboardApiController extends Controller
                 app(AutoCheckoutService::class)->processOverdueRooms($hotelId);
             })->afterResponse();
             $rooms = Room::query()->get();
+            $categoriesById = RoomCategory::query()->get()->keyBy(fn ($category) => (string) $category->id);
         $bookingBase = Booking::withoutGlobalScopes()->where('hotel_id', $hotelId);
         $awaitingCheckInRoomIds = Room::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
@@ -163,7 +164,7 @@ class AdminDashboardApiController extends Controller
                     'user_id' => (string) $user->id,
                 ]))->theme_color,
             ],
-            'rooms' => $rooms->map(function ($room) use ($latestBookingsByRoom, $hotelId) {
+            'rooms' => $rooms->map(function ($room) use ($latestBookingsByRoom, $hotelId, $categoriesById) {
                 try {
                     $booking = app(RoomCheckoutService::class)
                         ->resolveActiveBookingForRoom($hotelId, $room)
@@ -173,16 +174,22 @@ class AdminDashboardApiController extends Controller
                         ->latest()
                         ->limit(25)
                         ->get();
+                    $roomCategory = $categoriesById->get((string) ($room->getAttributes()['category_id'] ?? ''));
+                    $hourly = \App\Support\RoomBillingSupport::hourlyConfig($room, $roomCategory);
 
                     return [
                         'id' => (string) $room->id,
                         'hotel_id' => (string) $room->hotel_id,
                         'room_number' => SafeModelAttributes::rawString($room, 'room_number'),
+                        'category_id' => (string) ($room->getAttributes()['category_id'] ?? ''),
                         'category_name' => SafeModelAttributes::rawString($room, 'category_name'),
                         'display_name' => SafeModelAttributes::rawString($room, 'display_name'),
                         'room_type' => SafeModelAttributes::rawString($room, 'room_type'),
                         'price_per_night' => SafeModelAttributes::rawFloat($room, 'price_per_night'),
                         'billing_mode' => SafeModelAttributes::rawString($room, 'billing_mode'),
+                        'block_hours' => $hourly['block_hours'],
+                        'price_per_block' => $hourly['price_per_block'],
+                        'price_per_extra_hour' => \App\Support\RoomBillingSupport::extraHourRate($room, $roomCategory),
                         'status' => $room->status instanceof RoomStatus
                             ? $room->status->value
                             : (filled($room->status) ? (string) $room->status : RoomStatus::AVAILABLE->value),

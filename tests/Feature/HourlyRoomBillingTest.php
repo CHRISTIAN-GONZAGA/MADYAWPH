@@ -38,11 +38,12 @@ class HourlyRoomBillingTest extends TestCase
     {
         $hotel = Hotel::create(['name' => 'Hourly Hotel', 'location' => 'Loc']);
         $this->seedHotelCredits($hotel);
+        // Booking creation is a front-desk operation (FrontDeskBookingGate).
         $admin = User::create([
-            'name' => 'Admin',
-            'email' => 'admin-hourly@test.local',
+            'name' => 'Frontdesk',
+            'email' => 'frontdesk-hourly@test.local',
             'password' => bcrypt('secret'),
-            'role' => UserRole::ADMIN->value,
+            'role' => UserRole::FRONTDESK->value,
             'hotel_id' => (string) $hotel->id,
         ]);
         $room = Room::withoutGlobalScopes()->create([
@@ -428,6 +429,32 @@ class HourlyRoomBillingTest extends TestCase
         ]);
 
         $this->assertSame(250.0, RoomBillingSupport::extraHourRate($room));
+    }
+
+    public function test_block_hours_uses_category_over_stale_room_value(): void
+    {
+        $hotel = Hotel::create(['name' => 'Stale Block Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
+        $category = \App\Models\RoomCategory::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => '12h Cat',
+            'billing_mode' => 'hourly',
+            'price_per_block' => 1500,
+            'block_hours' => 12,
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'category_id' => (string) $category->id,
+            'room_number' => '612',
+            'room_type' => 'Single',
+            'billing_mode' => 'hourly',
+            'price_per_block' => 1500,
+            'block_hours' => 3, // stale copy from before the category moved to 12h
+        ]);
+
+        $config = RoomBillingSupport::hourlyConfig($room);
+        $this->assertSame(12, $config['block_hours']);
+        $this->assertSame(1500.0, $config['price_per_block']);
     }
 
     public function test_custom_hours_extension_rejects_more_than_ten_hours(): void

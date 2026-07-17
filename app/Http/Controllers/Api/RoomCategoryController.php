@@ -161,9 +161,15 @@ class RoomCategoryController extends Controller
             if (($hourlySync['price_per_block'] ?? 0) > 0) {
                 $hourlySync['price_per_night'] = $hourlySync['price_per_block'];
             }
+            $categoryName = trim((string) ($roomCategory->name ?? ''));
             Room::withoutGlobalScopes()
                 ->where('hotel_id', (string) $roomCategory->hotel_id)
-                ->where('category_id', (string) $roomCategory->id)
+                ->where(function ($q) use ($roomCategory, $categoryName) {
+                    $q->where('category_id', (string) $roomCategory->id);
+                    if ($categoryName !== '') {
+                        $q->orWhere('category_name', $categoryName);
+                    }
+                })
                 ->update($hourlySync);
         }
 

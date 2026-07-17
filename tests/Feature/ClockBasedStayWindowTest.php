@@ -402,11 +402,12 @@ class ClockBasedStayWindowTest extends TestCase
     {
         $hotel = Hotel::create(['name' => "Hotel {$suffix}", 'location' => 'Loc']);
         $this->seedHotelCredits($hotel);
+        // Booking creation is a front-desk operation (FrontDeskBookingGate).
         $admin = User::create([
-            'name' => "Admin {$suffix}",
-            'email' => 'admin-'.strtolower(str_replace(' ', '-', $suffix)).'@test.local',
+            'name' => "Frontdesk {$suffix}",
+            'email' => 'frontdesk-'.strtolower(str_replace(' ', '-', $suffix)).'@test.local',
             'password' => bcrypt('secret'),
-            'role' => UserRole::ADMIN->value,
+            'role' => UserRole::FRONTDESK->value,
             'hotel_id' => (string) $hotel->id,
         ]);
         $room = Room::withoutGlobalScopes()->create([

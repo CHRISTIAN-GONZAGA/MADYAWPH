@@ -36,28 +36,34 @@ final class RoomBillingSupport
 
     public const DEFAULT_BLOCK_HOURS = 3;
 
+    private static function categoryFor(Room $room): ?RoomCategory
+    {
+        $categoryId = (string) ($room->getAttributes()['category_id'] ?? '');
+        if ($categoryId === '') {
+            return null;
+        }
+
+        return RoomCategory::withoutGlobalScopes()->find($categoryId);
+    }
+
     /**
-     * Room attributes win when set; otherwise the room's category defines the
-     * hourly block (e.g. "₱1000 per 3 hours"), then hotel defaults.
+     * The room's category is the source of truth for the hourly block length
+     * (e.g. "₱1000 per 12 hours"); the room's own copy can be stale when the
+     * category rate was changed after the room was created. Rooms without a
+     * category fall back to their own attributes, then hotel defaults.
      *
      * @return array{price_per_block: float, block_hours: int}
      */
-    public static function hourlyConfig(Room $room): array
+    public static function hourlyConfig(Room $room, ?RoomCategory $category = null): array
     {
         $attrs = $room->getAttributes();
-        $blockHours = (int) ($attrs['block_hours'] ?? 0);
         $price = PriceRounding::nearest50(self::toFloat($attrs['price_per_block'] ?? 0));
 
-        $category = null;
-        if ($blockHours < 1 || $price <= 0) {
-            $categoryId = (string) ($attrs['category_id'] ?? '');
-            if ($categoryId !== '') {
-                $category = RoomCategory::withoutGlobalScopes()->find($categoryId);
-            }
-        }
+        $category ??= self::categoryFor($room);
 
+        $blockHours = (int) ($category?->block_hours ?? 0);
         if ($blockHours < 1) {
-            $blockHours = (int) ($category?->block_hours ?? 0);
+            $blockHours = (int) ($attrs['block_hours'] ?? 0);
         }
         if ($blockHours < 1) {
             $blockHours = self::DEFAULT_BLOCK_HOURS;
@@ -226,17 +232,14 @@ final class RoomBillingSupport
     /**
      * Per-hour rate for manual extensions (not the standard block rate).
      */
-    public static function extraHourRate(Room $room): float
+    public static function extraHourRate(Room $room, ?RoomCategory $category = null): float
     {
         if (self::isHourly($room)) {
-            $categoryId = (string) ($room->getAttributes()['category_id'] ?? '');
-            if ($categoryId !== '') {
-                $category = RoomCategory::withoutGlobalScopes()->find($categoryId);
-                if ($category !== null) {
-                    $rate = self::toFloat($category->price_per_extra_hour ?? 0);
-                    if ($rate > 0) {
-                        return PriceRounding::nearest50($rate);
-                    }
+            $category ??= self::categoryFor($room);
+            if ($category !== null) {
+                $rate = self::toFloat($category->price_per_extra_hour ?? 0);
+                if ($rate > 0) {
+                    return PriceRounding::nearest50($rate);
                 }
             }
         }

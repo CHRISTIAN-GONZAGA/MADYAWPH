@@ -2778,13 +2778,21 @@ Route::get('/admin/rooms', function (Request $request) {
             }
         });
     }
+    $categoriesById = RoomCategory::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->get()
+        ->keyBy(fn ($cat) => (string) $cat->id);
     $rooms = $query
         ->orderBy('room_number')
         ->get()
-        ->map(function ($room) {
+        ->map(function ($room) use ($categoriesById) {
+            $roomCategory = $categoriesById->get((string) ($room->getAttributes()['category_id'] ?? ''));
+            $hourly = RoomBillingSupport::hourlyConfig($room, $roomCategory);
             $payload = array_merge($room->toArray(), [
                 'id' => (string) $room->id,
                 'room_access_password' => (string) ($room->current_access_code ?? ''),
+                'block_hours' => $hourly['block_hours'],
+                'price_per_block' => $hourly['price_per_block'],
             ]);
             if (! empty($payload['image_url'])) {
                 $payload['image_url'] = ChatAttachmentUrl::fromStoredUrl((string) $payload['image_url'])
@@ -2840,11 +2848,15 @@ Route::get('/admin/rooms/{id}', function (Request $request, string $id, RoomChec
         $extensionOptions = app(StayExtensionService::class)->preview($room, $booking);
     }
 
+    $hourly = RoomBillingSupport::hourlyConfig($room);
+
     return response()->json([
         'room' => array_merge($room->toArray(), [
             'id' => (string) $room->id,
             'status' => StayManagementPolicy::roomStatusValue($room),
             'room_access_password' => (string) ($room->current_access_code ?? ''),
+            'block_hours' => $hourly['block_hours'],
+            'price_per_block' => $hourly['price_per_block'],
         ]),
         'active_booking' => $bookingPayload,
         'booking_charges' => $charges,

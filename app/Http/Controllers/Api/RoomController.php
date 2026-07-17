@@ -12,6 +12,7 @@ use App\Services\RoomCheckoutService;
 use App\Services\StayReceiptService;
 use App\Support\ChatAttachmentUrl;
 use App\Support\PriceRounding;
+use App\Support\RoomBillingSupport;
 use App\Support\RoomImageUploadRules;
 use App\Support\StayManagementPolicy;
 use App\Support\RoomMediaStorage;
@@ -306,6 +307,10 @@ class RoomController extends Controller
             $payload['image_url'] = ChatAttachmentUrl::fromStoredUrl((string) $payload['image_url']) ?? (string) $payload['image_url'];
         }
 
+        $hourly = RoomBillingSupport::hourlyConfig($room);
+        $payload['block_hours'] = $hourly['block_hours'];
+        $payload['price_per_block'] = $hourly['price_per_block'];
+
         return $payload;
     }
 
@@ -365,7 +370,8 @@ class RoomController extends Controller
         $payload['billing_mode'] = $billingMode === 'hourly' ? 'hourly' : 'nightly';
 
         if ($payload['billing_mode'] === 'hourly') {
-            $payload['block_hours'] = max(1, (int) ($payload['block_hours'] ?? $category->block_hours ?? 3));
+            // Category is the source of truth for the hourly block length.
+            $payload['block_hours'] = max(1, (int) ($category->block_hours ?? $payload['block_hours'] ?? 3));
             $payload['price_per_block'] = PriceRounding::nearest50(
                 (float) ($payload['price_per_block'] ?? $category->price_per_block ?? $category->default_price ?? 0)
             );
@@ -377,7 +383,7 @@ class RoomController extends Controller
             $payload['price_per_night'] = PriceRounding::nearest50(
                 (float) ($payload['price_per_night'] ?? $category->default_price ?? 0)
             );
-            $payload['block_hours'] = max(1, (int) ($payload['block_hours'] ?? 3));
+            $payload['block_hours'] = max(1, (int) ($category->block_hours ?? $payload['block_hours'] ?? 3));
             $payload['price_per_block'] = PriceRounding::nearest50((float) ($payload['price_per_block'] ?? 0));
         }
 

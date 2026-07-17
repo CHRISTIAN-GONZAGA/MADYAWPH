@@ -12,12 +12,13 @@ trait ApprovesGuestReservations
 {
     protected function approveGuestReservation(ExternalReservation $reservation, Hotel $hotel): User
     {
+        // Reservation approval is a front-desk operation (FrontDeskBookingGate).
         $admin = User::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
-            'name' => 'approve-admin',
-            'email' => 'approve-admin-'.uniqid('', true).'@test.local',
+            'name' => 'approve-frontdesk',
+            'email' => 'approve-frontdesk-'.uniqid('', true).'@test.local',
             'password' => bcrypt('secret123'),
-            'role' => UserRole::ADMIN,
+            'role' => UserRole::FRONTDESK,
         ]);
         HotelCredit::withoutGlobalScopes()->firstOrCreate(
             ['hotel_id' => (string) $hotel->id],
