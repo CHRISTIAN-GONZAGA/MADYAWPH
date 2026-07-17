@@ -18,7 +18,7 @@ import 'admin/widgets/room_insights_report_screen.dart';
 
 /// Revenue and operations charts with daily / weekly / monthly / annual granularity.
 class AdminReportsLegacyScreen extends StatefulWidget {
-  const AdminReportsScreen({
+  const AdminReportsLegacyScreen({
     super.key,
     this.embedded = false,
     this.isFrontDesk = false,
@@ -28,7 +28,8 @@ class AdminReportsLegacyScreen extends StatefulWidget {
   final bool isFrontDesk;
 
   @override
-  State<AdminReportsScreen> createState() => _AdminReportsScreenState();
+  State<AdminReportsLegacyScreen> createState() =>
+      _AdminReportsLegacyScreenState();
 }
 
 class _AdminReportsLegacyScreenState extends State<AdminReportsLegacyScreen> {
@@ -1698,23 +1699,23 @@ class _PeriodFinanceRow extends StatelessWidget {
               ),
         ),
         const SizedBox(height: 10),
-        _MetricLine(label: 'Gross revenue', value: '₱${_AdminReportsScreenState._fmtNum(revenue)}'),
-        _MetricLine(label: 'Room revenue', value: '₱${_AdminReportsScreenState._fmtNum(room)}'),
-        _MetricLine(label: 'Amenity revenue', value: '₱${_AdminReportsScreenState._fmtNum(amenity)}'),
-        _MetricLine(label: 'Transfer adjustments', value: '₱${_AdminReportsScreenState._fmtNum(transfers)}'),
+        _MetricLine(label: 'Gross revenue', value: '₱${_AdminReportsLegacyScreenState._fmtNum(revenue)}'),
+        _MetricLine(label: 'Room revenue', value: '₱${_AdminReportsLegacyScreenState._fmtNum(room)}'),
+        _MetricLine(label: 'Amenity revenue', value: '₱${_AdminReportsLegacyScreenState._fmtNum(amenity)}'),
+        _MetricLine(label: 'Transfer adjustments', value: '₱${_AdminReportsLegacyScreenState._fmtNum(transfers)}'),
         const SizedBox(height: 6),
-        _MetricLine(label: 'Refunds', value: '₱${_AdminReportsScreenState._fmtNum(refunds)}'),
-        _MetricLine(label: 'Reseller payouts', value: '₱${_AdminReportsScreenState._fmtNum(reseller)}'),
-        _MetricLine(label: 'Total expenses', value: '₱${_AdminReportsScreenState._fmtNum(expenses)}'),
+        _MetricLine(label: 'Refunds', value: '₱${_AdminReportsLegacyScreenState._fmtNum(refunds)}'),
+        _MetricLine(label: 'Reseller payouts', value: '₱${_AdminReportsLegacyScreenState._fmtNum(reseller)}'),
+        _MetricLine(label: 'Total expenses', value: '₱${_AdminReportsLegacyScreenState._fmtNum(expenses)}'),
         const SizedBox(height: 6),
         _MetricLine(
           label: 'Net before resellers',
-          value: '₱${_AdminReportsScreenState._fmtNum(grossNet)}',
+          value: '₱${_AdminReportsLegacyScreenState._fmtNum(grossNet)}',
           emphasized: true,
         ),
         _MetricLine(
           label: 'Net profit',
-          value: '₱${_AdminReportsScreenState._fmtNum(net)}',
+          value: '₱${_AdminReportsLegacyScreenState._fmtNum(net)}',
           emphasized: true,
         ),
         const SizedBox(height: 4),
@@ -1780,11 +1781,11 @@ class _ResellerPeriodRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final total = _AdminReportsScreenState._parseAmount(data?['total_paid']);
-    final count = _AdminReportsScreenState._parseInt(data?['payment_count']);
+    final total = _AdminReportsLegacyScreenState._parseAmount(data?['total_paid']);
+    final count = _AdminReportsLegacyScreenState._parseInt(data?['payment_count']);
     final resellers =
-        _AdminReportsScreenState._parseInt(data?['unique_resellers']);
-    final byCat = _AdminReportsScreenState._asCategoryMap(data?['by_category']);
+        _AdminReportsLegacyScreenState._parseInt(data?['unique_resellers']);
+    final byCat = _AdminReportsLegacyScreenState._asCategoryMap(data?['by_category']);
 
     if (data == null) {
       return Padding(
@@ -1813,7 +1814,7 @@ class _ResellerPeriodRow extends StatelessWidget {
           const SizedBox(height: 6),
           _MetricLine(
             label: 'Total paid',
-            value: '₱${_AdminReportsScreenState._fmtNum(total)}',
+            value: '₱${_AdminReportsLegacyScreenState._fmtNum(total)}',
           ),
           _MetricLine(label: 'Payments', value: '$count'),
           _MetricLine(label: 'Resellers', value: '$resellers'),
@@ -1821,15 +1822,15 @@ class _ResellerPeriodRow extends StatelessWidget {
             const SizedBox(height: 4),
             _MetricLine(
               label: 'Taxi',
-              value: '₱${_AdminReportsScreenState._fmtNum(byCat['taxi'] ?? 0)}',
+              value: '₱${_AdminReportsLegacyScreenState._fmtNum(byCat['taxi'] ?? 0)}',
             ),
             _MetricLine(
               label: 'Motorcycle',
-              value: '₱${_AdminReportsScreenState._fmtNum(byCat['motorcycle'] ?? 0)}',
+              value: '₱${_AdminReportsLegacyScreenState._fmtNum(byCat['motorcycle'] ?? 0)}',
             ),
             _MetricLine(
               label: 'Individual',
-              value: '₱${_AdminReportsScreenState._fmtNum(byCat['individual'] ?? 0)}',
+              value: '₱${_AdminReportsLegacyScreenState._fmtNum(byCat['individual'] ?? 0)}',
             ),
           ],
         ],
