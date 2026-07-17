@@ -147,6 +147,41 @@
                             'rows' => $report['amenity_transactions'] ?? [],
                         ])
 
+                        @if(!empty($report['shift_transactions']))
+                            @include('mail.partials.sales-report-transactions', [
+                                'title' => 'FO shift line items (' . count($report['shift_transactions'] ?? []) . ')',
+                                'rows' => $report['shift_transactions'] ?? [],
+                            ])
+                        @endif
+
+                        @if(!empty($report['staff_name']))
+                            <p style="margin:12px 0 0;font-size:14px;color:#4a5568;">
+                                Front desk staff: <strong>{{ $report['staff_name'] }}</strong>
+                            </p>
+                        @endif
+
+                        @if(!empty($report['shift_summary']))
+                            <h2 style="margin:20px 0 10px;font-size:16px;color:#1a237e;">Shift snapshot</h2>
+                            <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px;margin-bottom:16px;">
+                                <tr>
+                                    <td style="padding:8px 10px;border:1px solid #e2e8f0;">Rooms checked in</td>
+                                    <td style="padding:8px 10px;border:1px solid #e2e8f0;text-align:right;">{{ (int) ($report['shift_summary']['rooms_checked_in'] ?? 0) }}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:8px 10px;border:1px solid #e2e8f0;">Rooms checked out</td>
+                                    <td style="padding:8px 10px;border:1px solid #e2e8f0;text-align:right;">{{ (int) ($report['shift_summary']['rooms_checked_out'] ?? 0) }}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:8px 10px;border:1px solid #e2e8f0;">Gross (shift)</td>
+                                    <td style="padding:8px 10px;border:1px solid #e2e8f0;text-align:right;">{{ $fmt($report['shift_summary']['gross_revenue'] ?? 0) }}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:8px 10px;border:1px solid #e2e8f0;">Net (shift)</td>
+                                    <td style="padding:8px 10px;border:1px solid #e2e8f0;text-align:right;">{{ $fmt($report['shift_summary']['net_revenue'] ?? 0) }}</td>
+                                </tr>
+                            </table>
+                        @endif
+
                         @if(!empty($report['refund_transactions']))
                             @include('mail.partials.sales-report-transactions', [
                                 'title' => 'Refunds (' . count($report['refund_transactions'] ?? []) . ')',

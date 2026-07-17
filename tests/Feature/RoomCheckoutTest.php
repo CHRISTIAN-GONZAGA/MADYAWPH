@@ -81,14 +81,14 @@ class RoomCheckoutTest extends TestCase
 
         $this->postJson('/api/v1/rooms/'.$room->id.'/checkout')
             ->assertOk()
-            ->assertJsonPath('room.status', RoomStatus::MAINTENANCE->value)
+            ->assertJsonPath('room.status', RoomStatus::CLEANING->value)
             ->assertJsonPath('receipt.booking_reference', 'BK-CO-1')
             ->assertJsonStructure(['receipt' => ['lines', 'subtotal', 'receipt_url']]);
 
         $room = Room::withoutGlobalScopes()->findOrFail($room->id);
         $booking = Booking::withoutGlobalScopes()->findOrFail($booking->id);
 
-        $this->assertSame(RoomStatus::MAINTENANCE->value, $room->status?->value ?? (string) $room->status);
+        $this->assertSame(RoomStatus::CLEANING->value, $room->status?->value ?? (string) $room->status);
         $this->assertNull($room->current_guest_name);
         $this->assertNull($room->current_access_code);
         $this->assertSame(BookingStatus::COMPLETED->value, $booking->status?->value ?? (string) $booking->status);
@@ -120,7 +120,7 @@ class RoomCheckoutTest extends TestCase
         $this->assertNull($roomPayload['latest_booking'] ?? null);
     }
 
-    public function test_checkout_from_booked_status_clears_guest_and_sets_maintenance(): void
+    public function test_checkout_from_booked_status_clears_guest_and_sets_cleaning(): void
     {
         $hotel = Hotel::create(['name' => 'Booked Checkout Hotel', 'location' => 'Loc']);
         $admin = User::create([
@@ -164,7 +164,7 @@ class RoomCheckoutTest extends TestCase
 
         $this->postJson('/api/v1/rooms/'.$room->id.'/checkout')
             ->assertOk()
-            ->assertJsonPath('room.status', RoomStatus::MAINTENANCE->value);
+            ->assertJsonPath('room.status', RoomStatus::CLEANING->value);
 
         $room = Room::withoutGlobalScopes()->findOrFail($room->id);
         $this->assertNull($room->getAttributes()['current_guest_name'] ?? $room->current_guest_name);

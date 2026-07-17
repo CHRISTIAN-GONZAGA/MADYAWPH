@@ -9,6 +9,7 @@ use App\Models\Hotel;
 use App\Services\AppEmailService;
 use App\Services\FrontDeskActivityReportService;
 use App\Services\HotelFinancialReportService;
+use App\Services\TaskService;
 use App\Models\BillingCharge;
 use App\Models\Booking;
 use App\Models\Room;
@@ -54,20 +55,25 @@ class ReportController extends Controller
         return response()->json($rows);
     }
 
-    public function staffPerformance()
+    public function staffPerformance(TaskService $taskService)
     {
         return response()->json(
             StaffMember::query()
                 ->orderBy('name')
-                ->get(['name', 'role', 'performance_score', 'tasks_completed', 'user_id'])
-                ->map(fn (StaffMember $s) => [
-                    'id' => (string) $s->id,
-                    'name' => (string) ($s->name ?? ''),
-                    'role' => SafeModelAttributes::rawString($s, 'role'),
-                    'performance_score' => (int) ($s->performance_score ?? 0),
-                    'tasks_completed' => (int) ($s->tasks_completed ?? 0),
-                    'user_id' => (string) ($s->user_id ?? ''),
-                ])
+                ->get()
+                ->map(function (StaffMember $s) use ($taskService) {
+                    $taskService->recalculateStaffPerformance($s);
+                    $s = $s->fresh() ?? $s;
+
+                    return [
+                        'id' => (string) $s->id,
+                        'name' => (string) ($s->name ?? ''),
+                        'role' => SafeModelAttributes::rawString($s, 'role'),
+                        'performance_score' => (int) ($s->performance_score ?? 0),
+                        'tasks_completed' => (int) ($s->tasks_completed ?? 0),
+                        'user_id' => (string) ($s->user_id ?? ''),
+                    ];
+                })
         );
     }
 
@@ -1053,6 +1059,26 @@ class ReportController extends Controller
         );
     }
 
+    public function frontDeskSalesAccountOverview(Request $request, \App\Services\FrontDeskSalesReportService $frontDeskSales)
+    {
+        $validated = $request->validate([
+            'user_id' => ['required', 'string', 'max:120'],
+            'anchor_date' => ['nullable', 'date'],
+        ]);
+
+        $anchor = isset($validated['anchor_date'])
+            ? Carbon::parse($validated['anchor_date'])
+            : now();
+
+        return response()->json(
+            $frontDeskSales->accountPeriodOverview(
+                (string) $request->user()->hotel_id,
+                (string) $validated['user_id'],
+                $anchor,
+            )
+        );
+    }
+
     /**
      * @param  array<string, mixed>  $validated
      * @return array{0: Carbon, 1: Carbon}
@@ -1104,6 +1130,110 @@ class ReportController extends Controller
                 $to,
             )
         );
+    }
+
+    /**
+     * Room performance: most/least booked, profit leaders, maintenance frequency.
+     */
+    public function roomInsights(Request $request)
+    {
+        $validated = $request->validate([
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date'],
+        ]);
+        $hotelId = (string) ($request->user()?->hotel_id ?? '');
+        $to = isset($validated['to'])
+            ? Carbon::parse($validated['to'])->endOfDay()
+            : now()->endOfDay();
+        $from = isset($validated['from'])
+            ? Carbon::parse($validated['from'])->startOfDay()
+            : $to->copy()->subDays(90)->startOfDay();
+
+        $rooms = Room::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->get(['id', 'room_number', 'room_type', 'price_per_night', 'status', 'maintenance_reason']);
+
+        $bookings = Booking::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->whereNotIn('status', ['cancelled'])
+            ->where(function ($q) use ($from, $to) {
+                $q->whereBetween('created_at', [$from, $to])
+                    ->orWhereBetween('check_in_date', [$from->toDateString(), $to->toDateString()]);
+            })
+            ->get(['id', 'room_id', 'total_amount', 'payment_status', 'status', 'created_at']);
+
+        $byRoom = [];
+        foreach ($rooms as $room) {
+            $rid = (string) $room->id;
+            $byRoom[$rid] = [
+                'room_id' => $rid,
+                'room_number' => (string) ($room->room_number ?? ''),
+                'room_type' => (string) ($room->room_type ?? ''),
+                'bookings_count' => 0,
+                'revenue' => 0.0,
+                'maintenance_events' => 0,
+                'status' => strtolower((string) ($room->status?->value ?? $room->status ?? '')),
+            ];
+        }
+
+        foreach ($bookings as $booking) {
+            $rid = (string) ($booking->room_id ?? '');
+            if ($rid === '' || ! isset($byRoom[$rid])) {
+                continue;
+            }
+            $byRoom[$rid]['bookings_count']++;
+            $paid = strtolower((string) ($booking->payment_status ?? '')) === 'paid';
+            if ($paid || in_array(strtolower((string) ($booking->status?->value ?? $booking->status ?? '')), ['completed', 'checked_in', 'confirmed'], true)) {
+                $byRoom[$rid]['revenue'] += (float) ($booking->total_amount ?? 0);
+            }
+        }
+
+        $maintTasks = Task::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where(function ($q) {
+                $q->where('task_type', 'maintenance')
+                    ->orWhere('title', 'like', '%Maintenance%')
+                    ->orWhere('title', 'like', '%maintenance%');
+            })
+            ->whereBetween('created_at', [$from, $to])
+            ->get(['room_id', 'title']);
+
+        foreach ($maintTasks as $task) {
+            $rid = (string) ($task->room_id ?? '');
+            if ($rid !== '' && isset($byRoom[$rid])) {
+                $byRoom[$rid]['maintenance_events']++;
+            }
+        }
+
+        $rows = collect($byRoom)->values()->map(function ($row) {
+            $row['revenue'] = round((float) $row['revenue'], 2);
+
+            return $row;
+        });
+
+        $mostBooked = $rows->sortByDesc('bookings_count')->values()->take(10)->values();
+        $leastBooked = $rows->sortBy('bookings_count')->values()->take(10)->values();
+        $mostProfit = $rows->sortByDesc('revenue')->values()->take(10)->values();
+        $mostMaintenance = $rows->sortByDesc('maintenance_events')->values()->take(10)->values();
+        $currentlyCleaning = $rows->filter(fn ($r) => ($r['status'] ?? '') === 'cleaning')->values();
+        $currentlyMaintenance = $rows->filter(fn ($r) => ($r['status'] ?? '') === 'maintenance')->values();
+
+        return response()->json([
+            'from' => $from->toDateString(),
+            'to' => $to->toDateString(),
+            'most_booked' => $mostBooked,
+            'least_booked' => $leastBooked,
+            'most_profit' => $mostProfit,
+            'most_maintenance' => $mostMaintenance,
+            'currently_cleaning' => $currentlyCleaning,
+            'currently_maintenance' => $currentlyMaintenance,
+            'totals' => [
+                'rooms' => $rows->count(),
+                'bookings' => (int) $rows->sum('bookings_count'),
+                'revenue' => round((float) $rows->sum('revenue'), 2),
+                'maintenance_events' => (int) $rows->sum('maintenance_events'),
+            ],
+        ]);
     }
 
     /**
@@ -1203,6 +1333,37 @@ class ReportController extends Controller
         $report['from_display'] = $from->format('M j, Y g:i A');
         $report['to_display'] = $to->format('M j, Y g:i A');
         $report['staff_name'] = $staffName;
+
+        // Attach the detailed shift table payload (bookings + amenities line items).
+        $shiftPayload = $this->buildShiftReportPayload(
+            $from,
+            $to,
+            $staffName !== '' ? $staffName : null
+        );
+        $report['shift_detail'] = $shiftPayload;
+        $report['shift_transactions'] = $shiftPayload['transactions'] ?? [];
+        $report['shift_summary'] = $shiftPayload['summary'] ?? [];
+
+        // Per-account FO sales for the person who timed out (when identifiable).
+        $actorId = (string) ($user->id ?? '');
+        if ($actorId !== '') {
+            try {
+                $foService = app(\App\Services\FrontDeskSalesReportService::class);
+                $report['frontdesk_day'] = $foService->accountDayDetail(
+                    $hotelId,
+                    $actorId,
+                    $from->copy()->startOfDay(),
+                );
+                $report['frontdesk_overview'] = $foService->summarizeAccounts(
+                    $hotelId,
+                    'day',
+                    $from,
+                    $to,
+                );
+            } catch (\Throwable) {
+                // Keep core sales email even if FO drill-down fails.
+            }
+        }
 
         $result = app(AppEmailService::class)->sendHotelSalesReportToOwner(
             $recipients,

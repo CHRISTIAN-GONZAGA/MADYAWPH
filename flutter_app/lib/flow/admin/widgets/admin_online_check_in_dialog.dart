@@ -5,12 +5,15 @@ import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 import '../../../dio_client.dart';
 import '../../../utils/money_format.dart';
-import '../../../widgets/admin_time_slot_field.dart';
 import '../admin_dashboard_models.dart';
 import 'device_guest_welcome_sms.dart';
+import 'hourly_billing.dart';
 
 String formatAdminCheckInDate(DateTime d) =>
     '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+String _formatClock(DateTime d) =>
+    '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 
 /// Check-in dialog for booked rooms (walk-in or public online).
 Future<bool> showAdminOnlineAwareCheckInDialog(
@@ -23,15 +26,19 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
     return false;
   }
 
-  final inDate = AdminDashboardModels.stayStartDate(room) ?? DateTime.now();
-  final outDate =
-      AdminDashboardModels.stayEndDate(room) ?? inDate.add(const Duration(days: 1));
-  var checkInDate = inDate;
-  var checkOutDate = outDate;
-  var checkInTime = AdminDashboardModels.bookingTimeOfDay(room, 'check_in_time') ??
-      const TimeOfDay(hour: 15, minute: 0);
-  var checkOutTime = AdminDashboardModels.bookingTimeOfDay(room, 'check_out_time') ??
-      const TimeOfDay(hour: 11, minute: 0);
+  final isHourly = HourlyBilling.isHourly(room);
+  final scheduledOut =
+      AdminDashboardModels.stayEndDate(room) ?? DateTime.now().add(const Duration(days: 1));
+
+  // Hourly: stay window is always clock-now + block_hours (server also enforces).
+  // Nightly: check-in at clock now; checkout stays on scheduled overnight date @ 11:00.
+  final window = HourlyBilling.clockBasedStayWindow(
+    room,
+    DateTime.now(),
+    checkOutDate: scheduledOut,
+  );
+  final checkInAt = window.checkIn;
+  final checkOutAt = window.checkOut;
 
   double balanceDue = parseJsonDouble(
     room['balance_due'] ??
@@ -53,7 +60,7 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
         : const <String, dynamic>{};
     final bookingId = AdminDashboardModels.documentIdOf(booking);
     final futures = <Future>[
-      publicDio().get<Map<String, dynamic>>('/platform/info'),
+      portalDio().get<Map<String, dynamic>>('/admin/settings/min-check-in-payment'),
     ];
     if (bookingId.isNotEmpty) {
       futures.add(
@@ -63,8 +70,8 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
       );
     }
     final results = await Future.wait(futures);
-    final platform = results[0].data as Map<String, dynamic>?;
-    minPercent = parseJsonDouble(platform?['min_check_in_payment_percent'] ?? 50);
+    final policy = results[0].data as Map<String, dynamic>?;
+    minPercent = parseJsonDouble(policy?['min_check_in_payment_percent'] ?? 50);
     if (results.length > 1) {
       final bill = results[1].data as Map<String, dynamic>?;
       balanceDue = parseJsonDouble(
@@ -84,6 +91,12 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
     loadingPolicy = false;
   }
 
+  final staySummary = isHourly
+      ? '${HourlyBilling.blockHours(room)}h stay · check-in now · '
+          'checkout ~${_formatClock(checkOutAt)}'
+      : 'Check-in now · overnight through ${formatAdminCheckInDate(checkOutAt)} '
+          '(checkout ${_formatClock(checkOutAt)})';
+
   final ok = await showDialog<bool>(
     context: context,
     builder: (ctx) => StatefulBuilder(
@@ -99,50 +112,9 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
                 style: Theme.of(ctx).textTheme.titleMedium,
               ),
               const SizedBox(height: 12),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Check-in date'),
-                subtitle: Text(formatAdminCheckInDate(checkInDate)),
-                trailing: const Icon(Icons.calendar_today),
-                onTap: () async {
-                  final picked = await showDatePicker(
-                    context: ctx,
-                    firstDate: DateTime.now().subtract(const Duration(days: 7)),
-                    lastDate: DateTime.now().add(const Duration(days: 365)),
-                    initialDate: checkInDate,
-                  );
-                  if (picked != null) setLocal(() => checkInDate = picked);
-                },
-              ),
-              AdminTimeSlotField(
-                label: 'Check-in time',
-                value: checkInTime,
-                onChanged: (t) {
-                  if (t != null) setLocal(() => checkInTime = t);
-                },
-              ),
-              const SizedBox(height: 8),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Check-out date'),
-                subtitle: Text(formatAdminCheckInDate(checkOutDate)),
-                trailing: const Icon(Icons.calendar_today),
-                onTap: () async {
-                  final picked = await showDatePicker(
-                    context: ctx,
-                    firstDate: checkInDate,
-                    lastDate: DateTime.now().add(const Duration(days: 365)),
-                    initialDate: checkOutDate,
-                  );
-                  if (picked != null) setLocal(() => checkOutDate = picked);
-                },
-              ),
-              AdminTimeSlotField(
-                label: 'Check-out time',
-                value: checkOutTime,
-                onChanged: (t) {
-                  if (t != null) setLocal(() => checkOutTime = t);
-                },
+              Text(
+                staySummary,
+                style: Theme.of(ctx).textTheme.bodyMedium,
               ),
               const SizedBox(height: 16),
               Text(
@@ -224,21 +196,11 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
   paymentCtrl.dispose();
   if (ok != true || !context.mounted) return false;
 
-  final inTime = checkInTime ?? const TimeOfDay(hour: 15, minute: 0);
-  final outTime = checkOutTime ?? const TimeOfDay(hour: 11, minute: 0);
-  final checkInAt = DateTime(
-    checkInDate.year,
-    checkInDate.month,
-    checkInDate.day,
-    inTime.hour,
-    inTime.minute,
-  );
-  final checkOutAt = DateTime(
-    checkOutDate.year,
-    checkOutDate.month,
-    checkOutDate.day,
-    outTime.hour,
-    outTime.minute,
+  // Recompute at submit so the window matches the actual check-in clock.
+  final liveWindow = HourlyBilling.clockBasedStayWindow(
+    room,
+    DateTime.now(),
+    checkOutDate: scheduledOut,
   );
 
   Map<String, dynamic>? checkInResponse;
@@ -247,8 +209,8 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
       '/admin/rooms/$roomId/status',
       data: {
         'status': 'checked_in',
-        'check_in_at': checkInAt.toIso8601String(),
-        'check_out_at': checkOutAt.toIso8601String(),
+        'check_in_at': liveWindow.checkIn.toIso8601String(),
+        'check_out_at': liveWindow.checkOut.toIso8601String(),
         if (payAmount > 0) 'check_in_payment_amount': payAmount,
         if (payAmount > 0) 'payment_method': paymentMethod,
       },

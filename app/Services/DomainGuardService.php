@@ -65,6 +65,12 @@ class DomainGuardService
             ]);
         }
 
+        if ($status === RoomStatus::CLEANING) {
+            throw ValidationException::withMessages([
+                'room_id' => 'Room is being cleaned.',
+            ]);
+        }
+
         if ($status === RoomStatus::CHECKED_IN) {
             throw ValidationException::withMessages([
                 'room_id' => 'Room is currently occupied.',

@@ -363,6 +363,8 @@ Future<bool> showAdminCreateRoomDialog(
                           value: 'available', child: Text('Available')),
                       DropdownMenuItem(value: 'booked', child: Text('Booked')),
                       DropdownMenuItem(
+                          value: 'cleaning', child: Text('Cleaning')),
+                      DropdownMenuItem(
                           value: 'maintenance', child: Text('Maintenance')),
                     ],
                     onChanged: (v) => setLocal(() => status = v ?? status),

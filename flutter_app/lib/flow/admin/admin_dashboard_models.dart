@@ -89,7 +89,9 @@ class AdminDashboardModels {
   /// True when front desk can create a walk-in booking for this room.
   static bool isWalkInBookable(Map<String, dynamic> room) {
     final status = statusOf(room);
-    if (status == 'maintenance' || status == 'checked_in') return false;
+    if (status == 'maintenance' || status == 'cleaning' || status == 'checked_in') {
+      return false;
+    }
     if (status.isEmpty) {
       final guest = (room['current_guest_name'] ?? '').toString().trim();
       return guest.isEmpty;
@@ -99,7 +101,8 @@ class AdminDashboardModels {
 
   /// True when staff may schedule a booking (including future dates on occupied rooms).
   static bool canScheduleFutureBooking(Map<String, dynamic> room) {
-    return statusOf(room) != 'maintenance';
+    final status = statusOf(room);
+    return status != 'maintenance' && status != 'cleaning';
   }
 
   /// Booked / reserved arrivals eligible for quick check-in from Summary.
@@ -258,6 +261,8 @@ class AdminDashboardModels {
         return 'Checked out';
       case 'maintenance':
         return 'Maintenance';
+      case 'cleaning':
+        return 'Cleaning';
       case 'reserved':
         return 'Reserved';
       case 'booked':
@@ -300,7 +305,9 @@ class AdminDashboardModels {
   /// Walk-in tile grouping: available | reserved | occupied.
   static String walkInTileStatus(Map<String, dynamic> room) {
     final status = statusOf(room);
-    if (status == 'maintenance' || status == 'checked_in') return 'occupied';
+    if (status == 'maintenance' || status == 'cleaning' || status == 'checked_in') {
+      return 'occupied';
+    }
     if (status == 'available' || status == 'checked_out') {
       final start = stayStartDate(room);
       if (start != null) {
@@ -444,16 +451,18 @@ class AdminDashboardModels {
     var vacant = 0;
     var occupied = 0;
     var maintenance = 0;
+    var cleaning = 0;
     for (final r in rooms) {
       if (isWalkInBookable(r)) vacant++;
       if (statusOf(r) == 'checked_in') occupied++;
       if (statusOf(r) == 'maintenance') maintenance++;
+      if (statusOf(r) == 'cleaning') cleaning++;
     }
     return {
       'total': rooms.length,
       'vacant': vacant,
       'occupied': occupied,
-      'cleaning': maintenance,
+      'cleaning': cleaning,
       'maintenance': maintenance,
       'booked_reserved': bookedRoomCount(rooms),
     };
@@ -663,7 +672,7 @@ class AdminDashboardModels {
     if (status == 'checked_in' || status == 'booked' || status == 'reserved') {
       return true;
     }
-    if (status == 'maintenance') {
+    if (status == 'maintenance' || status == 'cleaning') {
       return (room['current_guest_name'] ?? '').toString().trim().isNotEmpty;
     }
     return false;
@@ -722,7 +731,7 @@ class AdminDashboardModels {
     final guest = guestName(room);
     if (guest == '—' || guest.isEmpty) return false;
     // Guest still on record during maintenance / turnover.
-    return status == 'maintenance';
+    return status == 'maintenance' || status == 'cleaning';
   }
 
   static List<Map<String, dynamic>> categoryOccupiedRooms(
@@ -768,12 +777,27 @@ class AdminDashboardModels {
           !isSummaryReserved(r, maxDaysAhead: 1)) {
         booked++;
       }
-      if (s == 'maintenance') maintenance++;
+      if (s == 'maintenance' || s == 'cleaning') maintenance++;
     }
     final reservedSoon = reservedArrivingSoonCount(rooms, withinDays: 1);
     final awaitingCheckIn = booked + reserved;
     final total = rooms.length;
     final occ = total > 0 ? ((total - vacant) / total * 100).round() : 0;
+
+    var priceSum = 0.0;
+    var priceCount = 0;
+    for (final r in rooms) {
+      final billing = (r['billing_mode'] ?? 'nightly').toString().toLowerCase();
+      final rate = billing == 'hourly'
+          ? parseJsonDouble(r['price_per_block'] ?? r['price_per_night'])
+          : parseJsonDouble(r['price_per_night']);
+      if (rate > 0) {
+        priceSum += rate;
+        priceCount++;
+      }
+    }
+    final avgPrice = priceCount > 0 ? priceSum / priceCount : 0.0;
+
     return {
       'label': label,
       'total': total,
@@ -786,6 +810,10 @@ class AdminDashboardModels {
       'awaiting_check_in': awaitingCheckIn,
       'maintenance': maintenance,
       'occupancy': occ,
+      'avg_price': avgPrice,
+      'avg_price_label': avgPrice > 0
+          ? 'Avg ₱${avgPrice.toStringAsFixed(0)}'
+          : 'Avg —',
     };
   }
 

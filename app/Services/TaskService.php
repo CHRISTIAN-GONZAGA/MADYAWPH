@@ -56,6 +56,11 @@ class TaskService
     public function updateStatus(Task $task, string $status, User $actor, array $payload = []): Task
     {
         $task = Task::withoutGlobalScopes()->findOrFail($task->id);
+        $previousStatus = strtolower(trim((string) (
+            $task->status?->value
+            ?? $task->getAttributes()['status']
+            ?? ''
+        )));
         $checklist = CleaningChecklistSupport::normalize(
             is_array($task->checklist) ? $task->checklist : null
         );
@@ -89,19 +94,20 @@ class TaskService
             'task_type' => $isCleaning ? 'cleaning' : (string) ($task->task_type ?? 'general'),
         ]);
 
-        if ($status === TaskStatus::COMPLETED->value) {
+        $becameCompleted = $status === TaskStatus::COMPLETED->value
+            && $previousStatus !== TaskStatus::COMPLETED->value;
+        $leftCompleted = $previousStatus === TaskStatus::COMPLETED->value
+            && $status !== TaskStatus::COMPLETED->value;
+
+        if ($becameCompleted || $leftCompleted) {
             $assignee = StaffMember::withoutGlobalScopes()->find($task->assigned_to);
             if ($assignee) {
-                $newCompleted = $assignee->tasks_completed + 1;
-                $assignee->update([
-                    'tasks_completed' => $newCompleted,
-                    'performance_score' => min(100, (int) round($newCompleted * 5)),
-                ]);
+                $this->recalculateStaffPerformance($assignee);
             }
+        }
 
-            if ($isCleaning) {
-                $this->releaseLinkedRoomWhenCleaningDone($task, $actor);
-            }
+        if ($becameCompleted && $isCleaning) {
+            $this->releaseLinkedRoomWhenCleaningDone($task, $actor);
         }
 
         $this->activityLogService->log(
@@ -112,6 +118,46 @@ class TaskService
         );
 
         return $task->fresh() ?? $task;
+    }
+
+    /**
+     * Completion rate of assigned tasks (completed / all assigned), not lifetime × 5.
+     */
+    public function recalculateStaffPerformance(StaffMember $assignee): void
+    {
+        $staffId = (string) $assignee->id;
+        $hotelId = (string) ($assignee->hotel_id ?? '');
+
+        $query = Task::withoutGlobalScopes()->where('assigned_to', $staffId);
+        if ($hotelId !== '') {
+            $query->where('hotel_id', $hotelId);
+        }
+
+        $tasks = $query->get(['status']);
+        $total = $tasks->count();
+        $completed = $tasks->filter(function ($task) {
+            $status = strtolower(trim((string) (
+                $task->status?->value
+                ?? $task->getAttributes()['status']
+                ?? ''
+            )));
+
+            return $status === TaskStatus::COMPLETED->value;
+        })->count();
+
+        $score = $total > 0 ? (int) round(($completed / $total) * 100) : 0;
+        $score = min(100, max(0, $score));
+
+        $currentCompleted = (int) ($assignee->getAttributes()['tasks_completed'] ?? 0);
+        $currentScore = (int) ($assignee->getAttributes()['performance_score'] ?? 0);
+        if ($currentCompleted === $completed && $currentScore === $score) {
+            return;
+        }
+
+        $assignee->update([
+            'tasks_completed' => $completed,
+            'performance_score' => $score,
+        ]);
     }
 
     private function releaseLinkedRoomWhenCleaningDone(Task $task, User $actor): void
@@ -144,13 +190,13 @@ class TaskService
             ?? $room->getAttributes()['status']
             ?? ''
         )));
-        if ($status !== RoomStatus::MAINTENANCE->value) {
+        if (! in_array($status, [RoomStatus::CLEANING->value, RoomStatus::MAINTENANCE->value], true)) {
             return;
         }
 
         // Do not auto-open a room that was manually flagged for repair.
         $reason = trim((string) ($room->getAttributes()['maintenance_reason'] ?? ''));
-        if ($reason !== '') {
+        if ($status === RoomStatus::MAINTENANCE->value && $reason !== '') {
             return;
         }
 

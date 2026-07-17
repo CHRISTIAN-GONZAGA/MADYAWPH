@@ -32,6 +32,14 @@ class StayExtensionService
             ];
         }
 
+        $config = RoomBillingSupport::hourlyConfig($room);
+        $blockHours = max(1, $config['block_hours']);
+        $blockPrice = $this->roomPricingService->applySurge(
+            (string) $room->hotel_id,
+            $config['price_per_block']
+        );
+        $blockFee = PriceRounding::nearest50($blockPrice);
+
         $extraHourRate = RoomBillingSupport::extraHourRate($room);
         $hourOptions = [];
         if ($extraHourRate > 0) {
@@ -46,6 +54,12 @@ class StayExtensionService
         return [
             'billing_mode' => RoomBillingSupport::MODE_HOURLY,
             'price_per_extra_hour' => $extraHourRate,
+            'block' => [
+                'block_hours' => $blockHours,
+                'price_per_block' => $blockFee,
+                'fee' => $blockFee,
+                'label' => "1 stay ({$blockHours} hr)",
+            ],
             'per_hour' => [
                 'price_per_hour' => $extraHourRate,
                 'min_hours' => 1,
@@ -68,9 +82,10 @@ class StayExtensionService
     public function apply(
         Room $room,
         Booking $booking,
-        int $hours,
+        int $hours = 0,
         ?string $actorUserId = null,
         ?string $logPrefix = 'Stay extended',
+        string $mode = 'custom_hours',
     ): array {
         if (! RoomBillingSupport::isHourly($room)) {
             throw ValidationException::withMessages([
@@ -78,14 +93,26 @@ class StayExtensionService
             ]);
         }
 
-        $extension = RoomBillingSupport::computeStayExtension(
-            $room,
-            $booking,
-            $this->financialComputationService,
-            $this->roomPricingService,
-            'custom_hours',
-            $hours,
-        );
+        $mode = strtolower(trim($mode));
+        if ($mode === 'block') {
+            $extension = RoomBillingSupport::computeStayExtension(
+                $room,
+                $booking,
+                $this->financialComputationService,
+                $this->roomPricingService,
+                'block',
+                null,
+            );
+        } else {
+            $extension = RoomBillingSupport::computeStayExtension(
+                $room,
+                $booking,
+                $this->financialComputationService,
+                $this->roomPricingService,
+                'custom_hours',
+                $hours,
+            );
+        }
 
         return DB::transaction(function () use ($room, $booking, $extension, $actorUserId, $logPrefix): array {
             $booking = Booking::withoutGlobalScopes()->lockForUpdate()->findOrFail($booking->id);
@@ -121,8 +148,11 @@ class StayExtensionService
                 'metadata' => array_filter([
                     'extension_mode' => $extension['extension_mode'],
                     'hours' => $addedHours,
+                    'blocks' => $extension['blocks'] ?? null,
+                    'block_hours' => $extension['block_hours'] ?? null,
+                    'price_per_block' => $extension['price_per_block'] ?? null,
                     'price_per_extra_hour' => $extension['price_per_extra_hour'] ?? null,
-                ]),
+                ], fn ($v) => $v !== null),
             ]);
 
             $newTotal = $this->bookingPaymentService->syncBookingTotalFromCharges($booking->fresh());

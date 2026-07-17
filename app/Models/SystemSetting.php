@@ -21,12 +21,15 @@ class SystemSetting extends Model
         'payment_qr_url',
         'room_fee_presets',
         'cancellation_retention_percent',
+        'min_check_in_payment_percent',
     ];
 
     protected function casts(): array
     {
         return [
             'room_fee_presets' => 'array',
+            'cancellation_retention_percent' => 'float',
+            'min_check_in_payment_percent' => 'float',
         ];
     }
 }

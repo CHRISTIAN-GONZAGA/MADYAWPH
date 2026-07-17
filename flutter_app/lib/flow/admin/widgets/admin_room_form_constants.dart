@@ -5,6 +5,7 @@ const adminRoomStatusOptions = [
   'booked',
   'checked_in',
   'checked_out',
+  'cleaning',
   'maintenance',
   'reserved',
 ];

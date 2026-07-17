@@ -17,6 +17,7 @@ import 'guest_nationalities.dart';
 import 'hourly_billing.dart';
 import 'manual_booking_dialog.dart';
 import 'multi_room_booking_summary.dart';
+import 'online_payment_qr_block.dart';
 
 /// Group walk-in booking — same steps as single room: calendar → guest form → submit.
 Future<bool> showAdminMultiRoomWalkInBooking({
@@ -75,6 +76,7 @@ Future<bool> showAdminMultiRoomWalkInBooking({
   var memberShidId = '';
   var memberDiscountPercent = 0.0;
   var paymentMethod = 'Cash';
+  final paymentRefCtrl = TextEditingController();
   var bookingMode = BookingModeOptions.defaultValue;
   XFile? discountIdFile;
   XFile? guestIdFile;
@@ -108,19 +110,16 @@ Future<bool> showAdminMultiRoomWalkInBooking({
         final durationLabel = (checkInDate != null && checkOutDate != null)
             ? (HourlyBilling.isHourly(anchorRoom)
                 ? () {
-                    final inAt =
-                        HourlyBilling.customerStayCheckIn(checkInDate!);
-                    final outAt = HourlyBilling.customerStayCheckOut(
+                    final window = HourlyBilling.clockBasedStayWindow(
                       anchorRoom,
                       checkInDate!,
-                      checkOutDate!,
+                      checkOutDate: checkOutDate,
                     );
-                    final hours = HourlyBilling.stayHours(inAt, outAt);
-                    final blocks = HourlyBilling.blocksForStay(
-                      hours,
-                      HourlyBilling.blockHours(anchorRoom),
-                    );
-                    return '$hours hr(s) · $blocks block(s) of ${HourlyBilling.blockHours(anchorRoom)}h';
+                    final bh = HourlyBilling.blockHours(anchorRoom);
+                    final out = window.checkOut;
+                    final outLabel =
+                        '${out.hour.toString().padLeft(2, '0')}:${out.minute.toString().padLeft(2, '0')}';
+                    return '${bh}h stay · checkout ~$outLabel';
                   }()
                 : () {
                     final nights =
@@ -447,6 +446,10 @@ Future<bool> showAdminMultiRoomWalkInBooking({
                   ],
                   onChanged: (v) => setLocal(() => paymentMethod = v ?? 'Cash'),
                 ),
+                OnlinePaymentQrBlock(
+                  paymentMethod: paymentMethod,
+                  referenceController: paymentRefCtrl,
+                ),
                 if (checkInDate != null && checkOutDate != null) ...[
                   const SizedBox(height: 12),
                   MultiRoomBookingTotalSummary(
@@ -470,80 +473,68 @@ Future<bool> showAdminMultiRoomWalkInBooking({
               onPressed: () => Navigator.of(dialogContext).pop(),
               child: const Text('Cancel'),
             ),
-            AppPrimaryButton(
-              label: 'Submit group booking',
+            TextButton(
               onPressed: () {
-                final name = nameCtrl.text.trim();
-                final email = emailCtrl.text.trim();
-                final phone = phoneCtrl.text.trim();
-                if (name.isEmpty) {
-                  showAppMessage(dialogContext, 'Enter your full name.');
-                  return;
+                final built = _buildMultiRoomWalkInPayload(
+                  dialogContext: dialogContext,
+                  nameCtrl: nameCtrl,
+                  emailCtrl: emailCtrl,
+                  phoneCtrl: phoneCtrl,
+                  checkInCtrl: checkInCtrl,
+                  checkOutCtrl: checkOutCtrl,
+                  bookingModeOtherCtrl: bookingModeOtherCtrl,
+                  paymentRefCtrl: paymentRefCtrl,
+                  checkInDate: checkInDate,
+                  checkOutDate: checkOutDate,
+                  staysByRoom: staysByRoom,
+                  discountType: discountType,
+                  memberShidId: memberShidId,
+                  discountIdFile: discountIdFile,
+                  bookingMode: bookingMode,
+                  paymentMethod: paymentMethod,
+                  adults: adults,
+                  children: children,
+                  guestsMale: guestsMale,
+                  guestsFemale: guestsFemale,
+                  guestNationality: guestNationality,
+                  checkInNow: false,
+                );
+                if (built != null) {
+                  Navigator.of(dialogContext).pop(built);
                 }
-                if (email.isNotEmpty && !email.contains('@')) {
-                  showAppMessage(dialogContext, 'Enter a valid email address.');
-                  return;
+              },
+              child: const Text('Submit booking'),
+            ),
+            AppPrimaryButton(
+              label: 'Check in now',
+              onPressed: () {
+                final built = _buildMultiRoomWalkInPayload(
+                  dialogContext: dialogContext,
+                  nameCtrl: nameCtrl,
+                  emailCtrl: emailCtrl,
+                  phoneCtrl: phoneCtrl,
+                  checkInCtrl: checkInCtrl,
+                  checkOutCtrl: checkOutCtrl,
+                  bookingModeOtherCtrl: bookingModeOtherCtrl,
+                  paymentRefCtrl: paymentRefCtrl,
+                  checkInDate: checkInDate,
+                  checkOutDate: checkOutDate,
+                  staysByRoom: staysByRoom,
+                  discountType: discountType,
+                  memberShidId: memberShidId,
+                  discountIdFile: discountIdFile,
+                  bookingMode: bookingMode,
+                  paymentMethod: paymentMethod,
+                  adults: adults,
+                  children: children,
+                  guestsMale: guestsMale,
+                  guestsFemale: guestsFemale,
+                  guestNationality: guestNationality,
+                  checkInNow: true,
+                );
+                if (built != null) {
+                  Navigator.of(dialogContext).pop(built);
                 }
-                if (phone.isNotEmpty && phone.length < 7) {
-                  showAppMessage(dialogContext, 'Enter a valid phone number.');
-                  return;
-                }
-                if (memberShidId.isEmpty &&
-                    discountType != 'none' &&
-                    discountIdFile == null) {
-                  showAppMessage(
-                    dialogContext,
-                    'Upload a photo of your discount ID.',
-                  );
-                  return;
-                }
-                if (bookingMode == 'other' &&
-                    bookingModeOtherCtrl.text.trim().isEmpty) {
-                  showAppMessage(
-                    dialogContext,
-                    'Specify the booking mode or choose another option.',
-                  );
-                  return;
-                }
-                if (checkInCtrl.text.trim().isEmpty ||
-                    checkOutCtrl.text.trim().isEmpty ||
-                    checkInDate == null ||
-                    checkOutDate == null) {
-                  showAppMessage(dialogContext, 'Select check-in and check-out.');
-                  return;
-                }
-                if (staysByRoom.isNotEmpty &&
-                    walkInRangeOverlapsAnyRoomStays(
-                      staysByRoom,
-                      checkInDate!,
-                      checkOutDate!,
-                    )) {
-                  showAppMessage(
-                    dialogContext,
-                    'Selected dates overlap a stay on one or more rooms.',
-                    isError: true,
-                  );
-                  return;
-                }
-                Navigator.of(dialogContext).pop({
-                  'guest_name': name,
-                  'guest_email': email,
-                  'guest_phone': phone,
-                  'check_in': checkInCtrl.text.trim(),
-                  'check_out': checkOutCtrl.text.trim(),
-                  'discount_type': discountType,
-                  if (memberShidId.isNotEmpty) 'member_shid_id': memberShidId,
-                  'payment_method': paymentMethod,
-                  'booking_mode': BookingModeOptions.apiValue(
-                    bookingMode,
-                    bookingModeOtherCtrl.text,
-                  ),
-                  'adults': adults,
-                  'children': children,
-                  'guests_male': guestsMale,
-                  'guests_female': guestsFemale,
-                  'guest_nationality': guestNationality,
-                });
               },
             ),
           ],
@@ -558,12 +549,15 @@ Future<bool> showAdminMultiRoomWalkInBooking({
   checkInCtrl.dispose();
   checkOutCtrl.dispose();
   bookingModeOtherCtrl.dispose();
+  paymentRefCtrl.dispose();
 
   if (payload == null || !context.mounted) return false;
 
+  final checkInNow = payload['check_in_now'] == true;
   try {
     await submitAdminBulkWalkInBooking(
       rooms: rooms,
+      checkInNow: checkInNow,
       payload: CompleteGuestBookingPayload(
         guestName: (payload['guest_name'] ?? '').toString(),
         guestEmail: (payload['guest_email'] ?? '').toString(),
@@ -572,6 +566,7 @@ Future<bool> showAdminMultiRoomWalkInBooking({
         checkOut: (payload['check_out'] ?? '').toString(),
         discountType: (payload['discount_type'] ?? 'none').toString(),
         paymentMethod: (payload['payment_method'] ?? 'Cash').toString(),
+        paymentReference: (payload['payment_reference'] ?? '').toString(),
         guestIdFile: guestIdFile,
         discountIdFile: discountIdFile,
         adults: (payload['adults'] as num?)?.toInt() ?? 1,
@@ -596,9 +591,12 @@ Future<bool> showAdminMultiRoomWalkInBooking({
       final gross = multiRoomGrossTotal(lines);
       showAppMessage(
         context,
-        'Booked ${rooms.length} rooms for ${payload['guest_name']}. '
-        'Total due: ${formatPeso(gross)}. '
-        'Open the Book tab to check guests in when they arrive.',
+        checkInNow
+            ? 'Checked in ${rooms.length} rooms for ${payload['guest_name']}. '
+                'Total due: ${formatPeso(gross)}. Guests are in-house.'
+            : 'Booked ${rooms.length} rooms for ${payload['guest_name']}. '
+                'Total due: ${formatPeso(gross)}. '
+                'Open the Book tab to check guests in when they arrive.',
       );
     }
     return true;
@@ -613,6 +611,111 @@ Future<bool> showAdminMultiRoomWalkInBooking({
     }
     return false;
   }
+}
+
+Map<String, dynamic>? _buildMultiRoomWalkInPayload({
+  required BuildContext dialogContext,
+  required TextEditingController nameCtrl,
+  required TextEditingController emailCtrl,
+  required TextEditingController phoneCtrl,
+  required TextEditingController checkInCtrl,
+  required TextEditingController checkOutCtrl,
+  required TextEditingController bookingModeOtherCtrl,
+  required TextEditingController paymentRefCtrl,
+  required DateTime? checkInDate,
+  required DateTime? checkOutDate,
+  required Map<String, List<Map<String, dynamic>>> staysByRoom,
+  required String discountType,
+  required String memberShidId,
+  required XFile? discountIdFile,
+  required String bookingMode,
+  required String paymentMethod,
+  required int adults,
+  required int children,
+  required int guestsMale,
+  required int guestsFemale,
+  required String guestNationality,
+  required bool checkInNow,
+}) {
+  final name = nameCtrl.text.trim();
+  final email = emailCtrl.text.trim();
+  final phone = phoneCtrl.text.trim();
+  if (name.isEmpty) {
+    showAppMessage(dialogContext, 'Enter your full name.');
+    return null;
+  }
+  if (email.isNotEmpty && !email.contains('@')) {
+    showAppMessage(dialogContext, 'Enter a valid email address.');
+    return null;
+  }
+  if (phone.isNotEmpty && phone.length < 7) {
+    showAppMessage(dialogContext, 'Enter a valid phone number.');
+    return null;
+  }
+  if (memberShidId.isEmpty &&
+      discountType != 'none' &&
+      discountIdFile == null) {
+    showAppMessage(dialogContext, 'Upload a photo of your discount ID.');
+    return null;
+  }
+  if (bookingMode == 'other' &&
+      bookingModeOtherCtrl.text.trim().isEmpty) {
+    showAppMessage(
+      dialogContext,
+      'Specify the booking mode or choose another option.',
+    );
+    return null;
+  }
+  if (checkInCtrl.text.trim().isEmpty ||
+      checkOutCtrl.text.trim().isEmpty ||
+      checkInDate == null ||
+      checkOutDate == null) {
+    showAppMessage(dialogContext, 'Select check-in and check-out.');
+    return null;
+  }
+  if (staysByRoom.isNotEmpty &&
+      walkInRangeOverlapsAnyRoomStays(
+        staysByRoom,
+        checkInDate,
+        checkOutDate,
+      )) {
+    showAppMessage(
+      dialogContext,
+      'Selected dates overlap a stay on one or more rooms.',
+      isError: true,
+    );
+    return null;
+  }
+  if (isOnlinePaymentMethod(paymentMethod) &&
+      paymentRefCtrl.text.trim().isEmpty) {
+    showAppMessage(
+      dialogContext,
+      'Enter the online payment reference number.',
+    );
+    return null;
+  }
+
+  return {
+    'guest_name': name,
+    'guest_email': email,
+    'guest_phone': phone,
+    'check_in': checkInCtrl.text.trim(),
+    'check_out': checkOutCtrl.text.trim(),
+    'discount_type': discountType,
+    if (memberShidId.isNotEmpty) 'member_shid_id': memberShidId,
+    'payment_method': paymentMethod,
+    'payment_reference': paymentRefCtrl.text.trim(),
+    'booking_mode': BookingModeOptions.apiValue(
+      bookingMode,
+      bookingModeOtherCtrl.text,
+    ),
+    'adults': adults,
+    'children': children,
+    'guests_male': guestsMale,
+    'guests_female': guestsFemale,
+    'guest_nationality': guestNationality,
+    'check_in_now': checkInNow,
+  };
 }
 
 class _MultiWalkInCounterRow extends StatelessWidget {

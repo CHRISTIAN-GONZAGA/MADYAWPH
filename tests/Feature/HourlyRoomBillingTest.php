@@ -583,6 +583,8 @@ class HourlyRoomBillingTest extends TestCase
 
         $this->assertSame('hourly', $preview['billing_mode']);
         $this->assertSame(150.0, $preview['price_per_extra_hour']);
+        $this->assertSame(12, (int) $preview['block']['block_hours']);
+        $this->assertSame(2000.0, (float) $preview['block']['fee']);
         $this->assertCount(10, $preview['per_hour']['hour_options']);
         $this->assertSame(300.0, $preview['per_hour']['hour_options'][1]['fee']);
     }
@@ -624,8 +626,8 @@ class HourlyRoomBillingTest extends TestCase
         $booking = Booking::withoutGlobalScopes()->latest('created_at')->first();
         $this->assertNotNull($booking);
         $this->assertSame('hourly', (string) $booking->billing_mode);
-        $this->assertSame(21, (int) $booking->stay_hours);
-        $this->assertSame(6300.0, (float) $booking->total_amount);
+        $this->assertSame(3, (int) $booking->stay_hours);
+        $this->assertSame(900.0, (float) $booking->total_amount);
 
         $charge = BillingCharge::withoutGlobalScopes()
             ->where('booking_id', (string) $booking->id)
@@ -633,7 +635,7 @@ class HourlyRoomBillingTest extends TestCase
             ->first();
         $this->assertNotNull($charge);
         $this->assertStringContainsString('hr', (string) $charge->label);
-        $this->assertSame(6300.0, (float) $charge->amount);
+        $this->assertSame(900.0, (float) $charge->amount);
 
         $room->refresh();
         $this->assertSame('hourly', RoomBillingSupport::billingMode($room));

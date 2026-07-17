@@ -164,6 +164,43 @@ class _AdminStaffScreenState extends State<AdminStaffScreen> {
     }
   }
 
+  Future<void> _deleteStaff(Map<String, dynamic> staff) async {
+    final id = (staff['id'] ?? '').toString();
+    final name = (staff['name'] ?? 'Staff').toString();
+    if (id.isEmpty) return;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove staff account?'),
+        content: Text(
+          'Delete "$name"? Their login will be removed and open tasks will be unassigned.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    try {
+      await portalDio().delete('/staff/$id');
+      if (!mounted) return;
+      showAppMessage(context, 'Staff account removed.');
+      await _load();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
@@ -203,6 +240,8 @@ class _AdminStaffScreenState extends State<AdminStaffScreen> {
         itemBuilder: (context, i) {
           final s = _rows[i] as Map<String, dynamic>;
           final role = (s['role'] ?? '').toString();
+          final score = s['performance_score'] ?? 0;
+          final done = s['tasks_completed'] ?? 0;
           return Card(
             child: ListTile(
               leading: CircleAvatar(
@@ -215,9 +254,13 @@ class _AdminStaffScreenState extends State<AdminStaffScreen> {
               ),
               title: Text((s['name'] ?? '').toString()),
               subtitle: Text(
-                '${role.isEmpty ? 'Staff' : role} · Tasks done: ${s['tasks_completed'] ?? 0}',
+                '${role.isEmpty ? 'Staff' : role} · Tasks done: $done · Completion: $score%',
               ),
-              trailing: Text('${s['performance_score'] ?? 0}%'),
+              trailing: IconButton(
+                tooltip: 'Delete staff',
+                onPressed: () => _deleteStaff(s),
+                icon: const Icon(Icons.delete_outline),
+              ),
             ),
           );
         },

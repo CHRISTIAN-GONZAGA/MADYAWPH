@@ -28,6 +28,7 @@ void _appendFreeBreakfastToMap(
 Future<void> submitAdminWalkInBooking({
   required Map<String, dynamic> room,
   required CompleteGuestBookingPayload payload,
+  bool checkInNow = false,
 }) async {
   final roomId = AdminDashboardModels.roomIdOf(room);
   if (roomId.isEmpty) {
@@ -36,9 +37,13 @@ Future<void> submitAdminWalkInBooking({
 
   final checkInDate = DateTime.parse(payload.checkIn);
   final checkOutDate = DateTime.parse(payload.checkOut);
-  final inAt = HourlyBilling.customerStayCheckIn(checkInDate);
-  final outAt =
-      HourlyBilling.customerStayCheckOut(room, checkInDate, checkOutDate);
+  final window = HourlyBilling.clockBasedStayWindow(
+    room,
+    checkInDate,
+    checkOutDate: checkOutDate,
+  );
+  final inAt = window.checkIn;
+  final outAt = window.checkOut;
 
   final breakfastJson = payload.freeBreakfastSelections
       .map((selection) => selection.toJson())
@@ -54,7 +59,9 @@ Future<void> submitAdminWalkInBooking({
     'check_in_at': inAt.toIso8601String(),
     'check_out_at': outAt.toIso8601String(),
     'payment_method': payload.paymentMethod,
-    'check_in_now': 0,
+    if (payload.paymentReference.trim().isNotEmpty)
+      'payment_reference': payload.paymentReference.trim(),
+    'check_in_now': checkInNow ? 1 : 0,
     'adults': payload.adults,
     'children': payload.children,
     'guests_male': payload.guestsMale,
@@ -103,6 +110,7 @@ Future<void> submitAdminWalkInBooking({
 Future<void> submitAdminBulkWalkInBooking({
   required List<Map<String, dynamic>> rooms,
   required CompleteGuestBookingPayload payload,
+  bool checkInNow = false,
 }) async {
   if (rooms.length < 2) {
     throw StateError('Select at least two rooms for a group booking.');
@@ -119,9 +127,13 @@ Future<void> submitAdminBulkWalkInBooking({
   final anchorRoom = rooms.first;
   final checkInDate = DateTime.parse(payload.checkIn);
   final checkOutDate = DateTime.parse(payload.checkOut);
-  final inAt = HourlyBilling.customerStayCheckIn(checkInDate);
-  final outAt =
-      HourlyBilling.customerStayCheckOut(anchorRoom, checkInDate, checkOutDate);
+  final window = HourlyBilling.clockBasedStayWindow(
+    anchorRoom,
+    checkInDate,
+    checkOutDate: checkOutDate,
+  );
+  final inAt = window.checkIn;
+  final outAt = window.checkOut;
 
   final breakfastJson = payload.freeBreakfastSelections
       .map((selection) => selection.toJson())
@@ -137,7 +149,9 @@ Future<void> submitAdminBulkWalkInBooking({
     'check_in_at': inAt.toIso8601String(),
     'check_out_at': outAt.toIso8601String(),
     'payment_method': payload.paymentMethod,
-    'check_in_now': 0,
+    if (payload.paymentReference.trim().isNotEmpty)
+      'payment_reference': payload.paymentReference.trim(),
+    'check_in_now': checkInNow ? 1 : 0,
     'adults': payload.adults,
     'children': payload.children,
     'guests_male': payload.guestsMale,

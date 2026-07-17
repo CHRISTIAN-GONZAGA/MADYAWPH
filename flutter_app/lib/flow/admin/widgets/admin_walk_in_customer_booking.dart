@@ -16,6 +16,7 @@ import '../../member_qr_scan.dart';
 import 'booking_mode_field.dart';
 import 'guest_nationalities.dart';
 import 'manual_booking_dialog.dart';
+import 'online_payment_qr_block.dart';
 
 /// Same booking popup + submit path as [CustomerRoomsScreen] admin walk-in.
 Future<bool> showAdminWalkInCustomerStyleBooking({
@@ -58,6 +59,7 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
   var memberShidId = '';
   var memberDiscountPercent = 0.0;
   var paymentMethod = 'Cash';
+  final paymentRefCtrl = TextEditingController();
   var bookingMode = BookingModeOptions.defaultValue;
   XFile? discountIdFile;
   XFile? guestIdFile;
@@ -98,19 +100,16 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
         final durationLabel = (checkInDate != null && checkOutDate != null)
             ? (HourlyBilling.isHourly(room)
                 ? () {
-                    final inAt =
-                        HourlyBilling.customerStayCheckIn(checkInDate!);
-                    final outAt = HourlyBilling.customerStayCheckOut(
+                    final window = HourlyBilling.clockBasedStayWindow(
                       room,
                       checkInDate!,
-                      checkOutDate!,
+                      checkOutDate: checkOutDate,
                     );
-                    final hours = HourlyBilling.stayHours(inAt, outAt);
-                    final blocks = HourlyBilling.blocksForStay(
-                      hours,
-                      HourlyBilling.blockHours(room),
-                    );
-                    return '$hours hr(s) · $blocks block(s) of ${HourlyBilling.blockHours(room)}h';
+                    final bh = HourlyBilling.blockHours(room);
+                    final out = window.checkOut;
+                    final outLabel =
+                        '${out.hour.toString().padLeft(2, '0')}:${out.minute.toString().padLeft(2, '0')}';
+                    return '${bh}h stay · checkout ~$outLabel';
                   }()
                 : '$safeNights night${safeNights == 1 ? '' : 's'}')
             : '';
@@ -388,6 +387,10 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                   ],
                   onChanged: (v) => setLocal(() => paymentMethod = v ?? 'Cash'),
                 ),
+                OnlinePaymentQrBlock(
+                  paymentMethod: paymentMethod,
+                  referenceController: paymentRefCtrl,
+                ),
                 const SizedBox(height: 10),
                 Align(
                   alignment: Alignment.centerLeft,
@@ -405,59 +408,62 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
               onPressed: () => Navigator.of(dialogContext).pop(),
               child: const Text('Cancel'),
             ),
-            AppPrimaryButton(
-              label: 'Submit booking',
+            TextButton(
               onPressed: () {
-                final name = nameCtrl.text.trim();
-                final email = emailCtrl.text.trim();
-                final phone = phoneCtrl.text.trim();
-                if (name.isEmpty) {
-                  showAppMessage(dialogContext, 'Enter your full name.');
-                  return;
+                final built = _buildWalkInPayload(
+                  dialogContext: dialogContext,
+                  nameCtrl: nameCtrl,
+                  emailCtrl: emailCtrl,
+                  phoneCtrl: phoneCtrl,
+                  checkInCtrl: checkInCtrl,
+                  checkOutCtrl: checkOutCtrl,
+                  bookingModeOtherCtrl: bookingModeOtherCtrl,
+                  paymentRefCtrl: paymentRefCtrl,
+                  discountType: discountType,
+                  memberShidId: memberShidId,
+                  discountIdFile: discountIdFile,
+                  bookingMode: bookingMode,
+                  paymentMethod: paymentMethod,
+                  adults: adults,
+                  children: children,
+                  guestsMale: guestsMale,
+                  guestsFemale: guestsFemale,
+                  guestNationality: guestNationality,
+                  checkInNow: false,
+                );
+                if (built != null) {
+                  Navigator.of(dialogContext).pop(built);
                 }
-                if (email.isNotEmpty && !email.contains('@')) {
-                  showAppMessage(dialogContext, 'Enter a valid email address.');
-                  return;
+              },
+              child: const Text('Submit booking'),
+            ),
+            AppPrimaryButton(
+              label: 'Check in now',
+              onPressed: () {
+                final built = _buildWalkInPayload(
+                  dialogContext: dialogContext,
+                  nameCtrl: nameCtrl,
+                  emailCtrl: emailCtrl,
+                  phoneCtrl: phoneCtrl,
+                  checkInCtrl: checkInCtrl,
+                  checkOutCtrl: checkOutCtrl,
+                  bookingModeOtherCtrl: bookingModeOtherCtrl,
+                  paymentRefCtrl: paymentRefCtrl,
+                  discountType: discountType,
+                  memberShidId: memberShidId,
+                  discountIdFile: discountIdFile,
+                  bookingMode: bookingMode,
+                  paymentMethod: paymentMethod,
+                  adults: adults,
+                  children: children,
+                  guestsMale: guestsMale,
+                  guestsFemale: guestsFemale,
+                  guestNationality: guestNationality,
+                  checkInNow: true,
+                );
+                if (built != null) {
+                  Navigator.of(dialogContext).pop(built);
                 }
-                if (phone.isNotEmpty && phone.length < 7) {
-                  showAppMessage(dialogContext, 'Enter a valid phone number.');
-                  return;
-                }
-                if (memberShidId.isEmpty &&
-                    discountType != 'none' &&
-                    discountIdFile == null) {
-                  showAppMessage(dialogContext, 'Upload a photo of your discount ID.');
-                  return;
-                }
-                if (bookingMode == 'other' &&
-                    bookingModeOtherCtrl.text.trim().isEmpty) {
-                  showAppMessage(dialogContext, 'Specify the booking mode or choose another option.',);
-                  return;
-                }
-                if (checkInCtrl.text.trim().isEmpty ||
-                    checkOutCtrl.text.trim().isEmpty) {
-                  showAppMessage(dialogContext, 'Select check-in and check-out.');
-                  return;
-                }
-                Navigator.of(dialogContext).pop({
-                  'guest_name': nameCtrl.text.trim(),
-                  'guest_email': emailCtrl.text.trim(),
-                  'guest_phone': phoneCtrl.text.trim(),
-                  'check_in': checkInCtrl.text.trim(),
-                  'check_out': checkOutCtrl.text.trim(),
-                  'discount_type': discountType,
-                  if (memberShidId.isNotEmpty) 'member_shid_id': memberShidId,
-                  'payment_method': paymentMethod,
-                  'booking_mode': BookingModeOptions.apiValue(
-                    bookingMode,
-                    bookingModeOtherCtrl.text,
-                  ),
-                  'adults': adults,
-                  'children': children,
-                  'guests_male': guestsMale,
-                  'guests_female': guestsFemale,
-                  'guest_nationality': guestNationality,
-                });
               },
             ),
           ],
@@ -472,12 +478,15 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
   checkInCtrl.dispose();
   checkOutCtrl.dispose();
   bookingModeOtherCtrl.dispose();
+  paymentRefCtrl.dispose();
 
   if (payload == null || !context.mounted) return false;
 
+  final checkInNow = payload['check_in_now'] == true;
   try {
     await submitAdminWalkInBooking(
       room: room,
+      checkInNow: checkInNow,
       payload: CompleteGuestBookingPayload(
         guestName: (payload['guest_name'] ?? '').toString(),
         guestEmail: (payload['guest_email'] ?? '').toString(),
@@ -486,6 +495,7 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
         checkOut: (payload['check_out'] ?? '').toString(),
         discountType: (payload['discount_type'] ?? 'none').toString(),
         paymentMethod: (payload['payment_method'] ?? 'Cash').toString(),
+        paymentReference: (payload['payment_reference'] ?? '').toString(),
         guestIdFile: guestIdFile,
         discountIdFile: discountIdFile,
         adults: (payload['adults'] as num?)?.toInt() ?? 1,
@@ -500,7 +510,12 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
       ),
     );
     if (context.mounted) {
-      showAppMessage(context, 'Room ${room['room_number']} booked. Open the Book tab to check the guest in when they arrive.',);
+      showAppMessage(
+        context,
+        checkInNow
+            ? 'Room ${room['room_number']} checked in. Guest is in-house.'
+            : 'Room ${room['room_number']} booked. Open the Book tab to check the guest in when they arrive.',
+      );
     }
     return true;
   } on DioException catch (e) {
@@ -514,6 +529,92 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
     }
     return false;
   }
+}
+
+Map<String, dynamic>? _buildWalkInPayload({
+  required BuildContext dialogContext,
+  required TextEditingController nameCtrl,
+  required TextEditingController emailCtrl,
+  required TextEditingController phoneCtrl,
+  required TextEditingController checkInCtrl,
+  required TextEditingController checkOutCtrl,
+  required TextEditingController bookingModeOtherCtrl,
+  required TextEditingController paymentRefCtrl,
+  required String discountType,
+  required String memberShidId,
+  required XFile? discountIdFile,
+  required String bookingMode,
+  required String paymentMethod,
+  required int adults,
+  required int children,
+  required int guestsMale,
+  required int guestsFemale,
+  required String guestNationality,
+  required bool checkInNow,
+}) {
+  final name = nameCtrl.text.trim();
+  final email = emailCtrl.text.trim();
+  final phone = phoneCtrl.text.trim();
+  if (name.isEmpty) {
+    showAppMessage(dialogContext, 'Enter your full name.');
+    return null;
+  }
+  if (email.isNotEmpty && !email.contains('@')) {
+    showAppMessage(dialogContext, 'Enter a valid email address.');
+    return null;
+  }
+  if (phone.isNotEmpty && phone.length < 7) {
+    showAppMessage(dialogContext, 'Enter a valid phone number.');
+    return null;
+  }
+  if (memberShidId.isEmpty &&
+      discountType != 'none' &&
+      discountIdFile == null) {
+    showAppMessage(dialogContext, 'Upload a photo of your discount ID.');
+    return null;
+  }
+  if (bookingMode == 'other' &&
+      bookingModeOtherCtrl.text.trim().isEmpty) {
+    showAppMessage(
+      dialogContext,
+      'Specify the booking mode or choose another option.',
+    );
+    return null;
+  }
+  if (checkInCtrl.text.trim().isEmpty || checkOutCtrl.text.trim().isEmpty) {
+    showAppMessage(dialogContext, 'Select check-in and check-out.');
+    return null;
+  }
+  if (isOnlinePaymentMethod(paymentMethod) &&
+      paymentRefCtrl.text.trim().isEmpty) {
+    showAppMessage(
+      dialogContext,
+      'Enter the online payment reference number.',
+    );
+    return null;
+  }
+
+  return {
+    'guest_name': name,
+    'guest_email': email,
+    'guest_phone': phone,
+    'check_in': checkInCtrl.text.trim(),
+    'check_out': checkOutCtrl.text.trim(),
+    'discount_type': discountType,
+    if (memberShidId.isNotEmpty) 'member_shid_id': memberShidId,
+    'payment_method': paymentMethod,
+    'payment_reference': paymentRefCtrl.text.trim(),
+    'booking_mode': BookingModeOptions.apiValue(
+      bookingMode,
+      bookingModeOtherCtrl.text,
+    ),
+    'adults': adults,
+    'children': children,
+    'guests_male': guestsMale,
+    'guests_female': guestsFemale,
+    'guest_nationality': guestNationality,
+    'check_in_now': checkInNow,
+  };
 }
 
 /// Alias used by [AdminRoomNavigation] and legacy call sites.

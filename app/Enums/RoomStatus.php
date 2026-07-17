@@ -8,6 +8,7 @@ enum RoomStatus: string
     case BOOKED = 'booked';
     case CHECKED_IN = 'checked_in';
     case CHECKED_OUT = 'checked_out';
+    case CLEANING = 'cleaning';
     case MAINTENANCE = 'maintenance';
     case RESERVED = 'reserved';
 }

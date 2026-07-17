@@ -85,7 +85,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     }
 
     // After checkout the API clears guest fields — do not restore stale snapshot data.
-    if ({'maintenance', 'available'}.contains(freshStatus)) {
+    if ({'maintenance', 'cleaning', 'available'}.contains(freshStatus)) {
       return merged;
     }
 
@@ -128,7 +128,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     final roomMap = _asMap(_data?['room']);
     if (_data == null || roomMap == null) return;
     final room = Map<String, dynamic>.from(roomMap);
-    room['status'] = 'maintenance';
+    room['status'] = 'cleaning';
     room['current_guest_name'] = null;
     room['current_check_in'] = null;
     room['current_check_out'] = null;
@@ -385,17 +385,32 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
 
     final extensionOptions =
         _asMap(_data?['extension_options']);
+    final block = _asMap(extensionOptions?['block']);
+    final perHour = _asMap(extensionOptions?['per_hour']) ??
+        _asMap(extensionOptions?['custom_hours']);
+    final hasBlock = ((block?['block_hours'] as num?)?.toInt() ?? 0) > 0 &&
+        ((block?['fee'] as num?)?.toDouble() ??
+                (block?['price_per_block'] as num?)?.toDouble() ??
+                0) >
+            0;
+    final hasHours =
+        ((perHour?['price_per_hour'] as num?)?.toDouble() ?? 0) > 0;
+    if (!hasBlock && !hasHours) {
+      if (!mounted) return;
+      showAppMessage(
+        context,
+        'No extension options available. Set a block rate and/or “Price per extra hour” on the room category.',
+      );
+      return;
+    }
+
     final payload = await showExtendStayDialog(
       context,
       extensionOptions: extensionOptions,
+      roomInfo: room,
       maxPickerHours: 10,
     );
-    if (payload == null) {
-      if (!mounted) return;
-      showAppMessage(context, 'No extension options available. Set “Price per extra hour” on the room category for hourly extensions.',);
-      return;
-    }
-    if (!mounted) return;
+    if (payload == null || !mounted) return;
 
     if (_extendingStay) return;
     setState(() => _extendingStay = true);
@@ -768,11 +783,13 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
             const DropdownMenuItem(value: 'checked_in', child: Text('Occupied')),
             if (showCheckedOut)
               const DropdownMenuItem(value: 'checked_out', child: Text('checked_out')),
+            const DropdownMenuItem(value: 'cleaning', child: Text('cleaning')),
             const DropdownMenuItem(value: 'maintenance', child: Text('maintenance')),
             const DropdownMenuItem(value: 'reserved', child: Text('reserved')),
           ]
         : const [
             DropdownMenuItem(value: 'available', child: Text('available')),
+            DropdownMenuItem(value: 'cleaning', child: Text('cleaning')),
             DropdownMenuItem(value: 'maintenance', child: Text('maintenance')),
           ];
     final chosen = await showDialog<Map<String, String>>(
@@ -794,7 +811,9 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                   DropdownButtonFormField<String>(
                     initialValue: _canEditGuestStay
                         ? current
-                        : (current == 'maintenance' ? 'maintenance' : 'available'),
+                        : ({'maintenance', 'cleaning'}.contains(current)
+                            ? current
+                            : 'available'),
                     items: statusItems,
                     onChanged: (v) => setLocal(() => status = v ?? current),
                   ),
@@ -1604,7 +1623,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     final guest = (room['current_guest_name'] ?? booking?['guest_name'] ?? '').toString();
     final guestOnRoom = (room['current_guest_name'] ?? '').toString().trim();
     final occupied = status == 'checked_in' || guestOnRoom.isNotEmpty;
-    final isMaintenance = status == 'maintenance';
+    final isMaintenance = status == 'maintenance' || status == 'cleaning';
     final pwd = (room['room_access_password'] ?? '').toString();
     const roomCardColor = Color(0xFFF3EDE3);
     final accent = Theme.of(context).colorScheme.primary;

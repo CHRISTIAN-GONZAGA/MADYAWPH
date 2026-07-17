@@ -599,6 +599,7 @@ class AdminRoomSummaryScreen extends StatelessWidget {
     final booked = _byStatus('booked');
     final available = _byStatus('available');
     final maintenance = _byStatus('maintenance');
+    final cleaning = _byStatus('cleaning');
     final checkedIn = _byStatus('checked_in');
     return AppScaffold(
       appBar: AppBar(title: const Text('Room summary')),
@@ -653,6 +654,18 @@ class AdminRoomSummaryScreen extends StatelessWidget {
                   context,
                   title: 'Maintenance rooms',
                   list: maintenance,
+                  showGuest: false,
+                ),
+              ),
+              _AdminSummaryCategoryCard(
+                label: 'Cleaning',
+                count: cleaning.length,
+                icon: Icons.cleaning_services_outlined,
+                color: scheme.tertiaryContainer,
+                onTap: () => _openDetail(
+                  context,
+                  title: 'Rooms in cleaning',
+                  list: cleaning,
                   showGuest: false,
                 ),
               ),
@@ -2214,17 +2227,19 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
     final billingMode =
         (roomInfo?['billingMode'] ?? 'nightly').toString().toLowerCase();
     final isHourly = billingMode == 'hourly';
+    final extensionOptions = roomInfo?['extensionOptions'] is Map
+        ? Map<String, dynamic>.from(roomInfo!['extensionOptions'] as Map)
+        : null;
 
     final payload = await showExtendStayDialog(
       context,
+      extensionOptions: extensionOptions,
       roomInfo: roomInfo,
       maxPickerHours: 10,
     );
     if (payload == null) {
       if (!mounted) return;
-      if (isHourly) {
-        showAppMessage(context, 'Extension is not available. Ask the front desk to set the category extra-hour rate.',);
-      }
+      // Cancelled, or no options configured.
       return;
     }
 

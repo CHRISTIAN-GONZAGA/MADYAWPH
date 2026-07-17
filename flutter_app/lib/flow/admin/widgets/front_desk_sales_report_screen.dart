@@ -9,7 +9,7 @@ import '../../../widgets/app_card.dart';
 import '../../../widgets/app_scaffold.dart';
 import '../../../widgets/app_state_views.dart';
 
-/// Frontdesk sales: account list → period / calendar day drill-down.
+/// Frontdesk sales: account list → per-account daily/weekly/monthly/annual + calendar.
 class FrontDeskSalesReportScreen extends StatefulWidget {
   const FrontDeskSalesReportScreen({super.key});
 
@@ -19,18 +19,10 @@ class FrontDeskSalesReportScreen extends StatefulWidget {
 }
 
 class _FrontDeskSalesReportScreenState extends State<FrontDeskSalesReportScreen> {
-  String _granularity = 'day';
   DateTime _anchor = DateUtils.dateOnly(DateTime.now());
   Map<String, dynamic>? _summary;
   bool _loading = true;
   String? _error;
-
-  static const _labels = {
-    'day': 'Daily',
-    'week': 'Weekly',
-    'month': 'Monthly',
-    'year': 'Annual',
-  };
 
   String _fmt(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -50,7 +42,7 @@ class _FrontDeskSalesReportScreenState extends State<FrontDeskSalesReportScreen>
       final res = await portalDio().get<Map<String, dynamic>>(
         '/reports/frontdesk-sales/summary',
         queryParameters: {
-          'granularity': _granularity,
+          'granularity': 'day',
           'anchor_date': _fmt(_anchor),
         },
       );
@@ -98,38 +90,24 @@ class _FrontDeskSalesReportScreenState extends State<FrontDeskSalesReportScreen>
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
         children: [
           Text(
-            'Sales by front desk account',
+            'Front desk accounts',
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.w800,
                 ),
           ),
           const SizedBox(height: 4),
           Text(
-            'Tap an account to open daily / weekly / monthly / annual detail and a sales calendar.',
+            'Tap an account to open that person’s daily, weekly, monthly, and annual sales — not hotel-wide totals.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _labels.entries.map((e) {
-              return ChoiceChip(
-                label: Text(e.value),
-                selected: _granularity == e.key,
-                onSelected: (_) {
-                  setState(() => _granularity = e.key);
-                  _load();
-                },
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 10),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            title: const Text('Anchor date'),
+            title: const Text('Reference date'),
             subtitle: Text(_fmt(_anchor)),
             trailing: const Icon(Icons.calendar_today),
             onTap: () async {
@@ -151,7 +129,7 @@ class _FrontDeskSalesReportScreenState extends State<FrontDeskSalesReportScreen>
                 children: [
                   Expanded(
                     child: _Metric(
-                      label: 'Product sales',
+                      label: 'Today’s sales',
                       value:
                           '₱${parseJsonDouble(totals['sales']).toStringAsFixed(2)}',
                     ),
@@ -187,25 +165,27 @@ class _FrontDeskSalesReportScreenState extends State<FrontDeskSalesReportScreen>
             final sales = parseJsonDouble(row['total_sales']);
             final orders = row['order_count'] ?? 0;
             return Card(
+              margin: const EdgeInsets.only(bottom: 8),
               child: ListTile(
-                leading: const CircleAvatar(child: Icon(Icons.badge_outlined)),
-                title: Text(name),
+                leading: CircleAvatar(
+                  child: Text(
+                    name.isNotEmpty ? name[0].toUpperCase() : 'F',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                title: Text(name, style: const TextStyle(fontWeight: FontWeight.w700)),
                 subtitle: Text(
-                  'Amenities ₱${parseJsonDouble(row['amenity_sales']).toStringAsFixed(2)}'
-                  ' · Manual ₱${parseJsonDouble(row['manual_sales']).toStringAsFixed(2)}'
-                  ' · $orders orders',
+                  'Today: ₱${sales.toStringAsFixed(2)} · $orders orders\n'
+                  'Open for daily / weekly / monthly / annual',
                 ),
-                trailing: Text(
-                  '₱${sales.toStringAsFixed(2)}',
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
+                isThreeLine: true,
+                trailing: const Icon(Icons.chevron_right),
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => _FrontDeskAccountSalesScreen(
+                      builder: (_) => FrontDeskAccountSalesScreen(
                         userId: (row['user_id'] ?? '').toString(),
                         username: name,
-                        initialGranularity: _granularity,
                         initialAnchor: _anchor,
                       ),
                     ),
@@ -239,27 +219,28 @@ class _Metric extends StatelessWidget {
   }
 }
 
-class _FrontDeskAccountSalesScreen extends StatefulWidget {
-  const _FrontDeskAccountSalesScreen({
+class FrontDeskAccountSalesScreen extends StatefulWidget {
+  const FrontDeskAccountSalesScreen({
+    super.key,
     required this.userId,
     required this.username,
-    required this.initialGranularity,
     required this.initialAnchor,
   });
 
   final String userId;
   final String username;
-  final String initialGranularity;
   final DateTime initialAnchor;
 
   @override
-  State<_FrontDeskAccountSalesScreen> createState() =>
+  State<FrontDeskAccountSalesScreen> createState() =>
       _FrontDeskAccountSalesScreenState();
 }
 
 class _FrontDeskAccountSalesScreenState
-    extends State<_FrontDeskAccountSalesScreen> {
+    extends State<FrontDeskAccountSalesScreen> {
+  late DateTime _anchor;
   late DateTime _month;
+  Map<String, dynamic>? _overview;
   Map<String, dynamic>? _calendar;
   Map<String, dynamic>? _dayDetail;
   DateTime? _selectedDay;
@@ -273,27 +254,38 @@ class _FrontDeskAccountSalesScreenState
   @override
   void initState() {
     super.initState();
-    _month = DateTime(widget.initialAnchor.year, widget.initialAnchor.month);
-    _selectedDay = widget.initialAnchor;
-    _loadCalendar();
+    _anchor = DateUtils.dateOnly(widget.initialAnchor);
+    _month = DateTime(_anchor.year, _anchor.month);
+    _selectedDay = _anchor;
+    _loadAll();
   }
 
-  Future<void> _loadCalendar() async {
+  Future<void> _loadAll() async {
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final res = await portalDio().get<Map<String, dynamic>>(
-        '/reports/frontdesk-sales/calendar',
-        queryParameters: {
-          'user_id': widget.userId,
-          'month': _fmt(_month),
-        },
-      );
+      final results = await Future.wait([
+        portalDio().get<Map<String, dynamic>>(
+          '/reports/frontdesk-sales/account-overview',
+          queryParameters: {
+            'user_id': widget.userId,
+            'anchor_date': _fmt(_anchor),
+          },
+        ),
+        portalDio().get<Map<String, dynamic>>(
+          '/reports/frontdesk-sales/calendar',
+          queryParameters: {
+            'user_id': widget.userId,
+            'month': _fmt(_month),
+          },
+        ),
+      ]);
       if (!mounted) return;
       setState(() {
-        _calendar = res.data;
+        _overview = results[0].data;
+        _calendar = results[1].data;
         _loading = false;
       });
       if (_selectedDay != null) {
@@ -345,131 +337,297 @@ class _FrontDeskAccountSalesScreenState
     return map;
   }
 
+  Widget _periodTile(
+    BuildContext context, {
+    required String title,
+    required Map<String, dynamic> period,
+    required Color accent,
+  }) {
+    final from = (period['from'] ?? '').toString();
+    final to = (period['to'] ?? '').toString();
+    final range = from == to ? from : '$from → $to';
+    return AppSectionCard(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: accent,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(range, style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 10),
+            Text(
+              '₱${parseJsonDouble(period['total_sales']).toStringAsFixed(2)}',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Payments ₱${parseJsonDouble(period['payments_collected']).toStringAsFixed(2)}'
+              ' · ${period['order_count'] ?? 0} orders',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final byDay = _salesByDay();
+    final periods =
+        (_overview?['periods'] as Map?)?.cast<String, dynamic>() ??
+            const <String, dynamic>{};
     final summary =
         (_dayDetail?['summary'] as Map?)?.cast<String, dynamic>() ??
             const <String, dynamic>{};
     final transactions = (_dayDetail?['transactions'] as List?) ?? const [];
 
+    Map<String, dynamic> periodOf(String key) {
+      final raw = periods[key];
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+      return const {};
+    }
+
     return AppScaffold(
-      appBar: AppBar(title: Text(widget.username)),
+      appBar: AppBar(
+        title: Text(widget.username),
+        actions: [
+          IconButton(onPressed: _loadAll, icon: const Icon(Icons.refresh)),
+        ],
+      ),
       body: _loading
           ? const AppLoadingView()
           : _error != null
-              ? AppErrorView(message: _error!, onRetry: _loadCalendar)
-              : ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    Text(
-                      'Sales calendar',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Tap a day to see product charges and payments recorded by this front desk account.',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: 12),
-                    AdminMonthCalendar(
-                      focusedMonth: _month,
-                      selectedDay: _selectedDay ?? DateUtils.dateOnly(DateTime.now()),
-                      hasEvent: (day) {
-                        final key = _fmt(day);
-                        return (byDay[key] ?? 0) > 0;
-                      },
-                      eventCount: (day) {
-                        final key = _fmt(day);
-                        final v = byDay[key] ?? 0;
-                        return v > 0 ? 1 : 0;
-                      },
-                      onMonthChanged: (m) {
-                        setState(() => _month = m);
-                        _loadCalendar();
-                      },
-                      onDaySelected: _loadDay,
-                    ),
-                    const SizedBox(height: 16),
-                    if (_selectedDay != null) ...[
+              ? AppErrorView(message: _error!, onRetry: _loadAll)
+              : RefreshIndicator(
+                  onRefresh: _loadAll,
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
+                    children: [
                       Text(
-                        'Sales on ${_fmt(_selectedDay!)}',
+                        'Sales for ${widget.username}',
+                        style:
+                            Theme.of(context).textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'These figures are only for this front desk account.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 8),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Anchor date'),
+                        subtitle: Text(_fmt(_anchor)),
+                        trailing: const Icon(Icons.calendar_today),
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            firstDate: DateTime(2020),
+                            lastDate:
+                                DateTime.now().add(const Duration(days: 1)),
+                            initialDate: _anchor,
+                          );
+                          if (picked == null) return;
+                          setState(() {
+                            _anchor = DateUtils.dateOnly(picked);
+                            _month = DateTime(_anchor.year, _anchor.month);
+                            _selectedDay = _anchor;
+                          });
+                          await _loadAll();
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final wide = constraints.maxWidth >= 520;
+                          final tileWidth = wide
+                              ? (constraints.maxWidth - 12) / 2
+                              : constraints.maxWidth;
+                          return Wrap(
+                            spacing: 12,
+                            runSpacing: 12,
+                            children: [
+                              SizedBox(
+                                width: tileWidth,
+                                child: _periodTile(
+                                  context,
+                                  title: 'Daily',
+                                  period: periodOf('daily'),
+                                  accent: scheme.primary,
+                                ),
+                              ),
+                              SizedBox(
+                                width: tileWidth,
+                                child: _periodTile(
+                                  context,
+                                  title: 'Weekly',
+                                  period: periodOf('weekly'),
+                                  accent: scheme.tertiary,
+                                ),
+                              ),
+                              SizedBox(
+                                width: tileWidth,
+                                child: _periodTile(
+                                  context,
+                                  title: 'Monthly',
+                                  period: periodOf('monthly'),
+                                  accent: const Color(0xFF00897B),
+                                ),
+                              ),
+                              SizedBox(
+                                width: tileWidth,
+                                child: _periodTile(
+                                  context,
+                                  title: 'Annual',
+                                  period: periodOf('annual'),
+                                  accent: const Color(0xFF6A1B9A),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 20),
+                      Text(
+                        'Sales calendar',
                         style:
                             Theme.of(context).textTheme.titleMedium?.copyWith(
                                   fontWeight: FontWeight.w800,
                                 ),
                       ),
-                      const SizedBox(height: 8),
-                      if (_loadingDay)
-                        const Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Center(child: CircularProgressIndicator()),
-                        )
-                      else ...[
-                        AppSectionCard(
-                          child: Padding(
-                            padding: const EdgeInsets.all(14),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: _Metric(
-                                    label: 'Sales',
-                                    value:
-                                        '₱${parseJsonDouble(summary['total_sales']).toStringAsFixed(2)}',
-                                  ),
-                                ),
-                                Expanded(
-                                  child: _Metric(
-                                    label: 'Payments',
-                                    value:
-                                        '₱${parseJsonDouble(summary['payments_collected']).toStringAsFixed(2)}',
-                                  ),
-                                ),
-                                Expanded(
-                                  child: _Metric(
-                                    label: 'Orders',
-                                    value: '${summary['order_count'] ?? 0}',
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Tap a day to see charges recorded by this account.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 12),
+                      AdminMonthCalendar(
+                        focusedMonth: _month,
+                        selectedDay: _selectedDay ?? _anchor,
+                        hasEvent: (day) {
+                          final key = _fmt(day);
+                          return (byDay[key] ?? 0) > 0;
+                        },
+                        eventCount: (day) {
+                          final key = _fmt(day);
+                          final v = byDay[key] ?? 0;
+                          return v > 0 ? 1 : 0;
+                        },
+                        onMonthChanged: (m) {
+                          setState(() => _month = m);
+                          _loadAll();
+                        },
+                        onDaySelected: _loadDay,
+                      ),
+                      const SizedBox(height: 16),
+                      if (_selectedDay != null) ...[
+                        Text(
+                          'Detail · ${_fmt(_selectedDay!)}',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w800),
                         ),
-                        const SizedBox(height: 10),
-                        if (transactions.isEmpty)
-                          const Card(
-                            child: ListTile(
-                              title: Text('No sales recorded on this day.'),
+                        const SizedBox(height: 8),
+                        if (_loadingDay)
+                          const Padding(
+                            padding: EdgeInsets.all(24),
+                            child: Center(child: CircularProgressIndicator()),
+                          )
+                        else ...[
+                          AppSectionCard(
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: _Metric(
+                                      label: 'Sales',
+                                      value:
+                                          '₱${parseJsonDouble(summary['total_sales']).toStringAsFixed(2)}',
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: _Metric(
+                                      label: 'Payments',
+                                      value:
+                                          '₱${parseJsonDouble(summary['payments_collected']).toStringAsFixed(2)}',
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: _Metric(
+                                      label: 'Orders',
+                                      value: '${summary['order_count'] ?? 0}',
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                        ...transactions.map((raw) {
-                          final tx = Map<String, dynamic>.from(raw as Map);
-                          final complimentary = tx['complimentary'] == true;
-                          final amount = parseJsonDouble(tx['amount']);
-                          return Card(
-                            child: ListTile(
-                              title: Text((tx['label'] ?? tx['type'] ?? 'Charge')
-                                  .toString()),
-                              subtitle: Text(
-                                '${(tx['type'] ?? '').toString()}'
-                                '${complimentary ? ' · Complimentary' : ''}',
-                              ),
-                              trailing: Text(
-                                complimentary
-                                    ? 'Free'
-                                    : '₱${amount.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                ),
+                          const SizedBox(height: 10),
+                          if (transactions.isEmpty)
+                            const Card(
+                              child: ListTile(
+                                title: Text('No sales recorded on this day.'),
                               ),
                             ),
-                          );
-                        }),
+                          ...transactions.map((raw) {
+                            final tx = Map<String, dynamic>.from(raw as Map);
+                            final complimentary = tx['complimentary'] == true;
+                            final amount = parseJsonDouble(tx['amount']);
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 6),
+                              child: ListTile(
+                                dense: true,
+                                title: Text(
+                                  (tx['label'] ?? tx['type'] ?? 'Charge')
+                                      .toString(),
+                                ),
+                                subtitle: Text(
+                                  '${(tx['type'] ?? '').toString()}'
+                                  '${complimentary ? ' · Complimentary' : ''}',
+                                ),
+                                trailing: Text(
+                                  complimentary
+                                      ? 'Free'
+                                      : '₱${amount.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                        ],
                       ],
                     ],
-                  ],
+                  ),
                 ),
     );
   }

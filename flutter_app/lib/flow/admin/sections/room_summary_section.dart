@@ -50,6 +50,10 @@ class RoomSummarySection extends StatelessWidget {
     return _filterByStatuses({'maintenance'});
   }
 
+  List<Map<String, dynamic>> _cleaningRooms() {
+    return _filterByStatuses({'cleaning'});
+  }
+
   List<_IssueRoom> _issueRoomsFromTasks(String keyword) {
     final out = <_IssueRoom>[];
     for (final t in tasks) {
@@ -176,6 +180,7 @@ class RoomSummarySection extends StatelessWidget {
     final guestsInHotel = AdminDashboardModels.guestsInHotelNow(rooms);
     final vacantRooms = rooms.where(AdminDashboardModels.isWalkInBookable).toList();
     final maintenanceRooms = _maintenanceRooms();
+    final cleaningRooms = _cleaningRooms();
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -325,11 +330,11 @@ class RoomSummarySection extends StatelessWidget {
               icon: Icons.cleaning_services_outlined,
               color: Colors.orange.shade800,
               onTap: () {
-                if (maintenanceRooms.isNotEmpty) {
+                if (cleaningRooms.isNotEmpty) {
                   _openRooms(
                     context,
                     title: 'Rooms in cleaning',
-                    list: maintenanceRooms,
+                    list: cleaningRooms,
                     subtitle: 'Turnover / housekeeping',
                     showGuest: false,
                   );
@@ -505,56 +510,66 @@ class RoomSummarySection extends StatelessWidget {
                     ),
               ),
               const SizedBox(height: 16),
-              _FloorStatusOption(
-                label: 'Reserved',
-                count: reserved.length,
-                color: Colors.orange.shade800,
-                icon: Icons.event_available_outlined,
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  _openRooms(
-                    context,
-                    title: '$title · Reserved',
-                    list: reserved,
-                    subtitle: 'Check-in today or tomorrow',
-                    showGuest: true,
-                    preferCheckIn: true,
-                  );
-                },
-              ),
-              const SizedBox(height: 8),
-              _FloorStatusOption(
-                label: 'Occupied',
-                count: occupied.length,
-                color: Colors.green.shade700,
-                icon: Icons.person_pin_circle_outlined,
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  _openRooms(
-                    context,
-                    title: '$title · Occupied',
-                    list: occupied,
-                    subtitle: 'Guests checked in',
-                    showGuest: true,
-                  );
-                },
-              ),
-              const SizedBox(height: 8),
-              _FloorStatusOption(
-                label: 'Vacant',
-                count: vacant.length,
-                color: Colors.teal.shade700,
-                icon: Icons.meeting_room_outlined,
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  _openRooms(
-                    context,
-                    title: '$title · Vacant',
-                    list: vacant,
-                    subtitle: 'Available for booking',
-                    showGuest: false,
-                  );
-                },
+              Row(
+                children: [
+                  Expanded(
+                    child: _FloorStatusOption(
+                      label: 'Reserved',
+                      count: reserved.length,
+                      color: Colors.orange.shade800,
+                      icon: Icons.event_available_outlined,
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _openRooms(
+                          context,
+                          title: '$title · Reserved',
+                          list: reserved,
+                          subtitle: 'Check-in today or tomorrow',
+                          showGuest: true,
+                          preferCheckIn: true,
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _FloorStatusOption(
+                      label: 'Occupied',
+                      count: occupied.length,
+                      color: Colors.green.shade700,
+                      icon: Icons.person_pin_circle_outlined,
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _openRooms(
+                          context,
+                          title: '$title · Occupied',
+                          list: occupied,
+                          subtitle: 'Guests checked in',
+                          showGuest: true,
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _FloorStatusOption(
+                      label: 'Vacant',
+                      count: vacant.length,
+                      color: Colors.teal.shade700,
+                      icon: Icons.meeting_room_outlined,
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _openRooms(
+                          context,
+                          title: '$title · Vacant',
+                          list: vacant,
+                          subtitle: 'Available for booking',
+                          showGuest: false,
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -581,40 +596,40 @@ class _FloorStatusOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: color.withValues(alpha: 0.08),
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          child: Row(
-            children: [
-              Icon(icon, color: color),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
+    return AspectRatio(
+      aspectRatio: 1,
+      child: Material(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: color, size: 26),
+                const SizedBox(height: 8),
+                Text(
+                  '$count',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: color,
+                        height: 1,
                       ),
                 ),
-              ),
-              Text(
-                '$count',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: color,
-                    ),
-              ),
-              const SizedBox(width: 4),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: scheme.onSurfaceVariant,
-              ),
-            ],
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: color,
+                      ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -998,7 +1013,7 @@ class _CategorySummaryGrid extends StatelessWidget {
         crossAxisCount: 2,
         mainAxisSpacing: 10,
         crossAxisSpacing: 10,
-        childAspectRatio: 1.35,
+        childAspectRatio: 1.05,
       ),
       itemCount: keys.length,
       itemBuilder: (context, i) {
@@ -1073,14 +1088,29 @@ class _CategoryCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(
-                        title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                              fontWeight: FontWeight.w800,
-                              height: 1.15,
-                            ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  height: 1.15,
+                                ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            (stats['avg_price_label'] ?? 'Avg —').toString(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                        ],
                       ),
                     ),
                     Icon(

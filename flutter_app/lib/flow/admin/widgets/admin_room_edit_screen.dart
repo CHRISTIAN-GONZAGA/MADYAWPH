@@ -413,6 +413,7 @@ class _EditForm extends StatelessWidget {
             DropdownMenuItem(value: 'booked', child: Text('Booked')),
             DropdownMenuItem(value: 'checked_in', child: Text('Checked in')),
             DropdownMenuItem(value: 'checked_out', child: Text('Checked out')),
+            DropdownMenuItem(value: 'cleaning', child: Text('Cleaning')),
             DropdownMenuItem(value: 'maintenance', child: Text('Maintenance')),
             DropdownMenuItem(value: 'reserved', child: Text('Reserved')),
           ],

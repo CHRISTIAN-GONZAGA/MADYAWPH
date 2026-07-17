@@ -69,7 +69,7 @@ class HotelAvailabilityService
         }
 
         $status = $room->status?->value ?? (string) $room->status;
-        if ($status === RoomStatus::MAINTENANCE->value) {
+        if (in_array($status, [RoomStatus::MAINTENANCE->value, RoomStatus::CLEANING->value], true)) {
             return false;
         }
 
@@ -77,8 +77,13 @@ class HotelAvailabilityService
             return false;
         }
 
-        $in = Carbon::parse($checkIn)->startOfDay()->toDateString();
-        $out = Carbon::parse($checkOut)->startOfDay()->toDateString();
+        $checkInAt = Carbon::parse($checkIn);
+        $checkOutAt = Carbon::parse($checkOut);
+        $in = $checkInAt->copy()->startOfDay()->toDateString();
+        $out = $checkOutAt->copy()->startOfDay()->toDateString();
+
+        $hasClockTimes = $checkInAt->format('H:i:s') !== '00:00:00'
+            || $checkOutAt->format('H:i:s') !== '00:00:00';
 
         return ! $this->roomHasStayConflict(
             $roomId,
@@ -86,8 +91,8 @@ class HotelAvailabilityService
             $in,
             $out,
             $excludeReservationId,
-            null,
-            null,
+            $hasClockTimes ? $checkInAt : null,
+            $hasClockTimes ? $checkOutAt : null,
             $excludeBookingId,
         );
     }
@@ -201,7 +206,7 @@ class HotelAvailabilityService
     private function roomIsVacantForWalkIn(Room $room): bool
     {
         $status = strtolower($room->status?->value ?? (string) ($room->status ?? ''));
-        if (in_array($status, [RoomStatus::CHECKED_IN->value, RoomStatus::MAINTENANCE->value], true)) {
+        if (in_array($status, [RoomStatus::CHECKED_IN->value, RoomStatus::MAINTENANCE->value, RoomStatus::CLEANING->value], true)) {
             return false;
         }
 

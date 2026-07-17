@@ -24,6 +24,8 @@ Color roomStatusColor(String status) {
       return Colors.orange.shade800;
     case 'maintenance':
       return Colors.grey.shade700;
+    case 'cleaning':
+      return Colors.orange.shade800;
     case 'available':
       return Colors.teal.shade700;
     default:

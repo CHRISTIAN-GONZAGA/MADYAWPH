@@ -24,6 +24,7 @@ class RoomStatusNotificationService
             'checked_in' => 'Occupied',
             'checked_out' => 'Checked out',
             'maintenance' => 'Maintenance',
+            'cleaning' => 'Cleaning',
             'reserved' => 'Reserved',
             'booked' => 'Booked',
             'available' => 'Available',

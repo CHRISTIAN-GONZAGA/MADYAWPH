@@ -53,13 +53,14 @@ use App\Services\SmsService;
 use App\Services\StayReceiptService;
 use App\Services\StayExtensionService;
 use App\Support\AdminBookingPresenter;
+use App\Support\CustomerStayPricing;
+use App\Support\RoomBillingSupport;
 use App\Support\ChatAttachmentUrl;
 use App\Support\GuestMessageResource;
 use App\Support\HotelScopeGuard;
 use App\Support\PortalAccountSupport;
 use App\Support\PortalPassword;
 use App\Support\PriceRounding;
-use App\Support\RoomBillingSupport;
 use App\Support\RoomImageUploadRules;
 use App\Support\RoomMediaStorage;
 use App\Support\StayDisplayPresenter;
@@ -417,7 +418,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
         \App\Services\PlatformSettingsService $platformSettings,
     ) {
         $validated = $request->validate([
-            'status' => ['required', 'in:available,booked,checked_in,checked_out,maintenance,reserved'],
+            'status' => ['required', 'in:available,booked,checked_in,checked_out,cleaning,maintenance,reserved'],
             'check_in_at' => ['nullable', 'date'],
             'check_out_at' => ['nullable', 'date', 'after_or_equal:check_in_at'],
             'maintenance_reason' => ['nullable', 'string', 'max:255'],
@@ -448,6 +449,25 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
                 ? Carbon::parse($validated['check_out_at'])
                 : null;
 
+            // Hourly rooms: always use wall-clock now + block_hours (ignore stale schedule).
+            if (RoomBillingSupport::isHourly($room)) {
+                $window = CustomerStayPricing::resolveClockCheckInWindow($room);
+                $checkIn = $window['check_in'];
+                $checkOut = $window['check_out'];
+            } elseif ($checkIn === null) {
+                $nightlyOut = $checkOut
+                    ?? ($activeBooking?->check_out_date
+                        ? Carbon::parse($activeBooking->check_out_date)
+                        : null);
+                $window = CustomerStayPricing::resolveClockCheckInWindow(
+                    $room,
+                    null,
+                    $nightlyOut,
+                );
+                $checkIn = $window['check_in'];
+                $checkOut = $window['check_out'];
+            }
+
             $paymentInfo = null;
             $payAmount = isset($validated['check_in_payment_amount'])
                 ? round((float) $validated['check_in_payment_amount'], 2)
@@ -455,7 +475,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             if ($activeBooking) {
                 $bill = $bookingPaymentService->billSummary($activeBooking);
                 $balanceDue = (float) ($bill['balance_due'] ?? 0);
-                $minPercent = $platformSettings->minCheckInPaymentPercent();
+                $minPercent = \App\Support\MinCheckInPaymentSupport::percentForHotel($hotelId);
                 $minDue = round($balanceDue * ($minPercent / 100), 2);
 
                 if ($minPercent > 0 && $balanceDue > 0 && $payAmount + 0.009 < $minDue) {
@@ -673,6 +693,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             'check_in_at' => ['required', 'date'],
             'check_out_at' => ['required', 'date', 'after:check_in_at'],
             'payment_method' => ['required', 'in:Cash,GCash,PayMaya,Credit Card'],
+            'payment_reference' => ['nullable', 'string', 'max:120'],
             'check_in_now' => ['nullable', 'boolean'],
             'discount_type' => ['nullable', 'string', 'in:none,pwd,senior'],
             'adults' => ['nullable', 'integer', 'min:1', 'max:20'],
@@ -687,6 +708,18 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             'booking_mode' => ['nullable', 'string', 'max:80'],
             'booking_mode_other' => ['nullable', 'string', 'max:80'],
         ]);
+
+        $paymentMethod = (string) ($validated['payment_method'] ?? 'Cash');
+        $paymentRef = trim((string) ($validated['payment_reference'] ?? ''));
+        if (in_array($paymentMethod, ['GCash', 'PayMaya', 'Credit Card'], true) && $paymentRef === '') {
+            return response()->json([
+                'message' => 'Payment reference is required for online payments.',
+                'errors' => ['payment_reference' => ['Enter the GCash / PayMaya / card reference number.']],
+            ], 422);
+        }
+        if ($paymentRef !== '') {
+            $validated['payment_reference'] = $paymentRef;
+        }
 
         $discountType = strtolower((string) ($validated['discount_type'] ?? 'none'));
         $discountPercent = 0.0;
@@ -816,6 +849,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             'check_in_at' => ['required', 'date'],
             'check_out_at' => ['required', 'date', 'after:check_in_at'],
             'payment_method' => ['required', 'in:Cash,GCash,PayMaya,Credit Card'],
+            'payment_reference' => ['nullable', 'string', 'max:120'],
             'check_in_now' => ['nullable', 'boolean'],
             'discount_type' => ['nullable', 'string', 'in:none,pwd,senior'],
             'adults' => ['nullable', 'integer', 'min:1', 'max:20'],
@@ -830,6 +864,18 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             'booking_mode' => ['nullable', 'string', 'max:80'],
             'booking_mode_other' => ['nullable', 'string', 'max:80'],
         ]);
+
+        $paymentMethod = (string) ($validated['payment_method'] ?? 'Cash');
+        $paymentRef = trim((string) ($validated['payment_reference'] ?? ''));
+        if (in_array($paymentMethod, ['GCash', 'PayMaya', 'Credit Card'], true) && $paymentRef === '') {
+            return response()->json([
+                'message' => 'Payment reference is required for online payments.',
+                'errors' => ['payment_reference' => ['Enter the GCash / PayMaya / card reference number.']],
+            ], 422);
+        }
+        if ($paymentRef !== '') {
+            $validated['payment_reference'] = $paymentRef;
+        }
 
         $hotelId = (string) $request->user()->hotel_id;
         $roomIds = array_values(array_unique($validated['room_ids']));
@@ -1975,6 +2021,7 @@ Route::get('/staff', [StaffController::class, 'index'])->middleware('role:admin'
 Route::get('/staff/{staff}', [StaffController::class, 'show'])->middleware('role:admin');
 Route::post('/staff', [StaffController::class, 'store'])->middleware('role:admin');
 Route::put('/staff/{staff}', [StaffController::class, 'update'])->middleware('role:admin');
+Route::delete('/staff/{staff}', [StaffController::class, 'destroy'])->middleware('role:admin');
 
 // Tasks
 Route::get('/tasks', [TaskController::class, 'index'])->middleware('role:admin,staff');
@@ -1983,6 +2030,7 @@ Route::put('/tasks/{task}/status', [TaskController::class, 'updateStatus'])->mid
 Route::get('/tasks/assigned-to-me', [TaskController::class, 'assignedToMe'])->middleware('role:staff');
 
 // Reports
+Route::get('/reports/room-insights', [ReportController::class, 'roomInsights'])->middleware('role:admin,frontdesk');
 Route::get('/reports/shift-summary', [ReportController::class, 'shiftSummary'])->middleware('role:admin,frontdesk,staff');
 Route::get('/reports/shift-summary/pdf', [ReportController::class, 'shiftSummaryPdf'])->middleware('role:admin,frontdesk,staff');
 Route::post('/reports/shift-summary/email', [ReportController::class, 'shiftSummaryEmail'])->middleware('role:admin,frontdesk,staff');
@@ -1991,6 +2039,7 @@ Route::get('/reports/frontdesk-activity/rooms', [ReportController::class, 'front
 Route::get('/reports/frontdesk-sales/summary', [ReportController::class, 'frontDeskSalesSummary'])->middleware('role:admin,frontdesk');
 Route::get('/reports/frontdesk-sales/calendar', [ReportController::class, 'frontDeskSalesCalendar'])->middleware('role:admin,frontdesk');
 Route::get('/reports/frontdesk-sales/day', [ReportController::class, 'frontDeskSalesDay'])->middleware('role:admin,frontdesk');
+Route::get('/reports/frontdesk-sales/account-overview', [ReportController::class, 'frontDeskSalesAccountOverview'])->middleware('role:admin,frontdesk');
 Route::get('/reports/sales', [ReportController::class, 'sales'])->middleware('role:admin,frontdesk');
 Route::get('/reports/sales/timeseries', [ReportController::class, 'salesTimeseries'])->middleware('role:admin,frontdesk');
 Route::get('/reports/paid-transactions', [ReportController::class, 'paidTransactions'])->middleware('role:admin,frontdesk');
@@ -2403,7 +2452,7 @@ Route::get('/admin/hotel/payment-qr', function (Request $request) {
         'qr_url' => ChatAttachmentUrl::fromStoredUrl($stored) ?? '',
         'payment_qr_url' => $stored,
     ]);
-})->middleware('role:admin')->name('api.v1.admin.hotel.payment-qr.show');
+})->middleware('role:admin,frontdesk,super_admin')->name('api.v1.admin.hotel.payment-qr.show');
 
 Route::post('/admin/hotel/payment-qr', function (Request $request) {
     $validated = $request->validate([
@@ -2426,7 +2475,7 @@ Route::post('/admin/hotel/payment-qr', function (Request $request) {
         'ok' => true,
         'qr_url' => ChatAttachmentUrl::fromStoredUrl($url),
     ]);
-})->middleware('role:admin')->name('api.v1.admin.hotel.payment-qr.store');
+})->middleware('role:admin,super_admin')->name('api.v1.admin.hotel.payment-qr.store');
 
 Route::get('/admin/payment-references/search', function (Request $request) {
     $validated = $request->validate([
@@ -2571,7 +2620,12 @@ Route::get('/admin/portal-users', function (Request $request) {
     $query = User::withoutGlobalScopes()->where('hotel_id', $hotelId);
 
     if ($actorRole === UserRole::ADMIN->value) {
-        $query->where('role', UserRole::FRONTDESK);
+        $query->whereIn('role', [
+            UserRole::FRONTDESK,
+            UserRole::STAFF,
+            'frontdesk',
+            'staff',
+        ]);
     } else {
         $query->whereIn('role', [
             UserRole::ADMIN,
@@ -2580,6 +2634,7 @@ Route::get('/admin/portal-users', function (Request $request) {
             'admin',
             'super_admin',
             'frontdesk',
+            'staff',
         ]);
     }
 
@@ -2614,22 +2669,37 @@ Route::delete('/admin/portal-users/{target}', function (Request $request, string
     if ($victim->roleValue() === 'super_admin') {
         return response()->json(['message' => 'Cannot delete another super admin account.'], 422);
     }
-    if ($victim->roleValue() === 'staff') {
-        return response()->json(['message' => 'Remove staff via staff management instead.'], 422);
-    }
     if ($victim->roleValue() === 'owner') {
         return response()->json(['message' => 'Cannot delete owner accounts via portal user management.'], 422);
     }
 
     $victimRole = $victim->roleValue();
     if ($actorRole === UserRole::ADMIN->value) {
-        if ($victimRole !== UserRole::FRONTDESK->value) {
-            return response()->json(['message' => 'Hotel admins can only remove front desk accounts.'], 403);
+        if (! in_array($victimRole, [UserRole::FRONTDESK->value, 'staff'], true)) {
+            return response()->json(['message' => 'Hotel admins can only remove front desk or staff accounts.'], 403);
         }
     } elseif ($actorRole !== UserRole::SUPER_ADMIN->value) {
         return response()->json(['message' => 'Only hotel admin or super admin can remove portal accounts.'], 403);
-    } elseif (! in_array($victimRole, [UserRole::ADMIN->value, UserRole::FRONTDESK->value], true)) {
-        return response()->json(['message' => 'Only administrator or front desk accounts can be removed here.'], 422);
+    } elseif (! in_array($victimRole, [UserRole::ADMIN->value, UserRole::FRONTDESK->value, 'staff'], true)) {
+        return response()->json(['message' => 'Only administrator, front desk, or staff accounts can be removed here.'], 422);
+    }
+
+    if ($victimRole === 'staff') {
+        $staff = \App\Models\StaffMember::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where('user_id', (string) $victim->id)
+            ->first();
+        if ($staff !== null) {
+            \App\Models\Task::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
+                ->where('assigned_to', (string) $staff->id)
+                ->whereIn('status', [
+                    \App\Enums\TaskStatus::PENDING->value,
+                    \App\Enums\TaskStatus::IN_PROGRESS->value,
+                ])
+                ->update(['assigned_to' => '']);
+            $staff->delete();
+        }
     }
 
     $morph = (new User)->getMorphClass();
@@ -2782,7 +2852,8 @@ Route::post('/admin/bookings/{booking}/extend-stay', function (Request $request,
     }
 
     $validated = $request->validate([
-        'hours' => ['required', 'integer', 'min:1', 'max:'.RoomBillingSupport::CUSTOM_EXTENSION_MAX_HOURS],
+        'extension_mode' => ['nullable', 'in:block,custom_hours,hours'],
+        'hours' => ['nullable', 'integer', 'min:1', 'max:'.RoomBillingSupport::CUSTOM_EXTENSION_MAX_HOURS],
     ]);
 
     $room = Room::withoutGlobalScopes()->findOrFail((string) $booking->room_id);
@@ -2790,7 +2861,17 @@ Route::post('/admin/bookings/{booking}/extend-stay', function (Request $request,
         return response()->json(['message' => 'Room is outside your hotel scope.'], 403);
     }
 
-    $hours = (int) $validated['hours'];
+    $mode = strtolower(trim((string) ($validated['extension_mode'] ?? 'custom_hours')));
+    if ($mode === 'hours') {
+        $mode = 'custom_hours';
+    }
+    $hours = (int) ($validated['hours'] ?? 0);
+    if ($mode !== 'block' && $hours < 1) {
+        return response()->json([
+            'message' => 'Hours are required for per-hour stay extension.',
+            'errors' => ['hours' => ['Select how many extra hours to add.']],
+        ], 422);
+    }
 
     $result = $stayExtensionService->apply(
         $room,
@@ -2798,6 +2879,7 @@ Route::post('/admin/bookings/{booking}/extend-stay', function (Request $request,
         $hours,
         (string) $request->user()->id,
         'Admin extended stay',
+        $mode,
     );
 
     return response()->json($result);
@@ -2941,6 +3023,50 @@ Route::patch('/admin/settings/cancellation-retention', function (Request $reques
         'cancellation_retention_percent' => (float) $settings->cancellation_retention_percent,
     ]);
 })->middleware('role:admin');
+
+Route::get('/admin/settings/min-check-in-payment', function (Request $request) {
+    $hotelId = (string) $request->user()->hotel_id;
+    $settings = SystemSetting::withoutGlobalScopes()->firstOrCreate(
+        ['hotel_id' => $hotelId],
+        [
+            'theme_color' => '#2563eb',
+            'theme_mode' => 'light',
+            'sound_notifications_enabled' => false,
+        ]
+    );
+    $hotelValue = $settings->min_check_in_payment_percent;
+    $platformDefault = app(\App\Services\PlatformSettingsService::class)->minCheckInPaymentPercent();
+
+    return response()->json([
+        'min_check_in_payment_percent' => \App\Support\MinCheckInPaymentSupport::percentForHotel($hotelId),
+        'hotel_min_check_in_payment_percent' => $hotelValue !== null ? (float) $hotelValue : null,
+        'platform_default_percent' => $platformDefault,
+        'uses_hotel_override' => $hotelValue !== null,
+    ]);
+})->middleware('role:admin,super_admin,frontdesk');
+
+Route::patch('/admin/settings/min-check-in-payment', function (Request $request) {
+    $validated = $request->validate([
+        'min_check_in_payment_percent' => ['required', 'numeric', 'min:0', 'max:100'],
+    ]);
+    $hotelId = (string) $request->user()->hotel_id;
+    $settings = SystemSetting::withoutGlobalScopes()->firstOrCreate(
+        ['hotel_id' => $hotelId],
+        [
+            'theme_color' => '#2563eb',
+            'theme_mode' => 'light',
+            'sound_notifications_enabled' => false,
+        ]
+    );
+    $settings->update([
+        'min_check_in_payment_percent' => (float) $validated['min_check_in_payment_percent'],
+    ]);
+
+    return response()->json([
+        'ok' => true,
+        'min_check_in_payment_percent' => \App\Support\MinCheckInPaymentSupport::percentForHotel($hotelId),
+    ]);
+})->middleware('role:admin,super_admin');
 
 Route::get('/admin/chat/inbox', [AdminChatController::class, 'inbox'])->middleware('role:admin,frontdesk');
 Route::get('/admin/chat/rooms/{roomId}', [AdminChatController::class, 'room'])->middleware('role:admin,frontdesk');

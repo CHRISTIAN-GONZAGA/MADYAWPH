@@ -83,7 +83,7 @@ class WalkInCheckInCleaningAndReportsTest extends TestCase
         $this->assertNotNull($task);
         $this->assertSame('cleaning', (string) ($task->task_type ?? ''));
         $this->assertNotEmpty($task->checklist);
-        $this->assertSame(RoomStatus::MAINTENANCE->value, (string) ($room->fresh()->status?->value ?? $room->fresh()->status));
+        $this->assertSame(RoomStatus::CLEANING->value, (string) ($room->fresh()->status?->value ?? $room->fresh()->status));
         $this->assertSame('', trim((string) ($room->fresh()->maintenance_reason ?? '')));
     }
 
@@ -149,7 +149,7 @@ class WalkInCheckInCleaningAndReportsTest extends TestCase
             'room_number' => '306',
             'room_type' => 'Deluxe',
             'price_per_night' => 1500,
-            'status' => RoomStatus::MAINTENANCE->value,
+            'status' => RoomStatus::CLEANING->value,
             'maintenance_reason' => null,
         ]);
         $checklist = CleaningChecklistSupport::defaultItems();
@@ -182,6 +182,87 @@ class WalkInCheckInCleaningAndReportsTest extends TestCase
             RoomStatus::AVAILABLE->value,
             (string) ($room->fresh()->status?->value ?? $room->fresh()->status)
         );
+
+        $staff = $staff->fresh();
+        $this->assertSame(1, (int) ($staff->tasks_completed ?? 0));
+        $this->assertSame(100, (int) ($staff->performance_score ?? 0));
+    }
+
+    public function test_manual_maintenance_auto_assigns_staff_task(): void
+    {
+        $hotel = Hotel::create(['name' => 'Auto Maint Hotel', 'location' => 'Loc']);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'admin',
+            'email' => 'auto-maint-admin@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $staffUser = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'maint_staff',
+            'email' => 'auto-maint-staff@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::STAFF,
+        ]);
+        $staff = StaffMember::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'user_id' => (string) $staffUser->id,
+            'name' => 'Maint Worker',
+            'role' => 'maintenance',
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '501',
+            'room_type' => 'Single',
+            'price_per_night' => 1000,
+            'status' => RoomStatus::AVAILABLE->value,
+        ]);
+
+        Sanctum::actingAs($admin);
+        $this->putJson('/api/v1/rooms/'.$room->id.'/status', [
+            'status' => 'maintenance',
+            'maintenance_reason' => 'Clogged toilet',
+        ])->assertOk();
+
+        $task = Task::withoutGlobalScopes()
+            ->where('hotel_id', (string) $hotel->id)
+            ->where('room_id', (string) $room->id)
+            ->whereIn('status', [TaskStatus::PENDING->value, TaskStatus::IN_PROGRESS->value])
+            ->first();
+        $this->assertNotNull($task);
+        $this->assertSame('maintenance', (string) ($task->task_type ?? ''));
+        $this->assertSame((string) $staff->id, (string) ($task->assigned_to ?? ''));
+    }
+
+    public function test_admin_can_delete_staff_account(): void
+    {
+        $hotel = Hotel::create(['name' => 'Delete Staff Hotel', 'location' => 'Loc']);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'admin',
+            'email' => 'del-staff-admin@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $staffUser = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'to_delete',
+            'email' => 'del-staff@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::STAFF,
+        ]);
+        $staff = StaffMember::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'user_id' => (string) $staffUser->id,
+            'name' => 'Delete Me',
+            'role' => 'janitor',
+        ]);
+
+        Sanctum::actingAs($admin);
+        $this->deleteJson('/api/v1/staff/'.$staff->id)->assertOk();
+        $this->assertNull(StaffMember::withoutGlobalScopes()->find($staff->id));
+        $this->assertNull(User::withoutGlobalScopes()->find($staffUser->id));
     }
 
     public function test_complimentary_product_charge_is_zero(): void

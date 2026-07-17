@@ -29,7 +29,7 @@ class RoomController extends Controller
     public function index(Request $request)
     {
         $validated = $request->validate([
-            'status' => ['nullable', 'in:available,booked,checked_in,checked_out,maintenance,reserved'],
+            'status' => ['nullable', 'in:available,booked,checked_in,checked_out,cleaning,maintenance,reserved'],
         ]);
 
         $query = Room::query();
@@ -60,7 +60,7 @@ class RoomController extends Controller
             'price_per_block' => ['nullable', 'numeric', 'min:0'],
             'block_hours' => ['nullable', 'integer', 'min:1', 'max:48'],
             'price_per_extra_hour' => ['nullable', 'numeric', 'min:0'],
-            'status' => ['nullable', 'in:available,booked,checked_in,checked_out,maintenance,reserved'],
+            'status' => ['nullable', 'in:available,booked,checked_in,checked_out,cleaning,maintenance,reserved'],
             'amenities' => ['nullable', 'array'],
             'image_file' => RoomImageUploadRules::fileRules(),
         ]);
@@ -103,7 +103,7 @@ class RoomController extends Controller
             'price_per_block' => ['sometimes', 'numeric', 'min:0'],
             'block_hours' => ['sometimes', 'integer', 'min:1', 'max:48'],
             'price_per_extra_hour' => ['sometimes', 'numeric', 'min:0'],
-            'status' => ['sometimes', 'in:available,booked,checked_in,checked_out,maintenance,reserved'],
+            'status' => ['sometimes', 'in:available,booked,checked_in,checked_out,cleaning,maintenance,reserved'],
             'amenities' => ['nullable', 'array'],
             'image_file' => RoomImageUploadRules::fileRules(),
             'remove_image' => ['sometimes', 'boolean'],
@@ -175,7 +175,7 @@ class RoomController extends Controller
     public function updateStatus(Request $request, Room $room)
     {
         $validated = $request->validate([
-            'status' => ['required', 'in:available,booked,checked_in,checked_out,maintenance,reserved'],
+            'status' => ['required', 'in:available,booked,checked_in,checked_out,cleaning,maintenance,reserved'],
             'maintenance_reason' => ['nullable', 'string', 'max:255'],
         ]);
 

@@ -2,15 +2,26 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\TaskStatus;
 use App\Http\Controllers\Controller;
+use App\Models\PersonalAccessToken;
 use App\Models\StaffMember;
+use App\Models\Task;
 use App\Models\User;
+use App\Services\ActivityLogService;
+use App\Services\TaskService;
 use App\Support\SafeModelAttributes;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
 class StaffController extends Controller
 {
+    public function __construct(
+        private readonly ActivityLogService $activityLogService,
+        private readonly TaskService $taskService,
+    ) {
+    }
+
     public function index()
     {
         $rows = StaffMember::query()->orderBy('name')->limit(100)->get();
@@ -67,9 +78,11 @@ class StaffController extends Controller
             'user_id' => (string) $user->id,
             'name' => $validated['name'],
             'role' => $validated['role'],
-            'performance_score' => $validated['performance_score'] ?? null,
+            'performance_score' => $validated['performance_score'] ?? 0,
+            'tasks_completed' => 0,
             'daily_tasks' => $validated['daily_tasks'] ?? [],
         ]);
+
         return response()->json($this->staffPayload($staff), 201);
     }
 
@@ -92,7 +105,57 @@ class StaffController extends Controller
         }
 
         $staff->update($validated);
+
         return response()->json($this->staffPayload($staff->fresh() ?? $staff));
+    }
+
+    public function destroy(Request $request, StaffMember $staff)
+    {
+        $actor = $request->user();
+        $hotelId = (string) $actor->hotel_id;
+        if ((string) ($staff->hotel_id ?? '') !== $hotelId) {
+            return response()->json(['message' => 'Staff outside hotel scope.'], 403);
+        }
+
+        $userId = trim((string) ($staff->user_id ?? ''));
+        if ($userId !== '' && $userId === (string) $actor->id) {
+            return response()->json(['message' => 'You cannot delete your own account.'], 422);
+        }
+
+        $staffId = (string) $staff->id;
+        $staffName = (string) ($staff->name ?? 'Staff');
+
+        Task::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where('assigned_to', $staffId)
+            ->whereIn('status', [TaskStatus::PENDING->value, TaskStatus::IN_PROGRESS->value])
+            ->update(['assigned_to' => '']);
+
+        if ($userId !== '') {
+            $user = User::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
+                ->where('id', $userId)
+                ->first();
+            if ($user !== null) {
+                $morph = (new User)->getMorphClass();
+                PersonalAccessToken::query()
+                    ->where('tokenable_type', $morph)
+                    ->where('tokenable_id', (string) $user->id)
+                    ->delete();
+                $user->delete();
+            }
+        }
+
+        $staff->delete();
+
+        $this->activityLogService->log(
+            $hotelId,
+            $actor,
+            "Deleted staff account {$staffName}",
+            ['deleted_staff_id' => $staffId, 'deleted_user_id' => $userId]
+        );
+
+        return response()->json(['ok' => true]);
     }
 
     /**
@@ -100,6 +163,10 @@ class StaffController extends Controller
      */
     private function staffPayload(StaffMember $staff): array
     {
+        // Keep displayed % in sync with actual assigned-task completion.
+        $this->taskService->recalculateStaffPerformance($staff);
+        $staff = $staff->fresh() ?? $staff;
+
         return [
             'id' => (string) $staff->id,
             'user_id' => (string) ($staff->getAttributes()['user_id'] ?? ''),

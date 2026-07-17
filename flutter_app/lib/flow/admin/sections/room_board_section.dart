@@ -38,6 +38,8 @@ class RoomBoardSection extends StatelessWidget {
         return Colors.blue.shade600;
       case 'maintenance':
         return Colors.red.shade400;
+      case 'cleaning':
+        return Colors.orange.shade400;
       default:
         return scheme.surfaceContainerHighest;
     }

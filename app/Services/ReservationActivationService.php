@@ -13,6 +13,7 @@ use App\Models\ExternalReservation;
 use App\Models\Room;
 use App\Support\CustomerStayPricing;
 use App\Support\PriceRounding;
+use App\Support\RoomBillingSupport;
 use Carbon\Carbon;
 use Illuminate\Support\Str;
 
@@ -42,7 +43,7 @@ class ReservationActivationService
         }
 
         $roomStatus = $room->status?->value ?? (string) $room->status;
-        if ($roomStatus === RoomStatus::MAINTENANCE->value) {
+        if (in_array($roomStatus, [RoomStatus::MAINTENANCE->value, RoomStatus::CLEANING->value], true)) {
             return null;
         }
 
@@ -52,16 +53,45 @@ class ReservationActivationService
 
         $checkIn = Carbon::parse($res->check_in_date)->startOfDay();
         $checkOut = Carbon::parse($res->check_out_date)->startOfDay();
-        $window = CustomerStayPricing::resolveStayWindow($room, $checkIn, $checkOut);
-        $charge = CustomerStayPricing::computeCharge(
-            $room,
-            $checkIn,
-            $checkOut,
-            $this->financialComputationService,
-            $this->roomPricingService,
-        );
-        $hotelId = (string) $room->hotel_id;
         $meta = is_array($res->metadata) ? $res->metadata : [];
+
+        // Prefer times captured at customer submit so activation does not shift the window.
+        if (! empty($meta['check_in_time']) && ! empty($meta['check_out_time'])) {
+            $inParts = explode(':', (string) $meta['check_in_time']);
+            $outParts = explode(':', (string) $meta['check_out_time']);
+            $windowCheckIn = $checkIn->copy()->setTime((int) ($inParts[0] ?? 0), (int) ($inParts[1] ?? 0));
+            $windowCheckOut = $checkOut->copy()->setTime((int) ($outParts[0] ?? 0), (int) ($outParts[1] ?? 0));
+            if ($windowCheckOut->lte($windowCheckIn)) {
+                $windowCheckOut = $windowCheckIn->copy()->addHours(
+                    max(1, (int) ($meta['block_hours'] ?? RoomBillingSupport::hourlyConfig($room)['block_hours']))
+                );
+            }
+            $window = [
+                'check_in' => $windowCheckIn,
+                'check_out' => $windowCheckOut,
+                'check_in_date' => $windowCheckIn->toDateString(),
+                'check_out_date' => $windowCheckOut->toDateString(),
+                'check_in_time' => $windowCheckIn->format('H:i'),
+                'check_out_time' => $windowCheckOut->format('H:i'),
+            ];
+            $charge = RoomBillingSupport::computeStayCharge(
+                $room,
+                $windowCheckIn,
+                $windowCheckOut,
+                $this->financialComputationService,
+                $this->roomPricingService,
+            );
+        } else {
+            $window = CustomerStayPricing::resolveStayWindow($room, $checkIn, $checkOut);
+            $charge = CustomerStayPricing::computeCharge(
+                $room,
+                $checkIn,
+                $checkOut,
+                $this->financialComputationService,
+                $this->roomPricingService,
+            );
+        }
+        $hotelId = (string) $room->hotel_id;
         $total = isset($meta['estimated_total']) && (float) $meta['estimated_total'] > 0
             ? PriceRounding::nearest50((float) $meta['estimated_total'])
             : (float) $charge['amount'];

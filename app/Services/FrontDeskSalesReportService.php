@@ -113,6 +113,95 @@ class FrontDeskSalesReportService
     }
 
     /**
+     * Daily / weekly / monthly / annual totals for one front desk account.
+     *
+     * @return array{
+     *     user_id: string,
+     *     username: string,
+     *     anchor_date: string,
+     *     periods: array{
+     *         daily: array{label: string, from: string, to: string, total_sales: float, payments_collected: float, order_count: int},
+     *         weekly: array{label: string, from: string, to: string, total_sales: float, payments_collected: float, order_count: int},
+     *         monthly: array{label: string, from: string, to: string, total_sales: float, payments_collected: float, order_count: int},
+     *         annual: array{label: string, from: string, to: string, total_sales: float, payments_collected: float, order_count: int}
+     *     }
+     * }
+     */
+    public function accountPeriodOverview(
+        string $hotelId,
+        string $userId,
+        Carbon $anchor,
+    ): array {
+        $user = $this->requireFrontDeskUser($hotelId, $userId);
+        $anchor = $anchor->copy()->startOfDay();
+
+        $ranges = [
+            'daily' => [
+                'label' => 'Daily',
+                'from' => $anchor->copy()->startOfDay(),
+                'to' => $anchor->copy()->endOfDay(),
+            ],
+            'weekly' => [
+                'label' => 'Weekly',
+                'from' => $anchor->copy()->startOfWeek()->startOfDay(),
+                'to' => $anchor->copy()->endOfWeek()->endOfDay(),
+            ],
+            'monthly' => [
+                'label' => 'Monthly',
+                'from' => $anchor->copy()->startOfMonth()->startOfDay(),
+                'to' => $anchor->copy()->endOfMonth()->endOfDay(),
+            ],
+            'annual' => [
+                'label' => 'Annual',
+                'from' => $anchor->copy()->startOfYear()->startOfDay(),
+                'to' => $anchor->copy()->endOfYear()->endOfDay(),
+            ],
+        ];
+
+        $periods = [];
+        foreach ($ranges as $key => $range) {
+            /** @var Carbon $from */
+            $from = $range['from'];
+            /** @var Carbon $to */
+            $to = $range['to'];
+            $charges = $this->chargesInRange($hotelId, $from, $to, [$userId]);
+            $totalSales = 0.0;
+            $payments = 0.0;
+            $orderCount = 0;
+            foreach ($charges as $charge) {
+                $type = strtolower(trim((string) ($charge->type ?? '')));
+                $amount = (float) ($charge->amount ?? 0);
+                if (BillingChargeTypes::isPartialPayment($type)) {
+                    $payments += abs($amount);
+                    continue;
+                }
+                if ($amount <= 0) {
+                    continue;
+                }
+                if (in_array($type, ['amenity', 'manual'], true)) {
+                    $totalSales += $amount;
+                    $orderCount++;
+                }
+            }
+            $periods[$key] = [
+                'label' => (string) $range['label'],
+                'from' => $from->toDateString(),
+                'to' => $to->toDateString(),
+                'total_sales' => round($totalSales, 2),
+                'payments_collected' => round($payments, 2),
+                'order_count' => $orderCount,
+            ];
+        }
+
+        return [
+            'user_id' => $userId,
+            'username' => (string) ($user->name ?? ''),
+            'anchor_date' => $anchor->toDateString(),
+            'periods' => $periods,
+        ];
+    }
+
+    /**
      * Day-level totals for calendar heatmap for one frontdesk account.
      *
      * @return array{

@@ -23,6 +23,7 @@ class CompleteGuestBookingPayload {
     required this.checkOut,
     required this.discountType,
     required this.paymentMethod,
+    this.paymentReference = '',
     this.checkInTime,
     this.checkOutTime,
     this.guestIdFile,
@@ -44,6 +45,7 @@ class CompleteGuestBookingPayload {
   final String checkOut;
   final String discountType;
   final String paymentMethod;
+  final String paymentReference;
   final TimeOfDay? checkInTime;
   final TimeOfDay? checkOutTime;
   final XFile? guestIdFile;

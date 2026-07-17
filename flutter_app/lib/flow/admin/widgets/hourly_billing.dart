@@ -67,43 +67,73 @@ class HourlyBilling {
     );
   }
 
-  /// Mirrors backend [CustomerStayPricing] for date-only customer bookings.
-  static DateTime customerStayCheckIn(DateTime checkInDate) => DateTime(
-        checkInDate.year,
-        checkInDate.month,
-        checkInDate.day,
-        14,
+  /// Clock-based stay window: check-in = selected date + current wall-clock time;
+  /// hourly checkout = check-in + [blockHours]; nightly uses overnight checkout date at 11:00.
+  static ({DateTime checkIn, DateTime checkOut}) clockBasedStayWindow(
+    Map<String, dynamic> room,
+    DateTime checkInDate, {
+    DateTime? checkOutDate,
+    DateTime? now,
+  }) {
+    final clock = now ?? DateTime.now();
+    final checkIn = DateTime(
+      checkInDate.year,
+      checkInDate.month,
+      checkInDate.day,
+      clock.hour,
+      clock.minute,
+      clock.second,
+    );
+
+    if (isHourly(room)) {
+      final hours = blockHours(room);
+      final safeHours = hours < 1 ? 1 : hours;
+      return (checkIn: checkIn, checkOut: checkIn.add(Duration(hours: safeHours)));
+    }
+
+    final outDay = checkOutDate ?? checkInDate.add(const Duration(days: 1));
+    final sameOrBefore = !outDay.isAfter(
+      DateTime(checkInDate.year, checkInDate.month, checkInDate.day),
+    );
+    final resolvedOut = sameOrBefore
+        ? checkInDate.add(const Duration(days: 1))
+        : outDay;
+    return (
+      checkIn: checkIn,
+      checkOut: DateTime(
+        resolvedOut.year,
+        resolvedOut.month,
+        resolvedOut.day,
+        11,
         0,
-      );
+      ),
+    );
+  }
+
+  /// Mirrors backend [CustomerStayPricing] for date-only customer bookings.
+  /// Prefer [clockBasedStayWindow] for new walk-in / check-in flows.
+  static DateTime customerStayCheckIn(DateTime checkInDate) {
+    final now = DateTime.now();
+    return DateTime(
+      checkInDate.year,
+      checkInDate.month,
+      checkInDate.day,
+      now.hour,
+      now.minute,
+      now.second,
+    );
+  }
 
   static DateTime customerStayCheckOut(
     Map<String, dynamic> room,
     DateTime checkInDate,
     DateTime checkOutDate,
   ) {
-    if (!isHourly(room)) {
-      return DateTime(
-        checkOutDate.year,
-        checkOutDate.month,
-        checkOutDate.day,
-        11,
-        0,
-      );
-    }
-    final inAt = customerStayCheckIn(checkInDate);
-    final sameDay = checkInDate.year == checkOutDate.year &&
-        checkInDate.month == checkOutDate.month &&
-        checkInDate.day == checkOutDate.day;
-    if (sameDay) {
-      return inAt.add(Duration(hours: blockHours(room)));
-    }
-    return DateTime(
-      checkOutDate.year,
-      checkOutDate.month,
-      checkOutDate.day,
-      11,
-      0,
-    );
+    return clockBasedStayWindow(
+      room,
+      checkInDate,
+      checkOutDate: checkOutDate,
+    ).checkOut;
   }
 
   static double customerDateStayCharge(
@@ -111,11 +141,16 @@ class HourlyBilling {
     DateTime checkInDate,
     DateTime checkOutDate,
   ) {
-    return stayCharge(
+    final window = clockBasedStayWindow(
       room,
-      customerStayCheckIn(checkInDate),
-      customerStayCheckOut(room, checkInDate, checkOutDate),
+      checkInDate,
+      checkOutDate: checkOutDate,
     );
+    return stayCharge(room, window.checkIn, window.checkOut);
+  }
+
+  static double blockExtensionFee(Map<String, dynamic> room) {
+    return _round50(pricePerBlock(room));
   }
 
   static String priceLabel(Map<String, dynamic> room) {

@@ -593,8 +593,9 @@ class GuestPortalApiController extends Controller
     ): JsonResponse {
         $portal = $request->attributes->get('guest_portal');
         $validated = $request->validate([
-            'nights' => ['required_without:hours', 'integer', 'min:1', 'max:30'],
+            'nights' => ['required_without_all:hours,extension_mode', 'integer', 'min:1', 'max:30'],
             'hours' => ['nullable', 'integer', 'min:1', 'max:'.RoomBillingSupport::CUSTOM_EXTENSION_MAX_HOURS],
+            'extension_mode' => ['nullable', 'in:block,custom_hours,hours'],
         ]);
 
         $hotelId = (string) $portal['hotel_id'];
@@ -613,8 +614,12 @@ class GuestPortalApiController extends Controller
             ->firstOrFail();
 
         if (RoomBillingSupport::isHourly($room)) {
+            $mode = strtolower(trim((string) ($validated['extension_mode'] ?? 'custom_hours')));
+            if ($mode === 'hours') {
+                $mode = 'custom_hours';
+            }
             $hours = (int) ($validated['hours'] ?? 0);
-            if ($hours < 1) {
+            if ($mode !== 'block' && $hours < 1) {
                 return response()->json(['message' => 'Hours are required for stay extension.'], 422);
             }
 
@@ -624,6 +629,7 @@ class GuestPortalApiController extends Controller
                 $hours,
                 null,
                 "Guest requested stay extension for room {$portal['room_number']}",
+                $mode,
             );
 
             return response()->json($result);

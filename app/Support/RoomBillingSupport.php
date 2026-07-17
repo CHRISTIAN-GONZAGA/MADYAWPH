@@ -226,10 +226,10 @@ final class RoomBillingSupport
      *   amount: float,
      *   hours: int,
      *   extension_mode: string,
-     *   blocks: null,
-     *   block_hours: null,
-     *   price_per_block: null,
-     *   price_per_extra_hour: float,
+     *   blocks: int|null,
+     *   block_hours: int|null,
+     *   price_per_block: float|null,
+     *   price_per_extra_hour: float|null,
      *   label: string
      * }
      */
@@ -247,7 +247,31 @@ final class RoomBillingSupport
             ]);
         }
 
-        unset($booking, $financial, $pricing, $mode);
+        unset($booking, $financial);
+        $mode = strtolower(trim($mode));
+
+        if ($mode === 'block') {
+            $config = self::hourlyConfig($room);
+            $blockHours = max(1, $config['block_hours']);
+            $price = $pricing->applySurge((string) $room->hotel_id, $config['price_per_block']);
+            if ($price <= 0) {
+                throw ValidationException::withMessages([
+                    'extension_mode' => ['Block rate is not set for this room.'],
+                ]);
+            }
+            $amount = PriceRounding::nearest50($price);
+
+            return [
+                'amount' => $amount,
+                'hours' => $blockHours,
+                'extension_mode' => 'block',
+                'blocks' => 1,
+                'block_hours' => $blockHours,
+                'price_per_block' => $price,
+                'price_per_extra_hour' => null,
+                'label' => "Extend stay (1×{$blockHours}h block @ ₱".number_format($price, 0).')',
+            ];
+        }
 
         if ($customHours === null || $customHours < 1) {
             throw ValidationException::withMessages([

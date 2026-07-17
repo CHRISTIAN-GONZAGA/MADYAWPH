@@ -14,6 +14,7 @@ import '../admin_online_payment_screen.dart';
 import '../admin_portal_users_screen.dart';
 import '../admin_room_fee_presets_screen.dart';
 import '../admin_cancellation_retention_screen.dart';
+import '../admin_min_check_in_payment_screen.dart';
 import '../admin_notification_emails_screen.dart';
 
 class SettingsSection extends StatelessWidget {
@@ -84,6 +85,25 @@ class SettingsSection extends StatelessWidget {
             ),
           ),
         ],
+        const SizedBox(height: 16),
+        _SettingsGroup(
+          title: 'Reports',
+          tiles: [
+            _SettingsTile(
+              icon: Icons.insights_outlined,
+              title: 'Analytics & reports',
+              subtitle: 'Sales, rooms, amenities, reseller commissions',
+              enabled: isFrontDesk || !creditsLocked,
+              onTap: () {
+                Navigator.of(context).push<void>(
+                  MaterialPageRoute<void>(
+                    builder: (_) => AdminReportsScreen(isFrontDesk: isFrontDesk),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
         const SizedBox(height: 16),
         _SettingsGroup(
           title: 'Operations',
@@ -164,6 +184,22 @@ class SettingsSection extends StatelessWidget {
                   await onRefreshAfterNav();
                 },
               ),
+              if (!isFrontDesk)
+                _SettingsTile(
+                  icon: Icons.payments_outlined,
+                  title: 'Check-in payment %',
+                  subtitle:
+                      'Minimum percent of the room bill required before check-in',
+                  enabled: !creditsLocked,
+                  onTap: () async {
+                    await Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AdminMinCheckInPaymentScreen(),
+                      ),
+                    );
+                    await onRefreshAfterNav();
+                  },
+                ),
               _SettingsTile(
                 icon: Icons.trending_up_outlined,
                 title: 'Dynamic / surge pricing',
@@ -264,7 +300,7 @@ class SettingsSection extends StatelessWidget {
           ),
         ],
         _SettingsGroup(
-          title: isFrontDesk ? 'Reports & account' : 'System & reports',
+          title: isFrontDesk ? 'Account' : 'System',
           tiles: [
             if (!isFrontDesk)
               _SettingsTile(
@@ -273,19 +309,6 @@ class SettingsSection extends StatelessWidget {
                 subtitle: 'Recharge via GCash or PayMaya',
                 onTap: onRecharge,
               ),
-            _SettingsTile(
-              icon: Icons.insights_outlined,
-              title: 'Analytics & reports',
-              subtitle: 'Daily, weekly, monthly, annual revenue',
-              enabled: isFrontDesk || !creditsLocked,
-              onTap: () {
-                Navigator.of(context).push<void>(
-                  MaterialPageRoute<void>(
-                    builder: (_) => AdminReportsScreen(isFrontDesk: isFrontDesk),
-                  ),
-                );
-              },
-            ),
             if (!isFrontDesk) ...[
               _SettingsTile(
                 icon: Icons.receipt_long_outlined,

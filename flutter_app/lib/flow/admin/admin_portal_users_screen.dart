@@ -67,6 +67,8 @@ class _AdminPortalUsersScreenState extends State<AdminPortalUsersScreen> {
         return 'Super admin';
       case 'admin':
         return 'Administrator';
+      case 'staff':
+        return 'Staff';
       default:
         return role.isEmpty ? '—' : role;
     }
@@ -76,9 +78,9 @@ class _AdminPortalUsersScreenState extends State<AdminPortalUsersScreen> {
     final role = (user['role'] ?? '').toString();
     if (role == 'super_admin') return false;
     if (widget.canManageAdmins) {
-      return role == 'admin' || role == 'frontdesk';
+      return role == 'admin' || role == 'frontdesk' || role == 'staff';
     }
-    return role == 'frontdesk';
+    return role == 'frontdesk' || role == 'staff';
   }
 
   Future<void> _addUser() async {
@@ -280,7 +282,9 @@ class _AdminPortalUsersScreenState extends State<AdminPortalUsersScreen> {
                             leading: Icon(
                               role == 'frontdesk'
                                   ? Icons.badge_outlined
-                                  : Icons.admin_panel_settings_outlined,
+                                  : role == 'staff'
+                                      ? Icons.engineering_outlined
+                                      : Icons.admin_panel_settings_outlined,
                             ),
                             title: Text((u['name'] ?? '').toString()),
                             subtitle: Text(

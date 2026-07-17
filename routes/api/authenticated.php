@@ -391,6 +391,7 @@ Route::get('/staff', [StaffController::class, 'index'])->middleware('role:admin'
 Route::get('/staff/{staff}', [StaffController::class, 'show'])->middleware('role:admin');
 Route::post('/staff', [StaffController::class, 'store'])->middleware('role:admin');
 Route::put('/staff/{staff}', [StaffController::class, 'update'])->middleware('role:admin');
+Route::delete('/staff/{staff}', [StaffController::class, 'destroy'])->middleware('role:admin');
 
 Route::get('/tasks', [TaskController::class, 'index'])->middleware('role:admin,staff');
 Route::post('/tasks', [TaskController::class, 'store'])->middleware('role:admin');

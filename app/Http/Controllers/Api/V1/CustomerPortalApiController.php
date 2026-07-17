@@ -266,7 +266,7 @@ class CustomerPortalApiController extends Controller
         bool $adminWalkIn = false,
     ): bool {
         $status = strtolower(SafeModelAttributes::rawString($room, 'status'));
-        if ($status === RoomStatus::MAINTENANCE->value) {
+        if (in_array($status, [RoomStatus::MAINTENANCE->value, RoomStatus::CLEANING->value], true)) {
             return false;
         }
 
@@ -406,16 +406,6 @@ class CustomerPortalApiController extends Controller
         $checkIn = Carbon::parse($validated['check_in'])->startOfDay();
         $checkOut = Carbon::parse($validated['check_out'])->startOfDay();
 
-        if (! $this->hotelAvailabilityService->isRoomAvailableForStay(
-            (string) $room->id,
-            $hotelId,
-            $checkIn,
-            $checkOut,
-            null,
-        )) {
-            return response()->json(['message' => 'This room cannot be reserved for those dates right now.'], 422);
-        }
-
         $window = CustomerStayPricing::resolveStayWindow($room, $checkIn, $checkOut);
         $charge = CustomerStayPricing::computeCharge(
             $room,
@@ -424,6 +414,17 @@ class CustomerPortalApiController extends Controller
             $this->financialComputationService,
             $this->roomPricingService,
         );
+
+        if (! $this->hotelAvailabilityService->isRoomAvailableForStay(
+            (string) $room->id,
+            $hotelId,
+            $window['check_in'],
+            $window['check_out'],
+            null,
+        )) {
+            return response()->json(['message' => 'This room cannot be reserved for those dates right now.'], 422);
+        }
+
         $gross = (float) $charge['amount'];
         $total = $this->applyDiscountToTotal($gross, (float) ($validated['discount_percent'] ?? 0));
 
@@ -434,8 +435,8 @@ class CustomerPortalApiController extends Controller
             'guest_name' => $validated['guest_name'],
             'guest_email' => (string) ($validated['guest_email'] ?? ''),
             'guest_phone' => $validated['guest_phone'],
-            'check_in_date' => $checkIn->toDateString(),
-            'check_out_date' => $checkOut->toDateString(),
+            'check_in_date' => $window['check_in_date'],
+            'check_out_date' => $window['check_out_date'],
             'assigned_room_id' => (string) $room->id,
             'status' => 'pending_approval',
             'metadata' => array_filter([
@@ -450,6 +451,8 @@ class CustomerPortalApiController extends Controller
                 'stay_hours' => $charge['stay_hours'] ?? null,
                 'block_hours' => $charge['block_hours'] ?? null,
                 'price_per_block' => $charge['price_per_block'] ?? null,
+                'check_in_time' => $window['check_in_time'] ?? null,
+                'check_out_time' => $window['check_out_time'] ?? null,
                 'rooms' => (int) ($validated['rooms'] ?? 1),
                 'adults' => (int) ($validated['adults'] ?? 1),
                 'children' => (int) ($validated['children'] ?? 0),
@@ -762,7 +765,7 @@ class CustomerPortalApiController extends Controller
     private function roomAvailableForAdminWalkIn(Room $room): bool
     {
         $status = strtolower(SafeModelAttributes::rawString($room, 'status'));
-        if (in_array($status, [RoomStatus::MAINTENANCE->value, RoomStatus::CHECKED_IN->value], true)) {
+        if (in_array($status, [RoomStatus::MAINTENANCE->value, RoomStatus::CLEANING->value, RoomStatus::CHECKED_IN->value], true)) {
             return false;
         }
 
