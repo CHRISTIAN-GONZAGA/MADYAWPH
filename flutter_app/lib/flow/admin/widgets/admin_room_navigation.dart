@@ -9,6 +9,7 @@ import '../../../navigation_keys.dart';
 import '../admin_dashboard_models.dart';
 import '../admin_room_guest_qr_screen.dart';
 import 'admin_check_in_helper.dart';
+import 'admin_room_booking_calendar_dialog.dart';
 import 'admin_room_detail_navigation.dart';
 import 'admin_summary_room_tile.dart';
 import 'admin_walk_in_customer_booking.dart';
@@ -22,7 +23,7 @@ enum AdminRoomOpenMode {
   manageOnly,
 }
 
-enum _AdminRoomAction { book, manage, checkIn, viewQr }
+enum _AdminRoomAction { book, manage, checkIn, viewQr, viewCalendar }
 
 typedef AdminRoomManageHandler = Future<void> Function(
   BuildContext context,
@@ -47,7 +48,7 @@ abstract final class AdminRoomNavigation {
       room: room,
       onSuccess: onSuccess,
       sheetContext: sheetContext,
-      mode: canCreateBookings ? mode : AdminRoomOpenMode.manageOnly,
+      mode: mode,
       onManageRoom: onManageRoom,
       preferCheckIn: preferCheckIn && canCreateBookings,
       canCreateBookings: canCreateBookings,
@@ -92,9 +93,7 @@ abstract final class AdminRoomNavigation {
     bool preferCheckIn = false,
     bool canCreateBookings = true,
   }) async {
-    final effectiveMode =
-        canCreateBookings ? mode : AdminRoomOpenMode.manageOnly;
-    if (effectiveMode == AdminRoomOpenMode.manageOnly) {
+    if (mode == AdminRoomOpenMode.manageOnly) {
       await openSummaryRoomDetail(
         room: room,
         sheetContext: sheetContext,
@@ -194,6 +193,13 @@ abstract final class AdminRoomNavigation {
               ),
               const SizedBox(height: 10),
               OutlinedButton.icon(
+                onPressed: () =>
+                    Navigator.pop(ctx, _AdminRoomAction.viewCalendar),
+                icon: const Icon(Icons.calendar_month_outlined),
+                label: const Text('View booking calendar'),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
                 onPressed: () => Navigator.pop(ctx, _AdminRoomAction.viewQr),
                 icon: const Icon(Icons.qr_code_2_outlined),
                 label: const Text('View room QR code'),
@@ -223,13 +229,18 @@ abstract final class AdminRoomNavigation {
       return;
     }
 
+    if (action == _AdminRoomAction.viewCalendar) {
+      await showRoomBookingCalendar(context: context, room: room);
+      return;
+    }
+
     if (action == _AdminRoomAction.viewQr) {
       final roomId = AdminDashboardModels.roomIdOf(room);
       if (roomId.isEmpty) {
         _missingRoomId(context);
         return;
       }
-      await Navigator.of(context).push<void>(
+      await Navigator.of(context, rootNavigator: true).push<void>(
         MaterialPageRoute<void>(
           builder: (_) => AdminRoomGuestQrScreen(
             roomId: roomId,

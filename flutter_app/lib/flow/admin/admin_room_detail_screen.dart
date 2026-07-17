@@ -8,7 +8,9 @@ import '../../widgets/app_state_views.dart';
 import '../../widgets/room_status_label.dart';
 import '../widgets/extend_stay_dialog.dart';
 import 'admin_dashboard_models.dart';
+import 'admin_room_guest_qr_screen.dart';
 import 'widgets/admin_opaque_scaffold.dart';
+import 'widgets/admin_room_booking_calendar_dialog.dart';
 import 'widgets/hourly_billing.dart';
 import 'widgets/stay_receipt_dialog.dart';
 import 'admin_room_fee_presets_screen.dart';
@@ -1497,6 +1499,35 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     Navigator.of(context).maybePop();
   }
 
+  List<Widget> _roomDetailActions() {
+    final room = _asMap(_data?['room']) ?? widget.initialRoomSnapshot;
+    final roomNo = (room?['room_number'] ?? '').toString();
+    return [
+      IconButton(
+        tooltip: 'Booking calendar',
+        onPressed: room == null
+            ? null
+            : () => showRoomBookingCalendar(context: context, room: room),
+        icon: const Icon(Icons.calendar_month_outlined),
+      ),
+      IconButton(
+        tooltip: 'Room QR code',
+        onPressed: () {
+          Navigator.of(context, rootNavigator: true).push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => AdminRoomGuestQrScreen(
+                roomId: _roomId,
+                roomNumber: roomNo.isEmpty ? null : roomNo,
+              ),
+            ),
+          );
+        },
+        icon: const Icon(Icons.qr_code_2_outlined),
+      ),
+      IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.panelBodyOnly) {
@@ -1514,9 +1545,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         appBar: AppBar(
           title: const Text('Room details'),
           leading: BackButton(onPressed: _close),
-          actions: [
-            IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
-          ],
+          actions: _roomDetailActions(),
         ),
         body: body,
       );
@@ -1534,9 +1563,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       appBar: AppBar(
         title: const Text('Room details'),
         leading: BackButton(onPressed: _close),
-        actions: [
-          IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
-        ],
+        actions: _roomDetailActions(),
       ),
       body: SizedBox.expand(child: _buildSafeBody()),
     ),
