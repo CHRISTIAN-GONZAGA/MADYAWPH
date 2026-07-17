@@ -3,6 +3,7 @@ import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/services.dart';
 
 import '../admin_dashboard_models.dart';
+import '../widgets/admin_floor_dropdown_list.dart';
 import '../widgets/admin_hotel_totals_room_panel.dart';
 import '../widgets/booking_overview_cards.dart';
 import '../widgets/admin_room_navigation.dart';
@@ -78,6 +79,7 @@ class RoomSummarySection extends StatelessWidget {
     String? subtitle,
     bool showGuest = true,
     bool preferCheckIn = false,
+    String? floorBadgeNoun,
   }) {
     if (list.isEmpty) {
       showAppMessage(context, 'No rooms in "$title".');
@@ -91,6 +93,7 @@ class RoomSummarySection extends StatelessWidget {
       showGuest: showGuest,
       subtitle: subtitle,
       preferCheckIn: preferCheckIn,
+      floorBadgeNoun: floorBadgeNoun,
     );
   }
 
@@ -347,6 +350,7 @@ class RoomSummarySection extends StatelessWidget {
                 subtitle: 'Check-in today or tomorrow',
                 showGuest: true,
                 preferCheckIn: true,
+                floorBadgeNoun: 'reserved',
               ),
             ),
             _TotalStatCard(
@@ -361,6 +365,7 @@ class RoomSummarySection extends StatelessWidget {
                 list: occupiedRooms,
                 subtitle: 'Guests checked in',
                 showGuest: true,
+                floorBadgeNoun: 'occupied',
               ),
             ),
             _TotalStatCard(
@@ -374,6 +379,7 @@ class RoomSummarySection extends StatelessWidget {
                 list: vacantRooms,
                 subtitle: 'Available for booking',
                 showGuest: false,
+                floorBadgeNoun: 'vacant',
               ),
             ),
             _TotalStatCard(
@@ -389,6 +395,7 @@ class RoomSummarySection extends StatelessWidget {
                     list: cleaningRooms,
                     subtitle: 'Turnover / housekeeping',
                     showGuest: false,
+                    floorBadgeNoun: 'cleaning',
                   );
                   return;
                 }
@@ -414,6 +421,7 @@ class RoomSummarySection extends StatelessWidget {
                     context,
                     title: 'Maintenance rooms',
                     list: maintenanceRooms,
+                    floorBadgeNoun: 'maintenance',
                   );
                 } else {
                   _showRoomList(
@@ -497,13 +505,23 @@ class RoomSummarySection extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Expanded(
-                    child: _CategoryFloorDropdownList(
+                    child: AdminFloorDropdownList(
                       rooms: rooms,
-                      hostContext: context,
-                      sheetContext: ctx,
                       scrollController: scrollController,
-                      onRefresh: onRefresh,
-                      canCreateBookings: canCreateBookings,
+                      onRoomTap: (room) async {
+                        if (Navigator.of(ctx).canPop()) {
+                          Navigator.of(ctx).pop();
+                        }
+                        await adminRoomAfterFrame(() async {
+                          if (!context.mounted) return;
+                          await AdminRoomNavigation.handleRoomTap(
+                            context,
+                            room: room,
+                            onSuccess: onRefresh,
+                            canCreateBookings: canCreateBookings,
+                          );
+                        });
+                      },
                     ),
                   ),
                 ],
@@ -1005,15 +1023,33 @@ class _CategoryCard extends StatelessWidget {
                                   height: 1.15,
                                 ),
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            (stats['avg_price_label'] ?? 'Avg —').toString(),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                  color: scheme.onSurfaceVariant,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                          const SizedBox(height: 4),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: scheme.primary.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                (stats['avg_price_label'] ?? 'Avg —')
+                                    .toString(),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleSmall
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                      color: scheme.primary,
+                                      height: 1.2,
+                                    ),
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -1214,243 +1250,3 @@ class _TotalStatCard extends StatelessWidget {
   }
 }
 
-/// Dropdown-style floor list for a category: each floor is a row showing the
-/// vacant count; tapping it expands to reveal the rooms on that floor.
-class _CategoryFloorDropdownList extends StatefulWidget {
-  const _CategoryFloorDropdownList({
-    required this.rooms,
-    required this.hostContext,
-    required this.sheetContext,
-    required this.scrollController,
-    required this.onRefresh,
-    this.canCreateBookings = true,
-  });
-
-  final List<Map<String, dynamic>> rooms;
-  final BuildContext hostContext;
-  final BuildContext sheetContext;
-  final ScrollController scrollController;
-  final Future<void> Function() onRefresh;
-  final bool canCreateBookings;
-
-  @override
-  State<_CategoryFloorDropdownList> createState() =>
-      _CategoryFloorDropdownListState();
-}
-
-class _CategoryFloorDropdownListState
-    extends State<_CategoryFloorDropdownList> {
-  int? _expandedFloor;
-
-  static String _ordinalFloorLabel(int floor) {
-    final mod100 = floor % 100;
-    final mod10 = floor % 10;
-    String suffix;
-    if (mod100 >= 11 && mod100 <= 13) {
-      suffix = 'th';
-    } else if (mod10 == 1) {
-      suffix = 'st';
-    } else if (mod10 == 2) {
-      suffix = 'nd';
-    } else if (mod10 == 3) {
-      suffix = 'rd';
-    } else {
-      suffix = 'th';
-    }
-    return '$floor$suffix Floor';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final floors = AdminDashboardModels.distinctFloors(widget.rooms);
-    if (floors.isEmpty) {
-      return Center(
-        child: Text(
-          'No floors with rooms yet.',
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-      );
-    }
-
-    return ListView.separated(
-      controller: widget.scrollController,
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-      itemCount: floors.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (context, i) {
-        final floor = floors[i];
-        final onFloor = AdminDashboardModels.sortRoomsByNumber(
-          AdminDashboardModels.roomsOnFloor(widget.rooms, floor),
-        );
-        final vacantCount =
-            AdminDashboardModels.categoryVacantRooms(onFloor).length;
-        final expanded = _expandedFloor == floor;
-        return _FloorDropdownTile(
-          label: _ordinalFloorLabel(floor),
-          roomCount: onFloor.length,
-          vacantCount: vacantCount,
-          expanded: expanded,
-          onToggle: () {
-            HapticFeedback.selectionClick();
-            setState(() => _expandedFloor = expanded ? null : floor);
-          },
-          rooms: onFloor,
-          onRoomTap: (room) async {
-            if (Navigator.of(widget.sheetContext).canPop()) {
-              Navigator.of(widget.sheetContext).pop();
-            }
-            await adminRoomAfterFrame(() async {
-              if (!widget.hostContext.mounted) return;
-              await AdminRoomNavigation.handleRoomTap(
-                widget.hostContext,
-                room: room,
-                onSuccess: widget.onRefresh,
-                canCreateBookings: widget.canCreateBookings,
-              );
-            });
-          },
-        );
-      },
-    );
-  }
-}
-
-class _FloorDropdownTile extends StatelessWidget {
-  const _FloorDropdownTile({
-    required this.label,
-    required this.roomCount,
-    required this.vacantCount,
-    required this.expanded,
-    required this.onToggle,
-    required this.rooms,
-    required this.onRoomTap,
-  });
-
-  final String label;
-  final int roomCount;
-  final int vacantCount;
-  final bool expanded;
-  final VoidCallback onToggle;
-  final List<Map<String, dynamic>> rooms;
-  final void Function(Map<String, dynamic> room) onRoomTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final vacantColor =
-        vacantCount > 0 ? Colors.green.shade700 : scheme.onSurfaceVariant;
-    final columns = _summaryGridColumns(context);
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      decoration: BoxDecoration(
-        color: expanded ? scheme.surfaceContainerLow : scheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: expanded
-              ? scheme.primary.withValues(alpha: 0.4)
-              : scheme.outlineVariant,
-        ),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          InkWell(
-            onTap: onToggle,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.layers_outlined,
-                    size: 20,
-                    color: scheme.primary,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          label,
-                          style:
-                              Theme.of(context).textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                        ),
-                        Text(
-                          '$roomCount room(s)',
-                          style:
-                              Theme.of(context).textTheme.labelSmall?.copyWith(
-                                    color: scheme.onSurfaceVariant,
-                                  ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: vacantColor.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      '$vacantCount vacant',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: vacantColor,
-                          ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  AnimatedRotation(
-                    turns: expanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 180),
-                    child: Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          AnimatedCrossFade(
-            duration: const Duration(milliseconds: 180),
-            crossFadeState: expanded
-                ? CrossFadeState.showSecond
-                : CrossFadeState.showFirst,
-            firstChild: const SizedBox(width: double.infinity),
-            secondChild: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: rooms.isEmpty
-                  ? Text(
-                      'No rooms on this floor.',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    )
-                  : GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: columns,
-                        mainAxisSpacing: 6,
-                        crossAxisSpacing: 6,
-                        childAspectRatio: 1.45,
-                      ),
-                      itemCount: rooms.length,
-                      itemBuilder: (context, i) => AdminSummaryRoomGridTile(
-                        room: rooms[i],
-                        onTap: () => onRoomTap(rooms[i]),
-                      ),
-                    ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}

@@ -6,7 +6,7 @@ import '../admin_dashboard_models.dart';
 import '../admin_room_detail_screen.dart';
 import 'admin_room_detail_navigation.dart';
 import 'admin_summary_room_tile.dart';
-import 'admin_floor_picker_grid.dart';
+import 'admin_floor_dropdown_list.dart';
 import 'admin_room_navigation.dart';
 import '../../../navigation_keys.dart';
 
@@ -18,7 +18,7 @@ class _RoomListPayload {
     this.subtitle,
     this.useFloorPicker = false,
     this.preferCheckIn = false,
-    this.categoryFloorCount,
+    this.floorBadgeNoun,
   });
 
   final String title;
@@ -27,7 +27,7 @@ class _RoomListPayload {
   final String? subtitle;
   final bool useFloorPicker;
   final bool preferCheckIn;
-  final int? categoryFloorCount;
+  final String? floorBadgeNoun;
 }
 
 /// Slide-up room list for Summary → Hotel totals; detail stays in-panel until back.
@@ -49,6 +49,7 @@ class HotelTotalsRoomPanelScope extends InheritedWidget {
     required bool showGuest,
     String? subtitle,
     bool preferCheckIn,
+    String? floorBadgeNoun,
   }) openRoomList;
 
   final void Function(String roomId) openRoomDetail;
@@ -107,7 +108,6 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
 
   bool _visible = false;
   _RoomListPayload? _list;
-  int? _pickedFloor;
   String? _detailRoomId;
   Map<String, dynamic>? _detailSnapshot;
 
@@ -154,6 +154,7 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     required bool showGuest,
     String? subtitle,
     bool preferCheckIn = false,
+    String? floorBadgeNoun,
   }) {
     HapticFeedback.selectionClick();
     final useFloorPicker = AdminDashboardModels.needsFloorDrilldown(rooms);
@@ -161,7 +162,6 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
       _visible = true;
       _detailRoomId = null;
       _detailSnapshot = null;
-      _pickedFloor = null;
       _list = _RoomListPayload(
         title: title,
         rooms: rooms,
@@ -169,6 +169,7 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
         subtitle: subtitle,
         useFloorPicker: useFloorPicker,
         preferCheckIn: preferCheckIn,
+        floorBadgeNoun: floorBadgeNoun,
       );
     });
     _syncOpenFlag();
@@ -252,7 +253,6 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     setState(() {
       _detailRoomId = null;
       _detailSnapshot = null;
-      _pickedFloor = null;
     });
     await _slideCtrl.reverse();
     if (!mounted) return;
@@ -271,11 +271,6 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
     if (!_visible) return false;
     if (_detailRoomId != null) {
       _backFromDetail();
-      return true;
-    }
-    final list = _list;
-    if (list != null && list.useFloorPicker && _pickedFloor != null) {
-      setState(() => _pickedFloor = null);
       return true;
     }
     _closePanel();
@@ -322,7 +317,7 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
       );
     }
 
-    if (list.useFloorPicker && _pickedFloor == null) {
+    if (list.useFloorPicker) {
       return ColoredBox(
         color: bg,
         child: Column(
@@ -333,12 +328,21 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
               backgroundColor: bg,
               onBack: _closePanel,
             ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Text(
+                list.subtitle ??
+                    '${list.rooms.length} room(s) — tap a floor to expand',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+            ),
             Expanded(
-              child: AdminFloorPickerGrid(
+              child: AdminFloorDropdownList(
                 rooms: list.rooms,
-                categoryFloorCount: list.categoryFloorCount,
-                subtitle: list.subtitle,
-                onFloorTap: (floor) => setState(() => _pickedFloor = floor),
+                badgeNoun: list.floorBadgeNoun,
+                onRoomTap: (room) => _onRoomTileTap(room),
               ),
             ),
           ],
@@ -346,15 +350,10 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
       );
     }
 
-    final displayRooms = list.useFloorPicker && _pickedFloor != null
-        ? AdminDashboardModels.roomsOnFloor(list.rooms, _pickedFloor!)
-        : AdminDashboardModels.sortRoomsByNumber(list.rooms);
-    final displayTitle = list.useFloorPicker && _pickedFloor != null
-        ? '${list.title} · ${AdminDashboardModels.floorLabel(_pickedFloor!)}'
-        : list.title;
+    final displayRooms = AdminDashboardModels.sortRoomsByNumber(list.rooms);
 
     return _HotelTotalsListPage(
-      title: displayTitle,
+      title: list.title,
       rooms: displayRooms,
       showGuest: list.showGuest,
       subtitle: list.subtitle,
@@ -602,6 +601,7 @@ void openHotelTotalsRoomList(
   required bool showGuest,
   String? subtitle,
   bool preferCheckIn = false,
+  String? floorBadgeNoun,
 }) {
   if (rooms.isEmpty) {
     showAppMessage(context, 'No rooms in "$title".');
@@ -620,6 +620,7 @@ void openHotelTotalsRoomList(
     showGuest: showGuest,
     subtitle: subtitle,
     preferCheckIn: preferCheckIn,
+    floorBadgeNoun: floorBadgeNoun,
   );
 }
 
