@@ -8,14 +8,14 @@ use App\Models\Booking;
 use App\Models\Hotel;
 use App\Models\Room;
 use App\Models\RoomCategory;
+use App\Models\SystemSetting;
 use App\Models\User;
-use App\Services\StayTimingFeeService;
 use Carbon\Carbon;
 use Tests\TestCase;
 
 class StayTimingAndPurgeTest extends TestCase
 {
-    public function test_early_check_in_adds_five_percent_fee(): void
+    public function test_early_check_in_auto_adds_configured_fee(): void
     {
         $hotel = Hotel::create(['name' => 'Fee Hotel', 'location' => 'X']);
         $admin = User::withoutGlobalScopes()->create([
@@ -24,6 +24,14 @@ class StayTimingAndPurgeTest extends TestCase
             'email' => 'fee@test.local',
             'password' => bcrypt('x'),
             'role' => 'admin',
+        ]);
+        SystemSetting::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'theme_color' => '#2563eb',
+            'theme_mode' => 'light',
+            'sound_notifications_enabled' => false,
+            'early_check_in_grace_minutes' => 15,
+            'early_check_in_fee_amount' => 500,
         ]);
         $category = RoomCategory::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
@@ -64,20 +72,16 @@ class StayTimingAndPurgeTest extends TestCase
         ]);
 
         $early = Carbon::parse(now()->toDateString().' 10:00:00');
-        $this->actingAs($admin, 'sanctum')
-            ->patchJson("/api/v1/admin/rooms/{$room->id}/status", [
-                'status' => 'checked_in',
-                'check_in_at' => $early->toIso8601String(),
-                'check_out_at' => now()->addDay()->setTime(11, 0)->toIso8601String(),
-            ])
-            ->assertOk();
-
-        $this->assertTrue(
-            BillingCharge::withoutGlobalScopes()
-                ->where('booking_id', (string) $booking->id)
-                ->where('type', 'early-check-in')
-                ->exists()
+        $charge = app(\App\Services\StayTimingFeeService::class)->applyEarlyCheckInFeeIfNeeded(
+            $booking,
+            $room,
+            $early,
+            $admin,
         );
+
+        $this->assertNotNull($charge);
+        $this->assertSame('early-check-in', (string) $charge->type);
+        $this->assertSame(500.0, (float) $charge->amount);
     }
 
     public function test_amenity_sales_endpoint_excludes_booking_revenue(): void

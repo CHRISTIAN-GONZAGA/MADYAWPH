@@ -6,7 +6,6 @@ import 'admin/widgets/front_desk_sales_report_screen.dart';
 import 'admin/widgets/hotel_period_report_screen.dart';
 import 'admin/widgets/reseller_commissions_report_screen.dart';
 import 'admin/widgets/room_insights_report_screen.dart';
-import 'admin_reports_legacy.dart';
 
 /// Grid hub for reports & analytics — each card opens a detailed view.
 class AdminReportsScreen extends StatelessWidget {
@@ -142,17 +141,6 @@ class AdminReportsScreen extends StatelessWidget {
           context,
           buttonLabel: 'Annual',
           periodKey: 'annual',
-        ),
-      ),
-      _HubTile(
-        title: 'Full operations',
-        subtitle: 'Occupancy, transfers, tasks, KPIs',
-        icon: Icons.dashboard_customize_outlined,
-        color: Colors.blueGrey,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => AdminReportsLegacyScreen(isFrontDesk: isFrontDesk),
-          ),
         ),
       ),
     ];

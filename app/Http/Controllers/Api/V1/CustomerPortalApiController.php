@@ -39,6 +39,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -415,54 +416,73 @@ class CustomerPortalApiController extends Controller
             $this->roomPricingService,
         );
 
-        if (! $this->hotelAvailabilityService->isRoomAvailableForStay(
-            (string) $room->id,
+        $reservation = DB::transaction(function () use (
+            $validated,
             $hotelId,
-            $window['check_in'],
-            $window['check_out'],
-            null,
-        )) {
-            return response()->json(['message' => 'This room cannot be reserved for those dates right now.'], 422);
-        }
+            $room,
+            $window,
+            $charge,
+        ) {
+            // Lock the room row so concurrent reservation requests cannot both pass.
+            $lockedRoom = Room::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
+                ->where(function ($query) use ($room) {
+                    $query->where('id', (string) $room->id)->orWhere('_id', (string) $room->id);
+                })
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $gross = (float) $charge['amount'];
-        $total = $this->applyDiscountToTotal($gross, (float) ($validated['discount_percent'] ?? 0));
+            if (! $this->hotelAvailabilityService->isRoomAvailableForStay(
+                (string) $lockedRoom->id,
+                $hotelId,
+                $window['check_in'],
+                $window['check_out'],
+                null,
+            )) {
+                throw new HttpResponseException(response()->json([
+                    'message' => 'This room cannot be reserved for those dates right now.',
+                ], 422));
+            }
 
-        $reservation = ExternalReservation::query()->create([
-            'hotel_id' => $hotelId,
-            'source' => 'app-customer',
-            'external_reference' => 'RES'.now()->format('YmdHis').strtoupper(Str::random(4)),
-            'guest_name' => $validated['guest_name'],
-            'guest_email' => (string) ($validated['guest_email'] ?? ''),
-            'guest_phone' => $validated['guest_phone'],
-            'check_in_date' => $window['check_in_date'],
-            'check_out_date' => $window['check_out_date'],
-            'assigned_room_id' => (string) $room->id,
-            'status' => 'pending_approval',
-            'metadata' => array_filter([
-                'discount_type' => ($validated['discount_type'] ?? 'none') !== 'none' ? $validated['discount_type'] : null,
-                'discount_percent' => (float) ($validated['discount_percent'] ?? 0) > 0 ? (float) $validated['discount_percent'] : null,
-                'discount_id_url' => $validated['discount_id_url'] ?? null,
-                'guest_id_url' => $validated['guest_id_url'] ?? null,
-                'payment_method' => $validated['payment_method'] ?? 'Cash',
-                'payment_reference' => $validated['payment_reference'] ?? null,
-                'estimated_total' => $total,
-                'billing_mode' => $charge['billing_mode'],
-                'stay_hours' => $charge['stay_hours'] ?? null,
-                'block_hours' => $charge['block_hours'] ?? null,
-                'price_per_block' => $charge['price_per_block'] ?? null,
-                'check_in_time' => $window['check_in_time'] ?? null,
-                'check_out_time' => $window['check_out_time'] ?? null,
-                'rooms' => (int) ($validated['rooms'] ?? 1),
-                'adults' => (int) ($validated['adults'] ?? 1),
-                'children' => (int) ($validated['children'] ?? 0),
-                'guests_male' => (int) ($validated['guests_male'] ?? 0),
-                'guests_female' => (int) ($validated['guests_female'] ?? 0),
-                'member_shid_id' => filled($validated['member_shid_id'] ?? null)
-                    ? (string) $validated['member_shid_id']
-                    : null,
-            ]),
-        ]);
+            $gross = (float) $charge['amount'];
+            $total = $this->applyDiscountToTotal($gross, (float) ($validated['discount_percent'] ?? 0));
+
+            return ExternalReservation::query()->create([
+                'hotel_id' => $hotelId,
+                'source' => 'app-customer',
+                'external_reference' => 'RES'.now()->format('YmdHis').strtoupper(Str::random(4)),
+                'guest_name' => $validated['guest_name'],
+                'guest_email' => (string) ($validated['guest_email'] ?? ''),
+                'guest_phone' => $validated['guest_phone'],
+                'check_in_date' => $window['check_in_date'],
+                'check_out_date' => $window['check_out_date'],
+                'assigned_room_id' => (string) $lockedRoom->id,
+                'status' => 'pending_approval',
+                'metadata' => array_filter([
+                    'discount_type' => ($validated['discount_type'] ?? 'none') !== 'none' ? $validated['discount_type'] : null,
+                    'discount_percent' => (float) ($validated['discount_percent'] ?? 0) > 0 ? (float) $validated['discount_percent'] : null,
+                    'discount_id_url' => $validated['discount_id_url'] ?? null,
+                    'guest_id_url' => $validated['guest_id_url'] ?? null,
+                    'payment_method' => $validated['payment_method'] ?? 'Cash',
+                    'payment_reference' => $validated['payment_reference'] ?? null,
+                    'estimated_total' => $total,
+                    'billing_mode' => $charge['billing_mode'],
+                    'stay_hours' => $charge['stay_hours'] ?? null,
+                    'block_hours' => $charge['block_hours'] ?? null,
+                    'price_per_block' => $charge['price_per_block'] ?? null,
+                    'check_in_time' => $window['check_in_time'] ?? null,
+                    'check_out_time' => $window['check_out_time'] ?? null,
+                    'rooms' => (int) ($validated['rooms'] ?? 1),
+                    'adults' => (int) ($validated['adults'] ?? 1),
+                    'children' => (int) ($validated['children'] ?? 0),
+                    'guests_male' => (int) ($validated['guests_male'] ?? 0),
+                    'guests_female' => (int) ($validated['guests_female'] ?? 0),
+                    'member_shid_id' => filled($validated['member_shid_id'] ?? null)
+                        ? (string) $validated['member_shid_id']
+                        : null,
+                ]),
+            ]);
+        });
 
         try {
             $walletFee = app(HotelCreditBookingFeeService::class)->deductForReservationSubmission(
@@ -607,6 +627,9 @@ class CustomerPortalApiController extends Controller
             $validated['guest_id_url'] = ChatAttachmentUrl::forPath($path);
         } catch (Throwable $e) {
             Log::warning('Guest ID upload failed', ['message' => $e->getMessage()]);
+            throw ValidationException::withMessages([
+                'guest_id_file' => ['Could not upload your ID photo. Please try again with a smaller image.'],
+            ]);
         }
 
         return $validated;

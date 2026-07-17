@@ -638,6 +638,7 @@ class GuestPortalApiController extends Controller
         $nights = (int) ($validated['nights'] ?? 1);
         $currentCheckout = now()->parse($booking->check_out_date);
         $newCheckout = $currentCheckout->copy()->addDays($nights);
+        $stayExtensionService->assertExtensionHasNoConflict($room, $booking, $currentCheckout, $newCheckout);
         $extensionFee = $financialComputationService->computeRoomCharge((float) $room->price_per_night, $nights);
 
         $booking->update([

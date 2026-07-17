@@ -1149,18 +1149,23 @@ class ReportController extends Controller
             ? Carbon::parse($validated['from'])->startOfDay()
             : $to->copy()->subDays(90)->startOfDay();
 
+        $periodDays = max(1, (int) $from->copy()->startOfDay()->diffInDays($to) + 1);
+
         $rooms = Room::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
-            ->get(['id', 'room_number', 'room_type', 'price_per_night', 'status', 'maintenance_reason']);
+            ->get(['id', 'room_number', 'room_type', 'category_name', 'price_per_night', 'status', 'maintenance_reason']);
 
         $bookings = Booking::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
             ->whereNotIn('status', ['cancelled'])
             ->where(function ($q) use ($from, $to) {
                 $q->whereBetween('created_at', [$from, $to])
-                    ->orWhereBetween('check_in_date', [$from->toDateString(), $to->toDateString()]);
+                    ->orWhere(function ($qq) use ($from, $to) {
+                        $qq->where('check_in_date', '<=', $to)
+                            ->where('check_out_date', '>=', $from);
+                    });
             })
-            ->get(['id', 'room_id', 'total_amount', 'payment_status', 'status', 'created_at']);
+            ->get(['id', 'room_id', 'total_amount', 'payment_status', 'status', 'created_at', 'check_in_date', 'check_out_date', 'nights']);
 
         $byRoom = [];
         foreach ($rooms as $room) {
@@ -1168,9 +1173,14 @@ class ReportController extends Controller
             $byRoom[$rid] = [
                 'room_id' => $rid,
                 'room_number' => (string) ($room->room_number ?? ''),
-                'room_type' => (string) ($room->room_type ?? ''),
+                'room_type' => (string) ($room->room_type?->value ?? $room->room_type ?? ''),
+                'category_name' => (string) ($room->category_name ?? ''),
                 'bookings_count' => 0,
                 'revenue' => 0.0,
+                'occupied_days' => 0,
+                'occupancy_rate' => 0.0,
+                'avg_booking_value' => 0.0,
+                'last_booked_at' => null,
                 'maintenance_events' => 0,
                 'status' => strtolower((string) ($room->status?->value ?? $room->status ?? '')),
             ];
@@ -1183,8 +1193,29 @@ class ReportController extends Controller
             }
             $byRoom[$rid]['bookings_count']++;
             $paid = strtolower((string) ($booking->payment_status ?? '')) === 'paid';
-            if ($paid || in_array(strtolower((string) ($booking->status?->value ?? $booking->status ?? '')), ['completed', 'checked_in', 'confirmed'], true)) {
+            if ($paid || in_array(strtolower((string) ($booking->status?->value ?? $booking->status ?? '')), ['completed', 'checked_in', 'confirmed', 'booked'], true)) {
                 $byRoom[$rid]['revenue'] += (float) ($booking->total_amount ?? 0);
+            }
+
+            try {
+                $stayIn = Carbon::parse($booking->check_in_date)->startOfDay();
+                $stayOut = Carbon::parse($booking->check_out_date)->startOfDay();
+                $overlapStart = $stayIn->greaterThan($from) ? $stayIn : $from->copy()->startOfDay();
+                $overlapEnd = $stayOut->lessThan($to) ? $stayOut : $to->copy()->startOfDay();
+                if ($overlapEnd->greaterThanOrEqualTo($overlapStart)) {
+                    $byRoom[$rid]['occupied_days'] += max(1, (int) $overlapStart->diffInDays($overlapEnd));
+                }
+            } catch (\Throwable) {
+                // Unparseable legacy dates must not break the report.
+            }
+
+            $bookedAt = $booking->created_at;
+            if ($bookedAt !== null) {
+                $existing = $byRoom[$rid]['last_booked_at'];
+                $candidate = Carbon::parse($bookedAt);
+                if ($existing === null || $candidate->greaterThan(Carbon::parse($existing))) {
+                    $byRoom[$rid]['last_booked_at'] = $candidate->toDateString();
+                }
             }
         }
 
@@ -1192,7 +1223,6 @@ class ReportController extends Controller
             ->where('hotel_id', $hotelId)
             ->where(function ($q) {
                 $q->where('task_type', 'maintenance')
-                    ->orWhere('title', 'like', '%Maintenance%')
                     ->orWhere('title', 'like', '%maintenance%');
             })
             ->whereBetween('created_at', [$from, $to])
@@ -1205,11 +1235,38 @@ class ReportController extends Controller
             }
         }
 
-        $rows = collect($byRoom)->values()->map(function ($row) {
+        $rows = collect($byRoom)->values()->map(function ($row) use ($periodDays) {
             $row['revenue'] = round((float) $row['revenue'], 2);
+            $row['occupied_days'] = min((int) $row['occupied_days'], $periodDays);
+            $row['occupancy_rate'] = round(($row['occupied_days'] / $periodDays) * 100, 1);
+            $row['avg_booking_value'] = $row['bookings_count'] > 0
+                ? round($row['revenue'] / $row['bookings_count'], 2)
+                : 0.0;
 
             return $row;
         });
+
+        $statusBreakdown = $rows
+            ->groupBy(fn ($r) => ($r['status'] ?? '') !== '' ? $r['status'] : 'unknown')
+            ->map(fn ($group) => $group->count())
+            ->sortDesc();
+
+        $byRoomType = $rows
+            ->groupBy(fn ($r) => trim((string) ($r['category_name'] ?? '')) !== ''
+                ? (string) $r['category_name']
+                : ((string) ($r['room_type'] ?? '') !== '' ? (string) $r['room_type'] : 'Uncategorized'))
+            ->map(function ($group, $label) {
+                return [
+                    'label' => (string) $label,
+                    'rooms' => $group->count(),
+                    'bookings' => (int) $group->sum('bookings_count'),
+                    'revenue' => round((float) $group->sum('revenue'), 2),
+                    'occupancy_rate' => round((float) $group->avg('occupancy_rate'), 1),
+                ];
+            })
+            ->values()
+            ->sortByDesc('revenue')
+            ->values();
 
         $mostBooked = $rows->sortByDesc('bookings_count')->values()->take(10)->values();
         $leastBooked = $rows->sortBy('bookings_count')->values()->take(10)->values();
@@ -1218,20 +1275,30 @@ class ReportController extends Controller
         $currentlyCleaning = $rows->filter(fn ($r) => ($r['status'] ?? '') === 'cleaning')->values();
         $currentlyMaintenance = $rows->filter(fn ($r) => ($r['status'] ?? '') === 'maintenance')->values();
 
+        $totalBookings = (int) $rows->sum('bookings_count');
+        $totalRevenue = round((float) $rows->sum('revenue'), 2);
+
         return response()->json([
             'from' => $from->toDateString(),
             'to' => $to->toDateString(),
+            'period_days' => $periodDays,
             'most_booked' => $mostBooked,
             'least_booked' => $leastBooked,
             'most_profit' => $mostProfit,
             'most_maintenance' => $mostMaintenance,
             'currently_cleaning' => $currentlyCleaning,
             'currently_maintenance' => $currentlyMaintenance,
+            'status_breakdown' => $statusBreakdown,
+            'by_room_type' => $byRoomType,
             'totals' => [
                 'rooms' => $rows->count(),
-                'bookings' => (int) $rows->sum('bookings_count'),
-                'revenue' => round((float) $rows->sum('revenue'), 2),
+                'bookings' => $totalBookings,
+                'revenue' => $totalRevenue,
                 'maintenance_events' => (int) $rows->sum('maintenance_events'),
+                'occupancy_rate' => round((float) $rows->avg('occupancy_rate'), 1),
+                'avg_booking_value' => $totalBookings > 0 ? round($totalRevenue / $totalBookings, 2) : 0.0,
+                'occupied_now' => $rows->filter(fn ($r) => in_array($r['status'] ?? '', ['checked_in', 'booked'], true))->count(),
+                'available_now' => $rows->filter(fn ($r) => ($r['status'] ?? '') === 'available')->count(),
             ],
         ]);
     }

@@ -175,8 +175,10 @@ class RoomCheckoutService
             if ($booking) {
                 $booking->forceFill(['check_in_time' => $checkInAt->format('H:i')])->save();
             }
-            $this->stayTimingFeeService->applyEarlyCheckInFeeIfNeeded($booking, $room, $checkInAt, $actor);
-            $booking?->refresh();
+            if ($booking) {
+                $this->stayTimingFeeService->applyEarlyCheckInFeeIfNeeded($booking, $room, $checkInAt, $actor);
+                $booking->refresh();
+            }
         } elseif ($checkOutAt) {
             $outDate = $checkOutAt->copy()->startOfDay();
             if ($booking) {
@@ -354,6 +356,12 @@ class RoomCheckoutService
 
         $hotelId = (string) $room->hotel_id;
         $booking = $this->findActiveBooking($hotelId, (string) $room->id);
+
+        // Apply late fee before the paid-balance gate so checkout requires settling it.
+        if ($booking) {
+            $this->stayTimingFeeService->applyLateCheckoutFeeIfNeeded($booking, $room, now(), $actor);
+            $booking->refresh();
+        }
 
         if ($requirePaid && $booking) {
             $bill = app(BookingPaymentService::class)->billSummary($booking);
@@ -987,10 +995,6 @@ class RoomCheckoutService
             'current_check_in' => $checkInAt->toDateString(),
             'current_check_out' => $checkOutAt->toDateString(),
         ])->save();
-
-        if (RoomBillingSupport::isHourly($room)) {
-            return;
-        }
 
         $this->stayTimingFeeService->applyEarlyCheckInFeeIfNeeded($booking, $room, $checkInAt, $actor);
         $booking->refresh();

@@ -19,6 +19,10 @@ class PlatformSettingsService
                 'member_monthly_fee' => (float) config('platform.member_monthly_fee', 300),
                 'booking_confirm_fee_percent' => (float) config('services.hotel_credits.booking_confirm_fee_percent', 8),
                 'min_check_in_payment_percent' => (float) config('platform.min_check_in_payment_percent', 50),
+                'late_checkout_grace_minutes' => (int) config('platform.late_checkout_grace_minutes', 15),
+                'late_checkout_fee_amount' => (float) config('platform.late_checkout_fee_amount', 500),
+                'early_check_in_grace_minutes' => (int) config('platform.early_check_in_grace_minutes', 15),
+                'early_check_in_fee_amount' => (float) config('platform.early_check_in_fee_amount', 500),
                 'member_booking_discount_percent' => (float) config('platform.member_booking_discount_percent', 10),
                 'member_points_per_check_in' => (float) config('platform.member_points_per_check_in', 1000),
                 'member_points_per_peso' => (float) config('platform.member_points_per_peso', 10),
@@ -81,6 +85,50 @@ class PlatformSettingsService
         return min(100.0, (float) config('platform.min_check_in_payment_percent', 50));
     }
 
+    public function lateCheckoutGraceMinutes(): int
+    {
+        $row = $this->row();
+        $fromDb = $row->late_checkout_grace_minutes ?? null;
+        if ($fromDb !== null && (int) $fromDb >= 0) {
+            return (int) $fromDb;
+        }
+
+        return max(0, (int) config('platform.late_checkout_grace_minutes', 15));
+    }
+
+    public function lateCheckoutFeeAmount(): float
+    {
+        $row = $this->row();
+        $fromDb = $row->late_checkout_fee_amount ?? null;
+        if ($fromDb !== null && (float) $fromDb >= 0) {
+            return max(0.0, (float) $fromDb);
+        }
+
+        return max(0.0, (float) config('platform.late_checkout_fee_amount', 500));
+    }
+
+    public function earlyCheckInGraceMinutes(): int
+    {
+        $row = $this->row();
+        $fromDb = $row->early_check_in_grace_minutes ?? null;
+        if ($fromDb !== null && (int) $fromDb >= 0) {
+            return (int) $fromDb;
+        }
+
+        return max(0, (int) config('platform.early_check_in_grace_minutes', 15));
+    }
+
+    public function earlyCheckInFeeAmount(): float
+    {
+        $row = $this->row();
+        $fromDb = $row->early_check_in_fee_amount ?? null;
+        if ($fromDb !== null && (float) $fromDb >= 0) {
+            return max(0.0, (float) $fromDb);
+        }
+
+        return max(0.0, (float) config('platform.early_check_in_fee_amount', 500));
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -93,6 +141,10 @@ class PlatformSettingsService
             'member_monthly_fee' => $fee,
             'booking_confirm_fee_percent' => $this->bookingConfirmFeePercent(),
             'min_check_in_payment_percent' => $this->minCheckInPaymentPercent(),
+            'late_checkout_grace_minutes' => $this->lateCheckoutGraceMinutes(),
+            'late_checkout_fee_amount' => $this->lateCheckoutFeeAmount(),
+            'early_check_in_grace_minutes' => $this->earlyCheckInGraceMinutes(),
+            'early_check_in_fee_amount' => $this->earlyCheckInFeeAmount(),
             'member_booking_discount_percent' => $this->memberBookingDiscountPercent(),
             'member_points_per_check_in' => $this->memberPointsPerCheckIn(),
             'member_points_per_peso' => $this->memberPointsPerPeso(),

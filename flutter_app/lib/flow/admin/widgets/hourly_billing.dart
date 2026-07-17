@@ -12,7 +12,7 @@ class HourlyBilling {
       (room['billing_mode'] ?? 'nightly').toString().toLowerCase() == 'hourly';
 
   static int blockHours(Map<String, dynamic> room) =>
-      parseAdminInt(room['block_hours'], 1);
+      parseAdminInt(room['block_hours'], 3);
 
   static double pricePerBlock(Map<String, dynamic> room) {
     final block = parseAdminDouble(room['price_per_block']);

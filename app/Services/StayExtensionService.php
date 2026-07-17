@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\BillingCharge;
 use App\Models\Booking;
+use App\Models\ExternalReservation;
 use App\Models\Room;
 use App\Support\PriceRounding;
 use App\Support\RoomBillingSupport;
@@ -19,7 +20,40 @@ class StayExtensionService
         private readonly RoomPricingService $roomPricingService,
         private readonly ActivityLogService $activityLogService,
         private readonly BookingPaymentService $bookingPaymentService,
+        private readonly HotelAvailabilityService $hotelAvailabilityService,
     ) {}
+
+    /**
+     * The extension window must not run into another guest's reservation or booking.
+     */
+    public function assertExtensionHasNoConflict(
+        Room $room,
+        Booking $booking,
+        CarbonInterface $currentCheckout,
+        CarbonInterface $newCheckout,
+    ): void {
+        $ownReservationId = ExternalReservation::withoutGlobalScopes()
+            ->where('hotel_id', (string) $room->hotel_id)
+            ->where('booking_id', (string) $booking->id)
+            ->value('id');
+
+        $hasConflict = $this->hotelAvailabilityService->roomHasStayConflict(
+            (string) $room->id,
+            (string) $room->hotel_id,
+            Carbon::parse($currentCheckout)->toDateString(),
+            Carbon::parse($newCheckout)->toDateString(),
+            $ownReservationId !== null ? (string) $ownReservationId : null,
+            Carbon::parse($currentCheckout),
+            Carbon::parse($newCheckout),
+            (string) $booking->id,
+        );
+
+        if ($hasConflict) {
+            throw ValidationException::withMessages([
+                'hours' => ['Cannot extend this stay — the room is reserved for another guest during the requested time. Ask the front desk about transferring rooms instead.'],
+            ]);
+        }
+    }
 
     /**
      * @return array<string, mixed>
@@ -128,6 +162,8 @@ class StayExtensionService
                 $checkoutDate.' '.($booking->check_out_time ?? '11:00')
             );
             $newCheckout = $checkoutBase->copy()->addHours($addedHours);
+
+            $this->assertExtensionHasNoConflict($room, $booking, $checkoutBase, $newCheckout);
 
             $booking->update([
                 'check_out_date' => $newCheckout->toDateString(),

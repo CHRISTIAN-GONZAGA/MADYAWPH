@@ -6,7 +6,10 @@ use App\Models\BillingCharge;
 use App\Models\Booking;
 use App\Models\Room;
 use App\Models\User;
+use App\Support\EarlyCheckInFeeSupport;
+use App\Support\LateCheckoutFeeSupport;
 use App\Support\PriceRounding;
+use App\Support\RoomBillingSupport;
 use Carbon\Carbon;
 
 class StayTimingFeeService
@@ -15,16 +18,24 @@ class StayTimingFeeService
 
     public const STANDARD_CHECK_OUT = '11:00';
 
-    public const FEE_PERCENT = 5.0;
-
     public function applyEarlyCheckInFeeIfNeeded(
         Booking $booking,
         Room $room,
         Carbon $actualCheckIn,
         ?User $actor = null,
     ): ?BillingCharge {
-        $standard = $this->standardCheckInOnDate($actualCheckIn);
-        if (! $actualCheckIn->lt($standard)) {
+        // Hourly stays start at wall-clock arrival; early fee is for nightly policy times.
+        if (RoomBillingSupport::isHourly($room)) {
+            return null;
+        }
+
+        $hotelId = (string) $booking->hotel_id;
+        $scheduled = $this->standardCheckInOnDate($actualCheckIn);
+        $graceMinutes = EarlyCheckInFeeSupport::graceMinutesForHotel($hotelId);
+        $threshold = $scheduled->copy()->subMinutes($graceMinutes);
+
+        // Fee only when arriving before (standard check-in − grace).
+        if (! $actualCheckIn->lt($threshold)) {
             return null;
         }
 
@@ -32,21 +43,27 @@ class StayTimingFeeService
             return null;
         }
 
-        $base = $this->roomChargeBase($booking);
-        $fee = PriceRounding::nearest50($base * (self::FEE_PERCENT / 100));
-
+        $fee = EarlyCheckInFeeSupport::feeAmountForHotel($hotelId);
         if ($fee <= 0) {
             return null;
         }
+
+        $minutesEarly = (int) $actualCheckIn->diffInMinutes($scheduled);
 
         return $this->createFeeCharge(
             $booking,
             $room,
             'early-check-in',
-            "Early check-in fee (before {$actualCheckIn->format('H:i')}, standard ".self::STANDARD_CHECK_IN.')',
+            "Early check-in fee ({$minutesEarly} min before {$scheduled->format('g:i A')}, grace {$graceMinutes} min)",
             $fee,
             $actor,
-            ['actual_check_in' => $actualCheckIn->toIso8601String()]
+            [
+                'actual_check_in' => $actualCheckIn->toIso8601String(),
+                'scheduled_check_in' => $scheduled->toIso8601String(),
+                'grace_minutes' => $graceMinutes,
+                'fee_threshold' => $threshold->toIso8601String(),
+                'minutes_early' => $minutesEarly,
+            ]
         );
     }
 
@@ -56,9 +73,12 @@ class StayTimingFeeService
         Carbon $actualCheckout,
         ?User $actor = null,
     ): ?BillingCharge {
-        $checkoutDate = $actualCheckout->copy()->startOfDay();
-        $standard = Carbon::parse($checkoutDate->toDateString().' '.self::STANDARD_CHECK_OUT);
-        if (! $actualCheckout->gt($standard)) {
+        $hotelId = (string) $booking->hotel_id;
+        $scheduled = $this->scheduledCheckoutAt($booking);
+        $graceMinutes = LateCheckoutFeeSupport::graceMinutesForHotel($hotelId);
+        $threshold = $scheduled->copy()->addMinutes($graceMinutes);
+
+        if (! $actualCheckout->gt($threshold)) {
             return null;
         }
 
@@ -66,21 +86,27 @@ class StayTimingFeeService
             return null;
         }
 
-        $base = $this->roomChargeBase($booking);
-        $fee = PriceRounding::nearest50($base * (self::FEE_PERCENT / 100));
-
+        $fee = LateCheckoutFeeSupport::feeAmountForHotel($hotelId);
         if ($fee <= 0) {
             return null;
         }
+
+        $minutesLate = (int) $scheduled->diffInMinutes($actualCheckout);
 
         return $this->createFeeCharge(
             $booking,
             $room,
             'late-checkout',
-            "Late check-out fee (after {$actualCheckout->format('H:i')}, standard ".self::STANDARD_CHECK_OUT.')',
+            "Late check-out fee ({$minutesLate} min past {$scheduled->format('g:i A')}, grace {$graceMinutes} min)",
             $fee,
             $actor,
-            ['actual_check_out' => $actualCheckout->toIso8601String()]
+            [
+                'actual_check_out' => $actualCheckout->toIso8601String(),
+                'scheduled_check_out' => $scheduled->toIso8601String(),
+                'grace_minutes' => $graceMinutes,
+                'fee_threshold' => $threshold->toIso8601String(),
+                'minutes_late' => $minutesLate,
+            ]
         );
     }
 
@@ -89,19 +115,19 @@ class StayTimingFeeService
         return Carbon::parse($date->copy()->startOfDay()->toDateString().' '.self::STANDARD_CHECK_IN);
     }
 
-    private function roomChargeBase(Booking $booking): float
+    private function scheduledCheckoutAt(Booking $booking): Carbon
     {
-        $roomCharge = BillingCharge::withoutGlobalScopes()
-            ->where('booking_id', (string) $booking->id)
-            ->where('type', 'room')
-            ->get()
-            ->sum(fn ($c) => (float) ($c->amount ?? 0));
+        $day = filled($booking->check_out_date)
+            ? Carbon::parse($booking->check_out_date)->startOfDay()
+            : now()->startOfDay();
 
-        if ($roomCharge > 0) {
-            return (float) $roomCharge;
+        $time = trim((string) ($booking->check_out_time ?? ''));
+        if ($time === '') {
+            $time = self::STANDARD_CHECK_OUT;
         }
+        $parts = explode(':', $time);
 
-        return max(0, (float) ($booking->total_amount ?? 0));
+        return $day->copy()->setTime((int) ($parts[0] ?? 11), (int) ($parts[1] ?? 0));
     }
 
     private function hasChargeType(string $bookingId, string $type): bool
@@ -134,7 +160,7 @@ class StayTimingFeeService
             'quantity' => 1,
             'is_manual' => false,
             'created_by' => (string) ($actor?->id ?? ''),
-            'metadata' => array_merge($metadata, ['fee_percent' => self::FEE_PERCENT]),
+            'metadata' => $metadata,
         ]);
 
         $booking->update([

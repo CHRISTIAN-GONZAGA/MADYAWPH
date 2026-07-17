@@ -34,15 +34,43 @@ final class RoomBillingSupport
         return self::billingMode($room) === self::MODE_HOURLY;
     }
 
+    public const DEFAULT_BLOCK_HOURS = 3;
+
     /**
+     * Room attributes win when set; otherwise the room's category defines the
+     * hourly block (e.g. "₱1000 per 3 hours"), then hotel defaults.
+     *
      * @return array{price_per_block: float, block_hours: int}
      */
     public static function hourlyConfig(Room $room): array
     {
-        $blockHours = max(1, (int) ($room->getAttributes()['block_hours'] ?? 1));
-        $price = PriceRounding::nearest50(self::toFloat($room->getAttributes()['price_per_block'] ?? 0));
+        $attrs = $room->getAttributes();
+        $blockHours = (int) ($attrs['block_hours'] ?? 0);
+        $price = PriceRounding::nearest50(self::toFloat($attrs['price_per_block'] ?? 0));
+
+        $category = null;
+        if ($blockHours < 1 || $price <= 0) {
+            $categoryId = (string) ($attrs['category_id'] ?? '');
+            if ($categoryId !== '') {
+                $category = RoomCategory::withoutGlobalScopes()->find($categoryId);
+            }
+        }
+
+        if ($blockHours < 1) {
+            $blockHours = (int) ($category?->block_hours ?? 0);
+        }
+        if ($blockHours < 1) {
+            $blockHours = self::DEFAULT_BLOCK_HOURS;
+        }
+
+        if ($price <= 0 && $category !== null) {
+            $price = PriceRounding::nearest50(self::toFloat($category->price_per_block ?? 0));
+            if ($price <= 0) {
+                $price = PriceRounding::nearest50(self::toFloat($category->default_price ?? 0));
+            }
+        }
         if ($price <= 0) {
-            $price = PriceRounding::nearest50(self::toFloat($room->getAttributes()['price_per_night'] ?? 0));
+            $price = PriceRounding::nearest50(self::toFloat($attrs['price_per_night'] ?? 0));
         }
 
         return [

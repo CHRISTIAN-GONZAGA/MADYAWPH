@@ -15,6 +15,8 @@ import '../admin_portal_users_screen.dart';
 import '../admin_room_fee_presets_screen.dart';
 import '../admin_cancellation_retention_screen.dart';
 import '../admin_min_check_in_payment_screen.dart';
+import '../admin_early_check_in_fee_screen.dart';
+import '../admin_late_checkout_fee_screen.dart';
 import '../admin_notification_emails_screen.dart';
 
 class SettingsSection extends StatelessWidget {
@@ -195,6 +197,38 @@ class SettingsSection extends StatelessWidget {
                     await Navigator.of(context).push<void>(
                       MaterialPageRoute<void>(
                         builder: (_) => const AdminMinCheckInPaymentScreen(),
+                      ),
+                    );
+                    await onRefreshAfterNav();
+                  },
+                ),
+              if (!isFrontDesk)
+                _SettingsTile(
+                  icon: Icons.login_outlined,
+                  title: 'Early check-in fee',
+                  subtitle:
+                      'Grace minutes before 3:00 PM, and the fee amount',
+                  enabled: !creditsLocked,
+                  onTap: () async {
+                    await Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AdminEarlyCheckInFeeScreen(),
+                      ),
+                    );
+                    await onRefreshAfterNav();
+                  },
+                ),
+              if (!isFrontDesk)
+                _SettingsTile(
+                  icon: Icons.schedule_outlined,
+                  title: 'Late check-out fee',
+                  subtitle:
+                      'Grace minutes after check-out time, and the fee amount',
+                  enabled: !creditsLocked,
+                  onTap: () async {
+                    await Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AdminLateCheckoutFeeScreen(),
                       ),
                     );
                     await onRefreshAfterNav();

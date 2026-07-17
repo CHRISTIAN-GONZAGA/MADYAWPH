@@ -3943,26 +3943,14 @@ class _CustomerRoomsScreenState extends State<CustomerRoomsScreen> {
                               ),
                             )
                           else
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: OutlinedButton(
-                                    onPressed: _booking
-                                        ? null
-                                        : () => _bookRoom(r, reserve: true),
-                                    child: const Text('Reserve'),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: FilledButton(
-                                    onPressed: _booking
-                                        ? null
-                                        : () => _bookRoom(r, reserve: false),
-                                    child: const Text('Book'),
-                                  ),
-                                ),
-                              ],
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton(
+                                onPressed: _booking
+                                    ? null
+                                    : () => _bookRoom(r, reserve: false),
+                                child: const Text('View & request stay'),
+                              ),
                             ),
                         ],
                       ),

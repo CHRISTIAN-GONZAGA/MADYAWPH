@@ -33,6 +33,24 @@ return [
      */
     'min_check_in_payment_percent' => (float) env('PLATFORM_MIN_CHECK_IN_PAYMENT_PERCENT', 50),
 
+    /**
+     * Minutes past scheduled check-out before an automatic late check-out fee applies.
+     * Example: 15 means a guest who leaves at 11:14 (standard 11:00) is still within grace.
+     */
+    'late_checkout_grace_minutes' => (int) env('PLATFORM_LATE_CHECKOUT_GRACE_MINUTES', 15),
+
+    /** Fixed late check-out fee in PHP (0 disables automatic late fees). */
+    'late_checkout_fee_amount' => (float) env('PLATFORM_LATE_CHECKOUT_FEE_AMOUNT', 500),
+
+    /**
+     * Minutes before standard check-in (15:00) that are still free.
+     * Example: 15 means arriving at 14:46 or earlier can trigger the early fee.
+     */
+    'early_check_in_grace_minutes' => (int) env('PLATFORM_EARLY_CHECK_IN_GRACE_MINUTES', 15),
+
+    /** Fixed early check-in fee in PHP (0 disables automatic early fees). */
+    'early_check_in_fee_amount' => (float) env('PLATFORM_EARLY_CHECK_IN_FEE_AMOUNT', 500),
+
     /** Direct HTTPS link to the Android APK (used in app install QR on the landing screen). */
     'app_install_url' => env('APP_INSTALL_URL', ''),
 

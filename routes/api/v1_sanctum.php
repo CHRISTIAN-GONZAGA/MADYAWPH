@@ -491,6 +491,19 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
                         'balance_due' => $balanceDue,
                     ], 422);
                 }
+
+                // Collect required payment before marking the room checked in.
+                if ($payAmount > 0) {
+                    $paymentInfo = $bookingPaymentService->applyPartialPayment(
+                        $activeBooking,
+                        $request->user(),
+                        [
+                            'amount' => $payAmount,
+                            'payment_method' => $validated['payment_method'] ?? 'Cash',
+                            'note' => 'Check-in payment',
+                        ]
+                    );
+                }
             }
 
             $room = $roomCheckoutService->checkInRoom($room, $request->user(), $checkIn, $checkOut);
@@ -500,19 +513,6 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
                         $validated['free_breakfast_options']
                     ),
                 ]);
-            }
-
-            $bookingForPay = $roomCheckoutService->resolveActiveBookingForRoom($hotelId, $room) ?? $activeBooking;
-            if ($bookingForPay && $payAmount > 0) {
-                $paymentInfo = $bookingPaymentService->applyPartialPayment(
-                    $bookingForPay,
-                    $request->user(),
-                    [
-                        'amount' => $payAmount,
-                        'payment_method' => $validated['payment_method'] ?? 'Cash',
-                        'note' => 'Check-in payment',
-                    ]
-                );
             }
 
             $result = [
@@ -2111,6 +2111,20 @@ Route::post('/admin/reservations/{id}/approve', function (Request $request, stri
     }
     $in = Carbon::parse($res->check_in_date)->startOfDay();
     $out = Carbon::parse($res->check_out_date)->startOfDay();
+    $meta = is_array($res->metadata) ? $res->metadata : [];
+    $inTime = trim((string) ($meta['check_in_time'] ?? ''));
+    $outTime = trim((string) ($meta['check_out_time'] ?? ''));
+    if ($inTime !== '') {
+        $parts = explode(':', $inTime);
+        $in = $in->copy()->setTime((int) ($parts[0] ?? 0), (int) ($parts[1] ?? 0));
+    }
+    if ($outTime !== '') {
+        $parts = explode(':', $outTime);
+        $out = $out->copy()->setTime((int) ($parts[0] ?? 0), (int) ($parts[1] ?? 0));
+    } elseif ($inTime !== '' && strtolower((string) ($meta['billing_mode'] ?? '')) === 'hourly') {
+        $blockHours = max(1, (int) ($meta['block_hours'] ?? RoomBillingSupport::hourlyConfig($room)['block_hours']));
+        $out = $in->copy()->addHours($blockHours);
+    }
     $availability = app(HotelAvailabilityService::class);
     if (! $availability->isRoomAvailableForStay(
         (string) $room->id,
@@ -2939,6 +2953,7 @@ Route::get('/admin/settings/room-fee-presets', function (Request $request) {
     $presets = $settings->room_fee_presets;
     if (! is_array($presets) || $presets === []) {
         $presets = [
+            ['label' => 'Early check-in fee', 'amount' => 500],
             ['label' => 'Stained sheets', 'amount' => 500],
             ['label' => 'Missing towel', 'amount' => 250],
             ['label' => 'Minibar restock', 'amount' => 350],
@@ -2946,6 +2961,15 @@ Route::get('/admin/settings/room-fee-presets', function (Request $request) {
             ['label' => 'Smoking fee', 'amount' => 1500],
             ['label' => 'Damage / breakage', 'amount' => 0],
         ];
+    } else {
+        // Early check-in is charged manually now; always offer it as a preset
+        // even for hotels that saved their list before this option existed.
+        $hasEarlyCheckIn = collect($presets)->contains(
+            fn ($row) => (bool) preg_match('/early.?check.?in/i', (string) ($row['label'] ?? ''))
+        );
+        if (! $hasEarlyCheckIn) {
+            array_unshift($presets, ['label' => 'Early check-in fee', 'amount' => 500]);
+        }
     }
 
     return response()->json([
@@ -3068,6 +3092,109 @@ Route::patch('/admin/settings/min-check-in-payment', function (Request $request)
     ]);
 })->middleware('role:admin,super_admin');
 
+Route::get('/admin/settings/late-checkout-fee', function (Request $request) {
+    $hotelId = (string) $request->user()->hotel_id;
+    $settings = SystemSetting::withoutGlobalScopes()->firstOrCreate(
+        ['hotel_id' => $hotelId],
+        [
+            'theme_color' => '#2563eb',
+            'theme_mode' => 'light',
+            'sound_notifications_enabled' => false,
+        ]
+    );
+    $platform = app(\App\Services\PlatformSettingsService::class);
+    $hotelGrace = $settings->late_checkout_grace_minutes;
+    $hotelFee = $settings->late_checkout_fee_amount;
+
+    return response()->json([
+        'late_checkout_grace_minutes' => \App\Support\LateCheckoutFeeSupport::graceMinutesForHotel($hotelId),
+        'late_checkout_fee_amount' => \App\Support\LateCheckoutFeeSupport::feeAmountForHotel($hotelId),
+        'hotel_late_checkout_grace_minutes' => $hotelGrace !== null ? (int) $hotelGrace : null,
+        'hotel_late_checkout_fee_amount' => $hotelFee !== null ? (float) $hotelFee : null,
+        'platform_default_grace_minutes' => $platform->lateCheckoutGraceMinutes(),
+        'platform_default_fee_amount' => $platform->lateCheckoutFeeAmount(),
+        'uses_hotel_override' => $hotelGrace !== null || $hotelFee !== null,
+    ]);
+})->middleware('role:admin,super_admin,frontdesk');
+
+Route::patch('/admin/settings/late-checkout-fee', function (Request $request) {
+    $validated = $request->validate([
+        'late_checkout_grace_minutes' => ['required', 'integer', 'min:0', 'max:720'],
+        'late_checkout_fee_amount' => ['required', 'numeric', 'min:0'],
+    ]);
+    $hotelId = (string) $request->user()->hotel_id;
+    $settings = SystemSetting::withoutGlobalScopes()->firstOrCreate(
+        ['hotel_id' => $hotelId],
+        [
+            'theme_color' => '#2563eb',
+            'theme_mode' => 'light',
+            'sound_notifications_enabled' => false,
+        ]
+    );
+    $settings->update([
+        'late_checkout_grace_minutes' => (int) $validated['late_checkout_grace_minutes'],
+        'late_checkout_fee_amount' => PriceRounding::nearest50((float) $validated['late_checkout_fee_amount']),
+    ]);
+
+    return response()->json([
+        'ok' => true,
+        'late_checkout_grace_minutes' => \App\Support\LateCheckoutFeeSupport::graceMinutesForHotel($hotelId),
+        'late_checkout_fee_amount' => \App\Support\LateCheckoutFeeSupport::feeAmountForHotel($hotelId),
+    ]);
+})->middleware('role:admin,super_admin');
+
+Route::get('/admin/settings/early-check-in-fee', function (Request $request) {
+    $hotelId = (string) $request->user()->hotel_id;
+    $settings = SystemSetting::withoutGlobalScopes()->firstOrCreate(
+        ['hotel_id' => $hotelId],
+        [
+            'theme_color' => '#2563eb',
+            'theme_mode' => 'light',
+            'sound_notifications_enabled' => false,
+        ]
+    );
+    $platform = app(\App\Services\PlatformSettingsService::class);
+    $hotelGrace = $settings->early_check_in_grace_minutes;
+    $hotelFee = $settings->early_check_in_fee_amount;
+
+    return response()->json([
+        'early_check_in_grace_minutes' => \App\Support\EarlyCheckInFeeSupport::graceMinutesForHotel($hotelId),
+        'early_check_in_fee_amount' => \App\Support\EarlyCheckInFeeSupport::feeAmountForHotel($hotelId),
+        'hotel_early_check_in_grace_minutes' => $hotelGrace !== null ? (int) $hotelGrace : null,
+        'hotel_early_check_in_fee_amount' => $hotelFee !== null ? (float) $hotelFee : null,
+        'platform_default_grace_minutes' => $platform->earlyCheckInGraceMinutes(),
+        'platform_default_fee_amount' => $platform->earlyCheckInFeeAmount(),
+        'standard_check_in_time' => \App\Services\StayTimingFeeService::STANDARD_CHECK_IN,
+        'uses_hotel_override' => $hotelGrace !== null || $hotelFee !== null,
+    ]);
+})->middleware('role:admin,super_admin,frontdesk');
+
+Route::patch('/admin/settings/early-check-in-fee', function (Request $request) {
+    $validated = $request->validate([
+        'early_check_in_grace_minutes' => ['required', 'integer', 'min:0', 'max:720'],
+        'early_check_in_fee_amount' => ['required', 'numeric', 'min:0'],
+    ]);
+    $hotelId = (string) $request->user()->hotel_id;
+    $settings = SystemSetting::withoutGlobalScopes()->firstOrCreate(
+        ['hotel_id' => $hotelId],
+        [
+            'theme_color' => '#2563eb',
+            'theme_mode' => 'light',
+            'sound_notifications_enabled' => false,
+        ]
+    );
+    $settings->update([
+        'early_check_in_grace_minutes' => (int) $validated['early_check_in_grace_minutes'],
+        'early_check_in_fee_amount' => PriceRounding::nearest50((float) $validated['early_check_in_fee_amount']),
+    ]);
+
+    return response()->json([
+        'ok' => true,
+        'early_check_in_grace_minutes' => \App\Support\EarlyCheckInFeeSupport::graceMinutesForHotel($hotelId),
+        'early_check_in_fee_amount' => \App\Support\EarlyCheckInFeeSupport::feeAmountForHotel($hotelId),
+    ]);
+})->middleware('role:admin,super_admin');
+
 Route::get('/admin/chat/inbox', [AdminChatController::class, 'inbox'])->middleware('role:admin,frontdesk');
 Route::get('/admin/chat/rooms/{roomId}', [AdminChatController::class, 'room'])->middleware('role:admin,frontdesk');
 
@@ -3081,6 +3208,8 @@ Route::middleware('role:central_admin')->prefix('platform')->group(function () {
     Route::post('/settings/member-qr', [$platform, 'uploadMemberQr']);
     Route::patch('/settings/booking-fee-percent', [$platform, 'updateBookingFeePercent']);
     Route::patch('/settings/min-check-in-payment-percent', [$platform, 'updateMinCheckInPaymentPercent']);
+    Route::patch('/settings/late-checkout-fee', [$platform, 'updateLateCheckoutFee']);
+    Route::patch('/settings/early-check-in-fee', [$platform, 'updateEarlyCheckInFee']);
     Route::patch('/settings/member-booking-discount-percent', [$platform, 'updateMemberBookingDiscountPercent']);
     Route::patch('/settings/member-points', [$platform, 'updateMemberPointsSettings']);
     Route::get('/hotels', [$platform, 'hotels']);

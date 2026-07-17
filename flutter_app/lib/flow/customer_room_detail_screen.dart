@@ -219,30 +219,33 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
     if (picked == null) return;
     setState(() {
       _checkInDate = picked;
-      if (_checkOutDate != null && !_checkOutDate!.isAfter(picked)) {
+      _checkInCtrl.text = picked.toIso8601String().split('T').first;
+      if (HourlyBilling.isHourly(widget.room)) {
+        // Hourly stays are clock + block hours; checkout date matches check-in day.
+        _checkOutDate = picked;
+        _checkOutCtrl.text = picked.toIso8601String().split('T').first;
+      } else if (_checkOutDate != null && !_checkOutDate!.isAfter(picked)) {
         _checkOutDate = null;
         _checkOutCtrl.clear();
       }
-      _checkInCtrl.text = picked.toIso8601String().split('T').first;
     });
   }
 
   Future<void> _pickCheckOut({required bool forceReserve}) async {
     if (_fromSearch) return;
+    if (HourlyBilling.isHourly(widget.room)) {
+      // Checkout is auto-calculated from check-in + block hours.
+      return;
+    }
     if (_checkInDate == null) {
       showAppMessage(context, context.tr('select_checkin_first'));
       return;
     }
     final picked = await showDatePicker(
       context: context,
-      firstDate: HourlyBilling.isHourly(widget.room) && !forceReserve
-          ? _checkInDate!
-          : _checkInDate!.add(const Duration(days: 1)),
+      firstDate: _checkInDate!.add(const Duration(days: 1)),
       lastDate: _checkInDate!.add(const Duration(days: 365)),
-      initialDate: _checkOutDate ??
-          (HourlyBilling.isHourly(widget.room) && !forceReserve
-              ? _checkInDate!
-              : _checkInDate!.add(const Duration(days: 1))),
+      initialDate: _checkOutDate ?? _checkInDate!.add(const Duration(days: 1)),
     );
     if (picked == null) return;
     setState(() {
@@ -284,7 +287,20 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
       );
       return;
     }
-    if (_checkInCtrl.text.trim().isEmpty || _checkOutCtrl.text.trim().isEmpty) {
+    if (_checkInCtrl.text.trim().isEmpty) {
+      showAppMessage(context, 'Select check-in.');
+      return;
+    }
+    if (HourlyBilling.isHourly(widget.room)) {
+      final inDay = _checkInDate ?? DateTime.tryParse(_checkInCtrl.text.trim());
+      if (inDay != null) {
+        final day = DateTime(inDay.year, inDay.month, inDay.day);
+        _checkInDate = day;
+        _checkOutDate = day;
+        _checkOutCtrl.text = day.toIso8601String().split('T').first;
+      }
+    }
+    if (_checkOutCtrl.text.trim().isEmpty) {
       showAppMessage(context, 'Select check-in and check-out.');
       return;
     }
@@ -409,13 +425,23 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
         ? _checkOutDate!.difference(_checkInDate!).inDays
         : 0;
     final safeNights = nights > 0 ? nights : 0;
-    final estTotal = (_checkInDate != null && _checkOutDate != null)
-        ? HourlyBilling.customerDateStayCharge(
+    final isHourly = HourlyBilling.isHourly(room);
+    final hourlyWindow = (_checkInDate != null && isHourly)
+        ? HourlyBilling.clockBasedStayWindow(room, _checkInDate!)
+        : null;
+    final estTotal = isHourly && hourlyWindow != null
+        ? HourlyBilling.stayCharge(
             room,
-            _checkInDate!,
-            _checkOutDate!,
+            hourlyWindow.checkIn,
+            hourlyWindow.checkOut,
           )
-        : 0.0;
+        : (_checkInDate != null && _checkOutDate != null)
+            ? HourlyBilling.customerDateStayCharge(
+                room,
+                _checkInDate!,
+                _checkOutDate!,
+              )
+            : 0.0;
     final discountPct = _memberDiscountPercent > 0
         ? _memberDiscountPercent
         : switch (_discountType) {
@@ -425,6 +451,18 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
           };
     final estAfterDiscount =
         HourlyBilling.round50(estTotal * (1 - (discountPct / 100)));
+    String fmtTime(DateTime d) {
+      final h = d.hour % 12 == 0 ? 12 : d.hour % 12;
+      final m = d.minute.toString().padLeft(2, '0');
+      final ampm = d.hour >= 12 ? 'PM' : 'AM';
+      return '$h:$m $ampm';
+    }
+    final staySummary = isHourly && hourlyWindow != null
+        ? '${HourlyBilling.blockHours(room)} hr stay · '
+            'approx ${fmtTime(hourlyWindow.checkIn)} → ${fmtTime(hourlyWindow.checkOut)}'
+        : (safeNights > 0
+            ? '$safeNights night${safeNights == 1 ? '' : 's'}'
+            : '');
 
     return LocaleScope(
       builder: (context, _) => AppScaffold(
@@ -784,18 +822,40 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
               suffixIcon: const Icon(Icons.calendar_month_outlined),
             ),
             const SizedBox(height: 8),
-            AppInput(
-              controller: _checkOutCtrl,
-              label: 'Check-out date',
-              hint: _fromSearch ? null : 'Tap to open calendar',
-              readOnly: true,
-              onTap: _fromSearch
-                  ? null
-                  : () => _pickCheckOut(
-                        forceReserve: _fromSearch || widget.preferReserve,
-                      ),
-              suffixIcon: const Icon(Icons.calendar_month_outlined),
-            ),
+            if (isHourly && !_fromSearch) ...[
+              InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Check-out (auto)',
+                  border: OutlineInputBorder(),
+                ),
+                child: Text(
+                  hourlyWindow == null
+                      ? 'Select check-in to see your stay end time'
+                      : '${_checkOutCtrl.text} · approx ${fmtTime(hourlyWindow.checkOut)} '
+                          '(${HourlyBilling.blockHours(room)} hr block)',
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Hourly rooms use your arrival time on the check-in day plus the room’s block length. The hotel confirms the exact window.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+              ),
+            ] else
+              AppInput(
+                controller: _checkOutCtrl,
+                label: 'Check-out date',
+                hint: _fromSearch ? null : 'Tap to open calendar',
+                readOnly: true,
+                onTap: _fromSearch
+                    ? null
+                    : () => _pickCheckOut(
+                          forceReserve: _fromSearch || widget.preferReserve,
+                        ),
+                suffixIcon: const Icon(Icons.calendar_month_outlined),
+              ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               value: _paymentMethod,
@@ -820,9 +880,11 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
               if (_qrLoading)
                 const Center(child: CircularProgressIndicator())
               else if (_paymentQrUrl.isEmpty)
-                const Text(
-                  'Hotel has not uploaded a payment QR yet. You may still submit — pay at the desk if needed.',
-                  style: TextStyle(fontSize: 12),
+                Text(
+                  'Hotel has not uploaded a payment QR yet. You can still submit a request and pay at the desk.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
                 )
               else
                 Center(
@@ -839,18 +901,26 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
                         height: 200,
                         fit: BoxFit.contain,
                       ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'After paying, keep your reference ready. The hotel confirms your request before the stay is active.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                      ),
                     ],
                   ),
                 ),
             ],
             const SizedBox(height: 12),
             Text(
-              _fromSearch
-                  ? 'Duration: $safeNights night${safeNights == 1 ? '' : 's'}\n'
-                      'Estimated: ₱${estTotal.toStringAsFixed(2)}'
-                      '${discountPct > 0 ? ' → ₱${estAfterDiscount.toStringAsFixed(2)} after discount' : ''}'
-                  : 'Estimated: ₱${estTotal.toStringAsFixed(2)}'
-                      '${discountPct > 0 ? ' → ₱${estAfterDiscount.toStringAsFixed(2)} after discount' : ''}',
+              [
+                if (staySummary.isNotEmpty) 'Duration: $staySummary',
+                'Estimated: ₱${estTotal.toStringAsFixed(2)}'
+                    '${discountPct > 0 ? ' → ₱${estAfterDiscount.toStringAsFixed(2)} after discount' : ''}',
+                'Hotel approval required before your stay is confirmed.',
+              ].join('\n'),
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 20),
@@ -860,26 +930,25 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
                 onPressed: _submitting ? null : () => _submit(reserve: true),
               )
             else
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed:
-                          _submitting ? null : () => _submit(reserve: true),
-                      child: const Text('Reserve'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: _submitting
-                          ? null
-                          : () => _submit(reserve: widget.preferReserve),
-                      child: Text(_submitting ? '…' : 'Book'),
-                    ),
-                  ),
-                ],
+              AppPrimaryButton(
+                label: _submitting
+                    ? 'Submitting…'
+                    : (widget.preferReserve
+                        ? 'Request reservation'
+                        : 'Request to book'),
+                onPressed: _submitting
+                    ? null
+                    : () => _submit(reserve: widget.preferReserve),
               ),
+            if (!_fromSearch) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Your request goes to the front desk for approval. You will get room access details once they confirm.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
           ],
         ),
       ),

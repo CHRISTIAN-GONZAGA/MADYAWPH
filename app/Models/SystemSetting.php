@@ -22,6 +22,10 @@ class SystemSetting extends Model
         'room_fee_presets',
         'cancellation_retention_percent',
         'min_check_in_payment_percent',
+        'late_checkout_grace_minutes',
+        'late_checkout_fee_amount',
+        'early_check_in_grace_minutes',
+        'early_check_in_fee_amount',
     ];
 
     protected function casts(): array
@@ -30,6 +34,10 @@ class SystemSetting extends Model
             'room_fee_presets' => 'array',
             'cancellation_retention_percent' => 'float',
             'min_check_in_payment_percent' => 'float',
+            'late_checkout_grace_minutes' => 'integer',
+            'late_checkout_fee_amount' => 'float',
+            'early_check_in_grace_minutes' => 'integer',
+            'early_check_in_fee_amount' => 'float',
         ];
     }
 }

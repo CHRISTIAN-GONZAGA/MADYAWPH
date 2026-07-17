@@ -19,6 +19,7 @@ use App\Services\PlatformHotelCreditService;
 use App\Services\PlatformRevenueAnalyticsService;
 use App\Services\PlatformSettingsService;
 use App\Support\ChatAttachmentUrl;
+use App\Support\PriceRounding;
 use App\Support\RoomImageUploadRules;
 use App\Support\RoomMediaStorage;
 use Illuminate\Http\JsonResponse;
@@ -128,6 +129,46 @@ class PlatformAdminController extends Controller
         return response()->json([
             'ok' => true,
             'min_check_in_payment_percent' => $this->settings->minCheckInPaymentPercent(),
+        ]);
+    }
+
+    public function updateLateCheckoutFee(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'late_checkout_grace_minutes' => ['required', 'integer', 'min:0', 'max:720'],
+            'late_checkout_fee_amount' => ['required', 'numeric', 'min:0'],
+        ]);
+
+        $row = $this->settings->row();
+        $row->update([
+            'late_checkout_grace_minutes' => (int) $validated['late_checkout_grace_minutes'],
+            'late_checkout_fee_amount' => PriceRounding::nearest50((float) $validated['late_checkout_fee_amount']),
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'late_checkout_grace_minutes' => $this->settings->lateCheckoutGraceMinutes(),
+            'late_checkout_fee_amount' => $this->settings->lateCheckoutFeeAmount(),
+        ]);
+    }
+
+    public function updateEarlyCheckInFee(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'early_check_in_grace_minutes' => ['required', 'integer', 'min:0', 'max:720'],
+            'early_check_in_fee_amount' => ['required', 'numeric', 'min:0'],
+        ]);
+
+        $row = $this->settings->row();
+        $row->update([
+            'early_check_in_grace_minutes' => (int) $validated['early_check_in_grace_minutes'],
+            'early_check_in_fee_amount' => PriceRounding::nearest50((float) $validated['early_check_in_fee_amount']),
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'early_check_in_grace_minutes' => $this->settings->earlyCheckInGraceMinutes(),
+            'early_check_in_fee_amount' => $this->settings->earlyCheckInFeeAmount(),
         ]);
     }
 

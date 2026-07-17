@@ -166,6 +166,48 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
     }
   }
 
+  Future<void> _updateLateCheckoutFee({
+    required int graceMinutes,
+    required double feeAmount,
+  }) async {
+    try {
+      await portalDio().patch<Map<String, dynamic>>(
+        '/platform/settings/late-checkout-fee',
+        data: {
+          'late_checkout_grace_minutes': graceMinutes,
+          'late_checkout_fee_amount': feeAmount,
+        },
+      );
+      if (!mounted) return;
+      showAppMessage(context, 'Late check-out grace and fee updated.');
+      await _loadAll();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
+  Future<void> _updateEarlyCheckInFee({
+    required int graceMinutes,
+    required double feeAmount,
+  }) async {
+    try {
+      await portalDio().patch<Map<String, dynamic>>(
+        '/platform/settings/early-check-in-fee',
+        data: {
+          'early_check_in_grace_minutes': graceMinutes,
+          'early_check_in_fee_amount': feeAmount,
+        },
+      );
+      if (!mounted) return;
+      showAppMessage(context, 'Early check-in grace and fee updated.');
+      await _loadAll();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
   Future<void> _updateMemberBookingDiscountPercent(double percent) async {
     try {
       await portalDio().patch<Map<String, dynamic>>(
@@ -501,6 +543,8 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
                       onUpdateBookingFeePercent: _updateBookingFeePercent,
                       onUpdateMinCheckInPaymentPercent:
                           _updateMinCheckInPaymentPercent,
+                      onUpdateLateCheckoutFee: _updateLateCheckoutFee,
+                      onUpdateEarlyCheckInFee: _updateEarlyCheckInFee,
                       onUpdateMemberBookingDiscountPercent:
                           _updateMemberBookingDiscountPercent,
                       onUpdateMemberPointsSettings: _updateMemberPointsSettings,
@@ -1473,6 +1517,8 @@ class _QrSettingsSection extends StatefulWidget {
     required this.onUploadMember,
     required this.onUpdateBookingFeePercent,
     required this.onUpdateMinCheckInPaymentPercent,
+    required this.onUpdateLateCheckoutFee,
+    required this.onUpdateEarlyCheckInFee,
     required this.onUpdateMemberBookingDiscountPercent,
     required this.onUpdateMemberPointsSettings,
   });
@@ -1482,6 +1528,14 @@ class _QrSettingsSection extends StatefulWidget {
   final VoidCallback onUploadMember;
   final Future<void> Function(double percent) onUpdateBookingFeePercent;
   final Future<void> Function(double percent) onUpdateMinCheckInPaymentPercent;
+  final Future<void> Function({
+    required int graceMinutes,
+    required double feeAmount,
+  }) onUpdateLateCheckoutFee;
+  final Future<void> Function({
+    required int graceMinutes,
+    required double feeAmount,
+  }) onUpdateEarlyCheckInFee;
   final Future<void> Function(double percent) onUpdateMemberBookingDiscountPercent;
   final Future<void> Function({
     required double pointsPerCheckIn,
@@ -1495,11 +1549,17 @@ class _QrSettingsSection extends StatefulWidget {
 class _QrSettingsSectionState extends State<_QrSettingsSection> {
   late final TextEditingController _feePercentCtrl;
   late final TextEditingController _minCheckInPercentCtrl;
+  late final TextEditingController _lateGraceCtrl;
+  late final TextEditingController _lateFeeCtrl;
+  late final TextEditingController _earlyGraceCtrl;
+  late final TextEditingController _earlyFeeCtrl;
   late final TextEditingController _memberDiscountCtrl;
   late final TextEditingController _pointsPerCheckInCtrl;
   late final TextEditingController _pointsPerPesoCtrl;
   var _savingFee = false;
   var _savingMinCheckIn = false;
+  var _savingLateCheckout = false;
+  var _savingEarlyCheckIn = false;
   var _savingMemberDiscount = false;
   var _savingMemberPoints = false;
 
@@ -1511,6 +1571,18 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     );
     _minCheckInPercentCtrl = TextEditingController(
       text: _minCheckInPercentText(widget.settings),
+    );
+    _lateGraceCtrl = TextEditingController(
+      text: _lateGraceText(widget.settings),
+    );
+    _lateFeeCtrl = TextEditingController(
+      text: _lateFeeText(widget.settings),
+    );
+    _earlyGraceCtrl = TextEditingController(
+      text: _earlyGraceText(widget.settings),
+    );
+    _earlyFeeCtrl = TextEditingController(
+      text: _earlyFeeText(widget.settings),
     );
     _memberDiscountCtrl = TextEditingController(
       text: _memberDiscountText(widget.settings),
@@ -1534,6 +1606,22 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     if (minCheckIn != _minCheckInPercentCtrl.text) {
       _minCheckInPercentCtrl.text = minCheckIn;
     }
+    final lateGrace = _lateGraceText(widget.settings);
+    if (lateGrace != _lateGraceCtrl.text) {
+      _lateGraceCtrl.text = lateGrace;
+    }
+    final lateFee = _lateFeeText(widget.settings);
+    if (lateFee != _lateFeeCtrl.text) {
+      _lateFeeCtrl.text = lateFee;
+    }
+    final earlyGrace = _earlyGraceText(widget.settings);
+    if (earlyGrace != _earlyGraceCtrl.text) {
+      _earlyGraceCtrl.text = earlyGrace;
+    }
+    final earlyFee = _earlyFeeText(widget.settings);
+    if (earlyFee != _earlyFeeCtrl.text) {
+      _earlyFeeCtrl.text = earlyFee;
+    }
     final memberNext = _memberDiscountText(widget.settings);
     if (memberNext != _memberDiscountCtrl.text) {
       _memberDiscountCtrl.text = memberNext;
@@ -1552,6 +1640,10 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
   void dispose() {
     _feePercentCtrl.dispose();
     _minCheckInPercentCtrl.dispose();
+    _lateGraceCtrl.dispose();
+    _lateFeeCtrl.dispose();
+    _earlyGraceCtrl.dispose();
+    _earlyFeeCtrl.dispose();
     _memberDiscountCtrl.dispose();
     _pointsPerCheckInCtrl.dispose();
     _pointsPerPesoCtrl.dispose();
@@ -1570,6 +1662,36 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     if (raw == null) return '50';
     return (raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 50)
         .toStringAsFixed(raw is num && raw % 1 == 0 ? 0 : 1);
+  }
+
+  static String _lateGraceText(Map<String, dynamic> settings) {
+    final raw = settings['late_checkout_grace_minutes'];
+    if (raw == null) return '15';
+    return '${raw is num ? raw.toInt() : int.tryParse('$raw') ?? 15}';
+  }
+
+  static String _lateFeeText(Map<String, dynamic> settings) {
+    final raw = settings['late_checkout_fee_amount'];
+    if (raw == null) return '500';
+    final value = raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 500;
+    return value == value.roundToDouble()
+        ? '${value.toInt()}'
+        : value.toStringAsFixed(2);
+  }
+
+  static String _earlyGraceText(Map<String, dynamic> settings) {
+    final raw = settings['early_check_in_grace_minutes'];
+    if (raw == null) return '15';
+    return '${raw is num ? raw.toInt() : int.tryParse('$raw') ?? 15}';
+  }
+
+  static String _earlyFeeText(Map<String, dynamic> settings) {
+    final raw = settings['early_check_in_fee_amount'];
+    if (raw == null) return '500';
+    final value = raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 500;
+    return value == value.roundToDouble()
+        ? '${value.toInt()}'
+        : value.toStringAsFixed(2);
   }
 
   static String _memberDiscountText(Map<String, dynamic> settings) {
@@ -1654,6 +1776,50 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
       await widget.onUpdateMinCheckInPaymentPercent(parsed);
     } finally {
       if (mounted) setState(() => _savingMinCheckIn = false);
+    }
+  }
+
+  Future<void> _saveLateCheckoutFee() async {
+    final grace = int.tryParse(_lateGraceCtrl.text.trim());
+    final fee = double.tryParse(_lateFeeCtrl.text.trim());
+    if (grace == null || grace < 0 || grace > 720) {
+      showAppMessage(context, 'Enter grace minutes from 0 to 720.');
+      return;
+    }
+    if (fee == null || fee < 0) {
+      showAppMessage(context, 'Enter a fee amount of 0 or more.');
+      return;
+    }
+    setState(() => _savingLateCheckout = true);
+    try {
+      await widget.onUpdateLateCheckoutFee(
+        graceMinutes: grace,
+        feeAmount: fee,
+      );
+    } finally {
+      if (mounted) setState(() => _savingLateCheckout = false);
+    }
+  }
+
+  Future<void> _saveEarlyCheckInFee() async {
+    final grace = int.tryParse(_earlyGraceCtrl.text.trim());
+    final fee = double.tryParse(_earlyFeeCtrl.text.trim());
+    if (grace == null || grace < 0 || grace > 720) {
+      showAppMessage(context, 'Enter grace minutes from 0 to 720.');
+      return;
+    }
+    if (fee == null || fee < 0) {
+      showAppMessage(context, 'Enter a fee amount of 0 or more.');
+      return;
+    }
+    setState(() => _savingEarlyCheckIn = true);
+    try {
+      await widget.onUpdateEarlyCheckInFee(
+        graceMinutes: grace,
+        feeAmount: fee,
+      );
+    } finally {
+      if (mounted) setState(() => _savingEarlyCheckIn = false);
     }
   }
 
@@ -1805,6 +1971,138 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                           _savingMinCheckIn
                               ? 'Saving…'
                               : 'Save check-in payment %',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Early check-in fee',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Default for all hotels (nightly rooms). Standard check-in is 3:00 PM. Arriving before 3:00 PM minus this grace period charges the fee. Hotels can override in Settings.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _earlyGraceCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Grace period',
+                          suffixText: 'minutes',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _earlyFeeCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Early check-in fee',
+                          prefixText: '₱ ',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      FilledButton.icon(
+                        onPressed:
+                            _savingEarlyCheckIn ? null : _saveEarlyCheckInFee,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _kPlatformNavy,
+                          foregroundColor: Colors.white,
+                        ),
+                        icon: _savingEarlyCheckIn
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.save_outlined),
+                        label: Text(
+                          _savingEarlyCheckIn
+                              ? 'Saving…'
+                              : 'Save early check-in settings',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Late check-out fee',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Default for all hotels. A guest who leaves after scheduled check-out plus this grace period is charged the fee. Hotels can override in Settings.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _lateGraceCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Grace period',
+                          suffixText: 'minutes',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _lateFeeCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Late check-out fee',
+                          prefixText: '₱ ',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      FilledButton.icon(
+                        onPressed:
+                            _savingLateCheckout ? null : _saveLateCheckoutFee,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _kPlatformNavy,
+                          foregroundColor: Colors.white,
+                        ),
+                        icon: _savingLateCheckout
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.save_outlined),
+                        label: Text(
+                          _savingLateCheckout
+                              ? 'Saving…'
+                              : 'Save late check-out settings',
                         ),
                       ),
                     ],

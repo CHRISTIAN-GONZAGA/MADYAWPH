@@ -153,6 +153,25 @@ class RoomCategoryController extends Controller
                 ->update(['price_per_extra_hour' => $syncedRate]);
         }
 
+        // Category is the source of truth for hourly stay length/pricing:
+        // keep member rooms in sync so auto check-out uses the right block.
+        $hourlySync = [];
+        if (array_key_exists('block_hours', $payload)) {
+            $hourlySync['block_hours'] = max(1, (int) ($roomCategory->block_hours ?? 3));
+        }
+        if (array_key_exists('price_per_block', $payload)) {
+            $hourlySync['price_per_block'] = PriceRounding::nearest50((float) ($roomCategory->price_per_block ?? 0));
+        }
+        if (array_key_exists('billing_mode', $payload)) {
+            $hourlySync['billing_mode'] = (string) ($roomCategory->billing_mode ?? 'nightly');
+        }
+        if ($hourlySync !== []) {
+            Room::withoutGlobalScopes()
+                ->where('hotel_id', (string) $roomCategory->hotel_id)
+                ->where('category_id', (string) $roomCategory->id)
+                ->update($hourlySync);
+        }
+
         return response()->json([
             'id' => (string) $roomCategory->id,
             'name' => (string) $roomCategory->name,

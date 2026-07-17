@@ -134,6 +134,7 @@ class HotelAvailabilityService
             $in,
             $out,
             $excludeReservationId,
+            $requestedCheckInAt,
             $requestedCheckOutAt,
         )) {
             return true;
@@ -436,6 +437,7 @@ class HotelAvailabilityService
         CarbonInterface $checkIn,
         CarbonInterface $checkOut,
         ?string $excludeReservationId,
+        ?CarbonInterface $requestedCheckInAt = null,
         ?CarbonInterface $requestedCheckOutAt = null,
     ): bool {
         $reservations = ExternalReservation::withoutGlobalScopes()
@@ -445,7 +447,9 @@ class HotelAvailabilityService
             ->where('check_out_date', '>=', $checkIn)
             ->get();
 
-        $requestEndsAt = $requestedCheckOutAt ?? Carbon::parse($checkOut)->startOfDay();
+        $requestStart = $requestedCheckInAt ?? Carbon::parse($checkIn)->startOfDay();
+        $requestEnd = $requestedCheckOutAt ?? Carbon::parse($checkOut)->endOfDay();
+        $useDateTimeOverlap = $requestedCheckInAt !== null && $requestedCheckOutAt !== null;
 
         foreach ($reservations as $reservation) {
             if ($excludeReservationId !== null
@@ -461,8 +465,32 @@ class HotelAvailabilityService
                 continue;
             }
 
+            if ($useDateTimeOverlap) {
+                [$resStart, $resEnd] = $this->reservationStayWindow($reservation);
+
+                $requestInDay = Carbon::parse($checkIn)->startOfDay();
+                $requestOutDay = Carbon::parse($checkOut)->startOfDay();
+                $resInDay = $resStart->copy()->startOfDay();
+
+                // Overnight turnover: a hold that starts on our checkout day is normally fine.
+                if ($requestInDay->lt($requestOutDay) && $resInDay->equalTo($requestOutDay)) {
+                    $meta = is_array($reservation->metadata) ? $reservation->metadata : [];
+                    $hasClockTimes = filled($meta['check_in_time'] ?? null)
+                        || filled($meta['check_out_time'] ?? null);
+                    if (! $hasClockTimes || $resStart->gte($requestEnd)) {
+                        continue;
+                    }
+                }
+
+                if ($resEnd->lte($requestStart) || $resStart->gte($requestEnd)) {
+                    continue;
+                }
+
+                return true;
+            }
+
             $reservationCheckIn = Carbon::parse($reservation->check_in_date)->startOfDay();
-            $requestEndDay = $requestEndsAt->copy()->startOfDay();
+            $requestEndDay = $requestEnd->copy()->startOfDay();
             if ($reservationCheckIn->gt($requestEndDay)) {
                 continue;
             }
@@ -478,6 +506,45 @@ class HotelAvailabilityService
     }
 
     /**
+     * @return array{0: Carbon, 1: Carbon}
+     */
+    private function reservationStayWindow(ExternalReservation $reservation): array
+    {
+        $meta = is_array($reservation->metadata) ? $reservation->metadata : [];
+        $inDay = Carbon::parse($reservation->check_in_date)->startOfDay();
+        $outDay = Carbon::parse($reservation->check_out_date)->startOfDay();
+
+        $inTime = trim((string) ($meta['check_in_time'] ?? ''));
+        $outTime = trim((string) ($meta['check_out_time'] ?? ''));
+
+        if ($inTime !== '') {
+            $parts = explode(':', $inTime);
+            $start = $inDay->copy()->setTime((int) ($parts[0] ?? 0), (int) ($parts[1] ?? 0));
+        } else {
+            $start = $inDay->copy();
+        }
+
+        if ($outTime !== '') {
+            $parts = explode(':', $outTime);
+            $end = $outDay->copy()->setTime((int) ($parts[0] ?? 0), (int) ($parts[1] ?? 0));
+        } else {
+            $blockHours = max(1, (int) ($meta['block_hours'] ?? 0));
+            $billingMode = strtolower((string) ($meta['billing_mode'] ?? ''));
+            if ($billingMode === RoomBillingSupport::MODE_HOURLY && $blockHours > 0) {
+                $end = $start->copy()->addHours($blockHours);
+            } else {
+                $end = $outDay->copy()->endOfDay();
+            }
+        }
+
+        if ($end->lte($start)) {
+            $end = $start->copy()->addHour();
+        }
+
+        return [$start, $end];
+    }
+
+    /**
      * Past stays and reservations whose linked booking already checked out must not block new bookings.
      */
     private function reservationShouldNotBlock(ExternalReservation $reservation): bool
@@ -489,7 +556,7 @@ class HotelAvailabilityService
             }
         }
 
-        $stayEnd = Carbon::parse($reservation->check_out_date)->endOfDay();
+        [, $stayEnd] = $this->reservationStayWindow($reservation);
         if ($stayEnd->lt(now())) {
             return true;
         }
