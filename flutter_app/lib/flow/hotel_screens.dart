@@ -1832,6 +1832,8 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
   final _adminEmail = TextEditingController();
   final _ownerEmail = TextEditingController();
   final _totalRooms = TextEditingController(text: '1');
+  final _scrollController = ScrollController();
+  final _errorKey = GlobalKey();
   bool _busy = false;
   bool _locatingGps = false;
   String? _error;
@@ -1854,7 +1856,32 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
     _adminEmail.dispose();
     _ownerEmail.dispose();
     _totalRooms.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _showFormError(String message) {
+    setState(() {
+      _error = message;
+      _busy = false;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _errorKey.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOut,
+          alignment: 0.2,
+        );
+      } else if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   Future<({double lat, double lng})?> _resolveRegistrationCoordinates() async {
@@ -2073,14 +2100,21 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
 
     final otpCtrl = TextEditingController();
     var resendBusy = false;
-    final verified = await showDialog<bool>(
+    var verifyBusy = false;
+    String? dialogError;
+    Map<String, dynamic>? verifiedPayload;
+
+    await showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) {
           Future<void> resendCode() async {
-            if (resendBusy) return;
-            setLocal(() => resendBusy = true);
+            if (resendBusy || verifyBusy) return;
+            setLocal(() {
+              resendBusy = true;
+              dialogError = null;
+            });
             try {
               await publicDio().post<Map<String, dynamic>>(
                 '/hotel/register/resend-code',
@@ -2091,10 +2125,48 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
               }
             } on DioException catch (e) {
               if (ctx.mounted) {
-                showAppMessage(ctx, dioErrorMessage(e), isError: true);
+                setLocal(() => dialogError = dioErrorMessage(e));
               }
             } finally {
               if (ctx.mounted) setLocal(() => resendBusy = false);
+            }
+          }
+
+          Future<void> verifyCode() async {
+            if (verifyBusy) return;
+            final code = otpCtrl.text.trim();
+            if (code.length != 6) {
+              setLocal(() => dialogError = 'Enter the 6-digit code.');
+              return;
+            }
+            setLocal(() {
+              verifyBusy = true;
+              dialogError = null;
+            });
+            try {
+              final verifyRes = await publicDio().post<Map<String, dynamic>>(
+                '/hotel/register/verify',
+                data: {
+                  'registration_token': token,
+                  'code': code,
+                },
+              );
+              verifiedPayload = verifyRes.data;
+              if (ctx.mounted) Navigator.of(ctx).pop();
+            } on DioException catch (e) {
+              if (ctx.mounted) {
+                setLocal(() {
+                  dialogError = dioErrorMessage(e);
+                  verifyBusy = false;
+                });
+              }
+            } catch (e) {
+              if (ctx.mounted) {
+                setLocal(() {
+                  dialogError = '$e';
+                  verifyBusy = false;
+                });
+              }
             }
           }
 
@@ -2110,59 +2182,60 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
                   controller: otpCtrl,
                   keyboardType: TextInputType.number,
                   maxLength: 6,
+                  enabled: !verifyBusy,
                   decoration: const InputDecoration(
                     labelText: 'Verification code',
                     border: OutlineInputBorder(),
                     counterText: '',
                   ),
+                  onSubmitted: (_) => verifyCode(),
                 ),
+                if (dialogError != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    dialogError!,
+                    style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+                  ),
+                ],
               ],
             ),
             actions: [
               TextButton(
-                onPressed: resendBusy ? null : resendCode,
+                onPressed: (resendBusy || verifyBusy) ? null : resendCode,
                 child: const Text('Resend code'),
               ),
               TextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
+                onPressed: verifyBusy ? null : () => Navigator.of(ctx).pop(),
                 child: const Text('Cancel'),
               ),
               FilledButton(
-                onPressed: () {
-                  if (otpCtrl.text.trim().length != 6) {
-                    showAppMessage(ctx, 'Enter the 6-digit code.');
-                    return;
-                  }
-                  Navigator.of(ctx).pop(true);
-                },
-                child: const Text('Verify & create hotel'),
+                onPressed: verifyBusy ? null : verifyCode,
+                child: verifyBusy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Verify & create hotel'),
               ),
             ],
           );
         },
       ),
     );
-    final code = otpCtrl.text.trim();
     otpCtrl.dispose();
-    if (verified != true || !mounted) {
+    if (!mounted) return;
+    if (verifiedPayload == null) {
       setState(() => _busy = false);
       return;
     }
-
-    final verifyRes = await publicDio().post<Map<String, dynamic>>(
-      '/hotel/register/verify',
-      data: {
-        'registration_token': token,
-        'code': code,
-      },
-    );
-    await _finishRegistration(verifyRes.data);
+    await _finishRegistration(verifiedPayload);
   }
 
   Future<void> _submit() async {
     final validationError = _validateForm();
     if (validationError != null) {
-      setState(() => _error = validationError);
+      _showFormError(validationError);
       return;
     }
     setState(() {
@@ -2196,17 +2269,11 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
       if (mounted) setState(() => _busy = false);
     } on DioException catch (e) {
       if (mounted) {
-        setState(() {
-          _error = dioErrorMessage(e);
-          _busy = false;
-        });
+        _showFormError(dioErrorMessage(e));
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _error = '$e';
-          _busy = false;
-        });
+        _showFormError('$e');
       }
     }
   }
@@ -2221,6 +2288,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
         ),
       ),
       body: ListView(
+        controller: _scrollController,
         padding: const EdgeInsets.all(24),
         children: [
       if (widget.fromStaffEntry) ...[
@@ -2381,7 +2449,27 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
       ),
       if (_error != null) ...[
         const SizedBox(height: 12),
-        Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+        KeyedSubtree(
+          key: _errorKey,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.45),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.error.withValues(alpha: 0.35),
+              ),
+            ),
+            child: Text(
+              _error!,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.error,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
       ],
       const SizedBox(height: 20),
       FilledButton(

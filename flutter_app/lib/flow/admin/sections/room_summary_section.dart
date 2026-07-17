@@ -129,6 +129,51 @@ class RoomSummarySection extends StatelessWidget {
     );
   }
 
+  /// Direct room list for a category mini stat (Rsv / Occ / Vac) —
+  /// skips the floor drilldown entirely.
+  void _showCategoryStatusRooms(
+    BuildContext context,
+    String label,
+    List<Map<String, dynamic>> categoryRooms,
+    String kind,
+  ) {
+    HapticFeedback.selectionClick();
+    late final List<Map<String, dynamic>> filtered;
+    late final String statusLabel;
+    switch (kind) {
+      case 'reserved':
+        filtered = AdminDashboardModels.sortRoomsByNumber(
+          AdminDashboardModels.categoryReservedSoonRooms(
+            categoryRooms,
+            withinDays: 1,
+          ),
+        );
+        statusLabel = 'Reserved';
+        break;
+      case 'occupied':
+        filtered = AdminDashboardModels.sortRoomsByNumber(
+          AdminDashboardModels.categoryOccupiedRooms(categoryRooms),
+        );
+        statusLabel = 'Occupied';
+        break;
+      default:
+        filtered = AdminDashboardModels.sortRoomsByNumber(
+          AdminDashboardModels.categoryVacantRooms(categoryRooms),
+        );
+        statusLabel = 'Vacant';
+    }
+    if (filtered.isEmpty) {
+      showAppMessage(context, 'No $statusLabel rooms in "$label".');
+      return;
+    }
+    _showCategoryRooms(
+      context,
+      '$label · $statusLabel',
+      filtered,
+      subtitle: '${filtered.length} $statusLabel room(s)',
+    );
+  }
+
   void _showRoomList(
     BuildContext context, {
     required String title,
@@ -181,7 +226,8 @@ class RoomSummarySection extends StatelessWidget {
     final occupiedRooms =
         rooms.where(AdminDashboardModels.isSummaryOccupied).toList();
     final guestsInHotel = AdminDashboardModels.guestsInHotelNow(rooms);
-    final vacantRooms = rooms.where(AdminDashboardModels.isWalkInBookable).toList();
+    final vacantRooms =
+        rooms.where((r) => AdminDashboardModels.walkInTileStatus(r) == 'available').toList();
     final maintenanceRooms = _maintenanceRooms();
     final cleaningRooms = _cleaningRooms();
 
@@ -244,6 +290,8 @@ class RoomSummarySection extends StatelessWidget {
             rooms: list,
             stats: stats,
           ),
+          onStatTap: (ctx, label, list, kind) =>
+              _showCategoryStatusRooms(ctx, label, list, kind),
         ),
         const SizedBox(height: 24),
         Row(
@@ -431,7 +479,20 @@ class RoomSummarySection extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    '${stats['total']} rooms · ${AdminDashboardModels.floorsForRooms(rooms, categoryFloorCount: AdminDashboardModels.categoryFloorCountFrom(label, rooms, categories)).length} floors',
+                    () {
+                      final floors = AdminDashboardModels.floorsForRooms(
+                        rooms,
+                        categoryFloorCount:
+                            AdminDashboardModels.categoryFloorCountFrom(
+                          label,
+                          rooms,
+                          categories,
+                        ),
+                      );
+                      final floorWord =
+                          floors.length == 1 ? 'floor' : 'floors';
+                      return '${stats['total']} rooms · ${floors.length} $floorWord with rooms';
+                    }(),
                     textAlign: TextAlign.center,
                     style: Theme.of(ctx).textTheme.bodySmall,
                   ),
@@ -1008,6 +1069,7 @@ class _CategorySummaryGrid extends StatelessWidget {
     required this.grouped,
     required this.keys,
     required this.onCategoryTap,
+    required this.onStatTap,
   });
 
   final Map<String, List<Map<String, dynamic>>> grouped;
@@ -1018,6 +1080,12 @@ class _CategorySummaryGrid extends StatelessWidget {
     List<Map<String, dynamic>> rooms,
     Map<String, dynamic> stats,
   ) onCategoryTap;
+  final void Function(
+    BuildContext context,
+    String label,
+    List<Map<String, dynamic>> rooms,
+    String kind,
+  ) onStatTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1045,6 +1113,9 @@ class _CategorySummaryGrid extends StatelessWidget {
           occupiedCount: occupied.length,
           vacantCount: vacant.length,
           onTap: () => onCategoryTap(context, label, list, stats),
+          onReservedTap: () => onStatTap(context, label, list, 'reserved'),
+          onOccupiedTap: () => onStatTap(context, label, list, 'occupied'),
+          onVacantTap: () => onStatTap(context, label, list, 'vacant'),
         );
       },
     );
@@ -1058,6 +1129,9 @@ class _CategoryCard extends StatelessWidget {
     required this.occupiedCount,
     required this.vacantCount,
     required this.onTap,
+    required this.onReservedTap,
+    required this.onOccupiedTap,
+    required this.onVacantTap,
   });
 
   final Map<String, dynamic> stats;
@@ -1065,6 +1139,9 @@ class _CategoryCard extends StatelessWidget {
   final int occupiedCount;
   final int vacantCount;
   final VoidCallback onTap;
+  final VoidCallback onReservedTap;
+  final VoidCallback onOccupiedTap;
+  final VoidCallback onVacantTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1143,6 +1220,7 @@ class _CategoryCard extends StatelessWidget {
                         label: 'Rsv',
                         count: reservedCount,
                         color: Colors.orange.shade800,
+                        onTap: onReservedTap,
                       ),
                     ),
                     const SizedBox(width: 4),
@@ -1151,6 +1229,7 @@ class _CategoryCard extends StatelessWidget {
                         label: 'Occ',
                         count: occupiedCount,
                         color: Colors.green.shade700,
+                        onTap: onOccupiedTap,
                       ),
                     ),
                     const SizedBox(width: 4),
@@ -1159,6 +1238,7 @@ class _CategoryCard extends StatelessWidget {
                         label: 'Vac',
                         count: vacantCount,
                         color: Colors.teal.shade700,
+                        onTap: onVacantTap,
                       ),
                     ),
                   ],
@@ -1177,39 +1257,45 @@ class _CategoryMiniStat extends StatelessWidget {
     required this.label,
     required this.count,
     required this.color,
+    this.onTap,
   });
 
   final String label;
   final int count;
   final Color color;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        children: [
-          Text(
-            '$count',
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: color,
-                  height: 1,
-                ),
+    return Material(
+      color: color.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(8),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+          child: Column(
+            children: [
+              Text(
+                '$count',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: color,
+                      height: 1,
+                    ),
+              ),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      fontSize: 9,
+                      color: color,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ],
           ),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  fontSize: 9,
-                  color: color,
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-        ],
+        ),
       ),
     );
   }

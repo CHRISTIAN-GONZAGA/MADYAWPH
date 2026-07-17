@@ -200,6 +200,7 @@ class ChatMessageBubble extends StatelessWidget {
     this.originalMessage,
     this.showTranslation = false,
     this.detectedLang,
+    this.sentAt,
   });
 
   final String message;
@@ -208,6 +209,7 @@ class ChatMessageBubble extends StatelessWidget {
   final String? originalMessage;
   final bool showTranslation;
   final String? detectedLang;
+  final DateTime? sentAt;
 
   factory ChatMessageBubble.fromMap(
     Map<String, dynamic> m, {
@@ -225,7 +227,35 @@ class ChatMessageBubble extends StatelessWidget {
       originalMessage: show ? original : null,
       showTranslation: show,
       detectedLang: (m['detected_lang'] ?? '').toString(),
+      sentAt: _parseSentAt(m),
     );
+  }
+
+  static DateTime? _parseSentAt(Map<String, dynamic> m) {
+    for (final key in ['sent_at', 'created_at', 'latest_sent_at']) {
+      final raw = m[key];
+      if (raw == null) continue;
+      final parsed = DateTime.tryParse(raw.toString());
+      if (parsed != null) return parsed.toLocal();
+    }
+    return null;
+  }
+
+  static String formatTimestamp(DateTime at) {
+    final local = at.toLocal();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(local.year, local.month, local.day);
+    final hh = local.hour.toString().padLeft(2, '0');
+    final mm = local.minute.toString().padLeft(2, '0');
+    final time = '$hh:$mm';
+    if (day == today) return time;
+    final yesterday = today.subtract(const Duration(days: 1));
+    if (day == yesterday) return 'Yesterday $time';
+    final mon = local.month.toString().padLeft(2, '0');
+    final dd = local.day.toString().padLeft(2, '0');
+    if (local.year == now.year) return '$mon/$dd $time';
+    return '$mon/$dd/${local.year} $time';
   }
 
   @override
@@ -292,6 +322,20 @@ class ChatMessageBubble extends StatelessWidget {
                       fontStyle: FontStyle.italic,
                       color: scheme.onSurfaceVariant,
                     ),
+              ),
+            ],
+            if (sentAt != null) ...[
+              const SizedBox(height: 6),
+              Align(
+                alignment:
+                    isMine ? Alignment.centerRight : Alignment.centerLeft,
+                child: Text(
+                  formatTimestamp(sentAt!),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w500,
+                      ),
+                ),
               ),
             ],
           ],

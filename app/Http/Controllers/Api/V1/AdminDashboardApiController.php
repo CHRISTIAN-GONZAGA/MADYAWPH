@@ -117,7 +117,7 @@ class AdminDashboardApiController extends Controller
             ])
             ->latest('created_at')
             ->get()
-            ->groupBy('room_id')
+            ->groupBy(fn ($booking) => (string) ($booking->room_id ?? ''))
             ->map(fn ($bookings) => $bookings->first());
 
         $lowBalanceThreshold = (float) config(
@@ -222,6 +222,7 @@ class AdminDashboardApiController extends Controller
                             'check_out_time' => (string) ($booking->check_out_time ?? ''),
                             'nights' => (int) ($booking->nights ?? 0),
                             'billing_mode' => (string) ($booking->billing_mode ?? ''),
+                            'status' => (string) ($booking->status?->value ?? $booking->status ?? ''),
                             'total_amount' => SafeModelAttributes::rawFloat($booking, 'total_amount'),
                             'created_at' => SafeModelAttributes::carbonFromModel($booking, 'created_at', 'updated_at')?->toISOString(),
                             'booking_type' => BookingTypeResolver::resolveForBooking($booking),

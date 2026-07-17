@@ -34,6 +34,7 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
   double _pointsPerPeso = 10;
   bool _loading = true;
   bool _submitting = false;
+  String? _error;
 
   String get _memberQrUrl => _memberQrRaw.trim().isEmpty
       ? ''
@@ -132,21 +133,22 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
   }
 
   Future<void> _submit() async {
+    setState(() => _error = null);
     if (_nameCtrl.text.trim().isEmpty ||
         _emailCtrl.text.trim().isEmpty ||
         _phoneCtrl.text.trim().isEmpty ||
         _usernameCtrl.text.trim().isEmpty ||
         _passwordCtrl.text.isEmpty ||
         _refCtrl.text.trim().isEmpty) {
-      showAppMessage(context, 'Please complete all fields.');
+      setState(() => _error = 'Please complete all fields.');
       return;
     }
     if (_passwordCtrl.text != _password2Ctrl.text) {
-      showAppMessage(context, 'Passwords do not match.', isError: true);
+      setState(() => _error = 'Passwords do not match.');
       return;
     }
     if (_passwordCtrl.text.length < 6) {
-      showAppMessage(context, 'Password must be at least 6 characters.', isError: true);
+      setState(() => _error = 'Password must be at least 6 characters.');
       return;
     }
     setState(() => _submitting = true);
@@ -178,7 +180,7 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
       );
     } on DioException catch (e) {
       if (!mounted) return;
-      showAppMessage(context, dioErrorMessage(e), isError: true);
+      setState(() => _error = dioErrorMessage(e));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -266,6 +268,27 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
                   controller: _refCtrl,
                   label: 'Payment reference / transaction ID',
                 ),
+                if (_error != null) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: scheme.errorContainer.withValues(alpha: 0.45),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: scheme.error.withValues(alpha: 0.35),
+                      ),
+                    ),
+                    child: Text(
+                      _error!,
+                      style: TextStyle(
+                        color: scheme.error,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 24),
                   FilledButton(
                     onPressed: _submitting ? null : _submit,

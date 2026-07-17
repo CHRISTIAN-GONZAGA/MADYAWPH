@@ -72,6 +72,15 @@ class AdminDashboardModels {
     return rt.length == 1 ? rt.toUpperCase() : rt;
   }
 
+  /// Stable category key so rooms with the same category_id stay together
+  /// even when stored category_name casing/spelling drifts.
+  static String categoryGroupKey(Map<String, dynamic> room) {
+    final id = (room['category_id'] ?? '').toString().trim();
+    if (id.isNotEmpty) return 'id:$id';
+    final label = categoryLabel(room).toLowerCase();
+    return 'name:$label';
+  }
+
   static String statusOf(Map<String, dynamic> room) {
     final raw = room['status'];
     if (raw is Map) {
@@ -146,15 +155,26 @@ class AdminDashboardModels {
   }
 
   /// Parses dashboard room payloads (JSON maps are not always [Map<String, dynamic>]).
+  /// Deduplicates by room id so intermittent duplicate/stale rows cannot undercount
+  /// or overwrite a second distinct room in summary cards.
   static List<Map<String, dynamic>> parseRoomMaps(List<dynamic>? raw) {
     if (raw == null || raw.isEmpty) return const [];
     final out = <Map<String, dynamic>>[];
+    final seenIds = <String>{};
     for (final item in raw) {
+      Map<String, dynamic>? map;
       if (item is Map<String, dynamic>) {
-        out.add(item);
+        map = item;
       } else if (item is Map) {
-        out.add(Map<String, dynamic>.from(item));
+        map = Map<String, dynamic>.from(item);
       }
+      if (map == null) continue;
+      final id = roomIdOf(map);
+      if (id.isNotEmpty) {
+        if (seenIds.contains(id)) continue;
+        seenIds.add(id);
+      }
+      out.add(map);
     }
     return out;
   }
@@ -303,19 +323,16 @@ class AdminDashboardModels {
   }
 
   /// Walk-in tile grouping: available | reserved | occupied.
+  /// Vacant = truly free now (room status available/checked_out with no active
+  /// upcoming booking). Stale latest_booking rows on an available room no longer
+  /// silently reclassify it as reserved.
   static String walkInTileStatus(Map<String, dynamic> room) {
     final status = statusOf(room);
     if (status == 'maintenance' || status == 'cleaning' || status == 'checked_in') {
       return 'occupied';
     }
     if (status == 'available' || status == 'checked_out') {
-      final start = stayStartDate(room);
-      if (start != null) {
-        final now = DateTime.now();
-        final today = DateTime(now.year, now.month, now.day);
-        final startDay = DateTime(start.year, start.month, start.day);
-        if (startDay.isAfter(today)) return 'reserved';
-      }
+      if (_hasActiveUpcomingStay(room)) return 'reserved';
       return 'available';
     }
     if (status.isEmpty) {
@@ -334,6 +351,39 @@ class AdminDashboardModels {
       return 'occupied';
     }
     return 'occupied';
+  }
+
+  /// True when an available room still has a non-completed booking starting today
+  /// or later (room status may lag behind booking status).
+  static bool _hasActiveUpcomingStay(Map<String, dynamic> room) {
+    final booking = room['latest_booking'];
+    if (booking is! Map || booking.isEmpty) return false;
+    final bookingStatus =
+        (booking['status'] ?? '').toString().toLowerCase().trim();
+    if (bookingStatus == 'completed' ||
+        bookingStatus == 'cancelled' ||
+        bookingStatus == 'checked_out') {
+      return false;
+    }
+    final start = stayStartDate(room);
+    if (start == null) return false;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final startDay = DateTime(start.year, start.month, start.day);
+    final upcoming = !startDay.isBefore(today);
+
+    // Prefer explicit booking status when the dashboard provides it.
+    if (bookingStatus == 'booked' ||
+        bookingStatus == 'reserved' ||
+        bookingStatus == 'confirmed') {
+      return upcoming;
+    }
+    // Legacy payloads without booking.status: only future stays count as reserved
+    // so a same-day leftover date cannot undercount vacant rooms.
+    if (bookingStatus.isEmpty) {
+      return startDay.isAfter(today);
+    }
+    return false;
   }
 
   static Color walkInTileColor(String walkInStatus) {
@@ -439,10 +489,27 @@ class AdminDashboardModels {
   static Map<String, List<Map<String, dynamic>>> groupByCategory(
     List<Map<String, dynamic>> rooms,
   ) {
-    final map = <String, List<Map<String, dynamic>>>{};
+    final byKey = <String, List<Map<String, dynamic>>>{};
+    final labelByKey = <String, String>{};
     for (final r in rooms) {
-      final label = categoryLabel(r);
-      map.putIfAbsent(label, () => []).add(r);
+      final key = categoryGroupKey(r);
+      byKey.putIfAbsent(key, () => []).add(r);
+      labelByKey.putIfAbsent(key, () => categoryLabel(r));
+    }
+    final map = <String, List<Map<String, dynamic>>>{};
+    final usedLabels = <String>{};
+    for (final entry in byKey.entries) {
+      var label = labelByKey[entry.key] ?? 'Uncategorized';
+      if (usedLabels.contains(label)) {
+        final base = label;
+        var n = 2;
+        while (usedLabels.contains('$base ($n)')) {
+          n++;
+        }
+        label = '$base ($n)';
+      }
+      usedLabels.add(label);
+      map[label] = entry.value;
     }
     return map;
   }
@@ -453,8 +520,9 @@ class AdminDashboardModels {
     var maintenance = 0;
     var cleaning = 0;
     for (final r in rooms) {
-      if (isWalkInBookable(r)) vacant++;
-      if (statusOf(r) == 'checked_in') occupied++;
+      // Keep hotel totals aligned with category/floor vacant & occupied lists.
+      if (walkInTileStatus(r) == 'available') vacant++;
+      if (isSummaryOccupied(r)) occupied++;
       if (statusOf(r) == 'maintenance') maintenance++;
       if (statusOf(r) == 'cleaning') cleaning++;
     }
@@ -913,17 +981,17 @@ class AdminDashboardModels {
     return list;
   }
 
-  /// Floors 1..N for a category, including floor 1 when the category has only one floor.
+  /// Floors that actually have rooms. Empty configured floors are omitted so
+  /// the summary only shows floors in use for this category.
   static List<int> floorsForRooms(
     List<Map<String, dynamic>> rooms, {
     int? categoryFloorCount,
   }) {
-    var maxFloor = (categoryFloorCount ?? 1).clamp(1, 99);
-    for (final room in rooms) {
-      final f = floorOf(room);
-      if (f > maxFloor) maxFloor = f;
-    }
-    return List.generate(maxFloor, (i) => i + 1);
+    final floors = distinctFloors(rooms);
+    if (floors.isNotEmpty) return floors;
+    // No rooms yet — keep a single placeholder only when a floor count exists.
+    final maxFloor = (categoryFloorCount ?? 1).clamp(1, 99);
+    return maxFloor > 0 ? const [1] : const [];
   }
 
   static int categoryFloorCountFrom(

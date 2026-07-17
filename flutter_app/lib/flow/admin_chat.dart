@@ -193,6 +193,8 @@ class _AdminChatInboxScreenState extends State<AdminChatInboxScreen> {
           final roomNo = (t['room_number'] ?? '').toString();
           final staffName = (t['staff_name'] ?? '').toString();
           final latest = (t['latest_message'] ?? '').toString();
+          final latestAtRaw = (t['latest_sent_at'] ?? '').toString();
+          final latestAt = DateTime.tryParse(latestAtRaw)?.toLocal();
           final unreadCount = (t['unread_count'] as num?)?.toInt() ?? 0;
           final isStaff = widget.staffOnly ||
               roomId.startsWith('STAFF-ADMIN:') ||
@@ -203,6 +205,9 @@ class _AdminChatInboxScreenState extends State<AdminChatInboxScreen> {
               isStaff ? (staffName.isNotEmpty ? staffName : 'Staff') : 'Room $roomNo';
           final subtitlePrefix =
               isStaff ? 'Staff chat · ' : '';
+          final timeLabel = latestAt == null
+              ? ''
+              : ChatMessageBubble.formatTimestamp(latestAt);
           return Card(
             child: ListTile(
               leading: Icon(
@@ -210,10 +215,13 @@ class _AdminChatInboxScreenState extends State<AdminChatInboxScreen> {
               ),
               title: Text(title),
               subtitle: Text(
-                '$subtitlePrefix$latest',
-                maxLines: 2,
+                timeLabel.isEmpty
+                    ? '$subtitlePrefix$latest'
+                    : '$subtitlePrefix$latest\n$timeLabel',
+                maxLines: 3,
                 overflow: TextOverflow.ellipsis,
               ),
+              isThreeLine: timeLabel.isNotEmpty,
               trailing: unreadCount == 0
                   ? const Icon(Icons.chevron_right)
                   : Row(
