@@ -461,7 +461,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 
   @override
   Widget build(BuildContext context) {
+    final auth = _data?['auth'] as Map<String, dynamic>?;
+    final user = auth?['user'] as Map<String, dynamic>?;
+    final userRole = (user?['role'] ?? '').toString();
+    final canCreateBookings =
+        widget.isFrontDesk || userRole == 'frontdesk';
+
     return HotelTotalsRoomPanelHost(
+      canCreateBookings: canCreateBookings,
       onBindBackHandler: (handler) => _panelBackHandler = handler,
       onRefresh: () => _load(silent: true),
       resolveLiveRooms: () => AdminDashboardModels.parseRoomMaps(

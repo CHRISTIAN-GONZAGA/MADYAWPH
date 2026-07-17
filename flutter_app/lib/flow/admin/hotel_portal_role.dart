@@ -6,4 +6,7 @@ abstract final class HotelPortalRole {
       role == 'admin' || role == 'super_admin';
 
   static bool canManagePropertySetup(String? role) => isHotelAdmin(role);
+
+  /// Walk-in booking, reservation approval, and guest check-in are front desk only.
+  static bool canCreateBookings(String? role) => isFrontDesk(role);
 }

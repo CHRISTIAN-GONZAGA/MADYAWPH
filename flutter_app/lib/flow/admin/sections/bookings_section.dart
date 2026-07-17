@@ -434,16 +434,17 @@ class _BookingsSectionState extends State<BookingsSection>
             _detailRow('Total', '₱${(r['total_amount'] as num?) ?? 0}'),
             const SizedBox(height: 12),
             if (pending) ...[
-              FilledButton(
-                onPressed: _busy
-                    ? null
-                    : () {
-                        Navigator.pop(ctx);
-                        _approveReservation(id);
-                      },
-                child: const Text('Approve'),
-              ),
-              const SizedBox(height: 8),
+              if (widget.isFrontDesk)
+                FilledButton(
+                  onPressed: _busy
+                      ? null
+                      : () {
+                          Navigator.pop(ctx);
+                          _approveReservation(id);
+                        },
+                  child: const Text('Approve'),
+                ),
+              if (widget.isFrontDesk) const SizedBox(height: 8),
               OutlinedButton(
                 onPressed: _busy
                     ? null
@@ -495,6 +496,14 @@ class _BookingsSectionState extends State<BookingsSection>
   }
 
   Future<void> _approveReservation(String id) async {
+    if (!widget.isFrontDesk) {
+      showAppMessage(
+        context,
+        'Only front desk can approve reservations.',
+        isError: true,
+      );
+      return;
+    }
     if (_busy || id.isEmpty) return;
     if (!await _confirmAction(
       'Approve reservation?',
@@ -572,6 +581,14 @@ class _BookingsSectionState extends State<BookingsSection>
   }
 
   Future<void> _checkInRoom(Map<String, dynamic> room) async {
+    if (!widget.isFrontDesk) {
+      showAppMessage(
+        context,
+        'Only front desk can check guests in.',
+        isError: true,
+      );
+      return;
+    }
     if (_busy) return;
     setState(() => _busy = true);
     try {
@@ -733,7 +750,9 @@ class _BookingsSectionState extends State<BookingsSection>
         ),
         const SizedBox(height: 8),
         Text(
-          'Customer portal bookings appear as booked rooms. Approve reservations to hold or activate stays.',
+          widget.isFrontDesk
+              ? 'Customer portal bookings appear as booked rooms. Approve reservations to hold or activate stays.'
+              : 'View bookings and reservations here. Front desk handles booking, check-in, and reservation approval.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 14),
@@ -823,8 +842,14 @@ class _BookingsSectionState extends State<BookingsSection>
               icon: const Icon(Icons.edit_calendar_outlined),
             ),
             FilledButton(
-              onPressed: _busy || !canCheckIn ? null : () => _checkInRoom(room),
-              child: Text(canCheckIn ? 'Check in' : 'Awaiting'),
+              onPressed: _busy || !canCheckIn || !widget.isFrontDesk
+                  ? null
+                  : () => _checkInRoom(room),
+              child: Text(
+                !widget.isFrontDesk
+                    ? 'View only'
+                    : (canCheckIn ? 'Check in' : 'Awaiting'),
+              ),
             ),
           ],
         ),
@@ -865,10 +890,11 @@ class _BookingsSectionState extends State<BookingsSection>
                 spacing: 8,
                 children: [
                   if (pending) ...[
-                    FilledButton(
-                      onPressed: _busy ? null : () => _approveReservation(id),
-                      child: const Text('Approve'),
-                    ),
+                    if (widget.isFrontDesk)
+                      FilledButton(
+                        onPressed: _busy ? null : () => _approveReservation(id),
+                        child: const Text('Approve'),
+                      ),
                     OutlinedButton(
                       onPressed: _busy ? null : () => _rejectReservation(id),
                       child: const Text('Reject'),

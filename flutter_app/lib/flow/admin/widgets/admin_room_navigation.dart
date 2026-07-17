@@ -40,15 +40,17 @@ abstract final class AdminRoomNavigation {
     AdminRoomOpenMode mode = AdminRoomOpenMode.bookOrManage,
     AdminRoomManageHandler? onManageRoom,
     bool preferCheckIn = false,
+    bool canCreateBookings = true,
   }) {
     return openRoom(
       context,
       room: room,
       onSuccess: onSuccess,
       sheetContext: sheetContext,
-      mode: mode,
+      mode: canCreateBookings ? mode : AdminRoomOpenMode.manageOnly,
       onManageRoom: onManageRoom,
-      preferCheckIn: preferCheckIn,
+      preferCheckIn: preferCheckIn && canCreateBookings,
+      canCreateBookings: canCreateBookings,
     );
   }
 
@@ -88,8 +90,11 @@ abstract final class AdminRoomNavigation {
     AdminRoomOpenMode mode = AdminRoomOpenMode.bookOrManage,
     AdminRoomManageHandler? onManageRoom,
     bool preferCheckIn = false,
+    bool canCreateBookings = true,
   }) async {
-    if (mode == AdminRoomOpenMode.manageOnly) {
+    final effectiveMode =
+        canCreateBookings ? mode : AdminRoomOpenMode.manageOnly;
+    if (effectiveMode == AdminRoomOpenMode.manageOnly) {
       await openSummaryRoomDetail(
         room: room,
         sheetContext: sheetContext,
@@ -116,6 +121,7 @@ abstract final class AdminRoomNavigation {
         onSuccess: onSuccess,
         onManageRoom: onManageRoom,
         preferCheckIn: preferCheckIn,
+        canCreateBookings: canCreateBookings,
       );
     }
 
@@ -133,10 +139,12 @@ abstract final class AdminRoomNavigation {
     required Future<void> Function() onSuccess,
     AdminRoomManageHandler? onManageRoom,
     bool preferCheckIn = false,
+    bool canCreateBookings = true,
   }) async {
     final roomNo = (room['room_number'] ?? 'Room').toString();
-    final showCheckIn =
-        preferCheckIn && AdminDashboardModels.canQuickCheckIn(room);
+    final showCheckIn = canCreateBookings &&
+        preferCheckIn &&
+        AdminDashboardModels.canQuickCheckIn(room);
 
     final action = await showModalBottomSheet<_AdminRoomAction>(
       context: context,
@@ -171,12 +179,14 @@ abstract final class AdminRoomNavigation {
                 ),
                 const SizedBox(height: 10),
               ],
-              FilledButton.icon(
-                onPressed: () => Navigator.pop(ctx, _AdminRoomAction.book),
-                icon: const Icon(Icons.event_available_outlined),
-                label: const Text('Book this room'),
-              ),
-              const SizedBox(height: 10),
+              if (canCreateBookings) ...[
+                FilledButton.icon(
+                  onPressed: () => Navigator.pop(ctx, _AdminRoomAction.book),
+                  icon: const Icon(Icons.event_available_outlined),
+                  label: const Text('Book this room'),
+                ),
+                const SizedBox(height: 10),
+              ],
               OutlinedButton.icon(
                 onPressed: () => Navigator.pop(ctx, _AdminRoomAction.manage),
                 icon: const Icon(Icons.meeting_room_outlined),
@@ -197,6 +207,14 @@ abstract final class AdminRoomNavigation {
     if (!context.mounted || action == null) return;
 
     if (action == _AdminRoomAction.checkIn) {
+      if (!canCreateBookings) {
+        showAppMessage(
+          context,
+          'Only front desk can check guests in.',
+          isError: true,
+        );
+        return;
+      }
       await performAdminRoomCheckIn(
         context,
         room: room,
@@ -232,6 +250,15 @@ abstract final class AdminRoomNavigation {
       return;
     }
 
+    if (!canCreateBookings) {
+      showAppMessage(
+        context,
+        'Only front desk can book rooms.',
+        isError: true,
+      );
+      return;
+    }
+
     if (!AdminDashboardModels.canScheduleFutureBooking(room)) {
       showAppMessage(context, 'Room $roomNo is under maintenance and cannot be booked.',);
       return;
@@ -254,7 +281,16 @@ abstract final class AdminRoomNavigation {
     BuildContext context, {
     required Map<String, dynamic> room,
     required Future<void> Function() onSuccess,
+    bool canCreateBookings = true,
   }) async {
+    if (!canCreateBookings) {
+      showAppMessage(
+        context,
+        'Only front desk can book rooms.',
+        isError: true,
+      );
+      return false;
+    }
     final hotelId = (await AuthStorage.hotelId()) ?? '';
     final booked = await showAdminWalkInBookingDialog(
       context: context,

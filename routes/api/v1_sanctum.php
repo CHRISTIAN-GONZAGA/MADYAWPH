@@ -54,6 +54,7 @@ use App\Services\StayReceiptService;
 use App\Services\StayExtensionService;
 use App\Support\AdminBookingPresenter;
 use App\Support\CustomerStayPricing;
+use App\Support\FrontDeskBookingGate;
 use App\Support\RoomBillingSupport;
 use App\Support\ChatAttachmentUrl;
 use App\Support\GuestMessageResource;
@@ -442,6 +443,8 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
         $activeBooking = $roomCheckoutService->resolveActiveBookingForRoom($hotelId, $room);
 
         if ($nextStatus === RoomStatus::CHECKED_IN->value) {
+            FrontDeskBookingGate::assertCanCreateBookings($request->user());
+
             $checkIn = isset($validated['check_in_at'])
                 ? Carbon::parse($validated['check_in_at'])
                 : null;
@@ -821,7 +824,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             'booking' => AdminBookingPresenter::present($booking, $room->fresh() ?? $room),
             'wallet' => $walletFee,
         ], 201);
-    })->middleware(['prevent.double.booking'])->name('api.v1.admin.bookings.store');
+    })->middleware(['booking.frontdesk', 'prevent.double.booking'])->name('api.v1.admin.bookings.store');
 
     Route::post('/admin/bookings/bulk', function (
         Request $request,
@@ -1017,7 +1020,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             'count' => count($presented),
             'bookings' => $presented,
         ], 201);
-    })->middleware(['prevent.double.booking', 'role:admin,frontdesk'])->name('api.v1.admin.bookings.bulk');
+    })->middleware(['booking.frontdesk', 'prevent.double.booking', 'role:admin,frontdesk'])->name('api.v1.admin.bookings.bulk');
 
     Route::patch('/admin/bookings/{booking}', function (
         Request $request,
@@ -1754,7 +1757,7 @@ Route::post('/reservations/external', function (Request $request) {
     ]);
 
     return response()->json($reservation, 201);
-})->middleware('role:admin,staff,frontdesk');
+})->middleware(['role:admin,staff,frontdesk', 'booking.frontdesk']);
 
 Route::put('/reservations/{reservation}/assign-room', function (Request $request, ExternalReservation $reservation, BookingService $bookingService) {
     $validated = $request->validate([
@@ -1787,7 +1790,7 @@ Route::put('/reservations/{reservation}/assign-room', function (Request $request
     ]);
 
     return response()->json(['reservation' => $reservation->fresh(), 'booking' => $booking]);
-})->middleware('role:admin,staff,frontdesk');
+})->middleware(['role:admin,staff,frontdesk', 'booking.frontdesk']);
 
 // Checkout reminders
 Route::post('/checkouts/{booking}/schedule-reminders', function (Request $request, Booking $booking) {
@@ -2180,7 +2183,7 @@ Route::post('/admin/reservations/{id}/approve', function (Request $request, stri
         'activated' => $booking !== null,
         'wallet' => $walletFee,
     ]);
-})->middleware('role:admin,frontdesk')->name('api.v1.admin.reservations.approve');
+})->middleware(['role:admin,frontdesk', 'booking.frontdesk'])->name('api.v1.admin.reservations.approve');
 
 Route::post('/admin/reservations/{id}/reject', function (Request $request, string $id) {
     $hotelId = (string) $request->user()->hotel_id;

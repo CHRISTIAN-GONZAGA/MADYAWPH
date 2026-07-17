@@ -267,7 +267,6 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
   Future<void> _create() async {
     final nameCtrl = TextEditingController();
     final descCtrl = TextEditingController();
-    final nightlyCtrl = TextEditingController(text: '0');
     final blockPriceCtrl = TextEditingController(text: '1000');
     var catBillingMode = 'hourly';
     var catPricePerNight = 0.0;
@@ -342,12 +341,12 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                     ),
                     const SizedBox(height: 16),
                     RoomPricingFields(
+                      allowNightly: false,
                       billingMode: catBillingMode,
                       pricePerNight: catPricePerNight,
                       pricePerBlock: catPricePerBlock,
                       blockHours: catBlockHours,
                       pricePerExtraHour: catPricePerExtraHour,
-                      nightlyController: nightlyCtrl,
                       blockPriceController: blockPriceCtrl,
                       extraHourPriceController: extraHourPriceCtrl,
                       onChanged: ({
@@ -358,8 +357,8 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                         required double pricePerExtraHour,
                       }) {
                         setLocal(() {
-                          catBillingMode = billingMode;
-                          catPricePerNight = pricePerNight;
+                          catBillingMode = 'hourly';
+                          catPricePerNight = pricePerBlock;
                           catPricePerBlock = pricePerBlock;
                           catBlockHours = blockHours;
                           catPricePerExtraHour = pricePerExtraHour;
@@ -379,10 +378,8 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                           onPressed: () => Navigator.of(context).pop({
                             'name': nameCtrl.text.trim(),
                             'description': descCtrl.text.trim(),
-                            'billing_mode': catBillingMode,
-                            'default_price': catBillingMode == 'nightly'
-                                ? catPricePerNight
-                                : catPricePerBlock,
+                            'billing_mode': 'hourly',
+                            'default_price': catPricePerBlock,
                             'price_per_block': catPricePerBlock,
                             'block_hours': catBlockHours,
                             'price_per_extra_hour': catPricePerExtraHour,
@@ -450,16 +447,23 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     if (categoryId.isEmpty) return;
     final nameCtrl = TextEditingController(text: (category['name'] ?? '').toString());
     final descCtrl = TextEditingController(text: (category['description'] ?? '').toString());
-    final nightlyCtrl = TextEditingController(
-      text: '${(category['default_price'] as num?)?.toDouble() ?? 0}',
-    );
-    final blockPriceCtrl = TextEditingController(
-      text: '${(category['price_per_block'] as num?)?.toDouble() ?? 0}',
-    );
-    var catBillingMode = (category['billing_mode'] ?? 'nightly').toString();
-    var catPricePerNight = (category['default_price'] as num?)?.toDouble() ?? 0.0;
+    final legacyNightly = (category['billing_mode'] ?? 'hourly').toString() != 'hourly';
+    final defaultPrice = (category['default_price'] as num?)?.toDouble() ?? 0.0;
     var catPricePerBlock = (category['price_per_block'] as num?)?.toDouble() ?? 0.0;
     var catBlockHours = (category['block_hours'] as num?)?.toInt() ?? 3;
+    if (legacyNightly) {
+      catBlockHours = 12;
+      if (catPricePerBlock <= 0) catPricePerBlock = defaultPrice;
+    } else if (catPricePerBlock <= 0) {
+      catPricePerBlock = defaultPrice;
+    }
+    final blockPriceCtrl = TextEditingController(
+      text: catPricePerBlock == catPricePerBlock.roundToDouble()
+          ? '${catPricePerBlock.toInt()}'
+          : catPricePerBlock.toStringAsFixed(2),
+    );
+    var catBillingMode = 'hourly';
+    var catPricePerNight = catPricePerBlock;
     var catPricePerExtraHour =
         (category['price_per_extra_hour'] as num?)?.toDouble() ?? 0.0;
     var catFloorCount = (category['floor_count'] as num?)?.toInt() ?? 1;
@@ -502,12 +506,12 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                 ),
                 const SizedBox(height: 12),
                 RoomPricingFields(
+                  allowNightly: false,
                   billingMode: catBillingMode,
                   pricePerNight: catPricePerNight,
                   pricePerBlock: catPricePerBlock,
                   blockHours: catBlockHours,
                   pricePerExtraHour: catPricePerExtraHour,
-                  nightlyController: nightlyCtrl,
                   blockPriceController: blockPriceCtrl,
                   extraHourPriceController: extraHourPriceCtrl,
                   onChanged: ({
@@ -518,8 +522,8 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                     required double pricePerExtraHour,
                   }) {
                     setLocal(() {
-                      catBillingMode = billingMode;
-                      catPricePerNight = pricePerNight;
+                      catBillingMode = 'hourly';
+                      catPricePerNight = pricePerBlock;
                       catPricePerBlock = pricePerBlock;
                       catBlockHours = blockHours;
                       catPricePerExtraHour = pricePerExtraHour;
@@ -544,8 +548,8 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
               onPressed: () => Navigator.pop(context, {
                 'name': nameCtrl.text.trim(),
                 'description': descCtrl.text.trim(),
-                'default_price': catPricePerNight,
-                'billing_mode': catBillingMode,
+                'default_price': catPricePerBlock,
+                'billing_mode': 'hourly',
                 'price_per_block': catPricePerBlock,
                 'block_hours': catBlockHours,
                 'price_per_extra_hour': catPricePerExtraHour,
@@ -560,7 +564,6 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     );
     nameCtrl.dispose();
     descCtrl.dispose();
-    nightlyCtrl.dispose();
     blockPriceCtrl.dispose();
     if (payload == null) return;
     final image = payload.remove('__image') as XFile?;

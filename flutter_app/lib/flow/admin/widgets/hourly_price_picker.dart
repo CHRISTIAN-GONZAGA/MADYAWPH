@@ -122,6 +122,8 @@ class RoomPricingFields extends StatefulWidget {
     required this.onChanged,
     this.pricePerExtraHour = 0,
     this.showExtraHourRate = true,
+    /// Category setup is hourly-only (legacy per-night maps to 12h).
+    this.allowNightly = true,
     this.nightlyController,
     this.blockPriceController,
     this.extraHourPriceController,
@@ -134,6 +136,7 @@ class RoomPricingFields extends StatefulWidget {
   final double pricePerExtraHour;
   /// Category forms only — rooms inherit the category rate.
   final bool showExtraHourRate;
+  final bool allowNightly;
   final void Function({
     required String billingMode,
     required double pricePerNight,
@@ -159,7 +162,7 @@ class _RoomPricingFieldsState extends State<RoomPricingFields> {
   @override
   void initState() {
     super.initState();
-    _mode = widget.billingMode;
+    _mode = widget.allowNightly ? widget.billingMode : 'hourly';
     _nightly = widget.pricePerNight;
     _blockPrice = widget.pricePerBlock;
     _blockHours = widget.blockHours;
@@ -181,19 +184,21 @@ class _RoomPricingFieldsState extends State<RoomPricingFields> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SegmentedButton<String>(
-          segments: const [
-            ButtonSegment(value: 'nightly', label: Text('Per night')),
-            ButtonSegment(value: 'hourly', label: Text('Per hours')),
-          ],
-          selected: {_mode},
-          onSelectionChanged: (s) {
-            setState(() => _mode = s.first);
-            _emit();
-          },
-        ),
-        const SizedBox(height: 14),
-        if (_mode == 'hourly') ...[
+        if (widget.allowNightly) ...[
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(value: 'nightly', label: Text('Per night')),
+              ButtonSegment(value: 'hourly', label: Text('Per hours')),
+            ],
+            selected: {_mode},
+            onSelectionChanged: (s) {
+              setState(() => _mode = s.first);
+              _emit();
+            },
+          ),
+          const SizedBox(height: 14),
+        ],
+        if (_mode == 'hourly' || !widget.allowNightly) ...[
           HourlyPricePicker(
             blockHours: _blockHours,
             pricePerBlock: _blockPrice,
@@ -224,8 +229,7 @@ class _RoomPricingFieldsState extends State<RoomPricingFields> {
               },
             ),
           ],
-        ]
-        else
+        ] else
           TextField(
             controller: widget.nightlyController,
             keyboardType:

@@ -86,12 +86,14 @@ class HotelTotalsRoomPanelHost extends StatefulWidget {
     this.onRefresh,
     this.onBindBackHandler,
     this.resolveLiveRooms,
+    this.canCreateBookings = true,
   });
 
   final Widget child;
   final Future<void> Function()? onRefresh;
   final ValueChanged<bool Function()>? onBindBackHandler;
   final List<Map<String, dynamic>> Function()? resolveLiveRooms;
+  final bool canCreateBookings;
 
   @override
   State<HotelTotalsRoomPanelHost> createState() =>
@@ -224,6 +226,7 @@ class _HotelTotalsRoomPanelHostState extends State<HotelTotalsRoomPanelHost>
       navContext,
       room: room,
       preferCheckIn: _list?.preferCheckIn ?? false,
+      canCreateBookings: widget.canCreateBookings,
       onSuccess: () async {
         await widget.onRefresh?.call();
       },

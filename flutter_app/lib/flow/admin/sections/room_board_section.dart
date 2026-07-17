@@ -14,11 +14,13 @@ class RoomBoardSection extends StatelessWidget {
     required this.rooms,
     required this.hotelName,
     required this.onChanged,
+    this.canCreateBookings = true,
   });
 
   final List<Map<String, dynamic>> rooms;
   final String hotelName;
   final Future<void> Function() onChanged;
+  final bool canCreateBookings;
 
   Color _tileColor(Map<String, dynamic> room, ColorScheme scheme) {
     if (AdminDashboardModels.isWalkInBookable(room)) {
@@ -68,6 +70,7 @@ class RoomBoardSection extends StatelessWidget {
         context,
         room: room,
         onSuccess: onChanged,
+        canCreateBookings: canCreateBookings,
       );
       if (booked) await onChanged();
       return;
@@ -78,6 +81,7 @@ class RoomBoardSection extends StatelessWidget {
       room: room,
       onSuccess: onChanged,
       preferCheckIn: AdminDashboardModels.canQuickCheckIn(room),
+      canCreateBookings: canCreateBookings,
     );
   }
 

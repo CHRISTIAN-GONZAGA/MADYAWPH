@@ -9,6 +9,7 @@ use App\Http\Middleware\EnsureSameOrigin;
 use App\Http\Middleware\PreventDoubleBooking;
 use App\Http\Middleware\RestoreAuthFromCookie;
 use App\Http\Middleware\EnsureHotelStaffTenant;
+use App\Http\Middleware\EnsureFrontDeskBooking;
 use App\Http\Middleware\RoleCheck;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
@@ -69,6 +70,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'role' => RoleCheck::class,
+            'booking.frontdesk' => EnsureFrontDeskBooking::class,
             'prevent.double.booking' => PreventDoubleBooking::class,
             'same.origin' => EnsureSameOrigin::class,
             'guest.portal' => AuthenticateGuestPortalToken::class,

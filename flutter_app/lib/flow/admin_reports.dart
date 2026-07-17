@@ -21,6 +21,9 @@ class AdminReportsScreen extends StatelessWidget {
   String _fmtDay(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
+  DateTime _endOfDay(DateTime d) =>
+      DateTime(d.year, d.month, d.day, 23, 59, 59, 999);
+
   void _openFinancePeriod(
     BuildContext context, {
     required String buttonLabel,
@@ -32,19 +35,22 @@ class AdminReportsScreen extends StatelessWidget {
     switch (periodKey) {
       case 'weekly':
         start = anchor.subtract(Duration(days: anchor.weekday - 1));
-        end = start.add(const Duration(days: 6));
+        end = _endOfDay(start.add(const Duration(days: 6)));
         break;
       case 'monthly':
         start = DateTime(anchor.year, anchor.month, 1);
-        end = DateTime(anchor.year, anchor.month + 1, 0);
+        end = _endOfDay(DateTime(anchor.year, anchor.month + 1, 0));
         break;
       case 'annual':
         start = DateTime(anchor.year, 1, 1);
-        end = DateTime(anchor.year, 12, 31);
+        end = _endOfDay(DateTime(anchor.year, 12, 31));
         break;
+      case 'daily':
       default:
+        // Full calendar day so shift-summary `after:time_in` validation passes
+        // and paid transactions throughout the day are included.
         start = anchor;
-        end = anchor;
+        end = _endOfDay(anchor);
     }
     openHotelPeriodReport(
       context: context,

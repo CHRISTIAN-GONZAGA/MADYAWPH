@@ -25,6 +25,7 @@ class RoomSummarySection extends StatelessWidget {
     required this.onOpenBookingsAlert,
     required this.onRefresh,
     this.categories = const [],
+    this.canCreateBookings = true,
   });
 
   final List<Map<String, dynamic>> rooms;
@@ -39,6 +40,7 @@ class RoomSummarySection extends StatelessWidget {
   final VoidCallback onOpenBookingsAlert;
   final Future<void> Function() onRefresh;
   final List<Map<String, dynamic>> categories;
+  final bool canCreateBookings;
 
   List<Map<String, dynamic>> _filterByStatuses(Set<String> statuses) {
     return rooms
@@ -119,6 +121,7 @@ class RoomSummarySection extends StatelessWidget {
               hostContext: context,
               scrollController: scrollController,
               onRefresh: onRefresh,
+              canCreateBookings: canCreateBookings,
             );
           },
         );
@@ -257,7 +260,9 @@ class RoomSummarySection extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          'Tap any stat to view rooms, then book or manage',
+          canCreateBookings
+              ? 'Tap any stat to view rooms, then book or manage'
+              : 'Tap any stat to view and manage rooms',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: scheme.onSurfaceVariant,
               ),
@@ -658,6 +663,7 @@ class _SummaryRoomListSheet extends StatefulWidget {
     required this.hostContext,
     required this.scrollController,
     required this.onRefresh,
+    this.canCreateBookings = true,
   });
 
   final String label;
@@ -666,6 +672,7 @@ class _SummaryRoomListSheet extends StatefulWidget {
   final BuildContext hostContext;
   final ScrollController scrollController;
   final Future<void> Function() onRefresh;
+  final bool canCreateBookings;
 
   @override
   State<_SummaryRoomListSheet> createState() => _SummaryRoomListSheetState();
@@ -786,6 +793,7 @@ class _SummaryRoomListSheetState extends State<_SummaryRoomListSheet> {
                           hostContext: widget.hostContext,
                           sheetContext: context,
                           onRefresh: widget.onRefresh,
+                          canCreateBookings: widget.canCreateBookings,
                         ),
                         const SizedBox(height: 16),
                       ],
@@ -804,6 +812,7 @@ class _SummaryRoomListSheetState extends State<_SummaryRoomListSheet> {
                           hostContext: widget.hostContext,
                           sheetContext: context,
                           onRefresh: widget.onRefresh,
+                          canCreateBookings: widget.canCreateBookings,
                         ),
                       ],
                     ],
@@ -823,6 +832,7 @@ class _SummaryRoomGrid extends StatelessWidget {
     required this.sheetContext,
     required this.onRefresh,
     this.highlight = false,
+    this.canCreateBookings = true,
   });
 
   final List<Map<String, dynamic>> rooms;
@@ -831,6 +841,7 @@ class _SummaryRoomGrid extends StatelessWidget {
   final BuildContext sheetContext;
   final Future<void> Function() onRefresh;
   final bool highlight;
+  final bool canCreateBookings;
 
   @override
   Widget build(BuildContext context) {
@@ -850,6 +861,7 @@ class _SummaryRoomGrid extends StatelessWidget {
         hostContext: hostContext,
         sheetContext: sheetContext,
         onRefresh: onRefresh,
+        canCreateBookings: canCreateBookings,
       ),
     );
   }
@@ -862,6 +874,7 @@ class _SummaryRoomGridTile extends StatelessWidget {
     required this.sheetContext,
     required this.onRefresh,
     this.highlight = false,
+    this.canCreateBookings = true,
   });
 
   final Map<String, dynamic> room;
@@ -869,6 +882,7 @@ class _SummaryRoomGridTile extends StatelessWidget {
   final BuildContext sheetContext;
   final Future<void> Function() onRefresh;
   final bool highlight;
+  final bool canCreateBookings;
 
   @override
   Widget build(BuildContext context) {
@@ -885,6 +899,7 @@ class _SummaryRoomGridTile extends StatelessWidget {
             hostContext,
             room: room,
             onSuccess: onRefresh,
+            canCreateBookings: canCreateBookings,
           );
         });
       },

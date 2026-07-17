@@ -24,7 +24,7 @@ class AdminWalkInStayConflictTest extends TestCase
             'name' => 'admin_turnover',
             'email' => 'admin-turnover@test.local',
             'password' => bcrypt('secret123'),
-            'role' => UserRole::ADMIN,
+            'role' => UserRole::FRONTDESK,
         ]);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
@@ -78,7 +78,7 @@ class AdminWalkInStayConflictTest extends TestCase
             'name' => 'admin_future_start',
             'email' => 'admin-future-start@test.local',
             'password' => bcrypt('secret123'),
-            'role' => UserRole::ADMIN,
+            'role' => UserRole::FRONTDESK,
         ]);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
@@ -129,7 +129,7 @@ class AdminWalkInStayConflictTest extends TestCase
             'name' => 'admin_stale',
             'email' => 'admin-stale@test.local',
             'password' => bcrypt('secret123'),
-            'role' => UserRole::ADMIN,
+            'role' => UserRole::FRONTDESK,
         ]);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
@@ -186,7 +186,7 @@ class AdminWalkInStayConflictTest extends TestCase
             'name' => 'admin_hourly',
             'email' => 'admin-hourly@test.local',
             'password' => bcrypt('secret123'),
-            'role' => UserRole::ADMIN,
+            'role' => UserRole::FRONTDESK,
         ]);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
@@ -245,7 +245,7 @@ class AdminWalkInStayConflictTest extends TestCase
             'name' => 'admin_twin',
             'email' => 'admin-twin@test.local',
             'password' => bcrypt('secret123'),
-            'role' => UserRole::ADMIN,
+            'role' => UserRole::FRONTDESK,
         ]);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
@@ -302,7 +302,7 @@ class AdminWalkInStayConflictTest extends TestCase
             'name' => 'admin_res_hold',
             'email' => 'admin-res-hold@test.local',
             'password' => bcrypt('secret123'),
-            'role' => UserRole::ADMIN,
+            'role' => UserRole::FRONTDESK,
         ]);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
@@ -375,7 +375,7 @@ class AdminWalkInStayConflictTest extends TestCase
             'name' => 'admin_checked_out',
             'email' => 'admin-checked-out@test.local',
             'password' => bcrypt('secret123'),
-            'role' => UserRole::ADMIN,
+            'role' => UserRole::FRONTDESK,
         ]);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,

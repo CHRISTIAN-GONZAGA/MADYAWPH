@@ -107,11 +107,12 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         badgeCount: pendingRes,
         badgeColor: const Color(0xFF6A1B9A),
       ),
-      const AdminNavItem(
-        label: 'Multiple',
-        shortLabel: 'Multi',
-        icon: Icons.library_add_outlined,
-      ),
+      if (widget.isFrontDesk)
+        const AdminNavItem(
+          label: 'Multiple',
+          shortLabel: 'Multi',
+          icon: Icons.library_add_outlined,
+        ),
       AdminNavItem(
         label: 'Amenities',
         shortLabel: 'Store',
@@ -244,8 +245,11 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
   }
 
   int _settingsTabIndex(Map<String, dynamic> d) {
+    // Frontdesk: Summary, Checkout, Guests, Bookings, Multiple, Amenities, Settings
     if (widget.isFrontDesk) return 6;
-    return widget.isSuperAdmin ? 9 : 8;
+    // Admin: Summary, Checkout, Guests, Bookings, Amenities, Requests, Resellers, Settings
+    // Super: + Control after Settings
+    return widget.isSuperAdmin ? 8 : 7;
   }
 
   void _maybeRedirectToCreditsTab(
@@ -467,6 +471,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           categories: _categories,
           tasks: tasks,
           hotelName: hotelName,
+          canCreateBookings: widget.isFrontDesk,
           localBookingsTotal: localTotal,
           onlineBookingsTotal: onlineTotal,
           recentBookings24h: recentBookings24h,
@@ -504,14 +509,15 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         ),
         3,
       ),
-      wrapTab(
-        MultipleBookingSection(
-          key: refreshKey,
-          rooms: _rooms,
-          onBooked: widget.onRefresh,
+      if (widget.isFrontDesk)
+        wrapTab(
+          MultipleBookingSection(
+            key: refreshKey,
+            rooms: _rooms,
+            onBooked: widget.onRefresh,
+          ),
+          4,
         ),
-        4,
-      ),
       wrapTab(
         AmenitiesSection(
           key: refreshKey,
@@ -523,7 +529,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           canManageProducts: !widget.isFrontDesk,
           isFrontDesk: widget.isFrontDesk,
         ),
-        5,
+        widget.isFrontDesk ? 5 : 4,
       ),
     ];
 
