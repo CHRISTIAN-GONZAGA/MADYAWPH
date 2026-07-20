@@ -4,7 +4,6 @@ import '../../../locale_controller.dart';
 import '../../../widgets/language_picker_button.dart';
 import '../../admin_categories.dart';
 import '../../admin_chat.dart';
-import '../../admin_reports.dart';
 import '../../admin_rooms.dart';
 import '../../admin_staff.dart';
 import '../../admin_tasks.dart';
@@ -77,7 +76,7 @@ class SettingsSection extends StatelessWidget {
               padding: const EdgeInsets.all(14),
               child: Text(
                 isFrontDesk
-                    ? 'Credits are depleted. Operational tabs are locked. You can still open reports and change your password here.'
+                    ? 'Credits are depleted. Operational tabs are locked. You can still open Hotel totals → Reports and change your password here.'
                     : 'Credits are depleted. Only recharge is available until your balance is above ₱0.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: Theme.of(context).colorScheme.onErrorContainer,
@@ -87,25 +86,6 @@ class SettingsSection extends StatelessWidget {
             ),
           ),
         ],
-        const SizedBox(height: 16),
-        _SettingsGroup(
-          title: 'Reports',
-          tiles: [
-            _SettingsTile(
-              icon: Icons.insights_outlined,
-              title: 'Analytics & reports',
-              subtitle: 'Sales, rooms, amenities, reseller commissions',
-              enabled: isFrontDesk || !creditsLocked,
-              onTap: () {
-                Navigator.of(context).push<void>(
-                  MaterialPageRoute<void>(
-                    builder: (_) => AdminReportsScreen(isFrontDesk: isFrontDesk),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
         const SizedBox(height: 16),
         _SettingsGroup(
           title: 'Operations',

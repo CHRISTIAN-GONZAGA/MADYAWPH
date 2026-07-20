@@ -2,19 +2,18 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
 
-/// Sends guest welcome SMS from the front-desk phone's own SIM (device SMS).
+/// Sends guest welcome SMS from the front-desk phone's own SIM (device load).
 ///
-/// - Android: tries silent send via [SmsManager] (sender = this phone's number).
-/// - iOS: opens Messages composer (Apple does not allow silent SMS); user taps Send.
-/// - Never throws into check-in — failures are returned as [DeviceSmsOutcome].
+/// Android: silent send via [SmsManager] — never opens the Messages app.
+/// iOS: Apple blocks silent SMS; returns [DeviceSmsMode.failed] with guidance.
+/// Never throws into check-in — failures are returned as [DeviceSmsOutcome].
 class DeviceGuestWelcomeSms {
   DeviceGuestWelcomeSms._();
 
   static const _channel = MethodChannel('gloretto/device_sms');
 
-  /// Normalize common PH formats for the device SMS app / SmsManager.
+  /// Normalize common PH formats for SmsManager.
   static String normalizePhone(String raw) {
     var digits = raw.replaceAll(RegExp(r'\D'), '');
     if (digits.isEmpty) return '';
@@ -43,11 +42,28 @@ class DeviceGuestWelcomeSms {
     if (password.isNotEmpty) {
       buffer.writeln('Your room password is: $password');
     }
-    buffer.writeln('Open the MADYAW guest portal and sign in with this password.');
+    buffer.writeln(
+      'Open the MADYAW guest portal and sign in with this password.',
+    );
     return buffer.toString().trim();
   }
 
-  /// Best-effort send. Check-in must already have succeeded before calling this.
+  /// Ask for SEND_SMS ahead of check-in so the first send is silent.
+  static Future<bool> ensurePermission() async {
+    if (kIsWeb || !Platform.isAndroid) return false;
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('ensureSmsPermission');
+      if (raw is bool) return raw;
+      if (raw is Map) {
+        return raw['granted'] == true;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Silent device-SIM send. Check-in must already have succeeded.
   static Future<DeviceSmsOutcome> sendWelcome({
     required String guestPhone,
     required String hotelName,
@@ -67,49 +83,69 @@ class DeviceGuestWelcomeSms {
       roomPassword: roomPassword,
     );
 
-    if (!kIsWeb && Platform.isAndroid) {
-      try {
-        final raw = await _channel.invokeMethod<dynamic>('sendSms', {
-          'phone': phone,
-          'body': body,
-        });
-        final map = raw is Map ? Map<String, dynamic>.from(raw) : const {};
-        if (map['sent'] == true) {
-          return DeviceSmsOutcome.sentDirect();
-        }
-        // Permission denied or soft failure — fall through to composer.
-      } on PlatformException {
-        // Fall through to composer.
-      } catch (_) {
-        // Fall through to composer.
-      }
+    if (kIsWeb) {
+      return DeviceSmsOutcome.failed(
+        'Welcome SMS needs the Android staff app (device SIM).',
+      );
     }
 
-    return _openComposer(phone: phone, body: body);
-  }
+    if (Platform.isIOS) {
+      return DeviceSmsOutcome.failed(
+        'Automatic SMS from phone load is not available on iOS. Use an Android front-desk phone.',
+      );
+    }
 
-  static Future<DeviceSmsOutcome> _openComposer({
-    required String phone,
-    required String body,
-  }) async {
-    final uri = Uri(
-      scheme: 'sms',
-      path: phone,
-      queryParameters: {'body': body},
-    );
+    if (!Platform.isAndroid) {
+      return DeviceSmsOutcome.failed('Automatic SMS requires Android.');
+    }
+
     try {
-      final ok = await launchUrl(uri);
-      if (ok) {
-        return DeviceSmsOutcome.openedComposer();
+      final raw = await _channel.invokeMethod<dynamic>('sendSms', {
+        'phone': phone,
+        'body': body,
+      });
+      final map = raw is Map ? Map<String, dynamic>.from(raw) : const {};
+      if (map['sent'] == true) {
+        return DeviceSmsOutcome.sentDirect();
       }
-      return DeviceSmsOutcome.failed('Could not open the Messages app.');
+      final mode = (map['mode'] ?? '').toString();
+      if (mode == 'permission_denied') {
+        return DeviceSmsOutcome.failed(
+          'SMS permission denied. Enable SMS for MADYAW in Android settings, then try again.',
+        );
+      }
+      final detail = (map['error'] ?? map['message'] ?? 'SMS was not sent.')
+          .toString();
+      return DeviceSmsOutcome.failed(detail);
+    } on PlatformException catch (e) {
+      return DeviceSmsOutcome.failed(
+        e.message?.isNotEmpty == true
+            ? e.message!
+            : 'Could not send SMS from this phone.',
+      );
     } catch (e) {
       return DeviceSmsOutcome.failed('$e');
     }
   }
+
+  /// Convenience: build + send from a server `guest_welcome_sms` payload map.
+  static Future<DeviceSmsOutcome> sendFromPayload(
+    Map<String, dynamic> payload, {
+    String fallbackPhone = '',
+    String fallbackGuest = '',
+    String fallbackRoom = '',
+  }) {
+    return sendWelcome(
+      guestPhone: (payload['guest_phone'] ?? fallbackPhone).toString(),
+      hotelName: (payload['hotel_name'] ?? '').toString(),
+      guestName: (payload['guest_name'] ?? fallbackGuest).toString(),
+      roomNumber: (payload['room_number'] ?? fallbackRoom).toString(),
+      roomPassword: (payload['room_access_password'] ?? '').toString(),
+    );
+  }
 }
 
-enum DeviceSmsMode { sentDirect, openedComposer, skipped, failed }
+enum DeviceSmsMode { sentDirect, skipped, failed }
 
 class DeviceSmsOutcome {
   const DeviceSmsOutcome._(this.mode, this.message);
@@ -122,17 +158,11 @@ class DeviceSmsOutcome {
         'Welcome SMS sent from this phone.',
       );
 
-  factory DeviceSmsOutcome.openedComposer() => const DeviceSmsOutcome._(
-        DeviceSmsMode.openedComposer,
-        'Messages opened — tap Send to deliver from this phone’s SIM.',
-      );
-
   factory DeviceSmsOutcome.skipped(String reason) =>
       DeviceSmsOutcome._(DeviceSmsMode.skipped, reason);
 
   factory DeviceSmsOutcome.failed(String reason) =>
       DeviceSmsOutcome._(DeviceSmsMode.failed, reason);
 
-  bool get didAttempt =>
-      mode == DeviceSmsMode.sentDirect || mode == DeviceSmsMode.openedComposer;
+  bool get didSend => mode == DeviceSmsMode.sentDirect;
 }

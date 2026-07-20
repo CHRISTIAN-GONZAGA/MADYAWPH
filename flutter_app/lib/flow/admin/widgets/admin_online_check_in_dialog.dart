@@ -37,7 +37,6 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
     DateTime.now(),
     checkOutDate: scheduledOut,
   );
-  final checkInAt = window.checkIn;
   final checkOutAt = window.checkOut;
 
   double balanceDue = parseJsonDouble(
@@ -96,6 +95,10 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
           'checkout ~${_formatClock(checkOutAt)}'
       : 'Check-in now · overnight through ${formatAdminCheckInDate(checkOutAt)} '
           '(checkout ${_formatClock(checkOutAt)})';
+
+  // Ask for SEND_SMS before check-in so the welcome SMS can go out silently.
+  await DeviceGuestWelcomeSms.ensurePermission();
+  if (!context.mounted) return false;
 
   final ok = await showDialog<bool>(
     context: context,
@@ -240,50 +243,48 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
     final rawSms = checkInResponse?['guest_welcome_sms'];
     final smsPayload = rawSms is Map
         ? Map<String, dynamic>.from(rawSms)
-        : const <String, dynamic>{};
+        : <String, dynamic>{
+            'guest_phone': AdminDashboardModels.guestPhone(room),
+            'guest_name': AdminDashboardModels.guestName(room),
+            'room_number': (room['room_number'] ?? '').toString(),
+            'room_access_password': (checkInResponse?['room'] is Map
+                    ? (checkInResponse!['room'] as Map)['room_access_password']
+                    : '')
+                ?.toString() ??
+                '',
+          };
     final roomPayload = checkInResponse?['room'];
     final roomMap = roomPayload is Map
         ? Map<String, dynamic>.from(roomPayload)
         : const <String, dynamic>{};
+    if ((smsPayload['room_access_password'] ?? '').toString().trim().isEmpty) {
+      smsPayload['room_access_password'] =
+          (roomMap['room_access_password'] ?? '').toString();
+    }
 
     final smsPhone = (smsPayload['guest_phone'] ??
             AdminDashboardModels.guestPhone(room))
         .toString()
         .trim();
-    final smsPassword = (smsPayload['room_access_password'] ??
-            roomMap['room_access_password'] ??
-            '')
-        .toString()
-        .trim();
-    final smsHotel = (smsPayload['hotel_name'] ?? '').toString().trim();
-    final smsGuest = (smsPayload['guest_name'] ??
-            AdminDashboardModels.guestName(room))
-        .toString()
-        .trim();
-    final smsRoom = (smsPayload['room_number'] ?? room['room_number'] ?? '')
-        .toString()
-        .trim();
 
     if (smsPhone.isNotEmpty) {
-      // Best-effort only — do not block returning success if SMS hangs briefly.
-      final smsResult = await DeviceGuestWelcomeSms.sendWelcome(
-        guestPhone: smsPhone,
-        hotelName: smsHotel,
-        guestName: smsGuest,
-        roomNumber: smsRoom,
-        roomPassword: smsPassword,
+      final smsResult = await DeviceGuestWelcomeSms.sendFromPayload(
+        smsPayload,
+        fallbackPhone: AdminDashboardModels.guestPhone(room),
+        fallbackGuest: AdminDashboardModels.guestName(room),
+        fallbackRoom: (room['room_number'] ?? '').toString(),
       ).timeout(
-        const Duration(seconds: 25),
-        onTimeout: () => DeviceSmsOutcome.skipped('SMS timed out.'),
+        const Duration(seconds: 30),
+        onTimeout: () => DeviceSmsOutcome.failed('SMS timed out.'),
       );
-      if (smsResult.mode == DeviceSmsMode.sentDirect) {
-        smsNote = ' Welcome SMS sent.';
+      if (smsResult.didSend) {
+        smsNote = ' Welcome SMS sent from this phone.';
       } else if (smsResult.message.isNotEmpty) {
         smsNote = ' ${smsResult.message}';
       }
     }
   } catch (_) {
-    // ignore SMS errors
+    // ignore SMS errors — check-in already succeeded
   }
 
   if (!context.mounted) return true;

@@ -165,14 +165,49 @@ class FrontDeskSalesReportService
             /** @var Carbon $to */
             $to = $range['to'];
             $charges = $this->chargesInRange($hotelId, $from, $to, [$userId]);
+
+            $bookingIds = $charges
+                ->map(fn ($c) => (string) ($c->booking_id ?? ''))
+                ->filter(fn ($id) => $id !== '')
+                ->unique()
+                ->values()
+                ->all();
+            $methodsByBooking = [];
+            if ($bookingIds !== []) {
+                $bookings = \App\Models\Booking::withoutGlobalScopes()
+                    ->whereIn('id', $bookingIds)
+                    ->get(['id', 'payment_method']);
+                foreach ($bookings as $booking) {
+                    $methodsByBooking[(string) $booking->id] =
+                        \App\Support\SafeModelAttributes::paymentMethodLabel($booking);
+                }
+            }
+
             $totalSales = 0.0;
             $payments = 0.0;
             $orderCount = 0;
+            $byMethod = [
+                'cash' => ['count' => 0, 'total' => 0.0],
+                'ewallet' => ['count' => 0, 'total' => 0.0],
+                'bank_transfer' => ['count' => 0, 'total' => 0.0],
+                'other' => ['count' => 0, 'total' => 0.0],
+            ];
+
             foreach ($charges as $charge) {
                 $type = strtolower(trim((string) ($charge->type ?? '')));
                 $amount = (float) ($charge->amount ?? 0);
-                if (BillingChargeTypes::isPartialPayment($type)) {
+                $isPayment = BillingChargeTypes::isPartialPayment($type);
+                $isSale = in_array($type, ['amenity', 'manual'], true) && $amount > 0;
+
+                $bookingId = (string) ($charge->booking_id ?? '');
+                $method = $methodsByBooking[$bookingId]
+                    ?? (string) data_get($charge->metadata, 'payment_method', '');
+                $bucket = $this->paymentMethodBucket($method);
+
+                if ($isPayment) {
                     $payments += abs($amount);
+                    $byMethod[$bucket]['count']++;
+                    $byMethod[$bucket]['total'] += abs($amount);
                     continue;
                 }
                 if ($amount <= 0) {
@@ -181,8 +216,15 @@ class FrontDeskSalesReportService
                 if (in_array($type, ['amenity', 'manual'], true)) {
                     $totalSales += $amount;
                     $orderCount++;
+                    $byMethod[$bucket]['count']++;
+                    $byMethod[$bucket]['total'] += $amount;
                 }
             }
+
+            foreach ($byMethod as $methodKey => $row) {
+                $byMethod[$methodKey]['total'] = round((float) $row['total'], 2);
+            }
+
             $periods[$key] = [
                 'label' => (string) $range['label'],
                 'from' => $from->toDateString(),
@@ -190,6 +232,7 @@ class FrontDeskSalesReportService
                 'total_sales' => round($totalSales, 2),
                 'payments_collected' => round($payments, 2),
                 'order_count' => $orderCount,
+                'by_payment_method' => $byMethod,
             ];
         }
 

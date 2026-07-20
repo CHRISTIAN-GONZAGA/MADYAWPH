@@ -25,7 +25,8 @@ void _appendFreeBreakfastToMap(
 }
 
 /// Admin walk-in gateway — always creates a **local** booking (`source: admin`).
-Future<void> submitAdminWalkInBooking({
+/// Returns the API response body (includes [guest_welcome_sms] when checked in now).
+Future<Map<String, dynamic>> submitAdminWalkInBooking({
   required Map<String, dynamic> room,
   required CompleteGuestBookingPayload payload,
   bool checkInNow = false,
@@ -76,6 +77,7 @@ Future<void> submitAdminWalkInBooking({
   final hasGuestId = payload.guestIdFile != null;
   final hasDiscountId = payload.discountIdFile != null;
 
+  late final Response<Map<String, dynamic>> res;
   if (hasGuestId || hasDiscountId) {
     final map = <String, dynamic>{};
     for (final entry in body.entries) {
@@ -99,15 +101,22 @@ Future<void> submitAdminWalkInBooking({
             : 'discount_id.jpg',
       );
     }
-    await portalDio().post('/admin/bookings', data: FormData.fromMap(map));
-    return;
+    res = await portalDio().post<Map<String, dynamic>>(
+      '/admin/bookings',
+      data: FormData.fromMap(map),
+    );
+  } else {
+    res = await portalDio().post<Map<String, dynamic>>(
+      '/admin/bookings',
+      data: body,
+    );
   }
 
-  await portalDio().post('/admin/bookings', data: body);
+  return res.data ?? const <String, dynamic>{};
 }
 
 /// Books multiple rooms under one guest profile (same stay dates).
-Future<void> submitAdminBulkWalkInBooking({
+Future<Map<String, dynamic>> submitAdminBulkWalkInBooking({
   required List<Map<String, dynamic>> rooms,
   required CompleteGuestBookingPayload payload,
   bool checkInNow = false,
@@ -166,6 +175,7 @@ Future<void> submitAdminBulkWalkInBooking({
   final hasGuestId = payload.guestIdFile != null;
   final hasDiscountId = payload.discountIdFile != null;
 
+  late final Response<Map<String, dynamic>> res;
   if (hasGuestId || hasDiscountId) {
     final map = <String, dynamic>{};
     for (var i = 0; i < roomIds.length; i++) {
@@ -192,9 +202,16 @@ Future<void> submitAdminBulkWalkInBooking({
             : 'discount_id.jpg',
       );
     }
-    await portalDio().post('/admin/bookings/bulk', data: FormData.fromMap(map));
-    return;
+    res = await portalDio().post<Map<String, dynamic>>(
+      '/admin/bookings/bulk',
+      data: FormData.fromMap(map),
+    );
+  } else {
+    res = await portalDio().post<Map<String, dynamic>>(
+      '/admin/bookings/bulk',
+      data: body,
+    );
   }
 
-  await portalDio().post('/admin/bookings/bulk', data: body);
+  return res.data ?? const <String, dynamic>{};
 }

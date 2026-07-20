@@ -176,7 +176,7 @@ class _FrontDeskSalesReportScreenState extends State<FrontDeskSalesReportScreen>
                 title: Text(name, style: const TextStyle(fontWeight: FontWeight.w700)),
                 subtitle: Text(
                   'Today: ₱${sales.toStringAsFixed(2)} · $orders orders\n'
-                  'Open for daily / weekly / monthly / annual',
+                  'Cash · e-wallet · bank · daily → annual',
                 ),
                 isThreeLine: true,
                 trailing: const Icon(Icons.chevron_right),
@@ -376,7 +376,7 @@ class _FrontDeskAccountSalesScreenState
     if (out.isEmpty) {
       out.add(
         const Text(
-          'No payment-method breakdown for this day yet.',
+          'No payment-method breakdown for this period yet.',
           style: TextStyle(fontStyle: FontStyle.italic),
         ),
       );
@@ -433,6 +433,19 @@ class _FrontDeskAccountSalesScreenState
               ' · ${period['order_count'] ?? 0} orders',
               style: Theme.of(context).textTheme.bodySmall,
             ),
+            if (period['by_payment_method'] is Map) ...[
+              const SizedBox(height: 10),
+              const Divider(height: 1),
+              const SizedBox(height: 8),
+              Text(
+                'By payment method',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              const SizedBox(height: 6),
+              ..._paymentMethodRows(period),
+            ],
           ],
         ),
       ),
@@ -483,7 +496,7 @@ class _FrontDeskAccountSalesScreenState
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'These figures are only for this front desk account.',
+                        'Tap an account for that FO’s daily, weekly, monthly, and annual sales — including cash, e-wallet, and bank transfer.',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       const SizedBox(height: 8),

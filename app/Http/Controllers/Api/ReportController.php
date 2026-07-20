@@ -1079,6 +1079,28 @@ class ReportController extends Controller
         );
     }
 
+    public function guestDemographics(Request $request, \App\Services\HotelGuestDemographicsService $demographics)
+    {
+        $validated = $request->validate([
+            'period' => ['nullable', 'string', 'in:day,daily,week,weekly,month,monthly,year,annual'],
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date', 'after_or_equal:from'],
+        ]);
+
+        $period = (string) ($validated['period'] ?? 'month');
+        $from = isset($validated['from']) ? Carbon::parse($validated['from']) : null;
+        $to = isset($validated['to']) ? Carbon::parse($validated['to']) : null;
+
+        return response()->json(
+            $demographics->summarize(
+                (string) $request->user()->hotel_id,
+                $period,
+                $from,
+                $to,
+            )
+        );
+    }
+
     /**
      * @param  array<string, mixed>  $validated
      * @return array{0: Carbon, 1: Carbon}

@@ -4,13 +4,15 @@ import 'package:flutter/services.dart';
 
 import '../../../dio_client.dart';
 import '../../../utils/money_format.dart';
-import '../../admin_reports.dart';
 import '../admin_dashboard_models.dart';
+import 'amenities_report_screen.dart';
 import 'collectibles_summary_dialog.dart';
 import 'front_desk_sales_report_screen.dart';
 import 'hotel_period_report_screen.dart';
+import 'reseller_commissions_report_screen.dart';
+import 'room_insights_report_screen.dart';
 
-/// Opens the Hotel Totals → Reports dropdown sheet (analytics + sales breakdown).
+/// Opens the Hotel Totals → Reports sheet.
 Future<void> openHotelTotalsReports(
   BuildContext context, {
   required List<Map<String, dynamic>> rooms,
@@ -26,9 +28,9 @@ Future<void> openHotelTotalsReports(
     builder: (ctx) {
       return DraggableScrollableSheet(
         expand: false,
-        initialChildSize: 0.88,
+        initialChildSize: 0.9,
         minChildSize: 0.5,
-        maxChildSize: 0.95,
+        maxChildSize: 0.96,
         builder: (ctx, scrollController) {
           return _HotelTotalsReportsSheet(
             rooms: rooms,
@@ -43,7 +45,7 @@ Future<void> openHotelTotalsReports(
 
 enum _PaymentBucket { cash, ewallet, bank }
 
-enum _SalesPeriod { daily, weekly, monthly, annual }
+enum _ReportPeriod { daily, weekly, monthly, annual }
 
 class _HotelTotalsReportsSheet extends StatefulWidget {
   const _HotelTotalsReportsSheet({
@@ -64,15 +66,24 @@ class _HotelTotalsReportsSheet extends StatefulWidget {
 class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
   bool _loading = true;
   bool _salesLoading = false;
+  bool _financeLoading = false;
+  bool _demoLoading = false;
   String? _error;
-  /// Always today's figures for expenses / cash on hand.
+  String? _expanded;
+
   Map<String, dynamic> _todaySummary = const {};
   List<Map<String, dynamic>> _todayBookingTxns = const [];
-  /// Sales section — follows [_salesPeriod].
+
   Map<String, dynamic> _salesSummary = const {};
   List<Map<String, dynamic>> _bookingTxns = const [];
-  _SalesPeriod _salesPeriod = _SalesPeriod.daily;
-  String? _expanded; // sales | analytics | fo
+  _ReportPeriod _salesPeriod = _ReportPeriod.daily;
+
+  Map<String, dynamic> _financeSummary = const {};
+  List<Map<String, dynamic>> _financeTxns = const [];
+  _ReportPeriod _financePeriod = _ReportPeriod.daily;
+
+  Map<String, dynamic> _demographics = const {};
+  _ReportPeriod _demoPeriod = _ReportPeriod.monthly;
 
   @override
   void initState() {
@@ -83,41 +94,54 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
   static DateTime _endOfDay(DateTime d) =>
       DateTime(d.year, d.month, d.day, 23, 59, 59, 999);
 
-  static (DateTime start, DateTime end) _rangeFor(_SalesPeriod period) {
+  static (DateTime start, DateTime end) _rangeFor(_ReportPeriod period) {
     final anchor = DateUtils.dateOnly(DateTime.now());
     switch (period) {
-      case _SalesPeriod.weekly:
+      case _ReportPeriod.weekly:
         final start = anchor.subtract(Duration(days: anchor.weekday - 1));
         return (start, _endOfDay(start.add(const Duration(days: 6))));
-      case _SalesPeriod.monthly:
+      case _ReportPeriod.monthly:
         final start = DateTime(anchor.year, anchor.month, 1);
         return (start, _endOfDay(DateTime(anchor.year, anchor.month + 1, 0)));
-      case _SalesPeriod.annual:
+      case _ReportPeriod.annual:
         final start = DateTime(anchor.year, 1, 1);
         return (start, _endOfDay(DateTime(anchor.year, 12, 31)));
-      case _SalesPeriod.daily:
+      case _ReportPeriod.daily:
         return (anchor, _endOfDay(anchor));
     }
   }
 
-  static String _periodLabel(_SalesPeriod period) {
+  static String _periodLabel(_ReportPeriod period) {
     switch (period) {
-      case _SalesPeriod.daily:
+      case _ReportPeriod.daily:
         return 'Daily';
-      case _SalesPeriod.weekly:
+      case _ReportPeriod.weekly:
         return 'Weekly';
-      case _SalesPeriod.monthly:
+      case _ReportPeriod.monthly:
         return 'Monthly';
-      case _SalesPeriod.annual:
+      case _ReportPeriod.annual:
         return 'Annual';
+    }
+  }
+
+  static String _demoApiPeriod(_ReportPeriod period) {
+    switch (period) {
+      case _ReportPeriod.daily:
+        return 'day';
+      case _ReportPeriod.weekly:
+        return 'week';
+      case _ReportPeriod.monthly:
+        return 'month';
+      case _ReportPeriod.annual:
+        return 'year';
     }
   }
 
   static String _fmtDay(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-  String get _salesRangeCaption {
-    final (start, end) = _rangeFor(_salesPeriod);
+  String _rangeCaption(_ReportPeriod period) {
+    final (start, end) = _rangeFor(period);
     final a = _fmtDay(start);
     final b = _fmtDay(end);
     return a == b ? a : '$a → $b';
@@ -143,7 +167,7 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
       _error = null;
     });
     try {
-      final (start, end) = _rangeFor(_SalesPeriod.daily);
+      final (start, end) = _rangeFor(_ReportPeriod.daily);
       final data = await _fetchShiftSummary(start, end);
       if (!mounted) return;
       final summary = (data['summary'] as Map?)?.cast<String, dynamic>() ??
@@ -157,9 +181,14 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
         _todayBookingTxns = bookings;
         _salesSummary = summary;
         _bookingTxns = bookings;
-        _salesPeriod = _SalesPeriod.daily;
+        _financeSummary = summary;
+        _financeTxns = bookings;
+        _salesPeriod = _ReportPeriod.daily;
+        _financePeriod = _ReportPeriod.daily;
         _loading = false;
       });
+      // Demographics load in background.
+      _loadDemographics(_demoPeriod);
     } on DioException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -175,13 +204,12 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
     }
   }
 
-  Future<void> _setSalesPeriod(_SalesPeriod period) async {
+  Future<void> _setSalesPeriod(_ReportPeriod period) async {
     if (_salesPeriod == period && _bookingTxns.isNotEmpty) return;
     HapticFeedback.selectionClick();
     setState(() {
       _salesPeriod = period;
       _salesLoading = true;
-      _error = null;
     });
     try {
       final (start, end) = _rangeFor(period);
@@ -209,6 +237,73 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
       setState(() {
         _error = '$e';
         _salesLoading = false;
+      });
+    }
+  }
+
+  Future<void> _setFinancePeriod(_ReportPeriod period) async {
+    if (_financePeriod == period && _financeTxns.isNotEmpty) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _financePeriod = period;
+      _financeLoading = true;
+    });
+    try {
+      final (start, end) = _rangeFor(period);
+      final data = await _fetchShiftSummary(start, end);
+      if (!mounted) return;
+      final summary = (data['summary'] as Map?)?.cast<String, dynamic>() ??
+          const <String, dynamic>{};
+      final bookings = ((data['booking_transactions'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      setState(() {
+        _financeSummary = summary;
+        _financeTxns = bookings;
+        _financeLoading = false;
+      });
+    } on DioException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = dioErrorMessage(e);
+        _financeLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '$e';
+        _financeLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadDemographics(_ReportPeriod period) async {
+    setState(() {
+      _demoPeriod = period;
+      _demoLoading = true;
+    });
+    try {
+      final res = await portalDio().get<Map<String, dynamic>>(
+        '/reports/guest-demographics',
+        queryParameters: {'period': _demoApiPeriod(period)},
+      );
+      if (!mounted) return;
+      setState(() {
+        _demographics = res.data ?? const <String, dynamic>{};
+        _demoLoading = false;
+      });
+    } on DioException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = dioErrorMessage(e);
+        _demoLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '$e';
+        _demoLoading = false;
       });
     }
   }
@@ -255,30 +350,45 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
   }
 
   double get _cashSales => _totalFor(_PaymentBucket.cash);
-  double get _todayCashSales =>
-      _totalFor(_PaymentBucket.cash, source: _todayBookingTxns);
-  double get _expenses {
-    final s = _todaySummary;
-    return (s['expenses'] as num?)?.toDouble() ??
-        (((s['refund_expense'] as num?)?.toDouble() ?? 0) +
-            ((s['reseller_commissions_paid'] as num?)?.toDouble() ?? 0));
+  double get _financeCashSales =>
+      _totalFor(_PaymentBucket.cash, source: _financeTxns);
+
+  double _expensesOf(Map<String, dynamic> summary) {
+    return (summary['expenses'] as num?)?.toDouble() ??
+        (((summary['refund_expense'] as num?)?.toDouble() ?? 0) +
+            ((summary['reseller_commissions_paid'] as num?)?.toDouble() ?? 0));
   }
 
+  double get _expenses => _expensesOf(_financeSummary);
+  double get _todayExpenses => _expensesOf(_todaySummary);
+
   double get _cashOnHand =>
-      (_todayCashSales - _expenses).clamp(0, double.infinity);
+      (_financeCashSales - _expenses).clamp(0, double.infinity);
+
   double get _collectibles =>
       AdminDashboardModels.collectiblesForRooms(widget.rooms);
+
+  List<Map<String, dynamic>> get _collectibleLines =>
+      AdminDashboardModels.collectiblesSummaryLines(widget.rooms);
 
   void _toggle(String key) {
     HapticFeedback.selectionClick();
     setState(() => _expanded = _expanded == key ? null : key);
+    if (key == 'demographics' &&
+        _expanded == 'demographics' &&
+        _demographics.isEmpty &&
+        !_demoLoading) {
+      _loadDemographics(_demoPeriod);
+    }
   }
 
   void _openTxnList({
     required String title,
     required List<Map<String, dynamic>> rows,
+    required _ReportPeriod period,
   }) {
-    final periodName = _periodLabel(_salesPeriod).toLowerCase();
+    final periodName = _periodLabel(period).toLowerCase();
+    final caption = _rangeCaption(period);
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -309,7 +419,7 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                     child: Text(
-                      '${rows.length} transaction(s) · $periodName · $_salesRangeCaption',
+                      '${rows.length} item(s) · $periodName · $caption',
                       style: Theme.of(ctx).textTheme.bodySmall,
                     ),
                   ),
@@ -327,7 +437,10 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
                               return Card(
                                 child: ListTile(
                                   title: Text(
-                                    (r['guest_name'] ?? 'Guest').toString(),
+                                    (r['guest_name'] ??
+                                            r['label'] ??
+                                            'Guest')
+                                        .toString(),
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -365,13 +478,7 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
     );
   }
 
-  void _openFinancePeriod(String buttonLabel, String periodKey) {
-    final period = switch (periodKey) {
-      'weekly' => _SalesPeriod.weekly,
-      'monthly' => _SalesPeriod.monthly,
-      'annual' => _SalesPeriod.annual,
-      _ => _SalesPeriod.daily,
-    };
+  void _openFinancePeriod(String buttonLabel, _ReportPeriod period) {
     final (start, end) = _rangeFor(period);
     openHotelPeriodReport(
       context: context,
@@ -379,6 +486,25 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
       timeOut: end,
       title: '$buttonLabel revenue',
       subtitle: 'Hotel-wide report',
+    );
+  }
+
+  Widget _periodChips({
+    required _ReportPeriod selected,
+    required bool loading,
+    required ValueChanged<_ReportPeriod> onSelect,
+  }) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final period in _ReportPeriod.values)
+          ChoiceChip(
+            label: Text(_periodLabel(period)),
+            selected: selected == period,
+            onSelected: loading ? null : (_) => onSelect(period),
+          ),
+      ],
     );
   }
 
@@ -400,7 +526,7 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
           ),
           const SizedBox(height: 2),
           Text(
-            'Sales, collectibles, expenses & analytics — tap a section to expand',
+            'Tap a section to expand · sales, collectibles, expenses & more',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),
@@ -408,17 +534,18 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
           const SizedBox(height: 12),
           if (_loading) const LinearProgressIndicator(minHeight: 2),
           if (_error != null) ...[
-            Text(
-              _error!,
-              style: TextStyle(color: scheme.error),
-            ),
+            Text(_error!, style: TextStyle(color: scheme.error)),
             TextButton(onPressed: _load, child: const Text('Retry')),
             const SizedBox(height: 8),
           ],
+
+          // —— Sales ——
           _DropdownSection(
             title: 'Sales',
-            subtitle:
-                'Cash · E-wallet · Bank transfer — daily / weekly / monthly / annual',
+            subtitle: formatPeso(_salesSummary['gross_revenue'] ??
+                (_cashSales +
+                    _totalFor(_PaymentBucket.ewallet) +
+                    _totalFor(_PaymentBucket.bank))),
             icon: Icons.payments_outlined,
             accent: Colors.teal.shade700,
             expanded: _expanded == 'sales',
@@ -426,25 +553,16 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final period in _SalesPeriod.values)
-                      ChoiceChip(
-                        label: Text(_periodLabel(period)),
-                        selected: _salesPeriod == period,
-                        onSelected: _salesLoading
-                            ? null
-                            : (_) => _setSalesPeriod(period),
-                      ),
-                  ],
+                _periodChips(
+                  selected: _salesPeriod,
+                  loading: _salesLoading,
+                  onSelect: _setSalesPeriod,
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  _salesRangeCaption,
+                  _rangeCaption(_salesPeriod),
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        color: scheme.onSurfaceVariant,
                         fontWeight: FontWeight.w600,
                       ),
                 ),
@@ -453,121 +571,453 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
                   const LinearProgressIndicator(minHeight: 2),
                 ],
                 const SizedBox(height: 10),
-                _SalesMethodTile(
+                _DetailTile(
                   label: 'Cash',
-                  count: _txnsFor(_PaymentBucket.cash).length,
+                  countLabel: '${_txnsFor(_PaymentBucket.cash).length} payment(s)',
                   total: _cashSales,
                   color: Colors.green.shade700,
                   onTap: () => _openTxnList(
                     title: 'Cash sales · ${_periodLabel(_salesPeriod)}',
                     rows: _txnsFor(_PaymentBucket.cash),
+                    period: _salesPeriod,
                   ),
                 ),
                 const SizedBox(height: 8),
-                _SalesMethodTile(
+                _DetailTile(
                   label: 'E-wallet',
-                  count: _txnsFor(_PaymentBucket.ewallet).length,
+                  countLabel:
+                      '${_txnsFor(_PaymentBucket.ewallet).length} payment(s)',
                   total: _totalFor(_PaymentBucket.ewallet),
                   color: Colors.blue.shade700,
                   onTap: () => _openTxnList(
-                    title:
-                        'E-wallet sales · ${_periodLabel(_salesPeriod)}',
+                    title: 'E-wallet sales · ${_periodLabel(_salesPeriod)}',
                     rows: _txnsFor(_PaymentBucket.ewallet),
+                    period: _salesPeriod,
                   ),
                 ),
                 const SizedBox(height: 8),
-                _SalesMethodTile(
+                _DetailTile(
                   label: 'Bank transfer',
-                  count: _txnsFor(_PaymentBucket.bank).length,
+                  countLabel: '${_txnsFor(_PaymentBucket.bank).length} payment(s)',
                   total: _totalFor(_PaymentBucket.bank),
                   color: Colors.indigo.shade700,
                   onTap: () => _openTxnList(
                     title:
                         'Bank transfer sales · ${_periodLabel(_salesPeriod)}',
                     rows: _txnsFor(_PaymentBucket.bank),
+                    period: _salesPeriod,
                   ),
                 ),
-                if ((_salesSummary['gross_revenue'] as num?) != null) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    'Period gross revenue: ${formatPeso(_salesSummary['gross_revenue'] ?? 0)}',
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                ],
               ],
             ),
           ),
           const SizedBox(height: 10),
-          _ActionTile(
+
+          // —— Collectibles ——
+          _DropdownSection(
             title: 'Collectibles',
             subtitle: formatPeso(_collectibles),
             icon: Icons.receipt_long_outlined,
-            color: Colors.orange.shade800,
-            onTap: () => showCollectiblesSummaryDialog(
-              context,
-              rooms: widget.rooms,
-            ),
-          ),
-          const SizedBox(height: 8),
-          _ActionTile(
-            title: 'Expenses',
-            subtitle: formatPeso(_expenses),
-            icon: Icons.money_off_outlined,
-            color: Colors.red.shade700,
-            onTap: () => _showMetricDetail(
-              title: 'Expenses (today)',
-              lines: [
-                MapEntry(
-                  'Refund expense',
-                  formatPeso(_todaySummary['refund_expense'] ?? 0),
+            accent: Colors.orange.shade800,
+            expanded: _expanded == 'collectibles',
+            onToggle: () => _toggle('collectibles'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Amounts due in the checkout queue right now',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
                 ),
-                MapEntry(
-                  'Reseller commissions',
-                  formatPeso(_todaySummary['reseller_commissions_paid'] ?? 0),
+                const SizedBox(height: 10),
+                if (_collectibleLines.isEmpty)
+                  const Text('No collectibles in queue.')
+                else
+                  ..._collectibleLines.map((line) {
+                    final roomNo = (line['room_number'] ?? '—').toString();
+                    final guest = (line['guest_name'] ?? 'Guest').toString();
+                    final amount =
+                        (line['amount'] as num?)?.toDouble() ?? 0;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _DetailTile(
+                        label: 'Room $roomNo',
+                        countLabel: guest,
+                        total: amount,
+                        color: Colors.orange.shade800,
+                        onTap: () => showCollectiblesSummaryDialog(
+                          context,
+                          rooms: widget.rooms,
+                        ),
+                      ),
+                    );
+                  }),
+                const SizedBox(height: 4),
+                _DetailTile(
+                  label: 'Full collectibles summary',
+                  countLabel: '${_collectibleLines.length} room(s)',
+                  total: _collectibles,
+                  color: Colors.orange.shade900,
+                  onTap: () => showCollectiblesSummaryDialog(
+                    context,
+                    rooms: widget.rooms,
+                  ),
                 ),
-                MapEntry('Total expenses', formatPeso(_expenses)),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          _ActionTile(
-            title: 'Cash on hand',
-            subtitle: formatPeso(_cashOnHand),
-            icon: Icons.account_balance_wallet_outlined,
-            color: scheme.primary,
-            onTap: () => _showMetricDetail(
-              title: 'Cash on hand',
-              lines: [
-                MapEntry('Cash sales today', formatPeso(_todayCashSales)),
-                MapEntry('Less expenses', formatPeso(_expenses)),
-                MapEntry('Cash on hand', formatPeso(_cashOnHand)),
               ],
             ),
           ),
           const SizedBox(height: 10),
+
+          // —— Expenses ——
           _DropdownSection(
-            title: 'Front desk sales report',
-            subtitle: 'Per FO account — cash, GCash, bank transfer & more',
+            title: 'Expenses',
+            subtitle: formatPeso(_expenses),
+            icon: Icons.money_off_outlined,
+            accent: Colors.red.shade700,
+            expanded: _expanded == 'expenses',
+            onToggle: () {
+              _toggle('expenses');
+              if (_expanded == 'expenses') {
+                _setFinancePeriod(_financePeriod);
+              }
+            },
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _periodChips(
+                  selected: _financePeriod,
+                  loading: _financeLoading,
+                  onSelect: _setFinancePeriod,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _rangeCaption(_financePeriod),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                if (_financeLoading) ...[
+                  const SizedBox(height: 8),
+                  const LinearProgressIndicator(minHeight: 2),
+                ],
+                const SizedBox(height: 10),
+                _DetailTile(
+                  label: 'Refund expense',
+                  countLabel: 'Refunds in period',
+                  total: (_financeSummary['refund_expense'] as num?)
+                          ?.toDouble() ??
+                      0,
+                  color: Colors.red.shade600,
+                  onTap: () => _showMetricDetail(
+                    title:
+                        'Refund expense · ${_periodLabel(_financePeriod)}',
+                    lines: [
+                      MapEntry(
+                        'Refund expense',
+                        formatPeso(_financeSummary['refund_expense'] ?? 0),
+                      ),
+                      MapEntry(
+                        'Period',
+                        _rangeCaption(_financePeriod),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _DetailTile(
+                  label: 'Reseller commissions',
+                  countLabel: 'Commissions paid',
+                  total: (_financeSummary['reseller_commissions_paid'] as num?)
+                          ?.toDouble() ??
+                      0,
+                  color: Colors.deepOrange.shade700,
+                  onTap: () => _showMetricDetail(
+                    title:
+                        'Reseller commissions · ${_periodLabel(_financePeriod)}',
+                    lines: [
+                      MapEntry(
+                        'Commissions paid',
+                        formatPeso(
+                          _financeSummary['reseller_commissions_paid'] ?? 0,
+                        ),
+                      ),
+                      MapEntry('Period', _rangeCaption(_financePeriod)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _DetailTile(
+                  label: 'Total expenses',
+                  countLabel: _periodLabel(_financePeriod),
+                  total: _expenses,
+                  color: Colors.red.shade900,
+                  onTap: () => _showMetricDetail(
+                    title: 'Expenses · ${_periodLabel(_financePeriod)}',
+                    lines: [
+                      MapEntry(
+                        'Refund expense',
+                        formatPeso(_financeSummary['refund_expense'] ?? 0),
+                      ),
+                      MapEntry(
+                        'Reseller commissions',
+                        formatPeso(
+                          _financeSummary['reseller_commissions_paid'] ?? 0,
+                        ),
+                      ),
+                      MapEntry('Total expenses', formatPeso(_expenses)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // —— Cash on hand ——
+          _DropdownSection(
+            title: 'Cash on hand',
+            subtitle: formatPeso(_cashOnHand),
+            icon: Icons.account_balance_wallet_outlined,
+            accent: scheme.primary,
+            expanded: _expanded == 'cash',
+            onToggle: () {
+              _toggle('cash');
+              if (_expanded == 'cash') {
+                _setFinancePeriod(_financePeriod);
+              }
+            },
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _periodChips(
+                  selected: _financePeriod,
+                  loading: _financeLoading,
+                  onSelect: _setFinancePeriod,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _rangeCaption(_financePeriod),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                if (_financeLoading) ...[
+                  const SizedBox(height: 8),
+                  const LinearProgressIndicator(minHeight: 2),
+                ],
+                const SizedBox(height: 10),
+                _DetailTile(
+                  label: 'Cash sales',
+                  countLabel:
+                      '${_txnsFor(_PaymentBucket.cash, source: _financeTxns).length} payment(s)',
+                  total: _financeCashSales,
+                  color: Colors.green.shade700,
+                  onTap: () => _openTxnList(
+                    title: 'Cash sales · ${_periodLabel(_financePeriod)}',
+                    rows: _txnsFor(
+                      _PaymentBucket.cash,
+                      source: _financeTxns,
+                    ),
+                    period: _financePeriod,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _DetailTile(
+                  label: 'Less expenses',
+                  countLabel: 'Refunds + commissions',
+                  total: _expenses,
+                  color: Colors.red.shade700,
+                  onTap: () => _showMetricDetail(
+                    title: 'Expenses deducted',
+                    lines: [
+                      MapEntry('Refunds', formatPeso(
+                        _financeSummary['refund_expense'] ?? 0,
+                      )),
+                      MapEntry(
+                        'Commissions',
+                        formatPeso(
+                          _financeSummary['reseller_commissions_paid'] ?? 0,
+                        ),
+                      ),
+                      MapEntry('Total', formatPeso(_expenses)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _DetailTile(
+                  label: 'Cash on hand',
+                  countLabel: 'Cash sales − expenses',
+                  total: _cashOnHand,
+                  color: scheme.primary,
+                  onTap: () => _showMetricDetail(
+                    title: 'Cash on hand · ${_periodLabel(_financePeriod)}',
+                    lines: [
+                      MapEntry('Cash sales', formatPeso(_financeCashSales)),
+                      MapEntry('Less expenses', formatPeso(_expenses)),
+                      MapEntry('Cash on hand', formatPeso(_cashOnHand)),
+                      MapEntry(
+                        'Today (reference)',
+                        formatPeso(
+                          (_totalFor(
+                                    _PaymentBucket.cash,
+                                    source: _todayBookingTxns,
+                                  ) -
+                                  _todayExpenses)
+                              .clamp(0, double.infinity),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // —— Demographics ——
+          _DropdownSection(
+            title: 'Demographics',
+            subtitle: _demoSubtitle(),
+            icon: Icons.groups_outlined,
+            accent: Colors.cyan.shade800,
+            expanded: _expanded == 'demographics',
+            onToggle: () => _toggle('demographics'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _periodChips(
+                  selected: _demoPeriod,
+                  loading: _demoLoading,
+                  onSelect: _loadDemographics,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  (_demographics['from'] != null &&
+                          _demographics['to'] != null)
+                      ? '${_demographics['from']} → ${_demographics['to']}'
+                      : _rangeCaption(_demoPeriod),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                if (_demoLoading) ...[
+                  const SizedBox(height: 8),
+                  const LinearProgressIndicator(minHeight: 2),
+                ],
+                const SizedBox(height: 10),
+                _DemoStatTile(
+                  label: 'Male guests',
+                  value: '${_demoInt(['gender', 'male'])}',
+                  color: Colors.blue.shade700,
+                  onTap: () => _showMetricDetail(
+                    title: 'Male guests',
+                    lines: [
+                      MapEntry('Male', '${_demoInt(['gender', 'male'])}'),
+                      MapEntry(
+                        'Share of known gender',
+                        _genderShare('male'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _DemoStatTile(
+                  label: 'Female guests',
+                  value: '${_demoInt(['gender', 'female'])}',
+                  color: Colors.pink.shade700,
+                  onTap: () => _showMetricDetail(
+                    title: 'Female guests',
+                    lines: [
+                      MapEntry('Female', '${_demoInt(['gender', 'female'])}'),
+                      MapEntry(
+                        'Share of known gender',
+                        _genderShare('female'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _DemoStatTile(
+                  label: 'Adults',
+                  value: '${_demoInt(['age_groups', 'adults'])}',
+                  color: Colors.indigo.shade700,
+                  onTap: () => _showMetricDetail(
+                    title: 'Age group · Adults',
+                    lines: [
+                      MapEntry(
+                        'Adults',
+                        '${_demoInt(['age_groups', 'adults'])}',
+                      ),
+                      MapEntry(
+                        'Children',
+                        '${_demoInt(['age_groups', 'children'])}',
+                      ),
+                      const MapEntry(
+                        'Note',
+                        'Exact ages are not collected; adults/children from booking forms.',
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _DemoStatTile(
+                  label: 'Children',
+                  value: '${_demoInt(['age_groups', 'children'])}',
+                  color: Colors.teal.shade700,
+                  onTap: () => _showMetricDetail(
+                    title: 'Age group · Children',
+                    lines: [
+                      MapEntry(
+                        'Children',
+                        '${_demoInt(['age_groups', 'children'])}',
+                      ),
+                      MapEntry(
+                        'Adults',
+                        '${_demoInt(['age_groups', 'adults'])}',
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Nationality',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(height: 6),
+                ..._nationalityTiles(),
+                const SizedBox(height: 8),
+                Text(
+                  'Booking source',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(height: 6),
+                ..._bookingModeTiles(),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // —— Front desk sales ——
+          _DropdownSection(
+            title: 'Front desk sales',
+            subtitle: 'Per FO account · cash / e-wallet / bank',
             icon: Icons.point_of_sale_outlined,
             accent: scheme.primary,
             expanded: _expanded == 'fo',
             onToggle: () => _toggle('fo'),
-            child: ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: CircleAvatar(
-                backgroundColor: scheme.primary.withValues(alpha: 0.12),
-                child: Icon(Icons.people_outline, color: scheme.primary),
-              ),
-              title: const Text(
-                'Open front desk sales',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
-              subtitle: const Text(
-                'See how many paid in cash, GCash, bank transfer, and totals per FO',
-              ),
-              trailing: const Icon(Icons.chevron_right),
+            child: _DetailTile(
+              label: 'Front desk accounts',
+              countLabel: 'Daily · weekly · monthly · annual breakdown',
+              total: null,
+              color: scheme.primary,
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
@@ -578,69 +1028,228 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
             ),
           ),
           const SizedBox(height: 10),
+
+          // —— Flat analytics (no nested “Reports & analytics”) ——
           _DropdownSection(
-            title: 'Reports & analytics',
-            subtitle: 'Same hub as Setup → Analytics & reports',
-            icon: Icons.analytics_outlined,
-            accent: Colors.purple.shade700,
-            expanded: _expanded == 'analytics',
-            onToggle: () => _toggle('analytics'),
-            child: Column(
-              children: [
-                _AnalyticsLink(
-                  title: 'Front desk sales',
-                  subtitle: 'Per-account daily → annual',
-                  icon: Icons.point_of_sale_outlined,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const FrontDeskSalesReportScreen(),
-                    ),
+            title: 'Room insights',
+            subtitle: 'Most / least booked · profit · maintenance',
+            icon: Icons.hotel_class_outlined,
+            accent: Colors.indigo,
+            expanded: _expanded == 'room_insights',
+            onToggle: () => _toggle('room_insights'),
+            child: _DetailTile(
+              label: 'Open room insights',
+              countLabel: 'Occupancy & profitability by room',
+              total: null,
+              color: Colors.indigo,
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const RoomInsightsReportScreen(),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          _DropdownSection(
+            title: 'Amenities reports',
+            subtitle: 'Product sales & profit',
+            icon: Icons.room_service_outlined,
+            accent: Colors.teal,
+            expanded: _expanded == 'amenities',
+            onToggle: () => _toggle('amenities'),
+            child: _DetailTile(
+              label: 'Open amenities report',
+              countLabel: 'Sales and margin by amenity',
+              total: null,
+              color: Colors.teal,
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const AmenitiesReportScreen(),
+                ),
+              ),
+            ),
+          ),
+          if (!widget.isFrontDesk) ...[
+            const SizedBox(height: 10),
+            _DropdownSection(
+              title: 'Reseller commissions',
+              subtitle: 'Payouts & calendar',
+              icon: Icons.handshake_outlined,
+              accent: Colors.deepOrange,
+              expanded: _expanded == 'reseller',
+              onToggle: () => _toggle('reseller'),
+              child: _DetailTile(
+                label: 'Open reseller commissions',
+                countLabel: 'Payout history and calendar',
+                total: null,
+                color: Colors.deepOrange,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const ResellerCommissionsReportScreen(),
                   ),
                 ),
-                _AnalyticsLink(
-                  title: 'Daily revenue',
-                  subtitle: 'Hotel-wide today',
-                  icon: Icons.today_outlined,
-                  onTap: () => _openFinancePeriod('Daily', 'daily'),
-                ),
-                _AnalyticsLink(
-                  title: 'Weekly revenue',
-                  subtitle: 'This week',
-                  icon: Icons.date_range_outlined,
-                  onTap: () => _openFinancePeriod('Weekly', 'weekly'),
-                ),
-                _AnalyticsLink(
-                  title: 'Monthly revenue',
-                  subtitle: 'This month',
-                  icon: Icons.calendar_month_outlined,
-                  onTap: () => _openFinancePeriod('Monthly', 'monthly'),
-                ),
-                _AnalyticsLink(
-                  title: 'Annual revenue',
-                  subtitle: 'This year',
-                  icon: Icons.insights_outlined,
-                  onTap: () => _openFinancePeriod('Annual', 'annual'),
-                ),
-                _AnalyticsLink(
-                  title: 'Full reports hub',
-                  subtitle: 'Room insights, amenities, commissions…',
-                  icon: Icons.grid_view_rounded,
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => AdminReportsScreen(
-                          isFrontDesk: widget.isFrontDesk,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          _DropdownSection(
+            title: 'Daily revenue',
+            subtitle: 'Hotel-wide today',
+            icon: Icons.today_outlined,
+            accent: Colors.blue,
+            expanded: _expanded == 'rev_daily',
+            onToggle: () => _toggle('rev_daily'),
+            child: _DetailTile(
+              label: 'View daily revenue',
+              countLabel: _rangeCaption(_ReportPeriod.daily),
+              total: null,
+              color: Colors.blue,
+              onTap: () =>
+                  _openFinancePeriod('Daily', _ReportPeriod.daily),
+            ),
+          ),
+          const SizedBox(height: 10),
+          _DropdownSection(
+            title: 'Weekly revenue',
+            subtitle: 'This week',
+            icon: Icons.date_range_outlined,
+            accent: Colors.cyan.shade700,
+            expanded: _expanded == 'rev_weekly',
+            onToggle: () => _toggle('rev_weekly'),
+            child: _DetailTile(
+              label: 'View weekly revenue',
+              countLabel: _rangeCaption(_ReportPeriod.weekly),
+              total: null,
+              color: Colors.cyan.shade700,
+              onTap: () =>
+                  _openFinancePeriod('Weekly', _ReportPeriod.weekly),
+            ),
+          ),
+          const SizedBox(height: 10),
+          _DropdownSection(
+            title: 'Monthly revenue',
+            subtitle: 'This month',
+            icon: Icons.calendar_month_outlined,
+            accent: Colors.purple,
+            expanded: _expanded == 'rev_monthly',
+            onToggle: () => _toggle('rev_monthly'),
+            child: _DetailTile(
+              label: 'View monthly revenue',
+              countLabel: _rangeCaption(_ReportPeriod.monthly),
+              total: null,
+              color: Colors.purple,
+              onTap: () =>
+                  _openFinancePeriod('Monthly', _ReportPeriod.monthly),
+            ),
+          ),
+          const SizedBox(height: 10),
+          _DropdownSection(
+            title: 'Annual revenue',
+            subtitle: 'This year',
+            icon: Icons.insights_outlined,
+            accent: Colors.brown,
+            expanded: _expanded == 'rev_annual',
+            onToggle: () => _toggle('rev_annual'),
+            child: _DetailTile(
+              label: 'View annual revenue',
+              countLabel: _rangeCaption(_ReportPeriod.annual),
+              total: null,
+              color: Colors.brown,
+              onTap: () =>
+                  _openFinancePeriod('Annual', _ReportPeriod.annual),
             ),
           ),
         ],
       ),
     );
+  }
+
+  String _demoSubtitle() {
+    final total = _demoInt(['totals', 'total_guests']);
+    if (total <= 0 && _demographics.isEmpty) return 'Gender · nationality · age groups';
+    return '$total guest(s) in period';
+  }
+
+  int _demoInt(List<String> path) {
+    dynamic cur = _demographics;
+    for (final key in path) {
+      if (cur is! Map) return 0;
+      cur = cur[key];
+    }
+    return (cur as num?)?.toInt() ?? 0;
+  }
+
+  String _genderShare(String key) {
+    final male = _demoInt(['gender', 'male']);
+    final female = _demoInt(['gender', 'female']);
+    final known = male + female;
+    if (known <= 0) return '—';
+    final n = key == 'male' ? male : female;
+    return '${((n / known) * 100).toStringAsFixed(0)}%';
+  }
+
+  List<Widget> _nationalityTiles() {
+    final raw = _demographics['nationalities'];
+    if (raw is! List || raw.isEmpty) {
+      return [
+        Text(
+          'No nationality data for this period.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ];
+    }
+    return raw.take(8).map((row) {
+      final map = Map<String, dynamic>.from(row as Map);
+      final label = (map['label'] ?? 'Unknown').toString();
+      final guests = (map['guests'] as num?)?.toInt() ?? 0;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: _DemoStatTile(
+          label: label,
+          value: '$guests',
+          color: Colors.cyan.shade800,
+          onTap: () => _showMetricDetail(
+            title: 'Nationality · $label',
+            lines: [
+              MapEntry('Guests', '$guests'),
+              MapEntry('Period', _rangeCaption(_demoPeriod)),
+            ],
+          ),
+        ),
+      );
+    }).toList();
+  }
+
+  List<Widget> _bookingModeTiles() {
+    final raw = _demographics['booking_modes'];
+    if (raw is! List || raw.isEmpty) {
+      return [
+        Text(
+          'No booking-source data for this period.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ];
+    }
+    return raw.take(6).map((row) {
+      final map = Map<String, dynamic>.from(row as Map);
+      final label = (map['label'] ?? 'Unspecified').toString();
+      final bookings = (map['bookings'] as num?)?.toInt() ?? 0;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: _DemoStatTile(
+          label: label,
+          value: '$bookings',
+          color: Colors.blueGrey.shade700,
+          onTap: () => _showMetricDetail(
+            title: 'Booking source · $label',
+            lines: [
+              MapEntry('Bookings', '$bookings'),
+              MapEntry('Period', _rangeCaption(_demoPeriod)),
+            ],
+          ),
+        ),
+      );
+    }).toList();
   }
 
   void _showMetricDetail({
@@ -658,11 +1267,16 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(child: Text(e.key)),
-                    Text(
-                      e.value,
-                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    const SizedBox(width: 12),
+                    Flexible(
+                      child: Text(
+                        e.value,
+                        textAlign: TextAlign.end,
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
                     ),
                   ],
                 ),
@@ -738,6 +1352,8 @@ class _DropdownSection extends StatelessWidget {
                         ),
                         Text(
                           subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style:
                               Theme.of(context).textTheme.labelSmall?.copyWith(
                                     color: scheme.onSurfaceVariant,
@@ -775,18 +1391,18 @@ class _DropdownSection extends StatelessWidget {
   }
 }
 
-class _SalesMethodTile extends StatelessWidget {
-  const _SalesMethodTile({
+class _DetailTile extends StatelessWidget {
+  const _DetailTile({
     required this.label,
-    required this.count,
-    required this.total,
+    required this.countLabel,
     required this.color,
     required this.onTap,
+    this.total,
   });
 
   final String label;
-  final int count;
-  final double total;
+  final String countLabel;
+  final double? total;
   final Color color;
   final VoidCallback onTap;
 
@@ -814,14 +1430,67 @@ class _SalesMethodTile extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '$count payment(s)',
+                      countLabel,
                       style: Theme.of(context).textTheme.labelSmall,
                     ),
                   ],
                 ),
               ),
+              if (total != null)
+                Text(
+                  formatPeso(total!),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: color,
+                    fontSize: 16,
+                  ),
+                ),
+              const SizedBox(width: 4),
+              Icon(Icons.chevron_right, color: color),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DemoStatTile extends StatelessWidget {
+  const _DemoStatTile({
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: color.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: color,
+                  ),
+                ),
+              ),
               Text(
-                formatPeso(total),
+                value,
                 style: TextStyle(
                   fontWeight: FontWeight.w900,
                   color: color,
@@ -834,86 +1503,6 @@ class _SalesMethodTile extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _ActionTile extends StatelessWidget {
-  const _ActionTile({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.color,
-    required this.onTap,
-  });
-
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.surfaceContainer,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
-            children: [
-              Icon(icon, color: color),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-              ),
-              Text(
-                subtitle,
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  color: color,
-                ),
-              ),
-              const SizedBox(width: 4),
-              Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AnalyticsLink extends StatelessWidget {
-  const _AnalyticsLink({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      dense: true,
-      leading: Icon(icon),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-      subtitle: Text(subtitle),
-      trailing: const Icon(Icons.chevron_right),
-      onTap: onTap,
     );
   }
 }

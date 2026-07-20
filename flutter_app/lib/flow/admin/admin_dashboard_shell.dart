@@ -23,6 +23,7 @@ import 'sections/settings_section.dart';
 import 'sections/super_admin_control_section.dart';
 import 'widgets/front_desk_shift.dart';
 import 'widgets/portal_shift_session.dart';
+import 'widgets/device_guest_welcome_sms.dart';
 
 class AdminDashboardShell extends StatefulWidget {
   const AdminDashboardShell({
@@ -170,6 +171,10 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
       if (mounted && widget.isFrontDesk && _shift != null) {
         setState(() {});
       }
+    });
+    // Pre-ask SEND_SMS so check-in can text the guest silently from this phone.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      DeviceGuestWelcomeSms.ensurePermission();
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.onBindBackHandler?.call(_handleInnerBack);

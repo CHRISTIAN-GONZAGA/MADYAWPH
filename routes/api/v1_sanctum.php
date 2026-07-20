@@ -819,10 +819,34 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             $room->refresh();
         }
 
+        $roomFresh = $room->fresh() ?? $room;
+        $hotel = Hotel::withoutGlobalScopes()->find((string) $roomFresh->hotel_id);
+        $guestWelcomeSms = null;
+        if ($request->boolean('check_in_now')) {
+            $guestWelcomeSms = [
+                'guest_phone' => trim((string) ($booking->guest_phone ?? '')),
+                'guest_name' => trim((string) ($booking->guest_name
+                    ?? $roomFresh->current_guest_name
+                    ?? '')),
+                'room_number' => (string) ($roomFresh->room_number ?? ''),
+                'room_access_password' => (string) ($roomFresh->current_access_code ?? ''),
+                'hotel_name' => trim((string) ($hotel?->name ?? '')),
+            ];
+        }
+
         return response()->json([
             'ok' => true,
-            'booking' => AdminBookingPresenter::present($booking, $room->fresh() ?? $room),
+            'booking' => AdminBookingPresenter::present($booking, $roomFresh),
             'wallet' => $walletFee,
+            'guest_welcome_sms' => $guestWelcomeSms,
+            'room' => [
+                'id' => (string) $roomFresh->id,
+                'room_number' => (string) ($roomFresh->room_number ?? ''),
+                'room_access_password' => $request->boolean('check_in_now')
+                    ? (string) ($roomFresh->current_access_code ?? '')
+                    : null,
+                'status' => StayManagementPolicy::roomStatusValue($roomFresh),
+            ],
         ], 201);
     })->middleware(['booking.frontdesk', 'prevent.double.booking'])->name('api.v1.admin.bookings.store');
 
@@ -1015,10 +1039,25 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             throw $e;
         }
 
+        $guestWelcomeSms = null;
+        if ($request->boolean('check_in_now') && $createdBookings !== []) {
+            $first = $createdBookings[0];
+            $firstRoom = Room::withoutGlobalScopes()->find((string) $first->room_id);
+            $hotel = Hotel::withoutGlobalScopes()->find($hotelId);
+            $guestWelcomeSms = [
+                'guest_phone' => trim((string) ($first->guest_phone ?? '')),
+                'guest_name' => trim((string) ($first->guest_name ?? '')),
+                'room_number' => (string) ($firstRoom?->room_number ?? ''),
+                'room_access_password' => (string) ($firstRoom?->current_access_code ?? ''),
+                'hotel_name' => trim((string) ($hotel?->name ?? '')),
+            ];
+        }
+
         return response()->json([
             'ok' => true,
             'count' => count($presented),
             'bookings' => $presented,
+            'guest_welcome_sms' => $guestWelcomeSms,
         ], 201);
     })->middleware(['booking.frontdesk', 'prevent.double.booking', 'role:admin,frontdesk'])->name('api.v1.admin.bookings.bulk');
 
@@ -2043,6 +2082,7 @@ Route::get('/reports/frontdesk-sales/summary', [ReportController::class, 'frontD
 Route::get('/reports/frontdesk-sales/calendar', [ReportController::class, 'frontDeskSalesCalendar'])->middleware('role:admin,frontdesk');
 Route::get('/reports/frontdesk-sales/day', [ReportController::class, 'frontDeskSalesDay'])->middleware('role:admin,frontdesk');
 Route::get('/reports/frontdesk-sales/account-overview', [ReportController::class, 'frontDeskSalesAccountOverview'])->middleware('role:admin,frontdesk');
+Route::get('/reports/guest-demographics', [ReportController::class, 'guestDemographics'])->middleware('role:admin,frontdesk');
 Route::get('/reports/sales', [ReportController::class, 'sales'])->middleware('role:admin,frontdesk');
 Route::get('/reports/sales/timeseries', [ReportController::class, 'salesTimeseries'])->middleware('role:admin,frontdesk');
 Route::get('/reports/paid-transactions', [ReportController::class, 'paidTransactions'])->middleware('role:admin,frontdesk');

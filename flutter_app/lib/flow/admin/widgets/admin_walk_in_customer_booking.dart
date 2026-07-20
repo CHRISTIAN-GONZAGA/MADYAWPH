@@ -17,6 +17,7 @@ import 'booking_mode_field.dart';
 import 'guest_nationalities.dart';
 import 'manual_booking_dialog.dart';
 import 'online_payment_qr_block.dart';
+import 'device_guest_welcome_sms.dart';
 
 /// Same booking popup + submit path as [CustomerRoomsScreen] admin walk-in.
 Future<bool> showAdminWalkInCustomerStyleBooking({
@@ -483,8 +484,11 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
   if (payload == null || !context.mounted) return false;
 
   final checkInNow = payload['check_in_now'] == true;
+  if (checkInNow) {
+    await DeviceGuestWelcomeSms.ensurePermission();
+  }
   try {
-    await submitAdminWalkInBooking(
+    final result = await submitAdminWalkInBooking(
       room: room,
       checkInNow: checkInNow,
       payload: CompleteGuestBookingPayload(
@@ -509,11 +513,47 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
         memberShidId: (payload['member_shid_id'] ?? '').toString(),
       ),
     );
+    var smsNote = '';
+    if (checkInNow) {
+      try {
+        final rawSms = result['guest_welcome_sms'];
+        final smsPayload = rawSms is Map
+            ? Map<String, dynamic>.from(rawSms)
+            : <String, dynamic>{
+                'guest_phone': (payload['guest_phone'] ?? '').toString(),
+                'guest_name': (payload['guest_name'] ?? '').toString(),
+                'room_number': (room['room_number'] ?? '').toString(),
+                'hotel_name': '',
+                'room_access_password':
+                    (result['room'] is Map
+                            ? (result['room'] as Map)['room_access_password']
+                            : '')
+                        ?.toString() ??
+                    '',
+              };
+        if ((smsPayload['guest_phone'] ?? '').toString().trim().isNotEmpty) {
+          final smsResult = await DeviceGuestWelcomeSms.sendFromPayload(
+            smsPayload,
+            fallbackPhone: (payload['guest_phone'] ?? '').toString(),
+            fallbackGuest: (payload['guest_name'] ?? '').toString(),
+            fallbackRoom: (room['room_number'] ?? '').toString(),
+          ).timeout(
+            const Duration(seconds: 30),
+            onTimeout: () => DeviceSmsOutcome.failed('SMS timed out.'),
+          );
+          if (smsResult.didSend) {
+            smsNote = ' Welcome SMS sent from this phone.';
+          } else if (smsResult.message.isNotEmpty) {
+            smsNote = ' ${smsResult.message}';
+          }
+        }
+      } catch (_) {}
+    }
     if (context.mounted) {
       showAppMessage(
         context,
         checkInNow
-            ? 'Room ${room['room_number']} checked in. Guest is in-house.'
+            ? 'Room ${room['room_number']} checked in. Guest is in-house.$smsNote'
             : 'Room ${room['room_number']} booked. Open the Book tab to check the guest in when they arrive.',
       );
     }

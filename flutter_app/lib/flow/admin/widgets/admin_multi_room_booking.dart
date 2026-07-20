@@ -18,6 +18,7 @@ import 'hourly_billing.dart';
 import 'manual_booking_dialog.dart';
 import 'multi_room_booking_summary.dart';
 import 'online_payment_qr_block.dart';
+import 'device_guest_welcome_sms.dart';
 
 /// Group walk-in booking — same steps as single room: calendar → guest form → submit.
 Future<bool> showAdminMultiRoomWalkInBooking({
@@ -554,8 +555,11 @@ Future<bool> showAdminMultiRoomWalkInBooking({
   if (payload == null || !context.mounted) return false;
 
   final checkInNow = payload['check_in_now'] == true;
+  if (checkInNow) {
+    await DeviceGuestWelcomeSms.ensurePermission();
+  }
   try {
-    await submitAdminBulkWalkInBooking(
+    final result = await submitAdminBulkWalkInBooking(
       rooms: rooms,
       checkInNow: checkInNow,
       payload: CompleteGuestBookingPayload(
@@ -589,11 +593,40 @@ Future<bool> showAdminMultiRoomWalkInBooking({
         checkOut: checkOut,
       );
       final gross = multiRoomGrossTotal(lines);
+      var smsNote = '';
+      if (checkInNow) {
+        try {
+          final rawSms = result['guest_welcome_sms'];
+          final smsPayload = rawSms is Map
+              ? Map<String, dynamic>.from(rawSms)
+              : <String, dynamic>{
+                  'guest_phone': (payload['guest_phone'] ?? '').toString(),
+                  'guest_name': (payload['guest_name'] ?? '').toString(),
+                  'room_number': (rooms.first['room_number'] ?? '').toString(),
+                };
+          if ((smsPayload['guest_phone'] ?? '').toString().trim().isNotEmpty) {
+            final smsResult = await DeviceGuestWelcomeSms.sendFromPayload(
+              smsPayload,
+              fallbackPhone: (payload['guest_phone'] ?? '').toString(),
+              fallbackGuest: (payload['guest_name'] ?? '').toString(),
+              fallbackRoom: (rooms.first['room_number'] ?? '').toString(),
+            ).timeout(
+              const Duration(seconds: 30),
+              onTimeout: () => DeviceSmsOutcome.failed('SMS timed out.'),
+            );
+            if (smsResult.didSend) {
+              smsNote = ' Welcome SMS sent from this phone.';
+            } else if (smsResult.message.isNotEmpty) {
+              smsNote = ' ${smsResult.message}';
+            }
+          }
+        } catch (_) {}
+      }
       showAppMessage(
         context,
         checkInNow
             ? 'Checked in ${rooms.length} rooms for ${payload['guest_name']}. '
-                'Total due: ${formatPeso(gross)}. Guests are in-house.'
+                'Total due: ${formatPeso(gross)}. Guests are in-house.$smsNote'
             : 'Booked ${rooms.length} rooms for ${payload['guest_name']}. '
                 'Total due: ${formatPeso(gross)}. '
                 'Open the Book tab to check guests in when they arrive.',

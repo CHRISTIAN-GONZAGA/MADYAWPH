@@ -436,21 +436,18 @@ class RoomSummarySection extends StatelessWidget {
                 }
               },
             ),
-            _TotalStatCard(
-              label: 'Reports',
-              value: 'Open',
-              icon: Icons.assessment_outlined,
-              color: Colors.purple.shade700,
-              onTap: () => openHotelTotalsReports(
-                context,
-                rooms: rooms,
-                isFrontDesk: isFrontDesk || canCreateBookings,
-              ),
-            ),
           ],
         ),
         const SizedBox(height: 6),
         const FoActivityStatCards(),
+        const SizedBox(height: 6),
+        _ReportsEntryCard(
+          onTap: () => openHotelTotalsReports(
+            context,
+            rooms: rooms,
+            isFrontDesk: isFrontDesk || canCreateBookings,
+          ),
+        ),
       ],
     );
   }
@@ -1037,7 +1034,7 @@ class _CategoryCard extends StatelessWidget {
                                   height: 1.15,
                                 ),
                           ),
-                          const SizedBox(height: 6),
+                          const SizedBox(height: 2),
                           Align(
                             alignment: Alignment.centerLeft,
                             child: _AvgPriceHighlight(
@@ -1103,52 +1100,102 @@ class _AvgPriceHighlight extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    // "Avg ₱2500" → black "Avg", larger highlighted amount.
-    final match = RegExp(r'^(Avg)\s*(.*)$', caseSensitive: false).firstMatch(label);
+    // Compact: "Avg ₱2500" — small enough to fit category cards.
+    final match =
+        RegExp(r'^(Avg)\s*(.*)$', caseSensitive: false).firstMatch(label);
     final prefix = match?.group(1) ?? 'Avg';
     final amount = (match?.group(2) ?? '').trim();
     final hasAmount = amount.isNotEmpty && amount != '—';
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: scheme.primary.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: scheme.primary.withValues(alpha: 0.35)),
-      ),
-      child: Text.rich(
-        TextSpan(
-          children: [
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(
+            text: prefix,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: scheme.onSurfaceVariant,
+                  fontSize: 10,
+                  height: 1.1,
+                ),
+          ),
+          if (hasAmount)
             TextSpan(
-              text: prefix,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              text: ' $amount',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     fontWeight: FontWeight.w800,
-                    color: scheme.onSurface,
-                    height: 1.15,
+                    color: scheme.primary,
+                    fontSize: 11,
+                    height: 1.1,
+                  ),
+            )
+          else
+            TextSpan(
+              text: ' —',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurfaceVariant,
+                    fontSize: 10,
+                    height: 1.1,
                   ),
             ),
-            if (hasAmount)
-              TextSpan(
-                text: ' $amount',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w900,
-                      color: scheme.primary,
-                      height: 1.15,
-                    ),
-              )
-            else
-              TextSpan(
-                text: ' —',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: scheme.onSurfaceVariant,
-                      height: 1.15,
-                    ),
-              ),
-          ],
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
+}
+
+class _ReportsEntryCard extends StatelessWidget {
+  const _ReportsEntryCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    const color = Color(0xFF6A1B9A);
+    return Material(
+      color: scheme.surface,
+      elevation: 0,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withValues(alpha: 0.22)),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                color.withValues(alpha: 0.07),
+                scheme.surface,
+              ],
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            child: Row(
+              children: [
+                Icon(Icons.assessment_outlined, color: color, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Reports',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: color,
+                        ),
+                  ),
+                ),
+                Icon(Icons.chevron_right, color: color.withValues(alpha: 0.7)),
+              ],
+            ),
+          ),
         ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
       ),
     );
   }
