@@ -25,6 +25,7 @@ class FrontDeskSalesReportService
      *         username: string,
      *         amenity_sales: float,
      *         manual_sales: float,
+     *         room_sales: float,
      *         payments_collected: float,
      *         total_sales: float,
      *         order_count: int
@@ -46,6 +47,7 @@ class FrontDeskSalesReportService
             $byUser[$id] = [
                 'amenity_sales' => 0.0,
                 'manual_sales' => 0.0,
+                'room_sales' => 0.0,
                 'payments_collected' => 0.0,
                 'order_count' => 0,
             ];
@@ -71,6 +73,9 @@ class FrontDeskSalesReportService
             } elseif ($type === 'manual') {
                 $byUser[$uid]['manual_sales'] += $amount;
                 $byUser[$uid]['order_count']++;
+            } elseif ($this->isSaleType($type)) {
+                $byUser[$uid]['room_sales'] += $amount;
+                $byUser[$uid]['order_count']++;
             }
         }
 
@@ -80,22 +85,30 @@ class FrontDeskSalesReportService
                 $row = $byUser[$id] ?? [
                     'amenity_sales' => 0.0,
                     'manual_sales' => 0.0,
+                    'room_sales' => 0.0,
                     'payments_collected' => 0.0,
                     'order_count' => 0,
                 ];
-                $totalSales = round($row['amenity_sales'] + $row['manual_sales'], 2);
+                $totalSales = round(
+                    $row['amenity_sales'] + $row['manual_sales'] + ($row['room_sales'] ?? 0),
+                    2
+                );
+                $payments = round((float) $row['payments_collected'], 2);
 
                 return [
                     'user_id' => $id,
                     'username' => (string) ($user->name ?? ''),
                     'amenity_sales' => round($row['amenity_sales'], 2),
                     'manual_sales' => round($row['manual_sales'], 2),
-                    'payments_collected' => round($row['payments_collected'], 2),
+                    'room_sales' => round((float) ($row['room_sales'] ?? 0), 2),
+                    'payments_collected' => $payments,
                     'total_sales' => $totalSales,
+                    // Headline for FO list: billed sales, or payments when only collections were recorded.
+                    'display_total' => round($totalSales > 0.009 ? $totalSales : $payments, 2),
                     'order_count' => (int) $row['order_count'],
                 ];
             })
-            ->sortByDesc('total_sales')
+            ->sortByDesc('display_total')
             ->values()
             ->all();
 
@@ -106,6 +119,7 @@ class FrontDeskSalesReportService
             'totals' => [
                 'sales' => round((float) collect($accounts)->sum('total_sales'), 2),
                 'payments' => round((float) collect($accounts)->sum('payments_collected'), 2),
+                'display_total' => round((float) collect($accounts)->sum('display_total'), 2),
                 'order_count' => (int) collect($accounts)->sum('order_count'),
             ],
             'accounts' => $accounts,
@@ -119,12 +133,7 @@ class FrontDeskSalesReportService
      *     user_id: string,
      *     username: string,
      *     anchor_date: string,
-     *     periods: array{
-     *         daily: array{label: string, from: string, to: string, total_sales: float, payments_collected: float, order_count: int},
-     *         weekly: array{label: string, from: string, to: string, total_sales: float, payments_collected: float, order_count: int},
-     *         monthly: array{label: string, from: string, to: string, total_sales: float, payments_collected: float, order_count: int},
-     *         annual: array{label: string, from: string, to: string, total_sales: float, payments_collected: float, order_count: int}
-     *     }
+     *     periods: array<string, array<string, mixed>>
      * }
      */
     public function accountPeriodOverview(
@@ -165,74 +174,17 @@ class FrontDeskSalesReportService
             /** @var Carbon $to */
             $to = $range['to'];
             $charges = $this->chargesInRange($hotelId, $from, $to, [$userId]);
-
-            $bookingIds = $charges
-                ->map(fn ($c) => (string) ($c->booking_id ?? ''))
-                ->filter(fn ($id) => $id !== '')
-                ->unique()
-                ->values()
-                ->all();
-            $methodsByBooking = [];
-            if ($bookingIds !== []) {
-                $bookings = \App\Models\Booking::withoutGlobalScopes()
-                    ->whereIn('id', $bookingIds)
-                    ->get(['id', 'payment_method']);
-                foreach ($bookings as $booking) {
-                    $methodsByBooking[(string) $booking->id] =
-                        \App\Support\SafeModelAttributes::paymentMethodLabel($booking);
-                }
-            }
-
-            $totalSales = 0.0;
-            $payments = 0.0;
-            $orderCount = 0;
-            $byMethod = [
-                'cash' => ['count' => 0, 'total' => 0.0],
-                'ewallet' => ['count' => 0, 'total' => 0.0],
-                'bank_transfer' => ['count' => 0, 'total' => 0.0],
-                'other' => ['count' => 0, 'total' => 0.0],
-            ];
-
-            foreach ($charges as $charge) {
-                $type = strtolower(trim((string) ($charge->type ?? '')));
-                $amount = (float) ($charge->amount ?? 0);
-                $isPayment = BillingChargeTypes::isPartialPayment($type);
-                $isSale = in_array($type, ['amenity', 'manual'], true) && $amount > 0;
-
-                $bookingId = (string) ($charge->booking_id ?? '');
-                $method = $methodsByBooking[$bookingId]
-                    ?? (string) data_get($charge->metadata, 'payment_method', '');
-                $bucket = $this->paymentMethodBucket($method);
-
-                if ($isPayment) {
-                    $payments += abs($amount);
-                    $byMethod[$bucket]['count']++;
-                    $byMethod[$bucket]['total'] += abs($amount);
-                    continue;
-                }
-                if ($amount <= 0) {
-                    continue;
-                }
-                if (in_array($type, ['amenity', 'manual'], true)) {
-                    $totalSales += $amount;
-                    $orderCount++;
-                    $byMethod[$bucket]['count']++;
-                    $byMethod[$bucket]['total'] += $amount;
-                }
-            }
-
-            foreach ($byMethod as $methodKey => $row) {
-                $byMethod[$methodKey]['total'] = round((float) $row['total'], 2);
-            }
+            $summary = $this->aggregateCharges($charges);
 
             $periods[$key] = [
                 'label' => (string) $range['label'],
                 'from' => $from->toDateString(),
                 'to' => $to->toDateString(),
-                'total_sales' => round($totalSales, 2),
-                'payments_collected' => round($payments, 2),
-                'order_count' => $orderCount,
-                'by_payment_method' => $byMethod,
+                'total_sales' => $summary['total_sales'],
+                'payments_collected' => $summary['payments_collected'],
+                'display_total' => $summary['display_total'],
+                'order_count' => $summary['order_count'],
+                'by_payment_method' => $summary['by_payment_method'],
             ];
         }
 
@@ -252,7 +204,7 @@ class FrontDeskSalesReportService
      *     username: string,
      *     from: string,
      *     to: string,
-     *     days: list<array{date: string, total_sales: float, payments_collected: float, order_count: int}>
+     *     days: list<array{date: string, total_sales: float, payments_collected: float, display_total: float, order_count: int}>
      * }
      */
     public function accountCalendar(
@@ -289,7 +241,7 @@ class FrontDeskSalesReportService
             if ($amount <= 0) {
                 continue;
             }
-            if (in_array($type, ['amenity', 'manual'], true)) {
+            if ($this->isSaleType($type)) {
                 $byDay[$day]['total_sales'] += $amount;
                 $byDay[$day]['order_count']++;
             }
@@ -305,10 +257,13 @@ class FrontDeskSalesReportService
                 'payments_collected' => 0.0,
                 'order_count' => 0,
             ];
+            $sales = round($row['total_sales'], 2);
+            $payments = round($row['payments_collected'], 2);
             $days[] = [
                 'date' => $key,
-                'total_sales' => round($row['total_sales'], 2),
-                'payments_collected' => round($row['payments_collected'], 2),
+                'total_sales' => $sales,
+                'payments_collected' => $payments,
+                'display_total' => round($sales > 0.009 ? $sales : $payments, 2),
                 'order_count' => (int) $row['order_count'],
             ];
             $cursor->addDay();
@@ -329,7 +284,7 @@ class FrontDeskSalesReportService
      *     username: string,
      *     from: string,
      *     to: string,
-     *     summary: array{total_sales: float, payments_collected: float, order_count: int},
+     *     summary: array{total_sales: float, payments_collected: float, display_total: float, order_count: int},
      *     transactions: list<array<string, mixed>>
      * }
      */
@@ -343,61 +298,26 @@ class FrontDeskSalesReportService
         $to = $day->copy()->endOfDay();
         $charges = $this->chargesInRange($hotelId, $from, $to, [$userId]);
 
-        $bookingIds = $charges
-            ->map(fn ($c) => (string) ($c->booking_id ?? ''))
-            ->filter(fn ($id) => $id !== '')
-            ->unique()
-            ->values()
-            ->all();
-        $methodsByBooking = [];
-        if ($bookingIds !== []) {
-            $bookings = \App\Models\Booking::withoutGlobalScopes()
-                ->whereIn('id', $bookingIds)
-                ->get(['id', 'payment_method']);
-            foreach ($bookings as $booking) {
-                $methodsByBooking[(string) $booking->id] =
-                    \App\Support\SafeModelAttributes::paymentMethodLabel($booking);
-            }
-        }
+        $methodsByBooking = $this->paymentMethodsByBooking($charges);
+        $summary = $this->aggregateCharges($charges, $methodsByBooking);
 
-        $totalSales = 0.0;
-        $payments = 0.0;
-        $orderCount = 0;
         $transactions = [];
-        $byMethod = [
-            'cash' => ['count' => 0, 'total' => 0.0],
-            'ewallet' => ['count' => 0, 'total' => 0.0],
-            'bank_transfer' => ['count' => 0, 'total' => 0.0],
-            'other' => ['count' => 0, 'total' => 0.0],
-        ];
-
         foreach ($charges as $charge) {
             $type = strtolower(trim((string) ($charge->type ?? '')));
             $amount = (float) ($charge->amount ?? 0);
             $isPayment = BillingChargeTypes::isPartialPayment($type);
-            $isSale = in_array($type, ['amenity', 'manual'], true) && $amount > 0;
+            $isSale = $this->isSaleType($type) && $amount > 0;
             $isComplimentary = $isSale === false
-                && in_array($type, ['amenity', 'manual'], true)
+                && in_array($type, ['amenity', 'manual', 'room'], true)
                 && $amount <= 0.009;
-
-            if ($isPayment) {
-                $payments += abs($amount);
-            } elseif ($isSale) {
-                $totalSales += $amount;
-                $orderCount++;
-            }
 
             if (! $isPayment && ! $isSale && ! $isComplimentary) {
                 continue;
             }
 
             $bookingId = (string) ($charge->booking_id ?? '');
-            $method = $methodsByBooking[$bookingId] ?? (string) data_get($charge->metadata, 'payment_method', '');
-            $bucket = $this->paymentMethodBucket($method);
-            if ($isPayment || $isSale) {
-                $byMethod[$bucket]['count']++;
-                $byMethod[$bucket]['total'] += $isPayment ? abs($amount) : $amount;
-            }
+            $method = $methodsByBooking[$bookingId]
+                ?? (string) data_get($charge->metadata, 'payment_method', '');
 
             $transactions[] = [
                 'id' => (string) $charge->id,
@@ -413,23 +333,117 @@ class FrontDeskSalesReportService
             ];
         }
 
-        foreach ($byMethod as $key => $row) {
-            $byMethod[$key]['total'] = round((float) $row['total'], 2);
-        }
-
         return [
             'user_id' => $userId,
             'username' => (string) ($user->name ?? ''),
             'from' => $from->toDateString(),
             'to' => $to->toDateString(),
             'summary' => [
-                'total_sales' => round($totalSales, 2),
-                'payments_collected' => round($payments, 2),
-                'order_count' => $orderCount,
-                'by_payment_method' => $byMethod,
+                'total_sales' => $summary['total_sales'],
+                'payments_collected' => $summary['payments_collected'],
+                'display_total' => $summary['display_total'],
+                'order_count' => $summary['order_count'],
+                'by_payment_method' => $summary['by_payment_method'],
             ],
             'transactions' => $transactions,
         ];
+    }
+
+    /**
+     * @param  Collection<int, BillingCharge>  $charges
+     * @param  array<string, string>|null  $methodsByBooking
+     * @return array{
+     *     total_sales: float,
+     *     payments_collected: float,
+     *     display_total: float,
+     *     order_count: int,
+     *     by_payment_method: array<string, array{count: int, total: float}>
+     * }
+     */
+    private function aggregateCharges(Collection $charges, ?array $methodsByBooking = null): array
+    {
+        $methodsByBooking ??= $this->paymentMethodsByBooking($charges);
+
+        $totalSales = 0.0;
+        $payments = 0.0;
+        $orderCount = 0;
+        $byMethod = [
+            'cash' => ['count' => 0, 'total' => 0.0],
+            'ewallet' => ['count' => 0, 'total' => 0.0],
+            'bank_transfer' => ['count' => 0, 'total' => 0.0],
+            'other' => ['count' => 0, 'total' => 0.0],
+        ];
+
+        foreach ($charges as $charge) {
+            $type = strtolower(trim((string) ($charge->type ?? '')));
+            $amount = (float) ($charge->amount ?? 0);
+            $isPayment = BillingChargeTypes::isPartialPayment($type);
+            $isSale = $this->isSaleType($type) && $amount > 0;
+
+            $bookingId = (string) ($charge->booking_id ?? '');
+            $method = $methodsByBooking[$bookingId]
+                ?? (string) data_get($charge->metadata, 'payment_method', '');
+            $bucket = $this->paymentMethodBucket($method);
+
+            if ($isPayment) {
+                $payments += abs($amount);
+                $byMethod[$bucket]['count']++;
+                $byMethod[$bucket]['total'] += abs($amount);
+                continue;
+            }
+            if ($amount <= 0) {
+                continue;
+            }
+            if ($isSale) {
+                $totalSales += $amount;
+                $orderCount++;
+                $byMethod[$bucket]['count']++;
+                $byMethod[$bucket]['total'] += $amount;
+            }
+        }
+
+        foreach ($byMethod as $methodKey => $row) {
+            $byMethod[$methodKey]['total'] = round((float) $row['total'], 2);
+        }
+
+        $sales = round($totalSales, 2);
+        $paymentsRounded = round($payments, 2);
+
+        return [
+            'total_sales' => $sales,
+            'payments_collected' => $paymentsRounded,
+            'display_total' => round($sales > 0.009 ? $sales : $paymentsRounded, 2),
+            'order_count' => $orderCount,
+            'by_payment_method' => $byMethod,
+        ];
+    }
+
+    /**
+     * @param  Collection<int, BillingCharge>  $charges
+     * @return array<string, string>
+     */
+    private function paymentMethodsByBooking(Collection $charges): array
+    {
+        $bookingIds = $charges
+            ->map(fn ($c) => (string) ($c->booking_id ?? ''))
+            ->filter(fn ($id) => $id !== '')
+            ->unique()
+            ->values()
+            ->all();
+        $methodsByBooking = [];
+        if ($bookingIds === []) {
+            return $methodsByBooking;
+        }
+
+        $bookings = \App\Models\Booking::withoutGlobalScopes()
+            ->whereIn('id', $bookingIds)
+            ->get(['id', 'payment_method']);
+        foreach ($bookings as $booking) {
+            $methodsByBooking[(string) $booking->id] =
+                \App\Support\SafeModelAttributes::paymentMethodLabel($booking);
+        }
+
+        return $methodsByBooking;
     }
 
     private function paymentMethodBucket(string $method): string
@@ -468,14 +482,63 @@ class FrontDeskSalesReportService
             return collect();
         }
 
+        $userIdSet = array_fill_keys(array_map('strval', $userIds), true);
+
+        // Filter created_by in PHP so ObjectId/string id forms still match.
         return BillingCharge::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
-            ->whereIn('created_by', $userIds)
-            ->whereIn('type', ['amenity', 'manual', 'partial_payment'])
+            ->whereIn('type', $this->trackedChargeTypes())
             ->where('created_at', '>=', $from->copy()->startOfDay())
             ->where('created_at', '<=', $to->copy()->endOfDay())
             ->orderBy('created_at')
-            ->get(['id', 'type', 'label', 'amount', 'quantity', 'room_id', 'booking_id', 'created_by', 'created_at', 'metadata']);
+            ->get(['id', 'type', 'label', 'amount', 'quantity', 'room_id', 'booking_id', 'created_by', 'created_at', 'metadata'])
+            ->filter(function ($charge) use ($userIdSet) {
+                $uid = (string) ($charge->created_by ?? '');
+
+                return $uid !== '' && isset($userIdSet[$uid]);
+            })
+            ->values();
+    }
+
+    /**
+     * Charge types that count toward FO sales (room stay + extras).
+     *
+     * @return list<string>
+     */
+    private function trackedChargeTypes(): array
+    {
+        return [
+            'room',
+            'amenity',
+            'manual',
+            'extend-stay',
+            'early_check_in',
+            'early-check-in',
+            'late_checkout',
+            'late_check_out',
+            'late-checkout',
+            BillingChargeTypes::PARTIAL_PAYMENT,
+        ];
+    }
+
+    private function isSaleType(string $type): bool
+    {
+        $type = strtolower(trim($type));
+        if ($type === '' || BillingChargeTypes::isCredit($type) || $type === 'refund') {
+            return false;
+        }
+
+        return in_array($type, [
+            'room',
+            'amenity',
+            'manual',
+            'extend-stay',
+            'early_check_in',
+            'early-check-in',
+            'late_checkout',
+            'late_check_out',
+            'late-checkout',
+        ], true);
     }
 
     private function requireFrontDeskUser(string $hotelId, string $userId): User

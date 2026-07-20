@@ -344,7 +344,7 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
   }) {
     var sum = 0.0;
     for (final t in _txnsFor(bucket, source: source)) {
-      sum += (t['amount'] as num?)?.toDouble() ?? 0;
+      sum += parseJsonDouble(t['amount']);
     }
     return sum;
   }
@@ -352,6 +352,11 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
   double get _cashSales => _totalFor(_PaymentBucket.cash);
   double get _financeCashSales =>
       _totalFor(_PaymentBucket.cash, source: _financeTxns);
+
+  double get _salesTxnTotal =>
+      _cashSales +
+      _totalFor(_PaymentBucket.ewallet) +
+      _totalFor(_PaymentBucket.bank);
 
   double _expensesOf(Map<String, dynamic> summary) {
     return (summary['expenses'] as num?)?.toDouble() ??
@@ -459,7 +464,7 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
                                     ].where((s) => s.isNotEmpty).join(' · '),
                                   ),
                                   trailing: Text(
-                                    formatPeso(r['amount'] ?? 0),
+                                    formatPeso(parseJsonDouble(r['amount'])),
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w800,
                                     ),
@@ -542,10 +547,11 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
           // —— Sales ——
           _DropdownSection(
             title: 'Sales',
-            subtitle: formatPeso(_salesSummary['gross_revenue'] ??
-                (_cashSales +
-                    _totalFor(_PaymentBucket.ewallet) +
-                    _totalFor(_PaymentBucket.bank))),
+            subtitle: formatPeso(
+              parseJsonDouble(_salesSummary['gross_revenue']) > 0.009
+                  ? parseJsonDouble(_salesSummary['gross_revenue'])
+                  : _salesTxnTotal,
+            ),
             icon: Icons.payments_outlined,
             accent: Colors.teal.shade700,
             expanded: _expanded == 'sales',

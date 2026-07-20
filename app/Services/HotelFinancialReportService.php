@@ -7,6 +7,7 @@ use App\Models\Booking;
 use App\Models\ResellerCommissionPayment;
 use App\Models\Room;
 use App\Models\RoomTransfer;
+use App\Support\BillingChargeTypes;
 use App\Support\CancellationRetentionSupport;
 use App\Support\SafeModelAttributes;
 use App\Support\TenantContext;
@@ -380,9 +381,11 @@ class HotelFinancialReportService
                 if ($set->isEmpty()) {
                     $gross = (float) ($booking?->total_amount ?? 0);
                 } else {
+                    // Exclude payments/credits (partial_payment is stored negative) so
+                    // room + payment does not net to ₱0 on paid stays.
                     $gross = (float) $set
-                        ->reject(fn ($c) => (string) ($c->type ?? '') === 'refund')
-                        ->sum(fn ($c) => (float) ($c->amount ?? 0));
+                        ->reject(fn ($c) => BillingChargeTypes::isCredit($c->type ?? ''))
+                        ->sum(fn ($c) => max(0, (float) ($c->amount ?? 0)));
                 }
                 if ($booking !== null) {
                     $gross = CancellationRetentionSupport::recognizedRevenueForBooking($booking, $gross);

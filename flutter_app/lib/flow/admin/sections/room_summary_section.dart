@@ -1006,86 +1006,87 @@ class _CategoryCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.45)),
           ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 15,
-                      backgroundColor: scheme.primaryContainer,
-                      child: Icon(
-                        Icons.king_bed_outlined,
-                        color: scheme.onPrimaryContainer,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 15,
+                        backgroundColor: scheme.primaryContainer,
+                        child: Icon(
+                          Icons.king_bed_outlined,
+                          color: scheme.onPrimaryContainer,
+                          size: 16,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelLarge
+                              ?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                height: 1.15,
+                              ),
+                        ),
+                      ),
+                      Icon(
+                        Icons.open_in_new_rounded,
                         size: 16,
+                        color: scheme.primary,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: _AvgPriceHighlight(
+                        label:
+                            (stats['avg_price_label'] ?? 'Avg —').toString(),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  height: 1.15,
-                                ),
-                          ),
-                          const SizedBox(height: 2),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: _AvgPriceHighlight(
-                              label: (stats['avg_price_label'] ?? 'Avg —')
-                                  .toString(),
-                            ),
-                          ),
-                        ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _CategoryMiniStat(
+                          label: 'Rsv',
+                          count: reservedCount,
+                          color: Colors.orange.shade800,
+                          onTap: onReservedTap,
+                        ),
                       ),
-                    ),
-                    Icon(
-                      Icons.open_in_new_rounded,
-                      size: 16,
-                      color: scheme.primary,
-                    ),
-                  ],
-                ),
-                const Spacer(),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _CategoryMiniStat(
-                        label: 'Rsv',
-                        count: reservedCount,
-                        color: Colors.orange.shade800,
-                        onTap: onReservedTap,
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: _CategoryMiniStat(
+                          label: 'Occ',
+                          count: occupiedCount,
+                          color: Colors.green.shade700,
+                          onTap: onOccupiedTap,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: _CategoryMiniStat(
-                        label: 'Occ',
-                        count: occupiedCount,
-                        color: Colors.green.shade700,
-                        onTap: onOccupiedTap,
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: _CategoryMiniStat(
+                          label: 'Vac',
+                          count: vacantCount,
+                          color: Colors.teal.shade700,
+                          onTap: onVacantTap,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: _CategoryMiniStat(
-                        label: 'Vac',
-                        count: vacantCount,
-                        color: Colors.teal.shade700,
-                        onTap: onVacantTap,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -1102,49 +1103,38 @@ class _AvgPriceHighlight extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    // Compact: "Avg ₱2500" — small enough to fit category cards.
     final match =
         RegExp(r'^(Avg)\s*(.*)$', caseSensitive: false).firstMatch(label);
     final prefix = match?.group(1) ?? 'Avg';
     final amount = (match?.group(2) ?? '').trim();
     final hasAmount = amount.isNotEmpty && amount != '—';
 
-    return Text.rich(
-      TextSpan(
-        children: [
-          TextSpan(
-            text: prefix,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: scheme.onSurfaceVariant,
-                  fontSize: 10,
-                  height: 1.1,
-                ),
-          ),
-          if (hasAmount)
-            TextSpan(
-              text: ' $amount',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: scheme.primary,
-                    fontSize: 11,
-                    height: 1.1,
-                  ),
-            )
-          else
-            TextSpan(
-              text: ' —',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: scheme.onSurfaceVariant,
-                    fontSize: 10,
-                    height: 1.1,
-                  ),
-            ),
-        ],
-      ),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          prefix.toUpperCase(),
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: scheme.onSurfaceVariant,
+                letterSpacing: 0.4,
+                height: 1,
+              ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          hasAmount ? amount : '—',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w900,
+                color: hasAmount ? scheme.primary : scheme.onSurfaceVariant,
+                height: 1.05,
+              ),
+        ),
+      ],
     );
   }
 }
