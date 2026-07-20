@@ -96,7 +96,9 @@ class FrontDeskSalesRoomChargesTest extends TestCase
         $this->assertSame(1500.0, (float) $account['total_sales']);
         $this->assertSame(1500.0, (float) ($account['room_sales'] ?? 0));
         $this->assertSame(1500.0, (float) ($account['display_total'] ?? 0));
-        $this->assertSame(2000.0, (float) ($account['cash'] ?? 0));
+        $this->assertSame(500.0, (float) ($account['cash_sales'] ?? 0));
+        $this->assertSame(1500.0, (float) ($account['booking_sales'] ?? 0));
+        $this->assertSame(500.0, (float) ($account['cash_on_hand'] ?? 0));
     }
 
     public function test_period_display_total_falls_back_to_payments_when_no_sale_charges(): void

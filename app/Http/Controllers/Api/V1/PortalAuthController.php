@@ -350,22 +350,16 @@ class PortalAuthController extends Controller
         $user = $this->findPortalUserForHotel($activeHotelId, $identifierField, $identifier);
 
         if (! $user) {
-            return response()->json(['message' => 'These credentials do not match our records.'], 422);
+            return response()->json(['message' => 'Invalid credentials.'], 422);
         }
 
         $userRole = $user->roleValue();
-        $roleMatches = $userRole === $role
-            || ($role === UserRole::ADMIN->value && $userRole === UserRole::SUPER_ADMIN->value)
-            || ($role === UserRole::OWNER->value && in_array($userRole, [
-                UserRole::OWNER->value,
-                UserRole::SUPER_ADMIN->value,
-            ], true));
-        if (! $roleMatches) {
-            return response()->json(['message' => 'Use the role that matches this account (admin, front desk, owner, super admin, or staff).'], 422);
+        if ($userRole !== $role) {
+            return response()->json(['message' => 'Invalid credentials.'], 422);
         }
 
         if (! $this->passwordMatchesUser($validated['password'], $user)) {
-            return response()->json(['message' => 'These credentials do not match our records.'], 422);
+            return response()->json(['message' => 'Invalid credentials.'], 422);
         }
 
         try {

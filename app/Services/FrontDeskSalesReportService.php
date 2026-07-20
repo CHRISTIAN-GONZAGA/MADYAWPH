@@ -12,24 +12,17 @@ class FrontDeskSalesReportService
 {
     public function __construct(
         private readonly FrontDeskActivityReportService $frontDeskActivity,
+        private readonly FrontDeskShiftSessionService $shiftSessions,
     ) {}
 
     /**
+     * @param  list<string>|null  $onlyUserIds  When set, only these FO user ids are included.
      * @return array{
      *     from: string,
      *     to: string,
      *     granularity: string,
-     *     totals: array{sales: float, payments: float, order_count: int},
-     *     accounts: list<array{
-     *         user_id: string,
-     *         username: string,
-     *         amenity_sales: float,
-     *         manual_sales: float,
-     *         room_sales: float,
-     *         payments_collected: float,
-     *         total_sales: float,
-     *         order_count: int
-     *     }>
+     *     totals: array<string, float|int>,
+     *     accounts: list<array<string, mixed>>
      * }
      */
     public function summarizeAccounts(
@@ -37,8 +30,15 @@ class FrontDeskSalesReportService
         string $granularity,
         Carbon $from,
         Carbon $to,
+        ?array $onlyUserIds = null,
     ): array {
         $users = $this->frontDeskActivity->frontDeskUsers($hotelId);
+        if ($onlyUserIds !== null) {
+            $allowed = array_fill_keys(array_map('strval', $onlyUserIds), true);
+            $users = $users
+                ->filter(fn (User $u) => isset($allowed[(string) $u->id]))
+                ->values();
+        }
         $userIds = $users->map(fn (User $u) => (string) $u->id)->all();
         $charges = $this->chargesInRange($hotelId, $from, $to, $userIds);
 
@@ -49,13 +49,37 @@ class FrontDeskSalesReportService
                     fn ($c) => (string) ($c->created_by ?? '') === $id
                 );
                 $agg = $this->aggregateCharges($userCharges);
+                $methodsByBooking = $this->paymentMethodsByBooking($userCharges);
 
                 $amenity = 0.0;
                 $manual = 0.0;
                 $room = 0.0;
+                $expenses = 0.0;
+                $cashPayments = 0.0;
+                $ewalletPayments = 0.0;
+                $bankPayments = 0.0;
                 foreach ($userCharges as $charge) {
                     $type = strtolower(trim((string) ($charge->type ?? '')));
                     $amount = (float) ($charge->amount ?? 0);
+                    if ($type === 'refund') {
+                        $expenses += abs($amount);
+                        continue;
+                    }
+                    if (BillingChargeTypes::isPartialPayment($type)) {
+                        $bookingId = (string) ($charge->booking_id ?? '');
+                        $method = $methodsByBooking[$bookingId]
+                            ?? (string) data_get($charge->metadata, 'payment_method', '');
+                        $bucket = $this->paymentMethodBucket($method);
+                        $paid = abs($amount);
+                        if ($bucket === 'cash') {
+                            $cashPayments += $paid;
+                        } elseif ($bucket === 'ewallet') {
+                            $ewalletPayments += $paid;
+                        } elseif ($bucket === 'bank_transfer') {
+                            $bankPayments += $paid;
+                        }
+                        continue;
+                    }
                     if ($amount <= 0 || BillingChargeTypes::isCredit($type)) {
                         continue;
                     }
@@ -69,21 +93,30 @@ class FrontDeskSalesReportService
                 }
 
                 $methods = $agg['by_payment_method'];
+                $cash = round($cashPayments, 2);
+                $ewallet = round($ewalletPayments, 2);
+                $bookingSales = round($room, 2);
+                $expensesRounded = round($expenses, 2);
 
                 return [
                     'user_id' => $id,
                     'username' => (string) ($user->name ?? ''),
                     'amenity_sales' => round($amenity, 2),
                     'manual_sales' => round($manual, 2),
-                    'room_sales' => round($room, 2),
+                    'room_sales' => $bookingSales,
+                    'booking_sales' => $bookingSales,
                     'payments_collected' => $agg['payments_collected'],
                     'total_sales' => $agg['total_sales'],
                     'display_total' => $agg['display_total'],
                     'order_count' => $agg['order_count'],
                     'by_payment_method' => $methods,
-                    'cash' => round((float) ($methods['cash']['total'] ?? 0), 2),
-                    'ewallet' => round((float) ($methods['ewallet']['total'] ?? 0), 2),
-                    'bank_transfer' => round((float) ($methods['bank_transfer']['total'] ?? 0), 2),
+                    'cash' => $cash,
+                    'cash_sales' => $cash,
+                    'ewallet' => $ewallet,
+                    'ewallet_sales' => $ewallet,
+                    'bank_transfer' => round($bankPayments, 2),
+                    'expenses' => $expensesRounded,
+                    'cash_on_hand' => round(max(0, $cash - $expensesRounded), 2),
                 ];
             })
             ->sortByDesc('display_total')
@@ -102,8 +135,32 @@ class FrontDeskSalesReportService
                 'cash' => round((float) collect($accounts)->sum('cash'), 2),
                 'ewallet' => round((float) collect($accounts)->sum('ewallet'), 2),
                 'bank_transfer' => round((float) collect($accounts)->sum('bank_transfer'), 2),
+                'booking_sales' => round((float) collect($accounts)->sum('booking_sales'), 2),
+                'expenses' => round((float) collect($accounts)->sum('expenses'), 2),
+                'cash_on_hand' => round((float) collect($accounts)->sum('cash_on_hand'), 2),
             ],
             'accounts' => $accounts,
+        ];
+    }
+
+    /**
+     * Timed-in FO report cards for Hotel totals.
+     *
+     * @return array{from: string, to: string, sessions: list<array<string, mixed>>, accounts: list<array<string, mixed>>}
+     */
+    public function timedInReportSummary(string $hotelId, Carbon $anchor): array
+    {
+        $from = $anchor->copy()->startOfDay();
+        $to = $anchor->copy()->endOfDay();
+        $activeIds = $this->shiftSessions->activeUserIds($hotelId);
+        $summary = $this->summarizeAccounts($hotelId, 'day', $from, $to, $activeIds);
+
+        return [
+            'from' => $from->toDateString(),
+            'to' => $to->toDateString(),
+            'sessions' => $this->shiftSessions->activeSessions($hotelId),
+            'accounts' => $summary['accounts'],
+            'totals' => $summary['totals'],
         ];
     }
 
@@ -499,6 +556,7 @@ class FrontDeskSalesReportService
             'late_check_out',
             'late-checkout',
             BillingChargeTypes::PARTIAL_PAYMENT,
+            'refund',
         ];
     }
 

@@ -3,11 +3,8 @@ import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
 import '../../../utils/money_format.dart';
-import '../admin_dashboard_models.dart';
 
-/// Inline Hotel totals report summary (no tap required).
-/// Shows each FO’s cash / e-wallet / bank sales plus hotel collectibles,
-/// expenses, and cash on hand — matching the paper report layout.
+/// Inline Hotel totals report summary for **timed-in** front desk only.
 class HotelTotalsReportSummary extends StatefulWidget {
   const HotelTotalsReportSummary({
     super.key,
@@ -25,20 +22,11 @@ class _HotelTotalsReportSummaryState extends State<HotelTotalsReportSummary> {
   bool _loading = true;
   String? _error;
   List<_FoSalesRow> _accounts = const [];
-  double _expenses = 0;
 
   @override
   void initState() {
     super.initState();
     _load();
-  }
-
-  @override
-  void didUpdateWidget(covariant HotelTotalsReportSummary oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.rooms != widget.rooms) {
-      // Collectibles are derived from rooms; expenses/sales refresh on pull.
-    }
   }
 
   String _fmt(DateTime d) =>
@@ -51,58 +39,30 @@ class _HotelTotalsReportSummaryState extends State<HotelTotalsReportSummary> {
     });
     try {
       final today = DateUtils.dateOnly(DateTime.now());
-      final end = DateTime(today.year, today.month, today.day, 23, 59, 59, 999);
-      final results = await Future.wait([
-        portalDio().get<Map<String, dynamic>>(
-          '/reports/frontdesk-sales/summary',
-          queryParameters: {
-            'granularity': 'day',
-            'anchor_date': _fmt(today),
-          },
-        ),
-        portalDio().get<Map<String, dynamic>>(
-          '/reports/shift-summary',
-          queryParameters: {
-            'time_in': today.toIso8601String(),
-            'time_out': end.toIso8601String(),
-          },
-        ),
-      ]);
+      final res = await portalDio().get<Map<String, dynamic>>(
+        '/reports/frontdesk-sales/timed-in-summary',
+        queryParameters: {'anchor_date': _fmt(today)},
+      );
       if (!mounted) return;
 
-      final foData = results[0].data ?? const <String, dynamic>{};
-      final shift = results[1].data ?? const <String, dynamic>{};
-      final summary =
-          (shift['summary'] as Map?)?.cast<String, dynamic>() ?? const {};
-      final expenses = parseJsonDouble(summary['expenses']);
-      final fallbackExpenses = parseJsonDouble(summary['refund_expense']) +
-          parseJsonDouble(summary['reseller_commissions_paid']);
-
-      final accounts = ((foData['accounts'] as List?) ?? const [])
+      final accounts = ((res.data?['accounts'] as List?) ?? const [])
           .whereType<Map>()
           .map((raw) {
             final row = Map<String, dynamic>.from(raw);
-            final methods = (row['by_payment_method'] as Map?) ?? const {};
-            double methodTotal(String key) {
-              final direct = row[key];
-              if (direct != null) return parseJsonDouble(direct);
-              final nested = methods[key];
-              if (nested is Map) return parseJsonDouble(nested['total']);
-              return 0;
-            }
-
             return _FoSalesRow(
               username: (row['username'] ?? 'Front desk').toString(),
-              cash: methodTotal('cash'),
-              ewallet: methodTotal('ewallet'),
-              bankTransfer: methodTotal('bank_transfer'),
+              cash: parseJsonDouble(row['cash_sales'] ?? row['cash']),
+              ewallet: parseJsonDouble(row['ewallet_sales'] ?? row['ewallet']),
+              bookingSales:
+                  parseJsonDouble(row['booking_sales'] ?? row['room_sales']),
+              expenses: parseJsonDouble(row['expenses']),
+              cashOnHand: parseJsonDouble(row['cash_on_hand']),
             );
           })
           .toList();
 
       setState(() {
         _accounts = accounts;
-        _expenses = expenses > 0.009 ? expenses : fallbackExpenses;
         _loading = false;
       });
     } on DioException catch (e) {
@@ -120,15 +80,6 @@ class _HotelTotalsReportSummaryState extends State<HotelTotalsReportSummary> {
     }
   }
 
-  double get _collectibles =>
-      AdminDashboardModels.collectiblesForRooms(widget.rooms);
-
-  double get _totalCash =>
-      _accounts.fold<double>(0, (sum, a) => sum + a.cash);
-
-  double get _cashOnHand =>
-      (_totalCash - _expenses).clamp(0, double.infinity);
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -141,11 +92,22 @@ class _HotelTotalsReportSummaryState extends State<HotelTotalsReportSummary> {
             Icon(Icons.receipt_long_outlined, color: scheme.primary, size: 20),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                'Report summary',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Report summary',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  Text(
+                    'Timed-in front desk only',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
               ),
             ),
             IconButton(
@@ -163,58 +125,47 @@ class _HotelTotalsReportSummaryState extends State<HotelTotalsReportSummary> {
             style: TextStyle(color: scheme.error, fontSize: 12),
           ),
           TextButton(onPressed: _load, child: const Text('Retry')),
-        ] else ...[
-          if (_accounts.isEmpty)
-            _ReportSummaryCard(
-              title: 'REPORT SUMMARY',
-              rows: [
-                const _ReportLine(label: 'SALES — CASH', amount: 0),
-                const _ReportLine(label: 'EWALLET', amount: 0),
-                const _ReportLine(label: 'BANK TRANSFER', amount: 0),
-                _ReportLine(label: 'COLLECTIBLES', amount: _collectibles),
-                _ReportLine(label: 'EXPENSES', amount: _expenses),
-                _ReportLine(label: 'CASH ON HAND', amount: _cashOnHand),
-              ],
-            )
-          else ...[
-            for (var i = 0; i < _accounts.length; i++) ...[
-              Padding(
-                padding: EdgeInsets.only(
-                  bottom: i == _accounts.length - 1 ? 0 : 8,
-                ),
-                child: _ReportSummaryCard(
-                  title:
-                      'REPORT SUMMARY — ${_accounts[i].username.toUpperCase()}',
-                  rows: [
-                    _ReportLine(
-                      label: 'SALES — CASH',
-                      amount: _accounts[i].cash,
-                    ),
-                    _ReportLine(
-                      label: 'EWALLET',
-                      amount: _accounts[i].ewallet,
-                    ),
-                    _ReportLine(
-                      label: 'BANK TRANSFER',
-                      amount: _accounts[i].bankTransfer,
-                    ),
-                    if (i == _accounts.length - 1) ...[
-                      _ReportLine(
-                        label: 'COLLECTIBLES',
-                        amount: _collectibles,
-                      ),
-                      _ReportLine(label: 'EXPENSES', amount: _expenses),
-                      _ReportLine(
-                        label: 'CASH ON HAND',
-                        amount: _cashOnHand,
-                      ),
-                    ],
-                  ],
-                ),
+        ] else if (_accounts.isEmpty)
+          Card(
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Text(
+                'No front desk is timed in right now.',
+                style: Theme.of(context).textTheme.bodySmall,
               ),
-            ],
+            ),
+          )
+        else
+          for (var i = 0; i < _accounts.length; i++) ...[
+            if (i > 0) const SizedBox(height: 8),
+            _ReportSummaryCard(
+              title:
+                  'REPORT SUMMARY — ${_accounts[i].username.toUpperCase()}',
+              rows: [
+                _ReportLine(
+                  label: 'CASH SALES',
+                  amount: _accounts[i].cash,
+                ),
+                _ReportLine(
+                  label: 'E-WALLET SALES',
+                  amount: _accounts[i].ewallet,
+                ),
+                _ReportLine(
+                  label: 'BOOKING SALES',
+                  amount: _accounts[i].bookingSales,
+                ),
+                _ReportLine(
+                  label: 'EXPENSES',
+                  amount: _accounts[i].expenses,
+                ),
+                _ReportLine(
+                  label: 'CASH ON HAND',
+                  amount: _accounts[i].cashOnHand,
+                ),
+              ],
+            ),
           ],
-        ],
       ],
     );
   }
@@ -225,13 +176,17 @@ class _FoSalesRow {
     required this.username,
     required this.cash,
     required this.ewallet,
-    required this.bankTransfer,
+    required this.bookingSales,
+    required this.expenses,
+    required this.cashOnHand,
   });
 
   final String username;
   final double cash;
   final double ewallet;
-  final double bankTransfer;
+  final double bookingSales;
+  final double expenses;
+  final double cashOnHand;
 }
 
 class _ReportLine {

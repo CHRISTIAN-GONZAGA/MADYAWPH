@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../dio_client.dart';
 import 'front_desk_shift.dart';
 import 'front_desk_shift_setup_dialog.dart';
 import 'front_desk_shift_summary_screen.dart';
@@ -46,7 +47,31 @@ class PortalShiftSession {
       );
       if (shift != null) {
         await FrontDeskShiftStorage.save(shift);
+        try {
+          await portalDio().post<Map<String, dynamic>>(
+            '/frontdesk-shifts/start',
+            data: {
+              'started_at': shift.startedAt.toIso8601String(),
+              'scheduled_time_out': shift.scheduledTimeOut.toIso8601String(),
+              'staff_name': shift.staffName,
+            },
+          );
+        } catch (_) {
+          // Local shift still works if sync fails; admin summary may lag.
+        }
       }
+    } else if (shift != null) {
+      // Re-assert active session on server (e.g. after app restart).
+      try {
+        await portalDio().post<Map<String, dynamic>>(
+          '/frontdesk-shifts/start',
+          data: {
+            'started_at': shift.startedAt.toIso8601String(),
+            'scheduled_time_out': shift.scheduledTimeOut.toIso8601String(),
+            'staff_name': shift.staffName,
+          },
+        );
+      } catch (_) {}
     }
 
     return shift;
@@ -60,6 +85,16 @@ class PortalShiftSession {
   }) async {
     if (!shift.canTimeOut) return;
     final endedAt = DateTime.now();
+    try {
+      await portalDio().post<Map<String, dynamic>>(
+        '/frontdesk-shifts/end',
+        data: {'ended_at': endedAt.toIso8601String()},
+      );
+    } catch (_) {}
+    await FrontDeskShiftStorage.clear(
+      hotelId: shift.hotelId,
+      userId: shift.userId,
+    );
     if (!context.mounted) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(

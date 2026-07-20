@@ -999,17 +999,43 @@ class ReportController extends Controller
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
             'anchor_date' => ['nullable', 'date'],
+            'active_only' => ['nullable', 'boolean'],
         ]);
 
         $granularity = (string) ($validated['granularity'] ?? 'day');
         [$from, $to] = $this->resolveFrontDeskSalesRange($validated, $granularity);
+        $hotelId = (string) $request->user()->hotel_id;
+
+        $onlyUserIds = null;
+        if (filter_var($validated['active_only'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            $onlyUserIds = app(\App\Services\FrontDeskShiftSessionService::class)
+                ->activeUserIds($hotelId);
+        }
 
         return response()->json(
             $frontDeskSales->summarizeAccounts(
-                (string) $request->user()->hotel_id,
+                $hotelId,
                 $granularity,
                 $from,
                 $to,
+                $onlyUserIds,
+            )
+        );
+    }
+
+    public function frontDeskTimedInSummary(Request $request, \App\Services\FrontDeskSalesReportService $frontDeskSales)
+    {
+        $validated = $request->validate([
+            'anchor_date' => ['nullable', 'date'],
+        ]);
+        $anchor = isset($validated['anchor_date'])
+            ? Carbon::parse($validated['anchor_date'])
+            : now();
+
+        return response()->json(
+            $frontDeskSales->timedInReportSummary(
+                (string) $request->user()->hotel_id,
+                $anchor,
             )
         );
     }

@@ -9,7 +9,6 @@ import '../widgets/booking_overview_cards.dart';
 import '../widgets/admin_room_navigation.dart';
 import '../widgets/admin_summary_room_tile.dart';
 import '../widgets/front_desk_activity_dialog.dart';
-import '../widgets/hotel_reports_bento_section.dart';
 import '../widgets/hotel_totals_report_summary.dart';
 
 class RoomSummarySection extends StatelessWidget {
@@ -444,8 +443,6 @@ class RoomSummarySection extends StatelessWidget {
           const FoActivityStatCards(),
           const SizedBox(height: 12),
           HotelTotalsReportSummary(rooms: rooms),
-          const SizedBox(height: 20),
-          HotelReportsBentoSection(rooms: rooms),
         ],
       ],
     );

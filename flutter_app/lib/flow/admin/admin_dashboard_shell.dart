@@ -16,6 +16,7 @@ import 'sections/bookings_section.dart';
 import 'sections/checkout_section.dart';
 import 'sections/guest_portfolio_section.dart';
 import 'sections/multiple_booking_section.dart';
+import 'sections/reports_analytics_section.dart';
 import 'sections/requests_section.dart';
 import 'sections/room_summary_section.dart';
 import 'sections/resellers_section.dart';
@@ -149,6 +150,14 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           icon: Icons.qr_code_scanner_outlined,
         ),
       );
+      items.insert(
+        items.length - 1,
+        const AdminNavItem(
+          label: 'Reports',
+          shortLabel: 'Reports',
+          icon: Icons.analytics_outlined,
+        ),
+      );
     }
     if (widget.isSuperAdmin) {
       items.add(
@@ -249,13 +258,13 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     }
   }
 
-  int _settingsTabIndex(Map<String, dynamic> d) {
-    // Frontdesk: Summary, Checkout, Guests, Bookings, Multiple, Amenities, Settings
-    if (widget.isFrontDesk) return 6;
-    // Admin: Summary, Checkout, Guests, Bookings, Amenities, Requests, Resellers, Settings
-    // Super: + Control after Settings
-    return widget.isSuperAdmin ? 8 : 7;
+  int _tabIndexFor(Map<String, dynamic> d, String label) {
+    final items = _navItemsFor(d);
+    final i = items.indexWhere((e) => e.label == label);
+    return i;
   }
+
+  int _settingsTabIndex(Map<String, dynamic> d) => _tabIndexFor(d, 'Settings');
 
   void _maybeRedirectToCreditsTab(
     Map<String, dynamic> oldData,
@@ -557,6 +566,15 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           ResellersSection(
             key: refreshKey,
             onRefresh: widget.onRefresh,
+          ),
+          sections.length,
+        ),
+      );
+      sections.add(
+        wrapTab(
+          ReportsAnalyticsSection(
+            key: refreshKey,
+            rooms: _rooms,
           ),
           sections.length,
         ),
