@@ -501,18 +501,26 @@ class FrontDeskSalesReportService
         /** @var array<string, array{room_number: string, category_name: string, room_type: string}> $roomsById */
         $roomsById = [];
         if ($roomIds !== []) {
-            $rooms = Room::withoutGlobalScopes()
-                ->whereIn('id', $roomIds)
-                ->get(['id', 'room_number', 'category_name', 'room_type']);
+            try {
+                $rooms = Room::withoutGlobalScopes()
+                    ->whereIn('id', $roomIds)
+                    ->get(['id', 'room_number', 'category_name', 'room_type']);
+            } catch (\Throwable) {
+                $rooms = collect();
+            }
             foreach ($rooms as $room) {
                 $roomType = $room->room_type;
-                if (is_object($roomType) && method_exists($roomType, 'value')) {
-                    $roomType = $roomType->value;
+                if ($roomType instanceof \BackedEnum) {
+                    $roomType = (string) $roomType->value;
+                } elseif (is_object($roomType)) {
+                    $roomType = (string) (data_get($roomType, 'value') ?? '');
+                } else {
+                    $roomType = trim((string) ($roomType ?? ''));
                 }
                 $roomsById[(string) $room->id] = [
                     'room_number' => (string) ($room->room_number ?? ''),
                     'category_name' => (string) ($room->category_name ?? ''),
-                    'room_type' => (string) ($roomType ?? ''),
+                    'room_type' => $roomType,
                 ];
             }
         }
@@ -520,9 +528,13 @@ class FrontDeskSalesReportService
         /** @var array<string, array{guest_name: string, room_id: string, room_number: string}> $bookingsById */
         $bookingsById = [];
         if ($bookingIds !== []) {
-            $bookings = Booking::withoutGlobalScopes()
-                ->whereIn('id', $bookingIds)
-                ->get(['id', 'guest_name', 'room_id']);
+            try {
+                $bookings = Booking::withoutGlobalScopes()
+                    ->whereIn('id', $bookingIds)
+                    ->get(['id', 'guest_name', 'room_id']);
+            } catch (\Throwable) {
+                $bookings = collect();
+            }
             foreach ($bookings as $booking) {
                 $bookingsById[(string) $booking->id] = [
                     'guest_name' => (string) ($booking->guest_name ?? ''),
@@ -548,13 +560,13 @@ class FrontDeskSalesReportService
 
             $bookingId = (string) ($charge->booking_id ?? '');
             $roomId = (string) ($charge->room_id ?? '');
-            $bookingMeta = $bookingsById[$bookingId] ?? null;
-            if ($roomId === '' && $bookingMeta !== null) {
+            $bookingMeta = $bookingsById[$bookingId] ?? [];
+            if ($roomId === '') {
                 $roomId = (string) ($bookingMeta['room_id'] ?? '');
             }
-            $roomMeta = $roomsById[$roomId] ?? null;
+            $roomMeta = $roomsById[$roomId] ?? [];
             $roomNumber = (string) ($roomMeta['room_number'] ?? '');
-            if ($roomNumber === '' && $bookingMeta !== null) {
+            if ($roomNumber === '') {
                 $roomNumber = (string) ($bookingMeta['room_number'] ?? '');
             }
             $categoryName = (string) ($roomMeta['category_name'] ?? '');
