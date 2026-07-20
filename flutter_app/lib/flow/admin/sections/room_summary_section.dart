@@ -438,16 +438,18 @@ class RoomSummarySection extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 6),
-        const FoActivityStatCards(),
-        const SizedBox(height: 6),
-        _ReportsEntryCard(
-          onTap: () => openHotelTotalsReports(
-            context,
-            rooms: rooms,
-            isFrontDesk: isFrontDesk || canCreateBookings,
+        if (!isFrontDesk) ...[
+          const SizedBox(height: 6),
+          const FoActivityStatCards(),
+          const SizedBox(height: 6),
+          _ReportsEntryCard(
+            onTap: () => openHotelTotalsReports(
+              context,
+              rooms: rooms,
+              isFrontDesk: false,
+            ),
           ),
-        ),
+        ],
       ],
     );
   }
