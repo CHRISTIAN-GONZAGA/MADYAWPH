@@ -323,16 +323,20 @@ class AdminDashboardModels {
   }
 
   /// Walk-in tile grouping: available | reserved | occupied.
-  /// Vacant = truly free now (room status available/checked_out with no active
-  /// upcoming booking). Stale latest_booking rows on an available room no longer
-  /// silently reclassify it as reserved.
+  /// Vacant = free now (available/checked_out, no guest, no same-day pending
+  /// arrival). Future reservations on an available room still count as vacant
+  /// so hotel totals match what staff see as free rooms.
   static String walkInTileStatus(Map<String, dynamic> room) {
     final status = statusOf(room);
     if (status == 'maintenance' || status == 'cleaning' || status == 'checked_in') {
       return 'occupied';
     }
-    if (status == 'available' || status == 'checked_out') {
-      if (_hasActiveUpcomingStay(room)) return 'reserved';
+    if (status == 'available' ||
+        status == 'checked_out' ||
+        status == 'vacant') {
+      final guest = (room['current_guest_name'] ?? '').toString().trim();
+      if (guest.isNotEmpty) return 'occupied';
+      if (_hasSameDayPendingArrival(room)) return 'reserved';
       return 'available';
     }
     if (status.isEmpty) {
@@ -350,12 +354,14 @@ class AdminDashboardModels {
       if (startDay.isAfter(today)) return 'reserved';
       return 'occupied';
     }
-    return 'occupied';
+    // Unknown status with no guest still counts vacant for hotel totals.
+    final guest = (room['current_guest_name'] ?? '').toString().trim();
+    return guest.isEmpty ? 'available' : 'occupied';
   }
 
-  /// True when an available room still has a non-completed booking starting today
-  /// or later (room status may lag behind booking status).
-  static bool _hasActiveUpcomingStay(Map<String, dynamic> room) {
+  /// True when an available room has a non-completed booking arriving today
+  /// (pending check-in). Future-dated bookings do not remove the room from vacant.
+  static bool _hasSameDayPendingArrival(Map<String, dynamic> room) {
     final booking = room['latest_booking'];
     if (booking is! Map || booking.isEmpty) return false;
     final bookingStatus =
@@ -370,18 +376,18 @@ class AdminDashboardModels {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final startDay = DateTime(start.year, start.month, start.day);
-    final upcoming = !startDay.isBefore(today);
+    if (startDay != today) return false;
 
-    // Prefer explicit booking status when the dashboard provides it.
+    final end = stayEndDate(room);
+    if (end != null) {
+      final endDay = DateTime(end.year, end.month, end.day);
+      if (endDay.isBefore(today)) return false;
+    }
+
     if (bookingStatus == 'booked' ||
         bookingStatus == 'reserved' ||
         bookingStatus == 'confirmed') {
-      return upcoming;
-    }
-    // Legacy payloads without booking.status: only future stays count as reserved
-    // so a same-day leftover date cannot undercount vacant rooms.
-    if (bookingStatus.isEmpty) {
-      return startDay.isAfter(today);
+      return true;
     }
     return false;
   }

@@ -472,6 +472,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           tasks: tasks,
           hotelName: hotelName,
           canCreateBookings: widget.isFrontDesk,
+          isFrontDesk: widget.isFrontDesk,
           localBookingsTotal: localTotal,
           onlineBookingsTotal: onlineTotal,
           recentBookings24h: recentBookings24h,

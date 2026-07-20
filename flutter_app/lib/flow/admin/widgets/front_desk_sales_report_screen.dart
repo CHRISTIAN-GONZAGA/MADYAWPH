@@ -337,6 +337,53 @@ class _FrontDeskAccountSalesScreenState
     return map;
   }
 
+  List<Widget> _paymentMethodRows(Map<String, dynamic> summary) {
+    final raw = summary['by_payment_method'];
+    if (raw is! Map) return const [];
+    final labels = <String, String>{
+      'cash': 'Cash',
+      'ewallet': 'E-wallet (GCash / PayMaya)',
+      'bank_transfer': 'Bank transfer',
+      'other': 'Other',
+    };
+    final out = <Widget>[];
+    for (final entry in labels.entries) {
+      final row = raw[entry.key];
+      if (row is! Map) continue;
+      final count = (row['count'] as num?)?.toInt() ?? 0;
+      final total = parseJsonDouble(row['total']);
+      if (count == 0 && total <= 0) continue;
+      out.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${entry.value} · $count',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              Text(
+                '₱${total.toStringAsFixed(2)}',
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (out.isEmpty) {
+      out.add(
+        const Text(
+          'No payment-method breakdown for this day yet.',
+          style: TextStyle(fontStyle: FontStyle.italic),
+        ),
+      );
+    }
+    return out;
+  }
+
   Widget _periodTile(
     BuildContext context, {
     required String title,
@@ -564,28 +611,49 @@ class _FrontDeskAccountSalesScreenState
                           AppSectionCard(
                             child: Padding(
                               padding: const EdgeInsets.all(14),
-                              child: Row(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  Expanded(
-                                    child: _Metric(
-                                      label: 'Sales',
-                                      value:
-                                          '₱${parseJsonDouble(summary['total_sales']).toStringAsFixed(2)}',
-                                    ),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: _Metric(
+                                          label: 'Sales',
+                                          value:
+                                              '₱${parseJsonDouble(summary['total_sales']).toStringAsFixed(2)}',
+                                        ),
+                                      ),
+                                      Expanded(
+                                        child: _Metric(
+                                          label: 'Payments',
+                                          value:
+                                              '₱${parseJsonDouble(summary['payments_collected']).toStringAsFixed(2)}',
+                                        ),
+                                      ),
+                                      Expanded(
+                                        child: _Metric(
+                                          label: 'Orders',
+                                          value: '${summary['order_count'] ?? 0}',
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  Expanded(
-                                    child: _Metric(
-                                      label: 'Payments',
-                                      value:
-                                          '₱${parseJsonDouble(summary['payments_collected']).toStringAsFixed(2)}',
+                                  if (summary['by_payment_method'] is Map) ...[
+                                    const SizedBox(height: 12),
+                                    const Divider(height: 1),
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      'By payment method',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelLarge
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w800,
+                                          ),
                                     ),
-                                  ),
-                                  Expanded(
-                                    child: _Metric(
-                                      label: 'Orders',
-                                      value: '${summary['order_count'] ?? 0}',
-                                    ),
-                                  ),
+                                    const SizedBox(height: 8),
+                                    ..._paymentMethodRows(summary),
+                                  ],
                                 ],
                               ),
                             ),
@@ -601,6 +669,8 @@ class _FrontDeskAccountSalesScreenState
                             final tx = Map<String, dynamic>.from(raw as Map);
                             final complimentary = tx['complimentary'] == true;
                             final amount = parseJsonDouble(tx['amount']);
+                            final method =
+                                (tx['payment_method'] ?? '').toString().trim();
                             return Card(
                               margin: const EdgeInsets.only(bottom: 6),
                               child: ListTile(
@@ -610,8 +680,11 @@ class _FrontDeskAccountSalesScreenState
                                       .toString(),
                                 ),
                                 subtitle: Text(
-                                  '${(tx['type'] ?? '').toString()}'
-                                  '${complimentary ? ' · Complimentary' : ''}',
+                                  [
+                                    (tx['type'] ?? '').toString(),
+                                    if (method.isNotEmpty) method,
+                                    if (complimentary) 'Complimentary',
+                                  ].where((s) => s.isNotEmpty).join(' · '),
                                 ),
                                 trailing: Text(
                                   complimentary

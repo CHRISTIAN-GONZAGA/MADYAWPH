@@ -300,10 +300,33 @@ class FrontDeskSalesReportService
         $to = $day->copy()->endOfDay();
         $charges = $this->chargesInRange($hotelId, $from, $to, [$userId]);
 
+        $bookingIds = $charges
+            ->map(fn ($c) => (string) ($c->booking_id ?? ''))
+            ->filter(fn ($id) => $id !== '')
+            ->unique()
+            ->values()
+            ->all();
+        $methodsByBooking = [];
+        if ($bookingIds !== []) {
+            $bookings = \App\Models\Booking::withoutGlobalScopes()
+                ->whereIn('id', $bookingIds)
+                ->get(['id', 'payment_method']);
+            foreach ($bookings as $booking) {
+                $methodsByBooking[(string) $booking->id] =
+                    \App\Support\SafeModelAttributes::paymentMethodLabel($booking);
+            }
+        }
+
         $totalSales = 0.0;
         $payments = 0.0;
         $orderCount = 0;
         $transactions = [];
+        $byMethod = [
+            'cash' => ['count' => 0, 'total' => 0.0],
+            'ewallet' => ['count' => 0, 'total' => 0.0],
+            'bank_transfer' => ['count' => 0, 'total' => 0.0],
+            'other' => ['count' => 0, 'total' => 0.0],
+        ];
 
         foreach ($charges as $charge) {
             $type = strtolower(trim((string) ($charge->type ?? '')));
@@ -325,6 +348,14 @@ class FrontDeskSalesReportService
                 continue;
             }
 
+            $bookingId = (string) ($charge->booking_id ?? '');
+            $method = $methodsByBooking[$bookingId] ?? (string) data_get($charge->metadata, 'payment_method', '');
+            $bucket = $this->paymentMethodBucket($method);
+            if ($isPayment || $isSale) {
+                $byMethod[$bucket]['count']++;
+                $byMethod[$bucket]['total'] += $isPayment ? abs($amount) : $amount;
+            }
+
             $transactions[] = [
                 'id' => (string) $charge->id,
                 'type' => $type,
@@ -332,10 +363,15 @@ class FrontDeskSalesReportService
                 'amount' => round($isPayment ? abs($amount) : $amount, 2),
                 'quantity' => (int) ($charge->quantity ?? 1),
                 'room_id' => (string) ($charge->room_id ?? ''),
-                'booking_id' => (string) ($charge->booking_id ?? ''),
+                'booking_id' => $bookingId,
+                'payment_method' => $method,
                 'complimentary' => $isComplimentary || (bool) data_get($charge->metadata, 'complimentary', false),
                 'created_at' => optional($charge->created_at)?->toIso8601String(),
             ];
+        }
+
+        foreach ($byMethod as $key => $row) {
+            $byMethod[$key]['total'] = round((float) $row['total'], 2);
         }
 
         return [
@@ -347,9 +383,32 @@ class FrontDeskSalesReportService
                 'total_sales' => round($totalSales, 2),
                 'payments_collected' => round($payments, 2),
                 'order_count' => $orderCount,
+                'by_payment_method' => $byMethod,
             ],
             'transactions' => $transactions,
         ];
+    }
+
+    private function paymentMethodBucket(string $method): string
+    {
+        $m = strtolower(trim($method));
+        if ($m === '' || $m === 'cash') {
+            return $m === 'cash' ? 'cash' : 'other';
+        }
+        if (str_contains($m, 'gcash')
+            || str_contains($m, 'g-cash')
+            || str_contains($m, 'paymaya')
+            || str_contains($m, 'maya')
+            || str_contains($m, 'ewallet')
+            || str_contains($m, 'e-wallet')
+            || str_contains($m, 'wallet')) {
+            return 'ewallet';
+        }
+        if (str_contains($m, 'bank') || str_contains($m, 'transfer')) {
+            return 'bank_transfer';
+        }
+
+        return 'other';
     }
 
     /**

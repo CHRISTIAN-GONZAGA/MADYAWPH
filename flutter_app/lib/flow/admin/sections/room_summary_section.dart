@@ -9,6 +9,7 @@ import '../widgets/booking_overview_cards.dart';
 import '../widgets/admin_room_navigation.dart';
 import '../widgets/admin_summary_room_tile.dart';
 import '../widgets/front_desk_activity_dialog.dart';
+import '../widgets/hotel_totals_reports_sheet.dart';
 
 class RoomSummarySection extends StatelessWidget {
   const RoomSummarySection({
@@ -26,6 +27,7 @@ class RoomSummarySection extends StatelessWidget {
     required this.onRefresh,
     this.categories = const [],
     this.canCreateBookings = true,
+    this.isFrontDesk = false,
   });
 
   final List<Map<String, dynamic>> rooms;
@@ -41,6 +43,7 @@ class RoomSummarySection extends StatelessWidget {
   final Future<void> Function() onRefresh;
   final List<Map<String, dynamic>> categories;
   final bool canCreateBookings;
+  final bool isFrontDesk;
 
   List<Map<String, dynamic>> _filterByStatuses(Set<String> statuses) {
     return rooms
@@ -432,6 +435,17 @@ class RoomSummarySection extends StatelessWidget {
                   );
                 }
               },
+            ),
+            _TotalStatCard(
+              label: 'Reports',
+              value: 'Open',
+              icon: Icons.assessment_outlined,
+              color: Colors.purple.shade700,
+              onTap: () => openHotelTotalsReports(
+                context,
+                rooms: rooms,
+                isFrontDesk: isFrontDesk || canCreateBookings,
+              ),
             ),
           ],
         ),
@@ -1023,32 +1037,12 @@ class _CategoryCard extends StatelessWidget {
                                   height: 1.15,
                                 ),
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 6),
                           Align(
                             alignment: Alignment.centerLeft,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: scheme.primary.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                (stats['avg_price_label'] ?? 'Avg —')
-                                    .toString(),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleSmall
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                      color: scheme.primary,
-                                      height: 1.2,
-                                    ),
-                              ),
+                            child: _AvgPriceHighlight(
+                              label: (stats['avg_price_label'] ?? 'Avg —')
+                                  .toString(),
                             ),
                           ),
                         ],
@@ -1096,6 +1090,65 @@ class _CategoryCard extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _AvgPriceHighlight extends StatelessWidget {
+  const _AvgPriceHighlight({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    // "Avg ₱2500" → black "Avg", larger highlighted amount.
+    final match = RegExp(r'^(Avg)\s*(.*)$', caseSensitive: false).firstMatch(label);
+    final prefix = match?.group(1) ?? 'Avg';
+    final amount = (match?.group(2) ?? '').trim();
+    final hasAmount = amount.isNotEmpty && amount != '—';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: scheme.primary.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: scheme.primary.withValues(alpha: 0.35)),
+      ),
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: prefix,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: scheme.onSurface,
+                    height: 1.15,
+                  ),
+            ),
+            if (hasAmount)
+              TextSpan(
+                text: ' $amount',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w900,
+                      color: scheme.primary,
+                      height: 1.15,
+                    ),
+              )
+            else
+              TextSpan(
+                text: ' —',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: scheme.onSurfaceVariant,
+                      height: 1.15,
+                    ),
+              ),
+          ],
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }
