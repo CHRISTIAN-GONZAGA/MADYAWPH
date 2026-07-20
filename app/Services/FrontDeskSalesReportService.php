@@ -212,7 +212,9 @@ class FrontDeskSalesReportService
             /** @var Carbon $to */
             $to = $range['to'];
             $charges = $this->chargesInRange($hotelId, $from, $to, [$userId]);
-            $summary = $this->aggregateCharges($charges);
+            $methodsByBooking = $this->paymentMethodsByBooking($charges);
+            $summary = $this->aggregateCharges($charges, $methodsByBooking);
+            $transactions = $this->mapChargeTransactions($charges, $methodsByBooking);
 
             $periods[$key] = [
                 'label' => (string) $range['label'],
@@ -223,6 +225,7 @@ class FrontDeskSalesReportService
                 'display_total' => $summary['display_total'],
                 'order_count' => $summary['order_count'],
                 'by_payment_method' => $summary['by_payment_method'],
+                'transactions' => $transactions,
             ];
         }
 
@@ -338,38 +341,7 @@ class FrontDeskSalesReportService
 
         $methodsByBooking = $this->paymentMethodsByBooking($charges);
         $summary = $this->aggregateCharges($charges, $methodsByBooking);
-
-        $transactions = [];
-        foreach ($charges as $charge) {
-            $type = strtolower(trim((string) ($charge->type ?? '')));
-            $amount = (float) ($charge->amount ?? 0);
-            $isPayment = BillingChargeTypes::isPartialPayment($type);
-            $isSale = $this->isSaleType($type) && $amount > 0;
-            $isComplimentary = $isSale === false
-                && in_array($type, ['amenity', 'manual', 'room'], true)
-                && $amount <= 0.009;
-
-            if (! $isPayment && ! $isSale && ! $isComplimentary) {
-                continue;
-            }
-
-            $bookingId = (string) ($charge->booking_id ?? '');
-            $method = $methodsByBooking[$bookingId]
-                ?? (string) data_get($charge->metadata, 'payment_method', '');
-
-            $transactions[] = [
-                'id' => (string) $charge->id,
-                'type' => $type,
-                'label' => (string) ($charge->label ?? ''),
-                'amount' => round($isPayment ? abs($amount) : $amount, 2),
-                'quantity' => (int) ($charge->quantity ?? 1),
-                'room_id' => (string) ($charge->room_id ?? ''),
-                'booking_id' => $bookingId,
-                'payment_method' => $method,
-                'complimentary' => $isComplimentary || (bool) data_get($charge->metadata, 'complimentary', false),
-                'created_at' => optional($charge->created_at)?->toIso8601String(),
-            ];
-        }
+        $transactions = $this->mapChargeTransactions($charges, $methodsByBooking);
 
         return [
             'user_id' => $userId,
@@ -406,10 +378,10 @@ class FrontDeskSalesReportService
         $payments = 0.0;
         $orderCount = 0;
         $byMethod = [
-            'cash' => ['count' => 0, 'total' => 0.0],
-            'ewallet' => ['count' => 0, 'total' => 0.0],
-            'bank_transfer' => ['count' => 0, 'total' => 0.0],
-            'other' => ['count' => 0, 'total' => 0.0],
+            'cash' => ['count' => 0, 'total' => 0.0, 'by_type' => []],
+            'ewallet' => ['count' => 0, 'total' => 0.0, 'by_type' => []],
+            'bank_transfer' => ['count' => 0, 'total' => 0.0, 'by_type' => []],
+            'other' => ['count' => 0, 'total' => 0.0, 'by_type' => []],
         ];
 
         foreach ($charges as $charge) {
@@ -424,9 +396,11 @@ class FrontDeskSalesReportService
             $bucket = $this->paymentMethodBucket($method);
 
             if ($isPayment) {
-                $payments += abs($amount);
+                $paid = abs($amount);
+                $payments += $paid;
                 $byMethod[$bucket]['count']++;
-                $byMethod[$bucket]['total'] += abs($amount);
+                $byMethod[$bucket]['total'] += $paid;
+                $this->bumpMethodTypeBreakdown($byMethod[$bucket]['by_type'], $type, $paid);
                 continue;
             }
             if ($amount <= 0) {
@@ -437,11 +411,21 @@ class FrontDeskSalesReportService
                 $orderCount++;
                 $byMethod[$bucket]['count']++;
                 $byMethod[$bucket]['total'] += $amount;
+                $this->bumpMethodTypeBreakdown($byMethod[$bucket]['by_type'], $type, $amount);
             }
         }
 
         foreach ($byMethod as $methodKey => $row) {
             $byMethod[$methodKey]['total'] = round((float) $row['total'], 2);
+            $byType = [];
+            foreach (($row['by_type'] ?? []) as $typeKey => $typeRow) {
+                $byType[$typeKey] = [
+                    'count' => (int) ($typeRow['count'] ?? 0),
+                    'total' => round((float) ($typeRow['total'] ?? 0), 2),
+                ];
+            }
+            ksort($byType);
+            $byMethod[$methodKey]['by_type'] = $byType;
         }
 
         $sales = round($totalSales, 2);
@@ -482,6 +466,63 @@ class FrontDeskSalesReportService
         }
 
         return $methodsByBooking;
+    }
+
+    /**
+     * @param  Collection<int, BillingCharge>  $charges
+     * @param  array<string, string>  $methodsByBooking
+     * @return list<array<string, mixed>>
+     */
+    private function mapChargeTransactions(Collection $charges, array $methodsByBooking): array
+    {
+        $transactions = [];
+        foreach ($charges as $charge) {
+            $type = strtolower(trim((string) ($charge->type ?? '')));
+            $amount = (float) ($charge->amount ?? 0);
+            $isPayment = BillingChargeTypes::isPartialPayment($type);
+            $isSale = $this->isSaleType($type) && $amount > 0;
+            $isComplimentary = $isSale === false
+                && in_array($type, ['amenity', 'manual', 'room'], true)
+                && $amount <= 0.009;
+
+            if (! $isPayment && ! $isSale && ! $isComplimentary) {
+                continue;
+            }
+
+            $bookingId = (string) ($charge->booking_id ?? '');
+            $method = $methodsByBooking[$bookingId]
+                ?? (string) data_get($charge->metadata, 'payment_method', '');
+            $bucket = $this->paymentMethodBucket($method);
+
+            $transactions[] = [
+                'id' => (string) $charge->id,
+                'type' => $type,
+                'label' => (string) ($charge->label ?? ''),
+                'amount' => round($isPayment ? abs($amount) : $amount, 2),
+                'quantity' => (int) ($charge->quantity ?? 1),
+                'room_id' => (string) ($charge->room_id ?? ''),
+                'booking_id' => $bookingId,
+                'payment_method' => $method,
+                'payment_method_bucket' => $bucket,
+                'complimentary' => $isComplimentary || (bool) data_get($charge->metadata, 'complimentary', false),
+                'created_at' => optional($charge->created_at)?->toIso8601String(),
+            ];
+        }
+
+        return $transactions;
+    }
+
+    /**
+     * @param  array<string, array{count: int, total: float}>  $byType
+     */
+    private function bumpMethodTypeBreakdown(array &$byType, string $type, float $amount): void
+    {
+        $key = $type !== '' ? $type : 'other';
+        if (! isset($byType[$key])) {
+            $byType[$key] = ['count' => 0, 'total' => 0.0];
+        }
+        $byType[$key]['count']++;
+        $byType[$key]['total'] += $amount;
     }
 
     private function paymentMethodBucket(string $method): string

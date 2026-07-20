@@ -382,6 +382,7 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
       AdminDashboardModels.collectiblesSummaryLines(widget.rooms);
 
   void _toggle(String key) {
+    if (_focused) return;
     HapticFeedback.selectionClick();
     setState(() => _expanded = _expanded == key ? null : key);
     if (key == 'demographics' &&
@@ -391,6 +392,54 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
       _loadDemographics(_demoPeriod);
     }
   }
+
+  bool get _focused => widget.initialExpanded != null;
+
+  bool _showSection(String key) =>
+      !_focused || widget.initialExpanded == key;
+
+  String get _sheetTitle {
+    switch (widget.initialExpanded) {
+      case 'sales':
+        return 'Sales';
+      case 'collectibles':
+        return 'Collectibles';
+      case 'expenses':
+        return 'Expenses';
+      case 'cash':
+        return 'Cash on hand';
+      case 'demographics':
+        return 'Demographics';
+      case 'fo':
+        return 'Front desk sales';
+      case 'room_insights':
+        return 'Room insights';
+      case 'amenities':
+        return 'Amenities reports';
+      case 'reseller':
+        return 'Reseller commissions';
+      case 'rev_daily':
+        return 'Daily revenue';
+      case 'rev_weekly':
+        return 'Weekly revenue';
+      case 'rev_monthly':
+        return 'Monthly revenue';
+      case 'rev_annual':
+        return 'Annual revenue';
+      default:
+        return 'Reports';
+    }
+  }
+
+  String get _sheetSubtitle {
+    if (!_focused) {
+      return 'Tap a section to expand · sales, collectibles, expenses & more';
+    }
+    return 'Showing this report only';
+  }
+
+  bool _sectionExpanded(String key) =>
+      _focused || _expanded == key;
 
   void _openTxnList({
     required String title,
@@ -529,14 +578,14 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
         children: [
           Text(
-            'Reports',
+            _sheetTitle,
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.w800,
                 ),
           ),
           const SizedBox(height: 2),
           Text(
-            'Tap a section to expand · sales, collectibles, expenses & more',
+            _sheetSubtitle,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),
@@ -550,6 +599,7 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
           ],
 
           // —— Sales ——
+          if (_showSection('sales')) ...[
           _DropdownSection(
             title: 'Sales',
             subtitle: formatPeso(
@@ -559,7 +609,8 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
             ),
             icon: Icons.payments_outlined,
             accent: Colors.teal.shade700,
-            expanded: _expanded == 'sales',
+            expanded: _sectionExpanded('sales'),
+            locked: _focused,
             onToggle: () => _toggle('sales'),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -622,15 +673,19 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
               ],
             ),
           ),
+          if (!_focused)
           const SizedBox(height: 10),
+          ],
 
           // —— Collectibles ——
+          if (_showSection('collectibles')) ...[
           _DropdownSection(
             title: 'Collectibles',
             subtitle: formatPeso(_collectibles),
             icon: Icons.receipt_long_outlined,
             accent: Colors.orange.shade800,
-            expanded: _expanded == 'collectibles',
+            expanded: _sectionExpanded('collectibles'),
+            locked: _focused,
             onToggle: () => _toggle('collectibles'),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -678,15 +733,19 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
               ],
             ),
           ),
+          if (!_focused)
           const SizedBox(height: 10),
+          ],
 
           // —— Expenses ——
+          if (_showSection('expenses')) ...[
           _DropdownSection(
             title: 'Expenses',
             subtitle: formatPeso(_expenses),
             icon: Icons.money_off_outlined,
             accent: Colors.red.shade700,
-            expanded: _expanded == 'expenses',
+            expanded: _sectionExpanded('expenses'),
+            locked: _focused,
             onToggle: () {
               _toggle('expenses');
               if (_expanded == 'expenses') {
@@ -784,15 +843,19 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
               ],
             ),
           ),
+          if (!_focused)
           const SizedBox(height: 10),
+          ],
 
           // —— Cash on hand ——
+          if (_showSection('cash')) ...[
           _DropdownSection(
             title: 'Cash on hand',
             subtitle: formatPeso(_cashOnHand),
             icon: Icons.account_balance_wallet_outlined,
             accent: scheme.primary,
-            expanded: _expanded == 'cash',
+            expanded: _sectionExpanded('cash'),
+            locked: _focused,
             onToggle: () {
               _toggle('cash');
               if (_expanded == 'cash') {
@@ -886,15 +949,19 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
               ],
             ),
           ),
+          if (!_focused)
           const SizedBox(height: 10),
+          ],
 
           // —— Demographics ——
+          if (_showSection('demographics')) ...[
           _DropdownSection(
             title: 'Demographics',
             subtitle: _demoSubtitle(),
             icon: Icons.groups_outlined,
             accent: Colors.cyan.shade800,
-            expanded: _expanded == 'demographics',
+            expanded: _sectionExpanded('demographics'),
+            locked: _focused,
             onToggle: () => _toggle('demographics'),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1014,15 +1081,19 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
               ],
             ),
           ),
+          if (!_focused)
           const SizedBox(height: 10),
+          ],
 
           // —— Front desk sales ——
+          if (_showSection('fo')) ...[
           _DropdownSection(
             title: 'Front desk sales',
             subtitle: 'Per FO account · cash / e-wallet / bank',
             icon: Icons.point_of_sale_outlined,
             accent: scheme.primary,
-            expanded: _expanded == 'fo',
+            expanded: _sectionExpanded('fo'),
+            locked: _focused,
             onToggle: () => _toggle('fo'),
             child: _DetailTile(
               label: 'Front desk accounts',
@@ -1038,15 +1109,19 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
               },
             ),
           ),
+          if (!_focused)
           const SizedBox(height: 10),
+          ],
 
           // —— Flat analytics (no nested “Reports & analytics”) ——
+          if (_showSection('room_insights')) ...[
           _DropdownSection(
             title: 'Room insights',
             subtitle: 'Most / least booked · profit · maintenance',
             icon: Icons.hotel_class_outlined,
             accent: Colors.indigo,
-            expanded: _expanded == 'room_insights',
+            expanded: _sectionExpanded('room_insights'),
+            locked: _focused,
             onToggle: () => _toggle('room_insights'),
             child: _DetailTile(
               label: 'Open room insights',
@@ -1060,13 +1135,17 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
               ),
             ),
           ),
+          if (!_focused)
           const SizedBox(height: 10),
+          ],
+          if (_showSection('amenities')) ...[
           _DropdownSection(
             title: 'Amenities reports',
             subtitle: 'Product sales & profit',
             icon: Icons.room_service_outlined,
             accent: Colors.teal,
-            expanded: _expanded == 'amenities',
+            expanded: _sectionExpanded('amenities'),
+            locked: _focused,
             onToggle: () => _toggle('amenities'),
             child: _DetailTile(
               label: 'Open amenities report',
@@ -1080,14 +1159,16 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
               ),
             ),
           ),
-          if (!widget.isFrontDesk) ...[
-            const SizedBox(height: 10),
+          ],
+          if (!widget.isFrontDesk && _showSection('reseller')) ...[
+            if (!_focused) const SizedBox(height: 10),
             _DropdownSection(
               title: 'Reseller commissions',
               subtitle: 'Payouts & calendar',
               icon: Icons.handshake_outlined,
               accent: Colors.deepOrange,
-              expanded: _expanded == 'reseller',
+              expanded: _sectionExpanded('reseller'),
+              locked: _focused,
               onToggle: () => _toggle('reseller'),
               child: _DetailTile(
                 label: 'Open reseller commissions',
@@ -1102,13 +1183,15 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
               ),
             ),
           ],
-          const SizedBox(height: 10),
+          if (_showSection('rev_daily')) ...[
+            if (!_focused) const SizedBox(height: 10),
           _DropdownSection(
             title: 'Daily revenue',
             subtitle: 'Hotel-wide today',
             icon: Icons.today_outlined,
             accent: Colors.blue,
-            expanded: _expanded == 'rev_daily',
+            expanded: _sectionExpanded('rev_daily'),
+            locked: _focused,
             onToggle: () => _toggle('rev_daily'),
             child: _DetailTile(
               label: 'View daily revenue',
@@ -1119,13 +1202,17 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
                   _openFinancePeriod('Daily', _ReportPeriod.daily),
             ),
           ),
+          if (!_focused)
           const SizedBox(height: 10),
+          ],
+          if (_showSection('rev_weekly')) ...[
           _DropdownSection(
             title: 'Weekly revenue',
             subtitle: 'This week',
             icon: Icons.date_range_outlined,
             accent: Colors.cyan.shade700,
-            expanded: _expanded == 'rev_weekly',
+            expanded: _sectionExpanded('rev_weekly'),
+            locked: _focused,
             onToggle: () => _toggle('rev_weekly'),
             child: _DetailTile(
               label: 'View weekly revenue',
@@ -1136,13 +1223,17 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
                   _openFinancePeriod('Weekly', _ReportPeriod.weekly),
             ),
           ),
+          if (!_focused)
           const SizedBox(height: 10),
+          ],
+          if (_showSection('rev_monthly')) ...[
           _DropdownSection(
             title: 'Monthly revenue',
             subtitle: 'This month',
             icon: Icons.calendar_month_outlined,
             accent: Colors.purple,
-            expanded: _expanded == 'rev_monthly',
+            expanded: _sectionExpanded('rev_monthly'),
+            locked: _focused,
             onToggle: () => _toggle('rev_monthly'),
             child: _DetailTile(
               label: 'View monthly revenue',
@@ -1153,13 +1244,17 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
                   _openFinancePeriod('Monthly', _ReportPeriod.monthly),
             ),
           ),
+          if (!_focused)
           const SizedBox(height: 10),
+          ],
+          if (_showSection('rev_annual')) ...[
           _DropdownSection(
             title: 'Annual revenue',
             subtitle: 'This year',
             icon: Icons.insights_outlined,
             accent: Colors.brown,
-            expanded: _expanded == 'rev_annual',
+            expanded: _sectionExpanded('rev_annual'),
+            locked: _focused,
             onToggle: () => _toggle('rev_annual'),
             child: _DetailTile(
               label: 'View annual revenue',
@@ -1170,6 +1265,7 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
                   _openFinancePeriod('Annual', _ReportPeriod.annual),
             ),
           ),
+          ],
         ],
       ),
     );
@@ -1314,6 +1410,7 @@ class _DropdownSection extends StatelessWidget {
     required this.expanded,
     required this.onToggle,
     required this.child,
+    this.locked = false,
   });
 
   final String title;
@@ -1323,6 +1420,7 @@ class _DropdownSection extends StatelessWidget {
   final bool expanded;
   final VoidCallback onToggle;
   final Widget child;
+  final bool locked;
 
   @override
   Widget build(BuildContext context) {
@@ -1343,7 +1441,7 @@ class _DropdownSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           InkWell(
-            onTap: onToggle,
+            onTap: locked ? null : onToggle,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               child: Row(
@@ -1373,14 +1471,15 @@ class _DropdownSection extends StatelessWidget {
                       ],
                     ),
                   ),
-                  AnimatedRotation(
-                    turns: expanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 180),
-                    child: Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      color: scheme.onSurfaceVariant,
+                  if (!locked)
+                    AnimatedRotation(
+                      turns: expanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 180),
+                      child: Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),

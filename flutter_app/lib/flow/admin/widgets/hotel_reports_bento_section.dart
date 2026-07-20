@@ -18,9 +18,11 @@ class HotelReportsBentoSection extends StatefulWidget {
   const HotelReportsBentoSection({
     super.key,
     required this.rooms,
+    this.showHeader = true,
   });
 
   final List<Map<String, dynamic>> rooms;
+  final bool showHeader;
 
   @override
   State<HotelReportsBentoSection> createState() =>
@@ -189,38 +191,49 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Icon(Icons.grid_view_rounded, color: scheme.primary, size: 22),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Reports',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                  ),
-                  Text(
-                    'Tap a tile to open that report',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                  ),
-                ],
+        if (widget.showHeader) ...[
+          Row(
+            children: [
+              Icon(Icons.grid_view_rounded, color: scheme.primary, size: 22),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Reports',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    Text(
+                      'Tap a tile to open that report',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            IconButton(
+              IconButton(
+                tooltip: 'Refresh',
+                onPressed: _loading ? null : _load,
+                icon: const Icon(Icons.refresh, size: 20),
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+        ] else
+          Align(
+            alignment: Alignment.centerRight,
+            child: IconButton(
               tooltip: 'Refresh',
               onPressed: _loading ? null : _load,
               icon: const Icon(Icons.refresh, size: 20),
               visualDensity: VisualDensity.compact,
             ),
-          ],
-        ),
-        const SizedBox(height: 10),
+          ),
         if (_loading) const LinearProgressIndicator(minHeight: 2),
         if (_error != null) ...[
           Text(_error!, style: TextStyle(color: scheme.error, fontSize: 12)),

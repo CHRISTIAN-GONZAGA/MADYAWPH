@@ -343,7 +343,172 @@ class _FrontDeskAccountSalesScreenState
     return map;
   }
 
-  List<Widget> _paymentMethodRows(Map<String, dynamic> summary) {
+  String _typeLabel(String type) {
+    switch (type) {
+      case 'room':
+        return 'Room charges';
+      case 'amenity':
+        return 'Amenities';
+      case 'manual':
+        return 'Manual charges';
+      case 'extend-stay':
+        return 'Extend stay';
+      case 'partial_payment':
+      case 'partial-payment':
+        return 'Payments collected';
+      case 'early_check_in':
+      case 'early-check-in':
+        return 'Early check-in';
+      case 'late_checkout':
+      case 'late_check_out':
+      case 'late-checkout':
+        return 'Late checkout';
+      default:
+        return type.replaceAll('_', ' ').replaceAll('-', ' ');
+    }
+  }
+
+  List<Map<String, dynamic>> _transactionsForMethod(
+    Map<String, dynamic> period,
+    String methodKey,
+  ) {
+    final raw = period['transactions'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .where((tx) {
+          final bucket = (tx['payment_method_bucket'] ?? '').toString();
+          if (bucket.isNotEmpty) return bucket == methodKey;
+          return _paymentMethodBucket(
+                (tx['payment_method'] ?? '').toString(),
+              ) ==
+              methodKey;
+        })
+        .toList();
+  }
+
+  String _paymentMethodBucket(String method) {
+    final m = method.toLowerCase().trim();
+    if (m == 'cash') return 'cash';
+    if (m.contains('gcash') ||
+        m.contains('g-cash') ||
+        m.contains('paymaya') ||
+        m.contains('maya') ||
+        m.contains('ewallet') ||
+        m.contains('e-wallet') ||
+        m.contains('wallet')) {
+      return 'ewallet';
+    }
+    if (m.contains('bank') || m.contains('transfer')) {
+      return 'bank_transfer';
+    }
+    return 'other';
+  }
+
+  void _openMethodTransactions({
+    required String title,
+    required String range,
+    required List<Map<String, dynamic>> rows,
+  }) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.72,
+          minChildSize: 0.4,
+          maxChildSize: 0.94,
+          builder: (ctx, sc) {
+            return Material(
+              color: Theme.of(ctx).colorScheme.surface,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                    child: Text(
+                      title,
+                      style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Text(
+                      '${rows.length} transaction(s) · $range',
+                      style: Theme.of(ctx).textTheme.bodySmall,
+                    ),
+                  ),
+                  Expanded(
+                    child: rows.isEmpty
+                        ? const Center(child: Text('No transactions yet.'))
+                        : ListView.separated(
+                            controller: sc,
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                            itemCount: rows.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 8),
+                            itemBuilder: (context, i) {
+                              final tx = rows[i];
+                              final complimentary = tx['complimentary'] == true;
+                              final amount = parseJsonDouble(tx['amount']);
+                              final method =
+                                  (tx['payment_method'] ?? '').toString().trim();
+                              final created =
+                                  (tx['created_at'] ?? '').toString();
+                              return Card(
+                                child: ListTile(
+                                  dense: true,
+                                  title: Text(
+                                    (tx['label'] ?? tx['type'] ?? 'Charge')
+                                        .toString(),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    [
+                                      (tx['type'] ?? '').toString(),
+                                      if (method.isNotEmpty) method,
+                                      if (created.isNotEmpty)
+                                        created.length >= 10
+                                            ? created.substring(0, 10)
+                                            : created,
+                                      if (complimentary) 'Complimentary',
+                                    ].where((s) => s.isNotEmpty).join(' · '),
+                                  ),
+                                  trailing: Text(
+                                    complimentary
+                                        ? 'Free'
+                                        : '₱${amount.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  List<Widget> _paymentMethodRows(
+    Map<String, dynamic> summary, {
+    Map<String, dynamic>? period,
+    String? periodTitle,
+  }) {
     final raw = summary['by_payment_method'];
     if (raw is! Map) return const [];
     final labels = <String, String>{
@@ -352,6 +517,7 @@ class _FrontDeskAccountSalesScreenState
       'bank_transfer': 'Bank transfer',
       'other': 'Other',
     };
+    final scheme = Theme.of(context).colorScheme;
     final out = <Widget>[];
     for (final entry in labels.entries) {
       final row = raw[entry.key];
@@ -359,22 +525,125 @@ class _FrontDeskAccountSalesScreenState
       final count = (row['count'] as num?)?.toInt() ?? 0;
       final total = parseJsonDouble(row['total']);
       if (count == 0 && total <= 0) continue;
+
+      final byType = row['by_type'];
+      final typeLines = <Widget>[];
+      if (byType is Map) {
+        final entries = byType.entries
+            .whereType<MapEntry>()
+            .map((e) => MapEntry(e.key.toString(), e.value))
+            .toList()
+          ..sort((a, b) {
+            final at = a.value is Map
+                ? parseJsonDouble((a.value as Map)['total'])
+                : 0.0;
+            final bt = b.value is Map
+                ? parseJsonDouble((b.value as Map)['total'])
+                : 0.0;
+            return bt.compareTo(at);
+          });
+        for (final typeEntry in entries) {
+          final typeRow = typeEntry.value;
+          if (typeRow is! Map) continue;
+          final typeCount = (typeRow['count'] as num?)?.toInt() ?? 0;
+          final typeTotal = parseJsonDouble(typeRow['total']);
+          if (typeCount == 0 && typeTotal <= 0) continue;
+          typeLines.add(
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${_typeLabel(typeEntry.key)} · $typeCount',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ),
+                  Text(
+                    '₱${typeTotal.toStringAsFixed(2)}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+      }
+
+      final txns = period == null
+          ? const <Map<String, dynamic>>[]
+          : _transactionsForMethod(period, entry.key);
+      final from = (period?['from'] ?? '').toString();
+      final to = (period?['to'] ?? '').toString();
+      final range = from.isEmpty
+          ? ''
+          : (from == to ? from : '$from → $to');
+      final titlePrefix = periodTitle == null || periodTitle.isEmpty
+          ? entry.value
+          : '${entry.value} · $periodTitle';
+
       out.add(
         Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${entry.value} · $count',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Material(
+            color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+            borderRadius: BorderRadius.circular(10),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: period == null
+                  ? null
+                  : () => _openMethodTransactions(
+                        title: titlePrefix,
+                        range: range,
+                        rows: txns,
+                      ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${entry.value} · $count txn${count == 1 ? '' : 's'}',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        Text(
+                          '₱${total.toStringAsFixed(2)}',
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        if (period != null) ...[
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.chevron_right,
+                            size: 18,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ],
+                      ],
+                    ),
+                    if (typeLines.isNotEmpty) ...typeLines,
+                    if (period != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          'Tap to view all $count transaction(s)',
+                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                color: scheme.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
-              Text(
-                '₱${total.toStringAsFixed(2)}',
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-            ],
+            ),
           ),
         ),
       );
@@ -451,7 +720,11 @@ class _FrontDeskAccountSalesScreenState
                     ),
               ),
               const SizedBox(height: 6),
-              ..._paymentMethodRows(period),
+              ..._paymentMethodRows(
+                period,
+                period: period,
+                periodTitle: title,
+              ),
             ],
           ],
         ),
@@ -672,7 +945,17 @@ class _FrontDeskAccountSalesScreenState
                                           ),
                                     ),
                                     const SizedBox(height: 8),
-                                    ..._paymentMethodRows(summary),
+                                    ..._paymentMethodRows(
+                                      summary,
+                                      period: {
+                                        'from': (_dayDetail?['from'] ?? '').toString(),
+                                        'to': (_dayDetail?['to'] ?? '').toString(),
+                                        'transactions': transactions,
+                                        'by_payment_method':
+                                            summary['by_payment_method'],
+                                      },
+                                      periodTitle: 'Selected day',
+                                    ),
                                   ],
                                 ],
                               ),

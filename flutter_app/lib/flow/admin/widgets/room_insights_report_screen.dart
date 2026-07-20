@@ -311,16 +311,48 @@ class _RoomTypeSection extends StatelessWidget {
               final revenue = (m['revenue'] as num?)?.toDouble() ?? 0;
               final occupancy =
                   (m['occupancy_rate'] as num?)?.toDouble() ?? 0;
+              final label = (m['label'] ?? '—').toString();
               return ListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                title: Text((m['label'] ?? '—').toString()),
+                title: Text(label),
                 subtitle: Text(
                   '${m['rooms'] ?? 0} rooms · ${m['bookings'] ?? 0} bookings · ${occupancy.toStringAsFixed(1)}% occupancy',
                 ),
-                trailing: Text(
-                  '₱${revenue.toStringAsFixed(0)}',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '₱${revenue.toStringAsFixed(0)}',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.chevron_right,
+                      size: 18,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ],
+                ),
+                onTap: () => _showInsightDetail(
+                  context,
+                  title: label,
+                  lines: [
+                    MapEntry('Rooms', '${m['rooms'] ?? 0}'),
+                    MapEntry('Bookings', '${m['bookings'] ?? 0}'),
+                    MapEntry(
+                      'Occupancy',
+                      '${occupancy.toStringAsFixed(1)}%',
+                    ),
+                    MapEntry('Revenue', '₱${revenue.toStringAsFixed(2)}'),
+                    if (m['avg_revenue'] != null)
+                      MapEntry(
+                        'Avg revenue',
+                        '₱${((m['avg_revenue'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}',
+                      ),
+                    if (m['nights'] != null)
+                      MapEntry('Nights', '${m['nights']}'),
+                  ],
                 ),
               );
             }),
@@ -415,9 +447,47 @@ class _RoomRankSection extends StatelessWidget {
                   subtitle: subtitleParts.isEmpty
                       ? null
                       : Text(subtitleParts.join(' · ')),
-                  trailing: Text(
-                    metricText,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        metricText,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.chevron_right,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ],
+                  ),
+                  onTap: () => _showInsightDetail(
+                    context,
+                    title: 'Room $no',
+                    lines: [
+                      if (type.isNotEmpty) MapEntry('Category', type),
+                      MapEntry(metricLabel.isEmpty ? 'Value' : metricLabel, metricText),
+                      if (secondary != null)
+                        MapEntry(secondaryLabel ?? 'Detail', secondary),
+                      if (m['bookings_count'] != null || m['bookings'] != null)
+                        MapEntry(
+                          'Bookings',
+                          '${m['bookings_count'] ?? m['bookings']}',
+                        ),
+                      if (m['revenue'] != null)
+                        MapEntry(
+                          'Revenue',
+                          '₱${((m['revenue'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}',
+                        ),
+                      if (m['status'] != null)
+                        MapEntry('Status', '${m['status']}'),
+                      if (m['maintenance_count'] != null)
+                        MapEntry(
+                          'Maintenance',
+                          '${m['maintenance_count']}',
+                        ),
+                    ],
                   ),
                 );
               }),
@@ -426,4 +496,53 @@ class _RoomRankSection extends StatelessWidget {
       ),
     );
   }
+}
+
+void _showInsightDetail(
+  BuildContext context, {
+  required String title,
+  required List<MapEntry<String, String>> lines,
+}) {
+  showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (ctx) {
+      final scheme = Theme.of(ctx).colorScheme;
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              title,
+              style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            const SizedBox(height: 12),
+            ...lines.map(
+              (e) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        e.key,
+                        style: TextStyle(color: scheme.onSurfaceVariant),
+                      ),
+                    ),
+                    Text(
+                      e.value,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
 }
