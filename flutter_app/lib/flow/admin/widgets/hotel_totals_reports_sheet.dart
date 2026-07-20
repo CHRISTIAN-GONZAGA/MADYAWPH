@@ -17,6 +17,7 @@ Future<void> openHotelTotalsReports(
   BuildContext context, {
   required List<Map<String, dynamic>> rooms,
   bool isFrontDesk = false,
+  String? initialExpanded,
 }) {
   HapticFeedback.selectionClick();
   return showModalBottomSheet<void>(
@@ -36,6 +37,7 @@ Future<void> openHotelTotalsReports(
             rooms: rooms,
             isFrontDesk: isFrontDesk,
             scrollController: scrollController,
+            initialExpanded: initialExpanded,
           );
         },
       );
@@ -52,11 +54,13 @@ class _HotelTotalsReportsSheet extends StatefulWidget {
     required this.rooms,
     required this.scrollController,
     this.isFrontDesk = false,
+    this.initialExpanded,
   });
 
   final List<Map<String, dynamic>> rooms;
   final ScrollController scrollController;
   final bool isFrontDesk;
+  final String? initialExpanded;
 
   @override
   State<_HotelTotalsReportsSheet> createState() =>
@@ -69,7 +73,7 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
   bool _financeLoading = false;
   bool _demoLoading = false;
   String? _error;
-  String? _expanded;
+  late String? _expanded;
 
   Map<String, dynamic> _todaySummary = const {};
   List<Map<String, dynamic>> _todayBookingTxns = const [];
@@ -88,6 +92,7 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
   @override
   void initState() {
     super.initState();
+    _expanded = widget.initialExpanded;
     _load();
   }
 
