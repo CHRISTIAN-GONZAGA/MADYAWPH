@@ -76,7 +76,7 @@ class SettingsSection extends StatelessWidget {
               padding: const EdgeInsets.all(14),
               child: Text(
                 isFrontDesk
-                    ? 'Credits are depleted. Operational tabs are locked. You can still open Hotel totals → Reports and change your password here.'
+                    ? 'Credits are depleted. Operational tabs are locked. You can still view Hotel totals report summary and change your password here.'
                     : 'Credits are depleted. Only recharge is available until your balance is above ₱0.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: Theme.of(context).colorScheme.onErrorContainer,

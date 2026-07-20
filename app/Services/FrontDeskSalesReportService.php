@@ -42,70 +42,48 @@ class FrontDeskSalesReportService
         $userIds = $users->map(fn (User $u) => (string) $u->id)->all();
         $charges = $this->chargesInRange($hotelId, $from, $to, $userIds);
 
-        $byUser = [];
-        foreach ($userIds as $id) {
-            $byUser[$id] = [
-                'amenity_sales' => 0.0,
-                'manual_sales' => 0.0,
-                'room_sales' => 0.0,
-                'payments_collected' => 0.0,
-                'order_count' => 0,
-            ];
-        }
-
-        foreach ($charges as $charge) {
-            $uid = (string) ($charge->created_by ?? '');
-            if ($uid === '' || ! isset($byUser[$uid])) {
-                continue;
-            }
-            $type = strtolower(trim((string) ($charge->type ?? '')));
-            $amount = (float) ($charge->amount ?? 0);
-            if (BillingChargeTypes::isPartialPayment($type) || $type === 'refund') {
-                $byUser[$uid]['payments_collected'] += abs($amount);
-                continue;
-            }
-            if ($amount <= 0) {
-                continue;
-            }
-            if ($type === 'amenity') {
-                $byUser[$uid]['amenity_sales'] += $amount;
-                $byUser[$uid]['order_count']++;
-            } elseif ($type === 'manual') {
-                $byUser[$uid]['manual_sales'] += $amount;
-                $byUser[$uid]['order_count']++;
-            } elseif ($this->isSaleType($type)) {
-                $byUser[$uid]['room_sales'] += $amount;
-                $byUser[$uid]['order_count']++;
-            }
-        }
-
         $accounts = $users
-            ->map(function (User $user) use ($byUser) {
+            ->map(function (User $user) use ($charges) {
                 $id = (string) $user->id;
-                $row = $byUser[$id] ?? [
-                    'amenity_sales' => 0.0,
-                    'manual_sales' => 0.0,
-                    'room_sales' => 0.0,
-                    'payments_collected' => 0.0,
-                    'order_count' => 0,
-                ];
-                $totalSales = round(
-                    $row['amenity_sales'] + $row['manual_sales'] + ($row['room_sales'] ?? 0),
-                    2
+                $userCharges = $charges->filter(
+                    fn ($c) => (string) ($c->created_by ?? '') === $id
                 );
-                $payments = round((float) $row['payments_collected'], 2);
+                $agg = $this->aggregateCharges($userCharges);
+
+                $amenity = 0.0;
+                $manual = 0.0;
+                $room = 0.0;
+                foreach ($userCharges as $charge) {
+                    $type = strtolower(trim((string) ($charge->type ?? '')));
+                    $amount = (float) ($charge->amount ?? 0);
+                    if ($amount <= 0 || BillingChargeTypes::isCredit($type)) {
+                        continue;
+                    }
+                    if ($type === 'amenity') {
+                        $amenity += $amount;
+                    } elseif ($type === 'manual') {
+                        $manual += $amount;
+                    } elseif ($this->isSaleType($type) && ! in_array($type, ['amenity', 'manual'], true)) {
+                        $room += $amount;
+                    }
+                }
+
+                $methods = $agg['by_payment_method'];
 
                 return [
                     'user_id' => $id,
                     'username' => (string) ($user->name ?? ''),
-                    'amenity_sales' => round($row['amenity_sales'], 2),
-                    'manual_sales' => round($row['manual_sales'], 2),
-                    'room_sales' => round((float) ($row['room_sales'] ?? 0), 2),
-                    'payments_collected' => $payments,
-                    'total_sales' => $totalSales,
-                    // Headline for FO list: billed sales, or payments when only collections were recorded.
-                    'display_total' => round($totalSales > 0.009 ? $totalSales : $payments, 2),
-                    'order_count' => (int) $row['order_count'],
+                    'amenity_sales' => round($amenity, 2),
+                    'manual_sales' => round($manual, 2),
+                    'room_sales' => round($room, 2),
+                    'payments_collected' => $agg['payments_collected'],
+                    'total_sales' => $agg['total_sales'],
+                    'display_total' => $agg['display_total'],
+                    'order_count' => $agg['order_count'],
+                    'by_payment_method' => $methods,
+                    'cash' => round((float) ($methods['cash']['total'] ?? 0), 2),
+                    'ewallet' => round((float) ($methods['ewallet']['total'] ?? 0), 2),
+                    'bank_transfer' => round((float) ($methods['bank_transfer']['total'] ?? 0), 2),
                 ];
             })
             ->sortByDesc('display_total')
@@ -121,6 +99,9 @@ class FrontDeskSalesReportService
                 'payments' => round((float) collect($accounts)->sum('payments_collected'), 2),
                 'display_total' => round((float) collect($accounts)->sum('display_total'), 2),
                 'order_count' => (int) collect($accounts)->sum('order_count'),
+                'cash' => round((float) collect($accounts)->sum('cash'), 2),
+                'ewallet' => round((float) collect($accounts)->sum('ewallet'), 2),
+                'bank_transfer' => round((float) collect($accounts)->sum('bank_transfer'), 2),
             ],
             'accounts' => $accounts,
         ];

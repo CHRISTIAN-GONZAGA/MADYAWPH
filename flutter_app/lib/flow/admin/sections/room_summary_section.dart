@@ -9,7 +9,7 @@ import '../widgets/booking_overview_cards.dart';
 import '../widgets/admin_room_navigation.dart';
 import '../widgets/admin_summary_room_tile.dart';
 import '../widgets/front_desk_activity_dialog.dart';
-import '../widgets/hotel_totals_reports_sheet.dart';
+import '../widgets/hotel_totals_report_summary.dart';
 
 class RoomSummarySection extends StatelessWidget {
   const RoomSummarySection({
@@ -441,14 +441,8 @@ class RoomSummarySection extends StatelessWidget {
         if (!isFrontDesk) ...[
           const SizedBox(height: 6),
           const FoActivityStatCards(),
-          const SizedBox(height: 6),
-          _ReportsEntryCard(
-            onTap: () => openHotelTotalsReports(
-              context,
-              rooms: rooms,
-              isFrontDesk: false,
-            ),
-          ),
+          const SizedBox(height: 12),
+          HotelTotalsReportSummary(rooms: rooms),
         ],
       ],
     );
@@ -1006,87 +1000,82 @@ class _CategoryCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.45)),
           ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 15,
-                        backgroundColor: scheme.primaryContainer,
-                        child: Icon(
-                          Icons.king_bed_outlined,
-                          color: scheme.onPrimaryContainer,
-                          size: 16,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context)
-                              .textTheme
-                              .labelLarge
-                              ?.copyWith(
-                                fontWeight: FontWeight.w800,
-                                height: 1.15,
-                              ),
-                        ),
-                      ),
-                      Icon(
-                        Icons.open_in_new_rounded,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 15,
+                      backgroundColor: scheme.primaryContainer,
+                      child: Icon(
+                        Icons.king_bed_outlined,
+                        color: scheme.onPrimaryContainer,
                         size: 16,
-                        color: scheme.primary,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: _AvgPriceHighlight(
-                        label:
-                            (stats['avg_price_label'] ?? 'Avg —').toString(),
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              height: 1.15,
+                            ),
+                      ),
+                    ),
+                    Icon(
+                      Icons.open_in_new_rounded,
+                      size: 16,
+                      color: scheme.primary,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _AvgPriceHighlight(
+                      label: (stats['avg_price_label'] ?? 'Avg —').toString(),
+                    ),
                   ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _CategoryMiniStat(
-                          label: 'Rsv',
-                          count: reservedCount,
-                          color: Colors.orange.shade800,
-                          onTap: onReservedTap,
-                        ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _CategoryMiniStat(
+                        label: 'Rsv',
+                        count: reservedCount,
+                        color: Colors.orange.shade800,
+                        onTap: onReservedTap,
                       ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: _CategoryMiniStat(
-                          label: 'Occ',
-                          count: occupiedCount,
-                          color: Colors.green.shade700,
-                          onTap: onOccupiedTap,
-                        ),
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: _CategoryMiniStat(
+                        label: 'Occ',
+                        count: occupiedCount,
+                        color: Colors.green.shade700,
+                        onTap: onOccupiedTap,
                       ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: _CategoryMiniStat(
-                          label: 'Vac',
-                          count: vacantCount,
-                          color: Colors.teal.shade700,
-                          onTap: onVacantTap,
-                        ),
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: _CategoryMiniStat(
+                        label: 'Vac',
+                        count: vacantCount,
+                        color: Colors.teal.shade700,
+                        onTap: onVacantTap,
                       ),
-                    ],
-                  ),
-                ],
-              ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ),
@@ -1135,60 +1124,6 @@ class _AvgPriceHighlight extends StatelessWidget {
               ),
         ),
       ],
-    );
-  }
-}
-
-class _ReportsEntryCard extends StatelessWidget {
-  const _ReportsEntryCard({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    const color = Color(0xFF6A1B9A);
-    return Material(
-      color: scheme.surface,
-      elevation: 0,
-      borderRadius: BorderRadius.circular(12),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Ink(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: color.withValues(alpha: 0.22)),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                color.withValues(alpha: 0.07),
-                scheme.surface,
-              ],
-            ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            child: Row(
-              children: [
-                Icon(Icons.assessment_outlined, color: color, size: 20),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Reports',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: color,
-                        ),
-                  ),
-                ),
-                Icon(Icons.chevron_right, color: color.withValues(alpha: 0.7)),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
