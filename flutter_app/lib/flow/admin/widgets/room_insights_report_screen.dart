@@ -81,6 +81,7 @@ class _RoomInsightsReportScreenState extends State<RoomInsightsReportScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return AppScaffold(
       appBar: AppBar(
         title: const Text('Room insights'),
@@ -107,70 +108,154 @@ class _RoomInsightsReportScreenState extends State<RoomInsightsReportScreen> {
                         '${_data?['period_days'] != null ? ' · ${_data?['period_days']} days' : ''}',
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
-                      const SizedBox(height: 12),
-                      _TotalsGrid(totals: (_data?['totals'] as Map?) ?? const {}),
-                      const SizedBox(height: 12),
-                      _StatusBreakdown(
-                        breakdown: (_data?['status_breakdown'] as Map?) ?? const {},
+                      const SizedBox(height: 4),
+                      Text(
+                        'Expand a section for details. Tap any row for a full breakdown.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
                       ),
                       const SizedBox(height: 12),
-                      _RoomTypeSection(
-                        rows: (_data?['by_room_type'] as List?) ?? const [],
+                      _ExpandSection(
+                        title: 'Overview totals',
+                        subtitle: 'Hotel-wide room performance snapshot',
+                        icon: Icons.insights_outlined,
+                        initiallyExpanded: true,
+                        child: _TotalsGrid(
+                          totals: (_data?['totals'] as Map?) ?? const {},
+                        ),
                       ),
-                      _RoomRankSection(
+                      _ExpandSection(
+                        title: 'Room status snapshot',
+                        subtitle: 'Current status counts',
+                        icon: Icons.meeting_room_outlined,
+                        child: _StatusBreakdown(
+                          breakdown:
+                              (_data?['status_breakdown'] as Map?) ?? const {},
+                        ),
+                      ),
+                      _ExpandSection(
+                        title: 'Performance by category',
+                        subtitle: 'Bookings, revenue, occupancy per category',
+                        icon: Icons.category_outlined,
+                        initiallyExpanded: true,
+                        child: _RoomTypeList(
+                          rows: (_data?['by_room_type'] as List?) ?? const [],
+                        ),
+                      ),
+                      _ExpandSection(
                         title: 'Most booked rooms',
                         subtitle: 'Highest stay count',
-                        rows: (_data?['most_booked'] as List?) ?? const [],
-                        metricKey: 'bookings_count',
-                        metricLabel: 'bookings',
-                        secondaryKey: 'occupancy_rate',
-                        secondaryLabel: '% occupancy',
+                        icon: Icons.trending_up_rounded,
+                        child: _RoomRankList(
+                          rows: (_data?['most_booked'] as List?) ?? const [],
+                          metricKey: 'bookings_count',
+                          metricLabel: 'bookings',
+                          secondaryKey: 'occupancy_rate',
+                          secondaryLabel: '% occupancy',
+                        ),
                       ),
-                      _RoomRankSection(
+                      _ExpandSection(
                         title: 'Least booked rooms',
                         subtitle: 'Lowest stay count',
-                        rows: (_data?['least_booked'] as List?) ?? const [],
-                        metricKey: 'bookings_count',
-                        metricLabel: 'bookings',
-                        secondaryKey: 'last_booked_at',
-                        secondaryLabel: 'last booked',
+                        icon: Icons.trending_down_rounded,
+                        child: _RoomRankList(
+                          rows: (_data?['least_booked'] as List?) ?? const [],
+                          metricKey: 'bookings_count',
+                          metricLabel: 'bookings',
+                          secondaryKey: 'last_booked_at',
+                          secondaryLabel: 'last booked',
+                        ),
                       ),
-                      _RoomRankSection(
+                      _ExpandSection(
                         title: 'Most profit per room',
                         subtitle: 'Recognized revenue',
-                        rows: (_data?['most_profit'] as List?) ?? const [],
-                        metricKey: 'revenue',
-                        metricLabel: '₱',
-                        isMoney: true,
-                        secondaryKey: 'avg_booking_value',
-                        secondaryLabel: 'avg/booking',
-                        secondaryIsMoney: true,
+                        icon: Icons.payments_outlined,
+                        child: _RoomRankList(
+                          rows: (_data?['most_profit'] as List?) ?? const [],
+                          metricKey: 'revenue',
+                          metricLabel: '₱',
+                          isMoney: true,
+                          secondaryKey: 'avg_booking_value',
+                          secondaryLabel: 'avg/booking',
+                          secondaryIsMoney: true,
+                        ),
                       ),
-                      _RoomRankSection(
+                      _ExpandSection(
                         title: 'Most frequent maintenance',
                         subtitle: 'Maintenance tasks logged',
-                        rows: (_data?['most_maintenance'] as List?) ?? const [],
-                        metricKey: 'maintenance_events',
-                        metricLabel: 'events',
+                        icon: Icons.build_outlined,
+                        child: _RoomRankList(
+                          rows:
+                              (_data?['most_maintenance'] as List?) ?? const [],
+                          metricKey: 'maintenance_events',
+                          metricLabel: 'events',
+                        ),
                       ),
-                      _RoomRankSection(
+                      _ExpandSection(
                         title: 'Currently cleaning',
                         subtitle: 'Rooms in cleaning status now',
-                        rows: (_data?['currently_cleaning'] as List?) ?? const [],
-                        metricKey: 'status',
-                        metricLabel: '',
+                        icon: Icons.cleaning_services_outlined,
+                        child: _RoomRankList(
+                          rows:
+                              (_data?['currently_cleaning'] as List?) ?? const [],
+                          metricKey: 'status',
+                          metricLabel: '',
+                        ),
                       ),
-                      _RoomRankSection(
+                      _ExpandSection(
                         title: 'Currently maintenance',
                         subtitle: 'Rooms flagged for repair',
-                        rows:
-                            (_data?['currently_maintenance'] as List?) ?? const [],
-                        metricKey: 'status',
-                        metricLabel: '',
+                        icon: Icons.handyman_outlined,
+                        child: _RoomRankList(
+                          rows: (_data?['currently_maintenance'] as List?) ??
+                              const [],
+                          metricKey: 'status',
+                          metricLabel: '',
+                        ),
                       ),
                     ],
                   ),
                 ),
+    );
+  }
+}
+
+class _ExpandSection extends StatelessWidget {
+  const _ExpandSection({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.child,
+    this.initiallyExpanded = false,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Widget child;
+  final bool initiallyExpanded;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: initiallyExpanded,
+          leading: Icon(icon, color: scheme.primary),
+          title: Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+          subtitle: Text(subtitle),
+          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          children: [child],
+        ),
+      ),
     );
   }
 }
@@ -193,11 +278,12 @@ class _TotalsGrid extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(value,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w800)),
+              Text(
+                value,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
               Text(
                 label,
                 style: Theme.of(context).textTheme.labelSmall,
@@ -239,7 +325,9 @@ class _StatusBreakdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (breakdown.isEmpty) return const SizedBox.shrink();
+    if (breakdown.isEmpty) {
+      return const Text('No status data.');
+    }
     final scheme = Theme.of(context).colorScheme;
     const statusColors = <String, Color>{
       'available': Colors.green,
@@ -251,122 +339,78 @@ class _StatusBreakdown extends StatelessWidget {
       'reserved': Colors.purple,
     };
 
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Room status snapshot',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: breakdown.entries.map((e) {
-                final status = e.key.toString();
-                final color = statusColors[status] ?? scheme.outline;
-                return Chip(
-                  avatar: CircleAvatar(backgroundColor: color, radius: 5),
-                  label: Text('${status.replaceAll('_', ' ')} · ${e.value}'),
-                  visualDensity: VisualDensity.compact,
-                );
-              }).toList(),
-            ),
-          ],
-        ),
-      ),
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: breakdown.entries.map((e) {
+        final status = e.key.toString();
+        final color = statusColors[status] ?? scheme.outline;
+        return Chip(
+          avatar: CircleAvatar(backgroundColor: color, radius: 5),
+          label: Text('${status.replaceAll('_', ' ')} · ${e.value}'),
+          visualDensity: VisualDensity.compact,
+        );
+      }).toList(),
     );
   }
 }
 
-class _RoomTypeSection extends StatelessWidget {
-  const _RoomTypeSection({required this.rows});
+class _RoomTypeList extends StatelessWidget {
+  const _RoomTypeList({required this.rows});
   final List rows;
 
   @override
   Widget build(BuildContext context) {
-    if (rows.isEmpty) return const SizedBox.shrink();
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Performance by category',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w800)),
-            Text('Bookings, revenue, and occupancy per room category',
-                style: Theme.of(context).textTheme.bodySmall),
-            const SizedBox(height: 8),
-            ...rows.take(10).map((raw) {
-              final m = Map<String, dynamic>.from(raw as Map);
-              final revenue = (m['revenue'] as num?)?.toDouble() ?? 0;
-              final occupancy =
-                  (m['occupancy_rate'] as num?)?.toDouble() ?? 0;
-              final label = (m['label'] ?? '—').toString();
-              return ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                title: Text(label),
-                subtitle: Text(
-                  '${m['rooms'] ?? 0} rooms · ${m['bookings'] ?? 0} bookings · ${occupancy.toStringAsFixed(1)}% occupancy',
+    if (rows.isEmpty) {
+      return const Text('No category data for this period.');
+    }
+    return Column(
+      children: rows.take(12).map((raw) {
+        final m = Map<String, dynamic>.from(raw as Map);
+        final revenue = (m['revenue'] as num?)?.toDouble() ?? 0;
+        final occupancy = (m['occupancy_rate'] as num?)?.toDouble() ?? 0;
+        final label = (m['label'] ?? '—').toString();
+        return ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: Text(
+            '${m['rooms'] ?? 0} rooms · ${m['bookings'] ?? 0} bookings · ${occupancy.toStringAsFixed(1)}% occupancy',
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '₱${revenue.toStringAsFixed(0)}',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const Icon(Icons.chevron_right, size: 18),
+            ],
+          ),
+          onTap: () => _showInsightDetail(
+            context,
+            title: label,
+            lines: [
+              MapEntry('Rooms', '${m['rooms'] ?? 0}'),
+              MapEntry('Bookings', '${m['bookings'] ?? 0}'),
+              MapEntry('Occupancy', '${occupancy.toStringAsFixed(1)}%'),
+              MapEntry('Revenue', '₱${revenue.toStringAsFixed(2)}'),
+              if (m['avg_revenue'] != null)
+                MapEntry(
+                  'Avg revenue',
+                  '₱${((m['avg_revenue'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}',
                 ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '₱${revenue.toStringAsFixed(0)}',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      Icons.chevron_right,
-                      size: 18,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ],
-                ),
-                onTap: () => _showInsightDetail(
-                  context,
-                  title: label,
-                  lines: [
-                    MapEntry('Rooms', '${m['rooms'] ?? 0}'),
-                    MapEntry('Bookings', '${m['bookings'] ?? 0}'),
-                    MapEntry(
-                      'Occupancy',
-                      '${occupancy.toStringAsFixed(1)}%',
-                    ),
-                    MapEntry('Revenue', '₱${revenue.toStringAsFixed(2)}'),
-                    if (m['avg_revenue'] != null)
-                      MapEntry(
-                        'Avg revenue',
-                        '₱${((m['avg_revenue'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}',
-                      ),
-                    if (m['nights'] != null)
-                      MapEntry('Nights', '${m['nights']}'),
-                  ],
-                ),
-              );
-            }),
-          ],
-        ),
-      ),
+              if (m['nights'] != null) MapEntry('Nights', '${m['nights']}'),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
 }
 
-class _RoomRankSection extends StatelessWidget {
-  const _RoomRankSection({
-    required this.title,
-    required this.subtitle,
+class _RoomRankList extends StatelessWidget {
+  const _RoomRankList({
     required this.rows,
     required this.metricKey,
     required this.metricLabel,
@@ -376,8 +420,6 @@ class _RoomRankSection extends StatelessWidget {
     this.secondaryIsMoney = false,
   });
 
-  final String title;
-  final String subtitle;
   final List rows;
   final String metricKey;
   final String metricLabel;
@@ -391,7 +433,8 @@ class _RoomRankSection extends StatelessWidget {
     final v = m[secondaryKey];
     if (v == null) return null;
     if (secondaryIsMoney) {
-      return '₱${((v as num?)?.toDouble() ?? 0).toStringAsFixed(0)} ${secondaryLabel ?? ''}'.trim();
+      return '₱${((v as num?)?.toDouble() ?? 0).toStringAsFixed(0)} ${secondaryLabel ?? ''}'
+          .trim();
     }
     if (v is num) {
       return '$v ${secondaryLabel ?? ''}'.trim();
@@ -403,97 +446,77 @@ class _RoomRankSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w800)),
-            Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-            const SizedBox(height: 8),
-            if (rows.isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 8),
-                child: Text('No data for this period.'),
-              )
-            else
-              ...rows.take(8).map((raw) {
-                final m = Map<String, dynamic>.from(raw as Map);
-                final no = (m['room_number'] ?? '—').toString();
-                final type = (m['category_name'] ?? '').toString().isNotEmpty
-                    ? (m['category_name'] ?? '').toString()
-                    : (m['room_type'] ?? '').toString();
-                final metric = m[metricKey];
-                final metricText = isMoney
-                    ? '₱${((metric as num?)?.toDouble() ?? 0).toStringAsFixed(0)}'
-                    : metricKey == 'status'
-                        ? (metric ?? '').toString()
-                        : '${metric ?? 0} $metricLabel';
-                final secondary = _secondaryText(m);
-                final subtitleParts = <String>[
-                  if (type.isNotEmpty) type,
-                  if (secondary != null) secondary,
-                ];
-                return ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  title: Text('Room $no'),
-                  subtitle: subtitleParts.isEmpty
-                      ? null
-                      : Text(subtitleParts.join(' · ')),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        metricText,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        Icons.chevron_right,
-                        size: 18,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ],
-                  ),
-                  onTap: () => _showInsightDetail(
-                    context,
-                    title: 'Room $no',
-                    lines: [
-                      if (type.isNotEmpty) MapEntry('Category', type),
-                      MapEntry(metricLabel.isEmpty ? 'Value' : metricLabel, metricText),
-                      if (secondary != null)
-                        MapEntry(secondaryLabel ?? 'Detail', secondary),
-                      if (m['bookings_count'] != null || m['bookings'] != null)
-                        MapEntry(
-                          'Bookings',
-                          '${m['bookings_count'] ?? m['bookings']}',
-                        ),
-                      if (m['revenue'] != null)
-                        MapEntry(
-                          'Revenue',
-                          '₱${((m['revenue'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}',
-                        ),
-                      if (m['status'] != null)
-                        MapEntry('Status', '${m['status']}'),
-                      if (m['maintenance_count'] != null)
-                        MapEntry(
-                          'Maintenance',
-                          '${m['maintenance_count']}',
-                        ),
-                    ],
-                  ),
-                );
-              }),
-          ],
-        ),
-      ),
+    if (rows.isEmpty) {
+      return const Text('No data for this period.');
+    }
+    return Column(
+      children: rows.take(10).map((raw) {
+        final m = Map<String, dynamic>.from(raw as Map);
+        final no = (m['room_number'] ?? '—').toString();
+        final type = (m['category_name'] ?? '').toString().isNotEmpty
+            ? (m['category_name'] ?? '').toString()
+            : (m['room_type'] ?? '').toString();
+        final metric = m[metricKey];
+        final metricText = isMoney
+            ? '₱${((metric as num?)?.toDouble() ?? 0).toStringAsFixed(0)}'
+            : metricKey == 'status'
+                ? (metric ?? '').toString()
+                : '${metric ?? 0} $metricLabel';
+        final secondary = _secondaryText(m);
+        final subtitleParts = <String>[
+          if (type.isNotEmpty) type,
+          if (secondary != null) secondary,
+        ];
+        return ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: Text('Room $no',
+              style: const TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: subtitleParts.isEmpty
+              ? null
+              : Text(subtitleParts.join(' · ')),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                metricText,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const Icon(Icons.chevron_right, size: 18),
+            ],
+          ),
+          onTap: () => _showInsightDetail(
+            context,
+            title: 'Room $no',
+            lines: [
+              if (type.isNotEmpty) MapEntry('Category', type),
+              MapEntry(
+                metricLabel.isEmpty ? 'Value' : metricLabel,
+                metricText,
+              ),
+              if (secondary != null)
+                MapEntry(secondaryLabel ?? 'Detail', secondary),
+              if (m['bookings_count'] != null || m['bookings'] != null)
+                MapEntry(
+                  'Bookings',
+                  '${m['bookings_count'] ?? m['bookings']}',
+                ),
+              if (m['revenue'] != null)
+                MapEntry(
+                  'Revenue',
+                  '₱${((m['revenue'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}',
+                ),
+              if (m['status'] != null) MapEntry('Status', '${m['status']}'),
+              if (m['maintenance_count'] != null ||
+                  m['maintenance_events'] != null)
+                MapEntry(
+                  'Maintenance',
+                  '${m['maintenance_count'] ?? m['maintenance_events']}',
+                ),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
 }

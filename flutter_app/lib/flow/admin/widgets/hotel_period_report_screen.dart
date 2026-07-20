@@ -2,10 +2,10 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
+import '../../../utils/money_format.dart';
 import '../../../widgets/app_scaffold.dart';
 import 'admin_reports_ui.dart';
 import 'report_pdf_helper.dart';
-import 'shift_report_table.dart';
 
 /// Hotel-wide period report (Setup → Analytics). Independent of front-desk shift state.
 class HotelPeriodReportScreen extends StatefulWidget {
@@ -88,17 +88,34 @@ class _HotelPeriodReportScreenState extends State<HotelPeriodReportScreen> {
           'time_out': widget.timeOut.toIso8601String(),
           'title': widget.title,
         },
-        filename:
-            'hotel_report_${DateTime.now().millisecondsSinceEpoch}.pdf',
+        filename: 'hotel_report_${DateTime.now().millisecondsSinceEpoch}.pdf',
       );
     } finally {
       if (mounted) setState(() => _pdfBusy = false);
     }
   }
 
+  Map<String, dynamic> get _summary =>
+      (_data?['summary'] as Map?)?.cast<String, dynamic>() ?? const {};
+
+  List<Map<String, dynamic>> _list(String key) {
+    final raw = _data?[key];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final period = '${_fmt(widget.timeIn)} → ${_fmt(widget.timeOut)}';
+    final scheme = Theme.of(context).colorScheme;
+    final summary = _summary;
+    final bookings = _list('booking_transactions');
+    final amenities = _list('amenity_transactions');
+    final gross = parseJsonDouble(summary['gross_revenue']);
+    final net = parseJsonDouble(summary['net_revenue'] ?? summary['profit']);
 
     return AppScaffold(
       appBar: AppBar(
@@ -129,7 +146,7 @@ class _HotelPeriodReportScreenState extends State<HotelPeriodReportScreen> {
                         Icon(
                           Icons.error_outline_rounded,
                           size: 48,
-                          color: Theme.of(context).colorScheme.error,
+                          color: scheme.error,
                         ),
                         const SizedBox(height: 12),
                         Text(_error!, textAlign: TextAlign.center),
@@ -148,42 +165,207 @@ class _HotelPeriodReportScreenState extends State<HotelPeriodReportScreen> {
                     ReportsHeroHeader(
                       title: widget.title,
                       selectedDateLabel: period,
-                      caption: 'Hotel-wide revenue for this period',
+                      caption: widget.subtitle?.isNotEmpty == true
+                          ? widget.subtitle!
+                          : 'Hotel-wide revenue for this period',
                       onRefresh: _load,
                       isRefreshing: _loading,
                     ),
                     const SizedBox(height: 16),
-                    if (widget.subtitle != null &&
-                        widget.subtitle!.isNotEmpty) ...[
-                      Text(
-                        widget.subtitle!,
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _TotalCard(
+                            label: 'Gross revenue',
+                            value: formatPeso(gross),
+                            color: Colors.teal.shade700,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _TotalCard(
+                            label: 'Net revenue',
+                            value: formatPeso(net),
+                            color: scheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _TotalCard(
+                            label: 'Bookings',
+                            value: '${summary['bookings'] ?? bookings.length}',
+                            color: Colors.indigo,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _TotalCard(
+                            label: 'Amenity sales',
+                            value: '${amenities.length}',
+                            color: Colors.deepOrange,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    _ExpandCard(
+                      title: 'Revenue breakdown',
+                      subtitle: 'Rooms, amenities, refunds, net',
+                      icon: Icons.account_balance_wallet_outlined,
+                      initiallyExpanded: true,
+                      child: Column(
+                        children: [
+                          _MetricRow(
+                            'Room revenue',
+                            formatPeso(summary['room_revenue'] ?? 0),
+                          ),
+                          _MetricRow(
+                            'Amenity revenue',
+                            formatPeso(summary['amenity_revenue'] ?? 0),
+                          ),
+                          _MetricRow(
+                            'Refunds',
+                            formatPeso(summary['refunds'] ?? 0),
+                          ),
+                          _MetricRow(
+                            'Transfer adjustments',
+                            formatPeso(summary['transfer_adjustments'] ?? 0),
+                          ),
+                          _MetricRow(
+                            'Reseller payouts',
+                            formatPeso(
+                              summary['reseller_commissions_paid'] ?? 0,
                             ),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    ReportsSection(
-                      title: 'Transactions',
-                      subtitle: 'Bookings and amenity charges in this period',
-                      icon: Icons.receipt_long_outlined,
-                      accent: Theme.of(context).colorScheme.primary,
-                      child: ShiftReportTable(
-                        summary: (_data?['summary'] as Map<String, dynamic>?) ??
-                            const {},
-                        bookingRows: ((_data?['booking_transactions'] as List?)
-                                ?.whereType<Map<String, dynamic>>()
-                                .map(Map<String, dynamic>.from)
-                                .toList()) ??
-                            const [],
-                        amenityRows: ((_data?['amenity_transactions'] as List?)
-                                ?.whereType<Map<String, dynamic>>()
-                                .map(Map<String, dynamic>.from)
-                                .toList()) ??
-                            const [],
+                          ),
+                          const Divider(height: 18),
+                          _MetricRow(
+                            'Gross revenue',
+                            formatPeso(summary['gross_revenue'] ?? 0),
+                            bold: true,
+                          ),
+                          _MetricRow(
+                            'Net revenue',
+                            formatPeso(
+                              summary['net_revenue'] ?? summary['profit'] ?? 0,
+                            ),
+                            bold: true,
+                          ),
+                          _MetricRow(
+                            'Net profit',
+                            formatPeso(summary['profit'] ?? 0),
+                            bold: true,
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    _ExpandCard(
+                      title: 'Operations summary',
+                      subtitle: 'Occupancy activity in this period',
+                      icon: Icons.hotel_outlined,
+                      child: Column(
+                        children: [
+                          _MetricRow(
+                            'Paid bookings',
+                            '${summary['bookings'] ?? 0}',
+                          ),
+                          _MetricRow(
+                            'Rooms checked in',
+                            '${summary['rooms_checked_in'] ?? 0}',
+                          ),
+                          _MetricRow(
+                            'Rooms checked out',
+                            '${summary['rooms_checked_out'] ?? 0}',
+                          ),
+                        ],
+                      ),
+                    ),
+                    _ExpandCard(
+                      title: 'Booking transactions',
+                      subtitle:
+                          '${bookings.length} paid stay(s) · tap rows for details',
+                      icon: Icons.receipt_long_outlined,
+                      initiallyExpanded: true,
+                      child: bookings.isEmpty
+                          ? const Text('No booking payments in this period.')
+                          : Column(
+                              children: bookings.map((r) {
+                                return ListTile(
+                                  dense: true,
+                                  contentPadding: EdgeInsets.zero,
+                                  title: Text(
+                                    (r['guest_name'] ?? 'Guest').toString(),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    [
+                                      if ((r['reference'] ?? '')
+                                          .toString()
+                                          .isNotEmpty)
+                                        r['reference'].toString(),
+                                      if ((r['room_number'] ?? '')
+                                          .toString()
+                                          .isNotEmpty)
+                                        'Room ${r['room_number']}',
+                                      if ((r['payment_method'] ?? '')
+                                          .toString()
+                                          .isNotEmpty)
+                                        r['payment_method'].toString(),
+                                    ].where((s) => s.isNotEmpty).join(' · '),
+                                  ),
+                                  trailing: Text(
+                                    formatPeso(parseJsonDouble(r['amount'])),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                    ),
+                    _ExpandCard(
+                      title: 'Amenity transactions',
+                      subtitle: '${amenities.length} amenity sale(s)',
+                      icon: Icons.room_service_outlined,
+                      child: amenities.isEmpty
+                          ? const Text('No amenity sales in this period.')
+                          : Column(
+                              children: amenities.map((r) {
+                                return ListTile(
+                                  dense: true,
+                                  contentPadding: EdgeInsets.zero,
+                                  title: Text(
+                                    (r['description'] ?? r['label'] ?? 'Amenity')
+                                        .toString(),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    [
+                                      if ((r['room_number'] ?? '')
+                                          .toString()
+                                          .isNotEmpty)
+                                        'Room ${r['room_number']}',
+                                      _shortDate(r['paid_at']),
+                                    ].where((s) => s.isNotEmpty).join(' · '),
+                                  ),
+                                  trailing: Text(
+                                    formatPeso(parseJsonDouble(r['amount'])),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                    ),
+                    const SizedBox(height: 12),
                     FilledButton.icon(
                       onPressed: _pdfBusy ? null : _downloadPdf,
                       icon: _pdfBusy
@@ -204,6 +386,133 @@ class _HotelPeriodReportScreenState extends State<HotelPeriodReportScreen> {
                     ),
                   ],
                 ),
+    );
+  }
+
+  static String _shortDate(dynamic value) {
+    final raw = (value ?? '').toString();
+    if (raw.isEmpty) return '';
+    final dt = DateTime.tryParse(raw);
+    if (dt == null) return raw;
+    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
+        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+class _TotalCard extends StatelessWidget {
+  const _TotalCard({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExpandCard extends StatelessWidget {
+  const _ExpandCard({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.child,
+    this.initiallyExpanded = false,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Widget child;
+  final bool initiallyExpanded;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: initiallyExpanded,
+          leading: Icon(icon, color: scheme.primary),
+          title: Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+          subtitle: Text(subtitle),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+          children: [child],
+        ),
+      ),
+    );
+  }
+}
+
+class _MetricRow extends StatelessWidget {
+  const _MetricRow(this.label, this.value, {this.bold = false});
+
+  final String label;
+  final String value;
+  final bool bold;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontWeight: bold ? FontWeight.w800 : FontWeight.w500,
+                color: bold
+                    ? null
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: bold ? FontWeight.w800 : FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

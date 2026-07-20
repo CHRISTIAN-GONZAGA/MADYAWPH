@@ -447,52 +447,10 @@ class _FrontDeskAccountSalesScreenState
                   Expanded(
                     child: rows.isEmpty
                         ? const Center(child: Text('No transactions yet.'))
-                        : ListView.separated(
+                        : ListView(
                             controller: sc,
                             padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                            itemCount: rows.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(height: 8),
-                            itemBuilder: (context, i) {
-                              final tx = rows[i];
-                              final complimentary = tx['complimentary'] == true;
-                              final amount = parseJsonDouble(tx['amount']);
-                              final method =
-                                  (tx['payment_method'] ?? '').toString().trim();
-                              final created =
-                                  (tx['created_at'] ?? '').toString();
-                              return Card(
-                                child: ListTile(
-                                  dense: true,
-                                  title: Text(
-                                    (tx['label'] ?? tx['type'] ?? 'Charge')
-                                        .toString(),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    [
-                                      (tx['type'] ?? '').toString(),
-                                      if (method.isNotEmpty) method,
-                                      if (created.isNotEmpty)
-                                        created.length >= 10
-                                            ? created.substring(0, 10)
-                                            : created,
-                                      if (complimentary) 'Complimentary',
-                                    ].where((s) => s.isNotEmpty).join(' · '),
-                                  ),
-                                  trailing: Text(
-                                    complimentary
-                                        ? 'Free'
-                                        : '₱${amount.toStringAsFixed(2)}',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
+                            children: _groupedTransactionWidgets(rows),
                           ),
                   ),
                 ],
@@ -659,6 +617,133 @@ class _FrontDeskAccountSalesScreenState
     return out;
   }
 
+  List<Widget> _groupedTransactionWidgets(List<Map<String, dynamic>> rows) {
+    final groups = <String, List<Map<String, dynamic>>>{};
+    for (final tx in rows) {
+      final key = (tx['type_label'] ?? tx['category'] ?? _typeLabel((tx['type'] ?? '').toString()))
+          .toString();
+      groups.putIfAbsent(key, () => []).add(tx);
+    }
+    final keys = groups.keys.toList()
+      ..sort((a, b) {
+        final at = groups[a]!.fold<double>(
+          0,
+          (s, t) => s + parseJsonDouble(t['amount']),
+        );
+        final bt = groups[b]!.fold<double>(
+          0,
+          (s, t) => s + parseJsonDouble(t['amount']),
+        );
+        return bt.compareTo(at);
+      });
+
+    return [
+      for (final key in keys)
+        Card(
+          margin: const EdgeInsets.only(bottom: 10),
+          child: ExpansionTile(
+            initiallyExpanded: keys.length <= 2,
+            title: Text(
+              key,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            subtitle: Text(
+              '${groups[key]!.length} txn(s) · ₱${groups[key]!.fold<double>(0, (s, t) => s + parseJsonDouble(t['amount'])).toStringAsFixed(2)}',
+            ),
+            children: [
+              for (final tx in groups[key]!) _transactionTile(tx),
+            ],
+          ),
+        ),
+    ];
+  }
+
+  Widget _transactionTile(Map<String, dynamic> tx) {
+    final complimentary = tx['complimentary'] == true;
+    final amount = parseJsonDouble(tx['amount']);
+    final method = (tx['payment_method'] ?? '').toString().trim();
+    final room = (tx['room_number'] ?? '').toString().trim();
+    final category = (tx['room_category'] ?? '').toString().trim();
+    final guest = (tx['guest_name'] ?? '').toString().trim();
+    final created = (tx['created_at'] ?? '').toString();
+    return ListTile(
+      dense: true,
+      title: Text(
+        (tx['label'] ?? tx['type_label'] ?? tx['type'] ?? 'Charge').toString(),
+        style: const TextStyle(fontWeight: FontWeight.w700),
+      ),
+      subtitle: Text(
+        [
+          if (room.isNotEmpty) 'Room $room',
+          if (category.isNotEmpty) category,
+          if (guest.isNotEmpty) guest,
+          if (method.isNotEmpty) method,
+          if (created.isNotEmpty)
+            created.length >= 10 ? created.substring(0, 10) : created,
+          if (complimentary) 'Complimentary',
+        ].where((s) => s.isNotEmpty).join(' · '),
+      ),
+      trailing: Text(
+        complimentary ? 'Free' : '₱${amount.toStringAsFixed(2)}',
+        style: const TextStyle(fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+
+  Widget _breakdownExpansion({
+    required String title,
+    required String subtitle,
+    required List<Widget> children,
+    bool initiallyExpanded = false,
+  }) {
+    if (children.isEmpty) return const SizedBox.shrink();
+    return Card(
+      margin: const EdgeInsets.only(top: 8),
+      elevation: 0,
+      color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+      child: ExpansionTile(
+        initiallyExpanded: initiallyExpanded,
+        tilePadding: const EdgeInsets.symmetric(horizontal: 10),
+        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+        subtitle: Text(subtitle),
+        children: children,
+      ),
+    );
+  }
+
+  List<Widget> _categoryRows(List? raw, {required String Function(Map) labelOf}) {
+    if (raw == null) return const [];
+    final out = <Widget>[];
+    for (final item in raw) {
+      if (item is! Map) continue;
+      final m = Map<String, dynamic>.from(item);
+      final count = (m['count'] as num?)?.toInt() ?? 0;
+      final total = parseJsonDouble(m['total']);
+      if (count == 0 && total <= 0) continue;
+      out.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${labelOf(m)} · $count',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              Text(
+                '₱${total.toStringAsFixed(2)}',
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return out;
+  }
+
   Widget _periodTile(
     BuildContext context, {
     required String title,
@@ -668,6 +753,13 @@ class _FrontDeskAccountSalesScreenState
     final from = (period['from'] ?? '').toString();
     final to = (period['to'] ?? '').toString();
     final range = from == to ? from : '$from → $to';
+    final byType = period['by_charge_type'] is List
+        ? period['by_charge_type'] as List
+        : const [];
+    final byRoom = period['by_room'] is List ? period['by_room'] as List : const [];
+    final byCategory =
+        period['by_category'] is List ? period['by_category'] as List : const [];
+
     return AppSectionCard(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -709,23 +801,49 @@ class _FrontDeskAccountSalesScreenState
               ' · ${period['order_count'] ?? 0} orders',
               style: Theme.of(context).textTheme.bodySmall,
             ),
-            if (period['by_payment_method'] is Map) ...[
-              const SizedBox(height: 10),
-              const Divider(height: 1),
-              const SizedBox(height: 8),
-              Text(
-                'By payment method',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
+            _breakdownExpansion(
+              title: 'By charge type',
+              subtitle: 'Room stay, amenities, payments, fees',
+              initiallyExpanded: true,
+              children: _categoryRows(
+                byType,
+                labelOf: (m) =>
+                    (m['label'] ?? m['key'] ?? '—').toString(),
               ),
-              const SizedBox(height: 6),
-              ..._paymentMethodRows(
-                period,
-                period: period,
-                periodTitle: title,
+            ),
+            _breakdownExpansion(
+              title: 'By room',
+              subtitle: 'Which rooms contributed',
+              children: _categoryRows(
+                byRoom,
+                labelOf: (m) {
+                  final no = (m['room_number'] ?? '—').toString();
+                  final cat = (m['room_category'] ?? '').toString();
+                  return cat.isEmpty || cat == '—'
+                      ? 'Room $no'
+                      : 'Room $no ($cat)';
+                },
               ),
-            ],
+            ),
+            _breakdownExpansion(
+              title: 'By room category',
+              subtitle: 'Totals per room type / category',
+              children: _categoryRows(
+                byCategory,
+                labelOf: (m) => (m['label'] ?? '—').toString(),
+              ),
+            ),
+            if (period['by_payment_method'] is Map)
+              _breakdownExpansion(
+                title: 'By payment method',
+                subtitle: 'Tap a method for full transaction list',
+                initiallyExpanded: true,
+                children: _paymentMethodRows(
+                  period,
+                  period: period,
+                  periodTitle: title,
+                ),
+              ),
           ],
         ),
       ),
@@ -931,32 +1049,65 @@ class _FrontDeskAccountSalesScreenState
                                       ),
                                     ],
                                   ),
-                                  if (summary['by_payment_method'] is Map) ...[
-                                    const SizedBox(height: 12),
-                                    const Divider(height: 1),
-                                    const SizedBox(height: 10),
-                                    Text(
-                                      'By payment method',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .labelLarge
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w800,
-                                          ),
+                                  if (summary['by_charge_type'] is List)
+                                    _breakdownExpansion(
+                                      title: 'By charge type',
+                                      subtitle: 'Room stay, amenities, payments',
+                                      initiallyExpanded: true,
+                                      children: _categoryRows(
+                                        summary['by_charge_type'] as List,
+                                        labelOf: (m) =>
+                                            (m['label'] ?? m['key'] ?? '—')
+                                                .toString(),
+                                      ),
                                     ),
-                                    const SizedBox(height: 8),
-                                    ..._paymentMethodRows(
-                                      summary,
-                                      period: {
-                                        'from': (_dayDetail?['from'] ?? '').toString(),
-                                        'to': (_dayDetail?['to'] ?? '').toString(),
-                                        'transactions': transactions,
-                                        'by_payment_method':
-                                            summary['by_payment_method'],
-                                      },
-                                      periodTitle: 'Selected day',
+                                  if (summary['by_room'] is List)
+                                    _breakdownExpansion(
+                                      title: 'By room',
+                                      subtitle: 'Which rooms contributed',
+                                      children: _categoryRows(
+                                        summary['by_room'] as List,
+                                        labelOf: (m) {
+                                          final no =
+                                              (m['room_number'] ?? '—').toString();
+                                          final cat =
+                                              (m['room_category'] ?? '').toString();
+                                          return cat.isEmpty || cat == '—'
+                                              ? 'Room $no'
+                                              : 'Room $no ($cat)';
+                                        },
+                                      ),
                                     ),
-                                  ],
+                                  if (summary['by_category'] is List)
+                                    _breakdownExpansion(
+                                      title: 'By room category',
+                                      subtitle: 'Totals per category',
+                                      children: _categoryRows(
+                                        summary['by_category'] as List,
+                                        labelOf: (m) =>
+                                            (m['label'] ?? '—').toString(),
+                                      ),
+                                    ),
+                                  if (summary['by_payment_method'] is Map)
+                                    _breakdownExpansion(
+                                      title: 'By payment method',
+                                      subtitle:
+                                          'Tap a method for full transaction list',
+                                      initiallyExpanded: true,
+                                      children: _paymentMethodRows(
+                                        summary,
+                                        period: {
+                                          'from': (_dayDetail?['from'] ?? '')
+                                              .toString(),
+                                          'to':
+                                              (_dayDetail?['to'] ?? '').toString(),
+                                          'transactions': transactions,
+                                          'by_payment_method':
+                                              summary['by_payment_method'],
+                                        },
+                                        periodTitle: 'Selected day',
+                                      ),
+                                    ),
                                 ],
                               ),
                             ),
@@ -967,39 +1118,14 @@ class _FrontDeskAccountSalesScreenState
                               child: ListTile(
                                 title: Text('No sales recorded on this day.'),
                               ),
+                            )
+                          else
+                            ..._groupedTransactionWidgets(
+                              transactions
+                                  .whereType<Map>()
+                                  .map((e) => Map<String, dynamic>.from(e))
+                                  .toList(),
                             ),
-                          ...transactions.map((raw) {
-                            final tx = Map<String, dynamic>.from(raw as Map);
-                            final complimentary = tx['complimentary'] == true;
-                            final amount = parseJsonDouble(tx['amount']);
-                            final method =
-                                (tx['payment_method'] ?? '').toString().trim();
-                            return Card(
-                              margin: const EdgeInsets.only(bottom: 6),
-                              child: ListTile(
-                                dense: true,
-                                title: Text(
-                                  (tx['label'] ?? tx['type'] ?? 'Charge')
-                                      .toString(),
-                                ),
-                                subtitle: Text(
-                                  [
-                                    (tx['type'] ?? '').toString(),
-                                    if (method.isNotEmpty) method,
-                                    if (complimentary) 'Complimentary',
-                                  ].where((s) => s.isNotEmpty).join(' · '),
-                                ),
-                                trailing: Text(
-                                  complimentary
-                                      ? 'Free'
-                                      : '₱${amount.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            );
-                          }),
                         ],
                       ],
                     ],

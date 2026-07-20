@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\BillingCharge;
+use App\Models\Booking;
+use App\Models\Room;
 use App\Models\User;
 use App\Support\BillingChargeTypes;
 use Carbon\Carbon;
@@ -215,6 +217,7 @@ class FrontDeskSalesReportService
             $methodsByBooking = $this->paymentMethodsByBooking($charges);
             $summary = $this->aggregateCharges($charges, $methodsByBooking);
             $transactions = $this->mapChargeTransactions($charges, $methodsByBooking);
+            $categories = $this->categorizeTransactions($transactions);
 
             $periods[$key] = [
                 'label' => (string) $range['label'],
@@ -225,6 +228,9 @@ class FrontDeskSalesReportService
                 'display_total' => $summary['display_total'],
                 'order_count' => $summary['order_count'],
                 'by_payment_method' => $summary['by_payment_method'],
+                'by_charge_type' => $categories['by_charge_type'],
+                'by_room' => $categories['by_room'],
+                'by_category' => $categories['by_category'],
                 'transactions' => $transactions,
             ];
         }
@@ -342,6 +348,7 @@ class FrontDeskSalesReportService
         $methodsByBooking = $this->paymentMethodsByBooking($charges);
         $summary = $this->aggregateCharges($charges, $methodsByBooking);
         $transactions = $this->mapChargeTransactions($charges, $methodsByBooking);
+        $categories = $this->categorizeTransactions($transactions);
 
         return [
             'user_id' => $userId,
@@ -354,6 +361,9 @@ class FrontDeskSalesReportService
                 'display_total' => $summary['display_total'],
                 'order_count' => $summary['order_count'],
                 'by_payment_method' => $summary['by_payment_method'],
+                'by_charge_type' => $categories['by_charge_type'],
+                'by_room' => $categories['by_room'],
+                'by_category' => $categories['by_category'],
             ],
             'transactions' => $transactions,
         ];
@@ -475,6 +485,53 @@ class FrontDeskSalesReportService
      */
     private function mapChargeTransactions(Collection $charges, array $methodsByBooking): array
     {
+        $roomIds = $charges
+            ->map(fn ($c) => (string) ($c->room_id ?? ''))
+            ->filter(fn ($id) => $id !== '')
+            ->unique()
+            ->values()
+            ->all();
+        $bookingIds = $charges
+            ->map(fn ($c) => (string) ($c->booking_id ?? ''))
+            ->filter(fn ($id) => $id !== '')
+            ->unique()
+            ->values()
+            ->all();
+
+        /** @var array<string, array{room_number: string, category_name: string, room_type: string}> $roomsById */
+        $roomsById = [];
+        if ($roomIds !== []) {
+            $rooms = Room::withoutGlobalScopes()
+                ->whereIn('id', $roomIds)
+                ->get(['id', 'room_number', 'category_name', 'room_type']);
+            foreach ($rooms as $room) {
+                $roomType = $room->room_type;
+                if (is_object($roomType) && method_exists($roomType, 'value')) {
+                    $roomType = $roomType->value;
+                }
+                $roomsById[(string) $room->id] = [
+                    'room_number' => (string) ($room->room_number ?? ''),
+                    'category_name' => (string) ($room->category_name ?? ''),
+                    'room_type' => (string) ($roomType ?? ''),
+                ];
+            }
+        }
+
+        /** @var array<string, array{guest_name: string, room_id: string, room_number: string}> $bookingsById */
+        $bookingsById = [];
+        if ($bookingIds !== []) {
+            $bookings = Booking::withoutGlobalScopes()
+                ->whereIn('id', $bookingIds)
+                ->get(['id', 'guest_name', 'room_id']);
+            foreach ($bookings as $booking) {
+                $bookingsById[(string) $booking->id] = [
+                    'guest_name' => (string) ($booking->guest_name ?? ''),
+                    'room_id' => (string) ($booking->room_id ?? ''),
+                    'room_number' => '',
+                ];
+            }
+        }
+
         $transactions = [];
         foreach ($charges as $charge) {
             $type = strtolower(trim((string) ($charge->type ?? '')));
@@ -490,17 +547,37 @@ class FrontDeskSalesReportService
             }
 
             $bookingId = (string) ($charge->booking_id ?? '');
+            $roomId = (string) ($charge->room_id ?? '');
+            $bookingMeta = $bookingsById[$bookingId] ?? null;
+            if ($roomId === '' && $bookingMeta !== null) {
+                $roomId = (string) ($bookingMeta['room_id'] ?? '');
+            }
+            $roomMeta = $roomsById[$roomId] ?? null;
+            $roomNumber = (string) ($roomMeta['room_number'] ?? '');
+            if ($roomNumber === '' && $bookingMeta !== null) {
+                $roomNumber = (string) ($bookingMeta['room_number'] ?? '');
+            }
+            $categoryName = (string) ($roomMeta['category_name'] ?? '');
+            if ($categoryName === '') {
+                $categoryName = (string) ($roomMeta['room_type'] ?? '');
+            }
             $method = $methodsByBooking[$bookingId]
                 ?? (string) data_get($charge->metadata, 'payment_method', '');
             $bucket = $this->paymentMethodBucket($method);
+            $typeLabel = $this->chargeTypeLabel($type);
 
             $transactions[] = [
                 'id' => (string) $charge->id,
                 'type' => $type,
+                'type_label' => $typeLabel,
+                'category' => $typeLabel,
                 'label' => (string) ($charge->label ?? ''),
                 'amount' => round($isPayment ? abs($amount) : $amount, 2),
                 'quantity' => (int) ($charge->quantity ?? 1),
-                'room_id' => (string) ($charge->room_id ?? ''),
+                'room_id' => $roomId,
+                'room_number' => $roomNumber,
+                'room_category' => $categoryName,
+                'guest_name' => (string) ($bookingMeta['guest_name'] ?? ''),
                 'booking_id' => $bookingId,
                 'payment_method' => $method,
                 'payment_method_bucket' => $bucket,
@@ -510,6 +587,104 @@ class FrontDeskSalesReportService
         }
 
         return $transactions;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $transactions
+     * @return array{
+     *     by_charge_type: list<array{key: string, label: string, count: int, total: float}>,
+     *     by_room: list<array{room_number: string, room_category: string, count: int, total: float}>,
+     *     by_category: list<array{label: string, count: int, total: float}>
+     * }
+     */
+    private function categorizeTransactions(array $transactions): array
+    {
+        $byType = [];
+        $byRoom = [];
+        $byCategory = [];
+
+        foreach ($transactions as $tx) {
+            if (($tx['complimentary'] ?? false) === true) {
+                continue;
+            }
+            $amount = (float) ($tx['amount'] ?? 0);
+            if ($amount <= 0) {
+                continue;
+            }
+            $typeKey = (string) ($tx['type'] ?? 'other');
+            $typeLabel = (string) ($tx['type_label'] ?? $this->chargeTypeLabel($typeKey));
+            if (! isset($byType[$typeKey])) {
+                $byType[$typeKey] = [
+                    'key' => $typeKey,
+                    'label' => $typeLabel,
+                    'count' => 0,
+                    'total' => 0.0,
+                ];
+            }
+            $byType[$typeKey]['count']++;
+            $byType[$typeKey]['total'] += $amount;
+
+            $roomNo = trim((string) ($tx['room_number'] ?? ''));
+            $roomKey = $roomNo !== '' ? $roomNo : 'Unassigned';
+            $roomCategory = trim((string) ($tx['room_category'] ?? ''));
+            if (! isset($byRoom[$roomKey])) {
+                $byRoom[$roomKey] = [
+                    'room_number' => $roomKey,
+                    'room_category' => $roomCategory !== '' ? $roomCategory : '—',
+                    'count' => 0,
+                    'total' => 0.0,
+                ];
+            }
+            $byRoom[$roomKey]['count']++;
+            $byRoom[$roomKey]['total'] += $amount;
+            if ($roomCategory !== '' && ($byRoom[$roomKey]['room_category'] === '—' || $byRoom[$roomKey]['room_category'] === '')) {
+                $byRoom[$roomKey]['room_category'] = $roomCategory;
+            }
+
+            $catLabel = $roomCategory !== '' ? $roomCategory : 'Uncategorized';
+            if (! isset($byCategory[$catLabel])) {
+                $byCategory[$catLabel] = [
+                    'label' => $catLabel,
+                    'count' => 0,
+                    'total' => 0.0,
+                ];
+            }
+            $byCategory[$catLabel]['count']++;
+            $byCategory[$catLabel]['total'] += $amount;
+        }
+
+        $sortDesc = static function (array $rows): array {
+            usort($rows, static fn ($a, $b) => ((float) ($b['total'] ?? 0)) <=> ((float) ($a['total'] ?? 0)));
+
+            return array_map(static function (array $row) {
+                $row['total'] = round((float) ($row['total'] ?? 0), 2);
+
+                return $row;
+            }, $rows);
+        };
+
+        return [
+            'by_charge_type' => $sortDesc(array_values($byType)),
+            'by_room' => $sortDesc(array_values($byRoom)),
+            'by_category' => $sortDesc(array_values($byCategory)),
+        ];
+    }
+
+    private function chargeTypeLabel(string $type): string
+    {
+        return match (strtolower(trim($type))) {
+            'room' => 'Room stay',
+            'amenity' => 'Amenity',
+            'manual' => 'Manual charge',
+            'extend-stay' => 'Extend stay',
+            'partial_payment', 'partial-payment' => 'Payment collected',
+            'early_check_in', 'early-check-in' => 'Early check-in',
+            'late_checkout', 'late_check_out', 'late-checkout' => 'Late checkout',
+            'refund' => 'Refund',
+            default => $type !== ''
+                ? str_replace(['_', '-'], ' ', $type)
+                : 'Other',
+        };
     }
 
     /**
