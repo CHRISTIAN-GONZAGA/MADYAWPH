@@ -132,6 +132,26 @@ class HotelCreditBookingFeeService
         Room $room,
         ?string $actorUserId = null,
     ): array {
+        $bookingType = strtolower(trim((string) (
+            $booking->booking_type?->value
+            ?? $booking->booking_type
+            ?? ''
+        )));
+        // Local / walk-in / hotel-portal bookings do not consume wallet credits.
+        if ($bookingType === '' || $bookingType === 'local') {
+            $roomTotal = $this->computeRoomTotalForBooking($booking, $room);
+
+            return [
+                'fee' => 0.0,
+                'room_total' => $roomTotal,
+                'fee_percent' => $this->feePercent(),
+                'balance_before' => 0.0,
+                'balance_after' => 0.0,
+                'skipped' => true,
+                'reason' => 'local_booking',
+            ];
+        }
+
         $bookingId = (string) $booking->id;
         $reference = (string) ($booking->booking_reference ?? $bookingId);
         $transactionKey = "booking-fee-bk-{$bookingId}";

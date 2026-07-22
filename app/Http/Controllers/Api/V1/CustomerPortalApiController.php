@@ -485,11 +485,37 @@ class CustomerPortalApiController extends Controller
         });
 
         try {
-            $walletFee = app(HotelCreditBookingFeeService::class)->deductForReservationSubmission(
-                $reservation,
-                $room,
-                Auth::id() ? (string) Auth::id() : null,
-            );
+            $actor = Auth::user();
+            $actorRole = $actor && method_exists($actor, 'roleValue')
+                ? (string) $actor->roleValue()
+                : '';
+            // Hotel staff booking via in-portal public customer UI counts as local.
+            $isLocalStaffBooking = in_array($actorRole, [
+                'admin',
+                'super_admin',
+                'frontdesk',
+                'owner',
+                'staff',
+            ], true);
+
+            if ($isLocalStaffBooking) {
+                $reservation->metadata = array_merge(
+                    is_array($reservation->metadata) ? $reservation->metadata : [],
+                    ['booking_channel' => 'local_portal', 'wallet_fee_skipped' => true],
+                );
+                $reservation->save();
+                $walletFee = [
+                    'fee' => 0.0,
+                    'skipped' => true,
+                    'reason' => 'local_portal_booking',
+                ];
+            } else {
+                $walletFee = app(HotelCreditBookingFeeService::class)->deductForReservationSubmission(
+                    $reservation,
+                    $room,
+                    Auth::id() ? (string) Auth::id() : null,
+                );
+            }
         } catch (\Illuminate\Validation\ValidationException $e) {
             $reservation->delete();
             throw $e;

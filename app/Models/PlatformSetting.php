@@ -10,6 +10,8 @@ class PlatformSetting extends Model
         'key',
         'credit_wallet_qr_url',
         'member_subscription_qr_url',
+        'hotel_subscription_qr_url',
+        'hotel_subscription_fee',
         'member_monthly_fee',
         'booking_confirm_fee_percent',
         'min_check_in_payment_percent',
@@ -26,6 +28,7 @@ class PlatformSetting extends Model
     {
         return [
             'member_monthly_fee' => 'float',
+            'hotel_subscription_fee' => 'float',
             'booking_confirm_fee_percent' => 'float',
             'min_check_in_payment_percent' => 'float',
             'late_checkout_grace_minutes' => 'integer',

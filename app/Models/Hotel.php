@@ -28,12 +28,17 @@ class Hotel extends Model
         'picker_banner_url',
         'guest_portal_qr_token',
         'total_rooms',
+        'subscription_trial_ends_at',
+        'subscription_paid_until',
+        'subscription_status',
     ];
 
     protected function casts(): array
     {
         return [
             'total_rooms' => 'integer',
+            'subscription_trial_ends_at' => 'datetime',
+            'subscription_paid_until' => 'datetime',
         ];
     }
 

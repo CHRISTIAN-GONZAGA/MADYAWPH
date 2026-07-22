@@ -1040,6 +1040,87 @@ class ReportController extends Controller
         );
     }
 
+    public function listExpenses(Request $request)
+    {
+        $validated = $request->validate([
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date', 'after_or_equal:from'],
+        ]);
+        $hotelId = (string) $request->user()->hotel_id;
+        $query = \App\Models\HotelExpense::query()->where('hotel_id', $hotelId);
+        if (! empty($validated['from'])) {
+            $query->where('expense_date', '>=', Carbon::parse($validated['from'])->startOfDay());
+        }
+        if (! empty($validated['to'])) {
+            $query->where('expense_date', '<=', Carbon::parse($validated['to'])->endOfDay());
+        }
+        $rows = $query->orderByDesc('expense_date')->limit(200)->get()->map(function ($e) {
+            return [
+                'id' => (string) $e->id,
+                'label' => (string) ($e->label ?? ''),
+                'amount' => (float) ($e->amount ?? 0),
+                'category' => (string) ($e->category ?? 'general'),
+                'notes' => (string) ($e->notes ?? ''),
+                'expense_date' => optional($e->expense_date)?->toDateString(),
+                'created_by_name' => (string) ($e->created_by_name ?? ''),
+            ];
+        })->values()->all();
+
+        return response()->json([
+            'data' => $rows,
+            'total' => round(collect($rows)->sum('amount'), 2),
+        ]);
+    }
+
+    public function storeExpense(Request $request)
+    {
+        $validated = $request->validate([
+            'label' => ['required', 'string', 'max:180'],
+            'amount' => ['required', 'numeric', 'min:0.01'],
+            'category' => ['nullable', 'string', 'max:80'],
+            'notes' => ['nullable', 'string', 'max:500'],
+            'expense_date' => ['nullable', 'date'],
+        ]);
+
+        $expense = \App\Models\HotelExpense::query()->create([
+            'hotel_id' => (string) $request->user()->hotel_id,
+            'label' => trim((string) $validated['label']),
+            'amount' => round((float) $validated['amount'], 2),
+            'category' => trim((string) ($validated['category'] ?? 'general')) ?: 'general',
+            'notes' => trim((string) ($validated['notes'] ?? '')),
+            'expense_date' => isset($validated['expense_date'])
+                ? Carbon::parse($validated['expense_date'])->startOfDay()
+                : now()->startOfDay(),
+            'created_by_user_id' => (string) $request->user()->id,
+            'created_by_name' => (string) ($request->user()->name ?? ''),
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'expense' => [
+                'id' => (string) $expense->id,
+                'label' => (string) $expense->label,
+                'amount' => (float) $expense->amount,
+                'category' => (string) $expense->category,
+                'notes' => (string) ($expense->notes ?? ''),
+                'expense_date' => optional($expense->expense_date)?->toDateString(),
+            ],
+        ], 201);
+    }
+
+    public function deleteExpense(Request $request, string $id)
+    {
+        $expense = \App\Models\HotelExpense::query()
+            ->where('hotel_id', (string) $request->user()->hotel_id)
+            ->where(function ($q) use ($id) {
+                $q->where('id', $id)->orWhere('_id', $id);
+            })
+            ->firstOrFail();
+        $expense->delete();
+
+        return response()->json(['ok' => true]);
+    }
+
     public function frontDeskSalesCalendar(Request $request, \App\Services\FrontDeskSalesReportService $frontDeskSales)
     {
         $validated = $request->validate([

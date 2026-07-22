@@ -366,7 +366,8 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
   double _expensesOf(Map<String, dynamic> summary) {
     return (summary['expenses'] as num?)?.toDouble() ??
         (((summary['refund_expense'] as num?)?.toDouble() ?? 0) +
-            ((summary['reseller_commissions_paid'] as num?)?.toDouble() ?? 0));
+            ((summary['reseller_commissions_paid'] as num?)?.toDouble() ?? 0) +
+            ((summary['custom_expenses'] as num?)?.toDouble() ?? 0));
   }
 
   double get _expenses => _expensesOf(_financeSummary);
@@ -546,6 +547,161 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
       title: '$buttonLabel revenue',
       subtitle: 'Hotel-wide report',
     );
+  }
+
+  Future<void> _openAddCustomExpense() async {
+    final labelCtrl = TextEditingController();
+    final amountCtrl = TextEditingController();
+    final notesCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add custom expense'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: labelCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Label',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: amountCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Amount',
+                prefixText: '₱ ',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: notesCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Notes (optional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final amount = double.tryParse(amountCtrl.text.trim());
+    final label = labelCtrl.text.trim();
+    if (label.isEmpty || amount == null || amount <= 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a valid label and amount.')),
+      );
+      return;
+    }
+    try {
+      await portalDio().post(
+        '/reports/expenses',
+        data: {
+          'label': label,
+          'amount': amount,
+          'notes': notesCtrl.text.trim(),
+          'expense_date': _fmtDay(DateTime.now()),
+        },
+      );
+      if (!mounted) return;
+      await _setFinancePeriod(_financePeriod);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Custom expense saved.')),
+      );
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dioErrorMessage(e))),
+      );
+    }
+  }
+
+  Future<void> _openCustomExpenses() async {
+    final (start, end) = _rangeFor(_financePeriod);
+    try {
+      final res = await portalDio().get<Map<String, dynamic>>(
+        '/reports/expenses',
+        queryParameters: {
+          'from': _fmtDay(start),
+          'to': _fmtDay(end),
+        },
+      );
+      if (!mounted) return;
+      final rows = ((res.data?['data'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      await showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        isScrollControlled: true,
+        builder: (ctx) {
+          return DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: 0.6,
+            builder: (ctx, sc) {
+              return ListView(
+                controller: sc,
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                children: [
+                  Text(
+                    'Custom expenses · ${_periodLabel(_financePeriod)}',
+                    style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text('Total ${formatPeso(res.data?['total'] ?? 0)}'),
+                  const SizedBox(height: 12),
+                  if (rows.isEmpty)
+                    const Text('No custom expenses in this period.')
+                  else
+                    ...rows.map(
+                      (r) => Card(
+                        child: ListTile(
+                          title: Text((r['label'] ?? 'Expense').toString()),
+                          subtitle: Text(
+                            [
+                              (r['expense_date'] ?? '').toString(),
+                              if ((r['notes'] ?? '').toString().isNotEmpty)
+                                r['notes'].toString(),
+                            ].where((s) => s.isNotEmpty).join(' · '),
+                          ),
+                          trailing: Text(
+                            formatPeso(r['amount']),
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dioErrorMessage(e))),
+      );
+    }
   }
 
   Widget _periodChips({
@@ -819,6 +975,22 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
                 ),
                 const SizedBox(height: 8),
                 _DetailTile(
+                  label: 'Custom expenses',
+                  countLabel: 'Manual expenses in period',
+                  total: (_financeSummary['custom_expenses'] as num?)
+                          ?.toDouble() ??
+                      0,
+                  color: Colors.brown.shade700,
+                  onTap: () => _openCustomExpenses(),
+                ),
+                const SizedBox(height: 8),
+                FilledButton.tonalIcon(
+                  onPressed: _openAddCustomExpense,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add custom expense'),
+                ),
+                const SizedBox(height: 8),
+                _DetailTile(
                   label: 'Total expenses',
                   countLabel: _periodLabel(_financePeriod),
                   total: _expenses,
@@ -835,6 +1007,10 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
                         formatPeso(
                           _financeSummary['reseller_commissions_paid'] ?? 0,
                         ),
+                      ),
+                      MapEntry(
+                        'Custom expenses',
+                        formatPeso(_financeSummary['custom_expenses'] ?? 0),
                       ),
                       MapEntry('Total expenses', formatPeso(_expenses)),
                     ],

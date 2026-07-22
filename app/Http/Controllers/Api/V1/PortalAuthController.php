@@ -397,6 +397,17 @@ class PortalAuthController extends Controller
             ], 500);
         }
 
+        $subscription = null;
+        try {
+            $hotel = Hotel::withoutGlobalScopes()->find($activeHotelId);
+            if ($hotel) {
+                $subscription = app(\App\Services\HotelSubscriptionService::class)
+                    ->statusPayload($hotel, $user);
+            }
+        } catch (Throwable $e) {
+            report($e);
+        }
+
         return response()->json([
             'token' => $token,
             'token_type' => 'Bearer',
@@ -409,6 +420,7 @@ class PortalAuthController extends Controller
             ],
             'role' => $userRole,
             'hotel_id' => $activeHotelId,
+            'subscription' => $subscription,
         ]);
     }
 
@@ -635,6 +647,8 @@ class PortalAuthController extends Controller
             'access_username' => $validated['username'],
             'access_password' => Hash::make($validated['password']),
             'total_rooms' => $totalRooms,
+            'subscription_trial_ends_at' => now()->addMonth(),
+            'subscription_status' => \App\Services\HotelSubscriptionService::STATUS_TRIAL,
         ]);
 
         HotelCredit::withoutGlobalScopes()->create([

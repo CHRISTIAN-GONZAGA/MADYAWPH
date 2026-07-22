@@ -48,6 +48,7 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
   Map<String, dynamic>? _guests;
   List<dynamic> _creditRequests = const [];
   List<dynamic> _memberRequests = const [];
+  List<dynamic> _subscriptionRequests = const [];
   List<dynamic> _hotels = const [];
   bool _loading = true;
   String? _error;
@@ -58,6 +59,11 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
       .length;
 
   int get _pendingMembers => _memberRequests
+      .whereType<Map<String, dynamic>>()
+      .where((e) => (e['status'] ?? '') == 'pending')
+      .length;
+
+  int get _pendingSubscriptions => _subscriptionRequests
       .whereType<Map<String, dynamic>>()
       .where((e) => (e['status'] ?? '') == 'pending')
       .length;
@@ -91,6 +97,7 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
         ),
         portalDio().get<Map<String, dynamic>>('/platform/credit-requests'),
         portalDio().get<Map<String, dynamic>>('/platform/member-requests'),
+        portalDio().get<Map<String, dynamic>>('/platform/subscription-requests'),
         portalDio().get<Map<String, dynamic>>('/platform/hotels'),
       ]);
       setState(() {
@@ -99,7 +106,8 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
         _guests = results[2].data;
         _creditRequests = (results[3].data?['data'] as List?) ?? const [];
         _memberRequests = (results[4].data?['data'] as List?) ?? const [];
-        _hotels = (results[5].data?['data'] as List?) ?? const [];
+        _subscriptionRequests = (results[5].data?['data'] as List?) ?? const [];
+        _hotels = (results[6].data?['data'] as List?) ?? const [];
         _loading = false;
       });
     } on DioException catch (e) {
@@ -244,7 +252,7 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
     }
   }
 
-  Future<void> _uploadQr({required bool creditWallet}) async {
+  Future<void> _uploadQr({required String kind}) async {
     final image = await ChatAttachment.pickRoomImageFromGallery(context);
     if (image == null || !mounted) return;
     try {
@@ -252,9 +260,11 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
         fields: const <String, dynamic>{},
         file: image,
       );
-      final path = creditWallet
-          ? '/platform/settings/credit-wallet-qr'
-          : '/platform/settings/member-qr';
+      final path = switch (kind) {
+        'member' => '/platform/settings/member-qr',
+        'subscription' => '/platform/settings/hotel-subscription-qr',
+        _ => '/platform/settings/credit-wallet-qr',
+      };
       await portalDio().post(
         path,
         data: form,
@@ -262,6 +272,42 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
       );
       if (!mounted) return;
       showAppMessage(context, 'QR image updated.');
+      await _loadAll();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
+  Future<void> _updateHotelSubscriptionFee(double amount) async {
+    try {
+      await portalDio().patch(
+        '/platform/settings/hotel-subscription-fee',
+        data: {'hotel_subscription_fee': amount},
+      );
+      if (!mounted) return;
+      showAppMessage(context, 'Hotel subscription fee updated.');
+      await _loadAll();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
+  Future<void> _approveSubscription(String id) async {
+    HapticFeedback.lightImpact();
+    try {
+      await portalDio().post('/platform/subscription-requests//approve');
+      await _loadAll();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
+  Future<void> _rejectSubscription(String id) async {
+    try {
+      await portalDio().post('/platform/subscription-requests//reject');
       await _loadAll();
     } on DioException catch (e) {
       if (!mounted) return;
@@ -531,15 +577,20 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
                       onTabChanged: (i) => setState(() => _approvalTab = i),
                       creditRequests: _creditRequests,
                       memberRequests: _memberRequests,
+                      subscriptionRequests: _subscriptionRequests,
                       onApproveCredit: _approveCredit,
                       onRejectCredit: _rejectCredit,
                       onApproveMember: _approveMember,
                       onRejectMember: _rejectMember,
+                      onApproveSubscription: _approveSubscription,
+                      onRejectSubscription: _rejectSubscription,
                     ),
                     _QrSettingsSection(
                       settings: _settings ?? const {},
-                      onUploadCredit: () => _uploadQr(creditWallet: true),
-                      onUploadMember: () => _uploadQr(creditWallet: false),
+                      onUploadCredit: () => _uploadQr(kind: 'credit'),
+                      onUploadMember: () => _uploadQr(kind: 'member'),
+                      onUploadSubscription: () => _uploadQr(kind: 'subscription'),
+                      onUpdateHotelSubscriptionFee: _updateHotelSubscriptionFee,
                       onUpdateBookingFeePercent: _updateBookingFeePercent,
                       onUpdateMinCheckInPaymentPercent:
                           _updateMinCheckInPaymentPercent,
@@ -1317,24 +1368,34 @@ class _ApprovalsSection extends StatelessWidget {
     required this.onTabChanged,
     required this.creditRequests,
     required this.memberRequests,
+    required this.subscriptionRequests,
     required this.onApproveCredit,
     required this.onRejectCredit,
     required this.onApproveMember,
     required this.onRejectMember,
+    required this.onApproveSubscription,
+    required this.onRejectSubscription,
   });
 
   final int tab;
   final ValueChanged<int> onTabChanged;
   final List<dynamic> creditRequests;
   final List<dynamic> memberRequests;
+  final List<dynamic> subscriptionRequests;
   final void Function(String id) onApproveCredit;
   final void Function(String id) onRejectCredit;
   final void Function(String id) onApproveMember;
   final void Function(String id) onRejectMember;
+  final void Function(String id) onApproveSubscription;
+  final void Function(String id) onRejectSubscription;
 
   @override
   Widget build(BuildContext context) {
-    final list = tab == 0 ? creditRequests : memberRequests;
+    final list = switch (tab) {
+      1 => memberRequests,
+      2 => subscriptionRequests,
+      _ => creditRequests,
+    };
     final pending = list
         .whereType<Map<String, dynamic>>()
         .where((e) => (e['status'] ?? '') == 'pending')
@@ -1345,14 +1406,15 @@ class _ApprovalsSection extends StatelessWidget {
         _PlatformSectionHeader(
           icon: Icons.pending_actions_outlined,
           title: 'Approvals',
-          subtitle: 'Credit top-ups and member subscriptions',
+          subtitle: 'Credits, members, and hotel subscriptions',
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: SegmentedButton<int>(
             segments: const [
-              ButtonSegment(value: 0, label: Text('Credit wallet')),
+              ButtonSegment(value: 0, label: Text('Credits')),
               ButtonSegment(value: 1, label: Text('Members')),
+              ButtonSegment(value: 2, label: Text('Hotels')),
             ],
             selected: {tab},
             onSelectionChanged: (s) => onTabChanged(s.first),
@@ -1362,9 +1424,11 @@ class _ApprovalsSection extends StatelessWidget {
           child: pending.isEmpty
               ? Center(
                   child: Text(
-                    tab == 0
-                        ? 'No pending credit top-ups.'
-                        : 'No pending member requests.',
+                    switch (tab) {
+                      1 => 'No pending member requests.',
+                      2 => 'No pending hotel subscription payments.',
+                      _ => 'No pending credit top-ups.',
+                    },
                   ),
                 )
               : ListView.separated(
@@ -1376,19 +1440,82 @@ class _ApprovalsSection extends StatelessWidget {
                     if (tab == 0) {
                       return _CreditCard(
                         item: item,
-                        onApprove: () => onApproveCredit((item['id'] ?? '').toString()),
-                        onReject: () => onRejectCredit((item['id'] ?? '').toString()),
+                        onApprove: () =>
+                            onApproveCredit((item['id'] ?? '').toString()),
+                        onReject: () =>
+                            onRejectCredit((item['id'] ?? '').toString()),
                       );
                     }
-                    return _MemberCard(
+                    if (tab == 1) {
+                      return _MemberCard(
+                        item: item,
+                        onApprove: () =>
+                            onApproveMember((item['id'] ?? '').toString()),
+                        onReject: () =>
+                            onRejectMember((item['id'] ?? '').toString()),
+                      );
+                    }
+                    return _SubscriptionCard(
                       item: item,
-                      onApprove: () => onApproveMember((item['id'] ?? '').toString()),
-                      onReject: () => onRejectMember((item['id'] ?? '').toString()),
+                      onApprove: () => onApproveSubscription(
+                        (item['id'] ?? '').toString(),
+                      ),
+                      onReject: () => onRejectSubscription(
+                        (item['id'] ?? '').toString(),
+                      ),
                     );
                   },
                 ),
         ),
       ],
+    );
+  }
+}
+
+class _SubscriptionCard extends StatelessWidget {
+  const _SubscriptionCard({
+    required this.item,
+    required this.onApprove,
+    required this.onReject,
+  });
+
+  final Map<String, dynamic> item;
+  final VoidCallback onApprove;
+  final VoidCallback onReject;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              (item['hotel_name'] ?? 'Hotel').toString(),
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Ref: ${(item['payment_reference'] ?? '—')} · '
+              '₱${((item['amount'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}',
+            ),
+            Text(
+              'Requested by ${(item['requested_by_name'] ?? '—')} '
+              '(${item['requested_by_role'] ?? 'admin'})',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                FilledButton(onPressed: onApprove, child: const Text('Approve')),
+                const SizedBox(width: 8),
+                OutlinedButton(onPressed: onReject, child: const Text('Reject')),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1515,6 +1642,8 @@ class _QrSettingsSection extends StatefulWidget {
     required this.settings,
     required this.onUploadCredit,
     required this.onUploadMember,
+    required this.onUploadSubscription,
+    required this.onUpdateHotelSubscriptionFee,
     required this.onUpdateBookingFeePercent,
     required this.onUpdateMinCheckInPaymentPercent,
     required this.onUpdateLateCheckoutFee,
@@ -1526,6 +1655,8 @@ class _QrSettingsSection extends StatefulWidget {
   final Map<String, dynamic> settings;
   final VoidCallback onUploadCredit;
   final VoidCallback onUploadMember;
+  final VoidCallback onUploadSubscription;
+  final Future<void> Function(double amount) onUpdateHotelSubscriptionFee;
   final Future<void> Function(double percent) onUpdateBookingFeePercent;
   final Future<void> Function(double percent) onUpdateMinCheckInPaymentPercent;
   final Future<void> Function({
@@ -1548,6 +1679,7 @@ class _QrSettingsSection extends StatefulWidget {
 
 class _QrSettingsSectionState extends State<_QrSettingsSection> {
   late final TextEditingController _feePercentCtrl;
+  late final TextEditingController _hotelSubFeeCtrl;
   late final TextEditingController _minCheckInPercentCtrl;
   late final TextEditingController _lateGraceCtrl;
   late final TextEditingController _lateFeeCtrl;
@@ -1557,6 +1689,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
   late final TextEditingController _pointsPerCheckInCtrl;
   late final TextEditingController _pointsPerPesoCtrl;
   var _savingFee = false;
+  var _savingHotelSubFee = false;
   var _savingMinCheckIn = false;
   var _savingLateCheckout = false;
   var _savingEarlyCheckIn = false;
@@ -1568,6 +1701,10 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     super.initState();
     _feePercentCtrl = TextEditingController(
       text: _feePercentText(widget.settings),
+    );
+    _hotelSubFeeCtrl = TextEditingController(
+      text: ((widget.settings['hotel_subscription_fee'] as num?)?.toDouble() ?? 1500)
+          .toStringAsFixed(0),
     );
     _minCheckInPercentCtrl = TextEditingController(
       text: _minCheckInPercentText(widget.settings),
@@ -1639,6 +1776,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
   @override
   void dispose() {
     _feePercentCtrl.dispose();
+    _hotelSubFeeCtrl.dispose();
     _minCheckInPercentCtrl.dispose();
     _lateGraceCtrl.dispose();
     _lateFeeCtrl.dispose();
@@ -1831,6 +1969,9 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     final memberQr = ChatAttachment.resolveMediaUrl(
       (widget.settings['member_subscription_qr_url'] ?? '').toString(),
     );
+    final hotelSubQr = ChatAttachment.resolveMediaUrl(
+      (widget.settings['hotel_subscription_qr_url'] ?? '').toString(),
+    );
 
     return ListView(
       padding: const EdgeInsets.only(bottom: 24),
@@ -1838,7 +1979,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
         const _PlatformSectionHeader(
           icon: Icons.qr_code_2_outlined,
           title: 'QR Ph images',
-          subtitle: 'Hotels and guests scan these for credits or membership',
+          subtitle: 'Hotels and guests scan these for credits, membership, or hotel subscription',
         ),
         const SizedBox(height: 8),
         Padding(
@@ -1871,6 +2012,74 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                 onUpload: widget.onUploadMember,
               ),
               const SizedBox(height: 16),
+              _QrUploadCard(
+                title: 'Hotel subscription (QR Ph)',
+                subtitle:
+                    'Shown when a hotel trial ends. Monthly fee ₱${widget.settings['hotel_subscription_fee'] ?? 1500}.',
+                imageUrl: hotelSubQr,
+                onUpload: widget.onUploadSubscription,
+              ),
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Hotel subscription fee',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Amount due after the 1-month free trial.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _hotelSubFeeCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Monthly fee',
+                          prefixText: '₱ ',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      FilledButton(
+                        onPressed: _savingHotelSubFee
+                            ? null
+                            : () async {
+                                final v = double.tryParse(
+                                  _hotelSubFeeCtrl.text.trim(),
+                                );
+                                if (v == null || v < 1) {
+                                  showAppMessage(
+                                    context,
+                                    'Enter a valid subscription fee.',
+                                  );
+                                  return;
+                                }
+                                setState(() => _savingHotelSubFee = true);
+                                try {
+                                  await widget.onUpdateHotelSubscriptionFee(v);
+                                } finally {
+                                  if (mounted) {
+                                    setState(() => _savingHotelSubFee = false);
+                                  }
+                                }
+                              },
+                        child: Text(
+                          _savingHotelSubFee ? 'Saving…' : 'Save fee',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -1883,7 +2092,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Deducted from a hotel\'s credit wallet when a walk-in or public customer booking is confirmed.',
+                        'Deducted from a hotel\'s credit wallet for online bookings (member / public guest app). Local walk-in and in-portal public customer bookings do not deduct credits.',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       const SizedBox(height: 12),

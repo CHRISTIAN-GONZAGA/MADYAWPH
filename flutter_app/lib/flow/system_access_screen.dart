@@ -14,6 +14,7 @@ import 'flow_state.dart';
 import 'hotel_property_login_screen.dart';
 import 'hotel_screens.dart';
 import 'owner_dashboard_screen.dart';
+import 'admin/widgets/hotel_subscription_gate.dart';
 
 /// Role-based portal sign-in after property gate (System Access UI).
 class SystemAccessScreen extends StatefulWidget {
@@ -241,6 +242,25 @@ class _SystemAccessScreenState extends State<SystemAccessScreen> {
       HapticFeedback.lightImpact();
 
       if (!mounted) return;
+
+      final subscription = (res.data?['subscription'] as Map?)
+          ?.cast<String, dynamic>();
+      final subStatus = (subscription?['status'] ?? '').toString();
+      if (subStatus == 'payment_required' || subStatus == 'processing') {
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute(
+            fullscreenDialog: true,
+            builder: (_) => HotelSubscriptionGateScreen(
+              initial: subscription ?? const {},
+            ),
+          ),
+        );
+        if (!mounted) return;
+        // Re-check after gate closes (approval may have completed).
+        final allowed = await ensureHotelSubscriptionAccess(context);
+        if (!allowed || !mounted) return;
+      }
+
       switch (role) {
         case 'admin':
           await _openDashboard(

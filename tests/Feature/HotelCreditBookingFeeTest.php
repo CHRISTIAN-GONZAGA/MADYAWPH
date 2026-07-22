@@ -160,7 +160,7 @@ class HotelCreditBookingFeeTest extends TestCase
         $this->assertSame('pending_approval', (string) $res->status);
     }
 
-    public function test_admin_walk_in_booking_deducts_eight_percent_from_hotel_wallet(): void
+    public function test_admin_walk_in_booking_does_not_deduct_wallet_credits(): void
     {
         $hotel = Hotel::create(['name' => 'Walk-in Fee Hotel', 'location' => 'City']);
         $this->seedHotelCredits($hotel, 5000);
@@ -169,7 +169,7 @@ class HotelCreditBookingFeeTest extends TestCase
             'name' => 'adminwalkin',
             'email' => 'adminwalkin@test.local',
             'password' => bcrypt('secret123'),
-            'role' => UserRole::ADMIN,
+            'role' => UserRole::FRONTDESK,
         ]);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
@@ -195,10 +195,10 @@ class HotelCreditBookingFeeTest extends TestCase
         ]);
 
         $response->assertCreated();
-        $response->assertJsonPath('wallet.fee', 80);
-        $response->assertJsonPath('wallet.balance_after', 4920);
+        $response->assertJsonPath('wallet.fee', 0);
+        $response->assertJsonPath('wallet.skipped', true);
 
         $credit = HotelCredit::withoutGlobalScopes()->where('hotel_id', (string) $hotel->id)->first();
-        $this->assertSame(4920.0, (float) $credit->current_credits);
+        $this->assertSame(5000.0, (float) $credit->current_credits);
     }
 }

@@ -98,6 +98,87 @@ class PlatformAdminController extends Controller
         ]);
     }
 
+    public function uploadHotelSubscriptionQr(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'image_file' => array_merge(['required'], array_slice(RoomImageUploadRules::fileRules(), 1)),
+        ]);
+
+        $url = RoomMediaStorage::store($request->file('image_file'), 'platform-qr');
+        $row = $this->settings->row();
+        $row->update(['hotel_subscription_qr_url' => $url]);
+
+        return response()->json([
+            'ok' => true,
+            'hotel_subscription_qr_url' => ChatAttachmentUrl::fromStoredUrl($url),
+        ]);
+    }
+
+    public function updateHotelSubscriptionFee(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'hotel_subscription_fee' => ['required', 'numeric', 'min:1'],
+        ]);
+
+        $row = $this->settings->row();
+        $row->update([
+            'hotel_subscription_fee' => round((float) $validated['hotel_subscription_fee'], 2),
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'hotel_subscription_fee' => app(\App\Services\HotelSubscriptionService::class)->subscriptionFeeAmount(),
+        ]);
+    }
+
+    public function subscriptionRequests(\App\Services\HotelSubscriptionService $subscriptions): JsonResponse
+    {
+        $rows = \App\Models\HotelSubscriptionPaymentRequest::query()
+            ->orderByDesc('created_at')
+            ->limit(200)
+            ->get()
+            ->map(fn ($r) => $subscriptions->serializeRequest($r))
+            ->values()
+            ->all();
+
+        return response()->json(['data' => $rows]);
+    }
+
+    public function approveSubscriptionRequest(
+        Request $request,
+        string $id,
+        \App\Services\HotelSubscriptionService $subscriptions,
+    ): JsonResponse {
+        $row = \App\Models\HotelSubscriptionPaymentRequest::query()->findOrFail($id);
+        $updated = $subscriptions->approve($row, $request->user());
+
+        return response()->json([
+            'ok' => true,
+            'request' => $subscriptions->serializeRequest($updated),
+        ]);
+    }
+
+    public function rejectSubscriptionRequest(
+        Request $request,
+        string $id,
+        \App\Services\HotelSubscriptionService $subscriptions,
+    ): JsonResponse {
+        $validated = $request->validate([
+            'notes' => ['nullable', 'string', 'max:500'],
+        ]);
+        $row = \App\Models\HotelSubscriptionPaymentRequest::query()->findOrFail($id);
+        $updated = $subscriptions->reject(
+            $row,
+            $request->user(),
+            $validated['notes'] ?? null,
+        );
+
+        return response()->json([
+            'ok' => true,
+            'request' => $subscriptions->serializeRequest($updated),
+        ]);
+    }
+
     public function updateBookingFeePercent(Request $request): JsonResponse
     {
         $validated = $request->validate([

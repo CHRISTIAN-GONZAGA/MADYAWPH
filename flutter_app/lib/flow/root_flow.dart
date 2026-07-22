@@ -10,6 +10,7 @@ import 'flow_state.dart';
 import 'member_dashboard_flow.dart';
 import 'owner_dashboard_screen.dart';
 import 'public_hotel_search_screen.dart';
+import 'admin/widgets/hotel_subscription_gate.dart';
 
 /// App home after intro: public hotel search (Agoda-style). Staff use the badge icon.
 class FlowRoot extends StatefulWidget {
@@ -64,6 +65,12 @@ class _FlowRootState extends State<FlowRoot> {
         hotelId: hotelId,
         hotelName: hotelName ?? 'Hotel',
       );
+
+      final allowed = await ensureHotelSubscriptionAccess(context);
+      if (!allowed || !mounted) {
+        await AuthStorage.clearPortalAuth();
+        return;
+      }
 
       final screen = switch (apiRole) {
         'frontdesk' => const AdminDashboardScreen(isFrontDesk: true),

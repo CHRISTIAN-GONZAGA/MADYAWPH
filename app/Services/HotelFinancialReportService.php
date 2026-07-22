@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\BillingCharge;
 use App\Models\Booking;
+use App\Models\HotelExpense;
 use App\Models\ResellerCommissionPayment;
 use App\Models\Room;
 use App\Models\RoomTransfer;
@@ -217,6 +218,7 @@ class HotelFinancialReportService
             }
 
             $resellerCommissions = $this->resellerCommissionTotal($from, $to);
+            $customExpenses = $this->customExpenseTotal($from, $to);
             $netRevenue = $grossRevenue + $refunds + $transferAdjustments;
             $refundExpense = abs(min(0, $refunds));
             if ($refunds > 0) {
@@ -227,8 +229,8 @@ class HotelFinancialReportService
                 ->filter(fn ($b) => strtolower((string) ($b->status?->value ?? $b->status ?? '')) === 'cancelled')
                 ->count();
             $retentionPercent = CancellationRetentionSupport::retentionPercentForHotel($this->hotelId);
-            $totalExpenses = $refundExpense + $resellerCommissions;
-            $profitAfterReseller = $netRevenue - $resellerCommissions;
+            $totalExpenses = $refundExpense + $resellerCommissions + $customExpenses;
+            $profitAfterReseller = $netRevenue - $resellerCommissions - $customExpenses;
 
             return [
                 'from' => $from->toDateString(),
@@ -238,14 +240,15 @@ class HotelFinancialReportService
                 'revenue' => round($grossRevenue, 2),
                 'refunds' => round($refunds, 2),
                 'refund_expense' => round($refundExpense, 2),
+                'custom_expenses' => round($customExpenses, 2),
                 'amenity_revenue' => round($amenityRevenue, 2),
                 'room_revenue' => round($roomRevenue > 0 ? $roomRevenue : $grossRevenue, 2),
                 'transfer_adjustments' => round($transferAdjustments, 2),
                 'reseller_commissions_paid' => round($resellerCommissions, 2),
                 'expenses' => round($totalExpenses, 2),
-                'net_revenue' => round($netRevenue, 2),
+                'net_revenue' => round($netRevenue - $customExpenses, 2),
                 'profit' => round($profitAfterReseller, 2),
-                'profit_before_reseller_payouts' => round($netRevenue, 2),
+                'profit_before_reseller_payouts' => round($netRevenue - $customExpenses, 2),
                 'cancelled_bookings' => $cancelledPaid,
                 'cancellation_retention_percent' => round($retentionPercent, 2),
             ];
@@ -279,6 +282,7 @@ class HotelFinancialReportService
             'revenue' => 0.0,
             'refunds' => 0.0,
             'refund_expense' => 0.0,
+            'custom_expenses' => 0.0,
             'amenity_revenue' => 0.0,
             'room_revenue' => 0.0,
             'transfer_adjustments' => 0.0,
@@ -440,6 +444,20 @@ class HotelFinancialReportService
         $room = Room::query()->find($roomId);
 
         return (string) ($room?->room_number ?? '-');
+    }
+
+    private function customExpenseTotal(Carbon $from, Carbon $to): float
+    {
+        return $this->withTenant(function () use ($from, $to) {
+            try {
+                return (float) HotelExpense::query()
+                    ->where('hotel_id', $this->hotelId)
+                    ->whereBetween('expense_date', [$from, $to])
+                    ->sum('amount');
+            } catch (\Throwable) {
+                return 0.0;
+            }
+        });
     }
 
     private function resellerCommissionTotal(Carbon $from, Carbon $to): float

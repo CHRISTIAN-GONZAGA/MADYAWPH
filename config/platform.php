@@ -18,6 +18,9 @@ return [
     /** Monthly member subscription price (PHP). */
     'member_monthly_fee' => (float) env('PLATFORM_MEMBER_MONTHLY_FEE', 300),
 
+    /** Monthly hotel SaaS subscription fee after free trial (PHP). */
+    'hotel_subscription_fee' => (float) env('PLATFORM_HOTEL_SUBSCRIPTION_FEE', 1500),
+
     /** Room booking discount (%) for active MADYAWPH members. */
     'member_booking_discount_percent' => (float) env('PLATFORM_MEMBER_BOOKING_DISCOUNT_PERCENT', 10),
 

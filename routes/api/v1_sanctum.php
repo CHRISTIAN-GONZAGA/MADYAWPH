@@ -2074,6 +2074,11 @@ Route::get('/tasks/assigned-to-me', [TaskController::class, 'assignedToMe'])->mi
 
 // Reports
 Route::get('/reports/room-insights', [ReportController::class, 'roomInsights'])->middleware('role:admin,frontdesk');
+Route::get('/reports/expenses', [ReportController::class, 'listExpenses'])->middleware('role:admin,frontdesk,super_admin');
+Route::post('/reports/expenses', [ReportController::class, 'storeExpense'])->middleware('role:admin,super_admin');
+Route::delete('/reports/expenses/{id}', [ReportController::class, 'deleteExpense'])->middleware('role:admin,super_admin');
+Route::get('/hotel/subscription', [\App\Http\Controllers\Api\HotelSubscriptionController::class, 'status'])->middleware('role:admin,frontdesk,staff,super_admin,owner');
+Route::post('/hotel/subscription/payment', [\App\Http\Controllers\Api\HotelSubscriptionController::class, 'submitPayment'])->middleware('role:admin,super_admin,owner');
 Route::get('/reports/shift-summary', [ReportController::class, 'shiftSummary'])->middleware('role:admin,frontdesk,staff');
 Route::get('/reports/shift-summary/pdf', [ReportController::class, 'shiftSummaryPdf'])->middleware('role:admin,frontdesk,staff');
 Route::post('/reports/shift-summary/email', [ReportController::class, 'shiftSummaryEmail'])->middleware('role:admin,frontdesk,staff');
@@ -3266,6 +3271,8 @@ Route::middleware('role:central_admin')->prefix('platform')->group(function () {
     Route::get('/guest-demographics', [$platform, 'guestDemographics']);
     Route::post('/settings/credit-wallet-qr', [$platform, 'uploadCreditWalletQr']);
     Route::post('/settings/member-qr', [$platform, 'uploadMemberQr']);
+    Route::post('/settings/hotel-subscription-qr', [$platform, 'uploadHotelSubscriptionQr']);
+    Route::patch('/settings/hotel-subscription-fee', [$platform, 'updateHotelSubscriptionFee']);
     Route::patch('/settings/booking-fee-percent', [$platform, 'updateBookingFeePercent']);
     Route::patch('/settings/min-check-in-payment-percent', [$platform, 'updateMinCheckInPaymentPercent']);
     Route::patch('/settings/late-checkout-fee', [$platform, 'updateLateCheckoutFee']);
@@ -3282,4 +3289,7 @@ Route::middleware('role:central_admin')->prefix('platform')->group(function () {
     Route::get('/member-requests', [$platform, 'memberRequests']);
     Route::post('/member-requests/{id}/approve', [$platform, 'approveMemberRequest']);
     Route::post('/member-requests/{id}/reject', [$platform, 'rejectMemberRequest']);
+    Route::get('/subscription-requests', [$platform, 'subscriptionRequests']);
+    Route::post('/subscription-requests/{id}/approve', [$platform, 'approveSubscriptionRequest']);
+    Route::post('/subscription-requests/{id}/reject', [$platform, 'rejectSubscriptionRequest']);
 });
