@@ -36,7 +36,7 @@ class HotelRegistrationLoginTest extends TestCase
         $response->assertCreated();
         $hotelId = (string) $response->json('hotel_id');
         $response->assertJsonPath('welcome_credits.total_rooms', 25);
-        $response->assertJsonPath('welcome_credits.free_credits', 20000);
+        $response->assertJsonPath('welcome_credits.free_credits', 10000);
         $response->assertJsonPath('registration_password', 'OwnerSecret9');
         $response->assertJsonPath('passwords_verified', true);
         $response->assertJsonPath('email_verified', false);
@@ -48,7 +48,7 @@ class HotelRegistrationLoginTest extends TestCase
             ->where('hotel_id', $hotelId)
             ->first();
         $this->assertNotNull($credit);
-        $this->assertSame(20000.0, (float) $credit->current_credits);
+        $this->assertSame(10000.0, (float) $credit->current_credits);
         $this->assertSame('palmresort', $response->json('portal_accounts.property.username'));
         $this->assertSame('OwnerSecret9', $response->json('portal_accounts.property.password'));
         $this->assertSame('OwnerSecret9', $response->json('portal_accounts.super_admin.password'));

@@ -5,7 +5,7 @@ namespace App\Support;
 /**
  * Free wallet credits granted when a hotel registers, based on declared room count.
  *
- * Tiers: 1–20 → ₱10,000; 21+ → ₱20,000 (hard cap).
+ * Any room count → ₱10,000 free credits (hard cap).
  */
 final class HotelRegistrationCredits
 {
@@ -14,7 +14,7 @@ final class HotelRegistrationCredits
     public const CREDITS_PER_TIER = 10000;
 
     /** Maximum free registration credits granted to any hotel. */
-    public const MAX_FREE_CREDITS = 20000;
+    public const MAX_FREE_CREDITS = 10000;
 
     public static function freeCreditsForRoomCount(int $roomCount): int
     {
@@ -29,7 +29,7 @@ final class HotelRegistrationCredits
         $roomCount = max(1, $roomCount);
         $credits = self::freeCreditsForRoomCount($roomCount);
         if ($credits >= self::MAX_FREE_CREDITS) {
-            return '21+ rooms (max free credits)';
+            return 'max free credits';
         }
 
         $tier = (int) ceil($roomCount / self::ROOMS_PER_TIER);

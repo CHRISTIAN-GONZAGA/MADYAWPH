@@ -121,7 +121,12 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
       final gross = parseJsonDouble(summary['gross_revenue']);
       final expenses = parseJsonDouble(summary['expenses']);
       final fallbackExpenses = parseJsonDouble(summary['refund_expense']) +
-          parseJsonDouble(summary['reseller_commissions_paid']);
+          parseJsonDouble(summary['reseller_commissions_paid']) +
+          parseJsonDouble(summary['custom_expenses']);
+      // Prefer the larger so older API payloads (expenses without custom) still
+      // show the correct total when custom_expenses is present separately.
+      final resolvedExpenses =
+          expenses >= fallbackExpenses - 0.009 ? expenses : fallbackExpenses;
 
       double periodGross(String key) {
         final row = profit[key];
@@ -134,7 +139,7 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
 
       setState(() {
         _sales = gross > 0.009 ? gross : salesFromTxns;
-        _expenses = expenses > 0.009 ? expenses : fallbackExpenses;
+        _expenses = resolvedExpenses;
         _cashSales = cashFromTxns;
         _dailyRevenue = periodGross('daily');
         _weeklyRevenue = periodGross('weekly');
@@ -164,13 +169,15 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
   double get _cashOnHand =>
       (_cashSales - _expenses).clamp(0, double.infinity);
 
-  void _openSheet(String section) {
-    openHotelTotalsReports(
+  Future<void> _openSheet(String section) async {
+    await openHotelTotalsReports(
       context,
       rooms: widget.rooms,
       isFrontDesk: false,
       initialExpanded: section,
     );
+    if (!mounted) return;
+    await _load();
   }
 
   void _openPeriod(_BentoPeriod period, String label) {

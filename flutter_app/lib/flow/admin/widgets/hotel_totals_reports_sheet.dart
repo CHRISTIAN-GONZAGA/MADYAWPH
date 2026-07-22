@@ -364,10 +364,14 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
       _totalFor(_PaymentBucket.bank);
 
   double _expensesOf(Map<String, dynamic> summary) {
-    return (summary['expenses'] as num?)?.toDouble() ??
-        (((summary['refund_expense'] as num?)?.toDouble() ?? 0) +
-            ((summary['reseller_commissions_paid'] as num?)?.toDouble() ?? 0) +
-            ((summary['custom_expenses'] as num?)?.toDouble() ?? 0));
+    final reported = (summary['expenses'] as num?)?.toDouble();
+    final parts = ((summary['refund_expense'] as num?)?.toDouble() ?? 0) +
+        ((summary['reseller_commissions_paid'] as num?)?.toDouble() ?? 0) +
+        ((summary['custom_expenses'] as num?)?.toDouble() ?? 0);
+    if (reported == null) return parts;
+    // Prefer the larger so older API payloads (expenses without custom) still
+    // show the correct total when custom_expenses is present separately.
+    return reported >= parts - 0.009 ? reported : parts;
   }
 
   double get _expenses => _expensesOf(_financeSummary);
