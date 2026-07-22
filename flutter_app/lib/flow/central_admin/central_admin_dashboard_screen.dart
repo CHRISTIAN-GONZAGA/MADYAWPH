@@ -297,7 +297,7 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
   Future<void> _approveSubscription(String id) async {
     HapticFeedback.lightImpact();
     try {
-      await portalDio().post('/platform/subscription-requests//approve');
+      await portalDio().post('/platform/subscription-requests/$id/approve');
       await _loadAll();
     } on DioException catch (e) {
       if (!mounted) return;
@@ -307,7 +307,7 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
 
   Future<void> _rejectSubscription(String id) async {
     try {
-      await portalDio().post('/platform/subscription-requests//reject');
+      await portalDio().post('/platform/subscription-requests/$id/reject');
       await _loadAll();
     } on DioException catch (e) {
       if (!mounted) return;
