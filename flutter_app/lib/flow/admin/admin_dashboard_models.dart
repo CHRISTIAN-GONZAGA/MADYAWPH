@@ -891,18 +891,30 @@ class AdminDashboardModels {
     };
   }
 
-  /// Amount due for one checkout-queue room (charges if present, else booking total).
+  /// Outstanding balance for one room (live bill only — never raw charge history).
   static double roomCollectibleAmount(Map<String, dynamic> room) {
-    final charges = (room['charges'] as List?) ?? const [];
-    var chargeSum = 0.0;
-    for (final c in charges) {
-      if (c is Map) {
-        chargeSum += parseJsonDouble(c['amount']);
-      }
-    }
-    if (chargeSum > 0) return chargeSum;
+    final balanceDue = parseJsonDouble(room['balance_due']);
+    if (balanceDue > 0.009) return balanceDue;
+
     final booking = room['latest_booking'] as Map<String, dynamic>?;
-    return parseJsonDouble(booking?['total_amount']);
+    final paymentStatus =
+        (booking?['payment_status'] ?? room['payment_status'] ?? '')
+            .toString()
+            .toLowerCase();
+    if (paymentStatus == 'paid') return 0;
+
+    // Synced outstanding balance on the active booking.
+    final bookingBalance = parseJsonDouble(booking?['total_amount']);
+    if (bookingBalance > 0.009) return bookingBalance;
+
+    // Last resort: net booking-scoped charges (credits/payments are negative).
+    final charges = (room['charges'] as List?) ?? const [];
+    var net = 0.0;
+    for (final c in charges) {
+      if (c is! Map) continue;
+      net += parseJsonDouble(c['amount']);
+    }
+    return net > 0.009 ? net : 0.0;
   }
 
   static double collectiblesForRooms(List<Map<String, dynamic>> rooms) {
@@ -922,30 +934,33 @@ class AdminDashboardModels {
     for (final room in rooms) {
       if (!isCheckoutSoon(room)) continue;
       final booking = room['latest_booking'] as Map<String, dynamic>?;
+      final roomTotal = roomCollectibleAmount(room);
+      if (roomTotal <= 0.009) continue;
+
       final chargesRaw = (room['charges'] as List?) ?? const [];
       final chargeLines = <Map<String, dynamic>>[];
       for (final c in chargesRaw) {
         if (c is! Map) continue;
         final amount = parseJsonDouble(c['amount']);
-        if (amount == 0) continue;
+        if (amount.abs() < 0.009) continue;
         chargeLines.add({
           'label': (c['label'] ?? c['type'] ?? 'Charge').toString(),
           'amount': amount,
           'type': (c['type'] ?? '').toString(),
+          'is_credit': c['is_credit'] == true ||
+              amount < 0 ||
+              _isCreditChargeType((c['type'] ?? '').toString()),
         });
       }
       if (chargeLines.isEmpty) {
-        final stay = parseJsonDouble(booking?['total_amount']);
-        if (stay > 0) {
-          chargeLines.add({
-            'label': 'Stay charges',
-            'amount': stay,
-            'type': 'room',
-          });
-        }
+        chargeLines.add({
+          'label': 'Outstanding balance',
+          'amount': roomTotal,
+          'type': 'balance',
+          'is_credit': false,
+        });
       }
-      final roomTotal = roomCollectibleAmount(room);
-      if (roomTotal <= 0 && chargeLines.isEmpty) continue;
+
       lines.add({
         'room_number': (room['room_number'] ?? '—').toString(),
         'guest_name': guestName(room),
@@ -956,9 +971,23 @@ class AdminDashboardModels {
         ),
         'charges': chargeLines,
         'total': roomTotal,
+        'amount': roomTotal,
+        'amount_paid': parseJsonDouble(
+          room['amount_paid'] ?? booking?['amount_paid'],
+        ),
+        'payment_status':
+            (booking?['payment_status'] ?? 'unpaid').toString(),
       });
     }
     return lines;
+  }
+
+  static bool _isCreditChargeType(String type) {
+    final t = type.toLowerCase().trim();
+    return t == 'partial_payment' ||
+        t == 'refund' ||
+        t == 'member_points' ||
+        t == 'member_discount';
   }
 
   /// Physical floor for a room (stored value or parsed from room number).

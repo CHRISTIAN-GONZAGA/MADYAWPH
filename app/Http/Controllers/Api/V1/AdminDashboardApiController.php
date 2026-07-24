@@ -24,9 +24,11 @@ use App\Enums\BookingStatus;
 use App\Enums\RoomStatus;
 use Carbon\Carbon;
 use App\Services\AutoCheckoutService;
+use App\Services\BookingPaymentService;
 use App\Services\RoomCheckoutService;
 use App\Services\StaffRequestService;
 use App\Support\AdminBookingPresenter;
+use App\Support\BillingChargeTypes;
 use App\Support\BookingTypeResolver;
 use App\Support\SafeModelAttributes;
 use Illuminate\Http\JsonResponse;
@@ -169,11 +171,26 @@ class AdminDashboardApiController extends Controller
                     $booking = app(RoomCheckoutService::class)
                         ->resolveActiveBookingForRoom($hotelId, $room)
                         ?? $latestBookingsByRoom->get((string) $room->id);
-                    $charges = BillingCharge::withoutGlobalScopes()
-                        ->where('room_id', (string) $room->id)
-                        ->latest()
-                        ->limit(25)
-                        ->get();
+                    // Active booking ledger only — never room charge history from prior stays.
+                    $charges = collect();
+                    $balanceDue = 0.0;
+                    $amountPaid = 0.0;
+                    $billPaymentStatus = (string) ($booking?->payment_status ?? 'unpaid');
+                    if ($booking) {
+                        $charges = BillingCharge::withoutGlobalScopes()
+                            ->where('hotel_id', $hotelId)
+                            ->where('booking_id', (string) $booking->id)
+                            ->orderByDesc('created_at')
+                            ->limit(80)
+                            ->get();
+                        $bill = app(BookingPaymentService::class)->summarizeCharges(
+                            $charges,
+                            $billPaymentStatus,
+                        );
+                        $balanceDue = (float) ($bill['balance_due'] ?? 0);
+                        $amountPaid = (float) ($bill['amount_paid'] ?? 0);
+                        $billPaymentStatus = (string) ($bill['payment_status'] ?? $billPaymentStatus);
+                    }
                     $roomCategory = $categoriesById->get((string) ($room->getAttributes()['category_id'] ?? ''));
                     $hourly = \App\Support\RoomBillingSupport::hourlyConfig($room, $roomCategory);
 
@@ -223,19 +240,23 @@ class AdminDashboardApiController extends Controller
                             'nights' => (int) ($booking->nights ?? 0),
                             'billing_mode' => (string) ($booking->billing_mode ?? ''),
                             'status' => (string) ($booking->status?->value ?? $booking->status ?? ''),
-                            'payment_status' => (string) ($booking->payment_status ?? 'unpaid'),
+                            'payment_status' => $billPaymentStatus,
                             'payment_method' => SafeModelAttributes::paymentMethodLabel($booking),
-                            'total_amount' => SafeModelAttributes::rawFloat($booking, 'total_amount'),
+                            // Keep total_amount aligned with live outstanding balance.
+                            'total_amount' => $balanceDue,
                             'created_at' => SafeModelAttributes::carbonFromModel($booking, 'created_at', 'updated_at')?->toISOString(),
                             'booking_type' => BookingTypeResolver::resolveForBooking($booking),
                             'booking_source' => (string) ($booking->booking_source ?? ''),
                         ] : null,
+                        'balance_due' => round($balanceDue, 2),
+                        'amount_paid' => round($amountPaid, 2),
                         'charges' => $charges->map(fn ($charge) => [
                             'id' => (string) $charge->id,
                             'label' => $charge->label,
                             'amount' => (float) $charge->amount,
                             'type' => $charge->type,
-                        ]),
+                            'is_credit' => BillingChargeTypes::isCredit($charge->type ?? ''),
+                        ])->values(),
                     ];
                 } catch (\Throwable $e) {
                     Log::warning('Admin dashboard skipped room row', [
@@ -249,6 +270,8 @@ class AdminDashboardApiController extends Controller
                         'room_number' => SafeModelAttributes::rawString($room, 'room_number'),
                         'status' => RoomStatus::AVAILABLE->value,
                         'latest_booking' => null,
+                        'balance_due' => 0.0,
+                        'amount_paid' => 0.0,
                         'charges' => [],
                     ];
                 }

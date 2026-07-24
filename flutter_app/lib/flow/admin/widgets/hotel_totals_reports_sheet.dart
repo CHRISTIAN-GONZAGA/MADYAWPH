@@ -864,7 +864,7 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
                     final roomNo = (line['room_number'] ?? '—').toString();
                     final guest = (line['guest_name'] ?? 'Guest').toString();
                     final amount =
-                        (line['amount'] as num?)?.toDouble() ?? 0;
+                        parseJsonDouble(line['total'] ?? line['amount']);
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: _DetailTile(

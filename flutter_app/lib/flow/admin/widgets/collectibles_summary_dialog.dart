@@ -85,9 +85,7 @@ Future<void> showCollectiblesSummaryDialog(
                                           ),
                                         ),
                                         Text(
-                                          formatPeso(
-                                            parseJsonDouble(c['amount']),
-                                          ),
+                                          formatBillLineAmount(c),
                                           style: const TextStyle(
                                             fontWeight: FontWeight.w600,
                                           ),

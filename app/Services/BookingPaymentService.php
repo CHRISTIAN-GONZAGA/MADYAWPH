@@ -20,7 +20,20 @@ class BookingPaymentService
      */
     public function billSummary(Booking $booking): array
     {
-        $charges = $this->chargesForBooking($booking);
+        return $this->summarizeCharges(
+            $this->chargesForBooking($booking),
+            (string) ($booking->payment_status ?? 'unpaid'),
+        );
+    }
+
+    /**
+     * Outstanding balance from an already-loaded charge set (no extra query).
+     *
+     * @param  Collection<int, BillingCharge>  $charges
+     * @return array<string, mixed>
+     */
+    public function summarizeCharges(Collection $charges, string $currentPaymentStatus = 'unpaid'): array
+    {
         $lines = $charges->map(fn ($c) => [
             'label' => (string) ($c->label ?? ''),
             'type' => (string) ($c->type ?? ''),
@@ -49,7 +62,7 @@ class BookingPaymentService
             'amount_paid' => round($amountPaid, 2),
             'balance_due' => $balanceDue,
             'total_due' => $balanceDue,
-            'payment_status' => $this->derivePaymentStatus($amountPaid, $balanceDue, (string) ($booking->payment_status ?? 'unpaid')),
+            'payment_status' => $this->derivePaymentStatus($amountPaid, $balanceDue, $currentPaymentStatus),
         ];
     }
 
