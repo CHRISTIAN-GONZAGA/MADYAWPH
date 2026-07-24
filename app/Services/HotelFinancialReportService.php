@@ -28,6 +28,46 @@ class HotelFinancialReportService
     }
 
     /**
+     * Shift / period report payload used by Flutter Reports (cash collections basis).
+     *
+     * @return array<string, mixed>
+     */
+    public function buildShiftReportPayload(Carbon $from, Carbon $to, ?string $staffName = null): array
+    {
+        return $this->withTenant(function () use ($from, $to, $staffName) {
+            $summary = $this->safeFinancialSummary($from, $to);
+            $roomCounts = app(FrontDeskActivityReportService::class)->shiftRoomCounts(
+                $this->hotelId,
+                $from,
+                $to,
+                $staffName,
+            );
+            $summary = array_merge($summary, $roomCounts);
+
+            $bookingRows = $this->paymentCollectionRows($from, $to, isoTimestamps: true);
+            $amenityRows = $this->amenityTransactionRows($from, $to, isoTimestamps: true);
+
+            $allRows = collect($bookingRows)
+                ->merge($amenityRows)
+                ->sortByDesc(fn ($row) => $row['paid_at'] ?? '')
+                ->values()
+                ->all();
+
+            return [
+                'shift' => [
+                    'time_in' => $from->toIso8601String(),
+                    'time_out' => $to->toIso8601String(),
+                    'staff_name' => $staffName ?? '',
+                ],
+                'summary' => $summary,
+                'booking_transactions' => $bookingRows,
+                'amenity_transactions' => $amenityRows,
+                'transactions' => $allRows,
+            ];
+        });
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function buildSalesReportPayload(Carbon $from, Carbon $to, string $periodLabel): array
@@ -41,58 +81,8 @@ class HotelFinancialReportService
             );
             $summary = array_merge($summary, $roomCounts);
 
-            $bookings = $this->paidBookingsInRange($from, $to);
-            $revenueByBooking = $this->recognizedRevenueByBooking($bookings);
-
-            $bookingRows = $bookings
-                ->map(function ($booking) use ($revenueByBooking) {
-                    $bookingId = (string) $booking->id;
-                    $amount = (float) ($revenueByBooking[$bookingId] ?? (float) ($booking->total_amount ?? 0));
-                    $paidAt = $this->paymentDateForBooking($booking);
-
-                    return [
-                        'category' => 'Booking',
-                        'reference' => (string) ($booking->booking_reference ?? $bookingId),
-                        'guest_name' => (string) ($booking->guest_name ?? ''),
-                        'room_number' => $this->roomNumberForBooking($booking),
-                        'description' => 'Room stay',
-                        'payment_method' => $this->paymentMethodLabel($booking),
-                        'payment_channel' => $this->paymentChannel($booking),
-                        'amount' => round($amount, 2),
-                        'paid_at' => $paidAt?->format('M d, Y g:i A'),
-                        'paid_at_sort' => $paidAt?->toIso8601String() ?? '',
-                    ];
-                })
-                ->sortByDesc(fn ($row) => $row['paid_at_sort'])
-                ->values()
-                ->all();
-
-            $amenityCharges = BillingCharge::query()
-                ->where('type', 'amenity')
-                ->whereBetween('created_at', [$from, $to])
-                ->orderByDesc('created_at')
-                ->get();
-
-            $amenityRows = $amenityCharges
-                ->map(function ($charge) {
-                    $amount = (float) ($charge->amount ?? 0);
-                    $createdAt = SafeModelAttributes::carbonFromModel($charge, 'created_at');
-
-                    return [
-                        'category' => 'Amenity',
-                        'reference' => (string) ($charge->id ?? ''),
-                        'guest_name' => '',
-                        'room_number' => $this->roomNumberByRoomId((string) ($charge->room_id ?? '')),
-                        'description' => (string) ($charge->label ?? 'Amenity'),
-                        'payment_method' => '',
-                        'payment_channel' => 'amenity',
-                        'amount' => round($amount, 2),
-                        'paid_at' => $createdAt?->format('M d, Y g:i A'),
-                        'paid_at_sort' => $createdAt?->toIso8601String() ?? '',
-                    ];
-                })
-                ->values()
-                ->all();
+            $bookingRows = $this->paymentCollectionRows($from, $to, isoTimestamps: false);
+            $amenityRows = $this->amenityTransactionRows($from, $to, isoTimestamps: false);
 
             $refundCharges = BillingCharge::query()
                 ->where('type', 'refund')
@@ -140,7 +130,7 @@ class HotelFinancialReportService
                 'from_display' => $from->format('F j, Y'),
                 'to_display' => $to->format('F j, Y'),
                 'summary' => $summary,
-                'payment_breakdown' => $this->paymentBreakdown($bookings, $revenueByBooking, $from, $to),
+                'payment_breakdown' => $this->paymentBreakdownFromCollections($from, $to),
                 'daily_breakdown' => $dailyBreakdown,
                 'booking_transactions' => $bookingRows,
                 'amenity_transactions' => $amenityRows,
@@ -188,9 +178,19 @@ class HotelFinancialReportService
     public function financialSummary(Carbon $from, Carbon $to): array
     {
         return $this->withTenant(function () use ($from, $to) {
+            $paymentCharges = $this->paymentChargesInRange($from, $to);
+            $collections = (float) $paymentCharges->sum(
+                fn ($c) => abs((float) ($c->amount ?? 0))
+            );
+
             $bookings = $this->paidBookingsInRange($from, $to);
             $revenueMap = $this->recognizedRevenueByBooking($bookings);
-            $grossRevenue = (float) collect($revenueMap)->sum();
+            $accruedRevenue = (float) collect($revenueMap)->sum();
+
+            // Operational hotel Sales must reflect FO check-in/out money taken
+            // (partial or final). Fall back to settled-stay accrual only when
+            // legacy paid bookings have no payment charge rows.
+            $grossRevenue = $collections > 0.009 ? $collections : $accruedRevenue;
 
             $charges = BillingCharge::query()
                 ->whereBetween('created_at', [$from, $to])
@@ -232,12 +232,20 @@ class HotelFinancialReportService
             $totalExpenses = $refundExpense + $resellerCommissions + $customExpenses;
             $profitAfterReseller = $netRevenue - $resellerCommissions - $customExpenses;
 
+            $paymentBookingCount = (int) $paymentCharges
+                ->map(fn ($c) => (string) ($c->booking_id ?? ''))
+                ->filter(fn ($id) => $id !== '')
+                ->unique()
+                ->count();
+
             return [
                 'from' => $from->toDateString(),
                 'to' => $to->toDateString(),
-                'bookings' => (int) $bookings->count(),
+                'bookings' => $paymentBookingCount > 0 ? $paymentBookingCount : (int) $bookings->count(),
                 'gross_revenue' => round($grossRevenue, 2),
                 'revenue' => round($grossRevenue, 2),
+                'payments_collected' => round($collections, 2),
+                'settled_stay_revenue' => round($accruedRevenue, 2),
                 'refunds' => round($refunds, 2),
                 'refund_expense' => round($refundExpense, 2),
                 'custom_expenses' => round($customExpenses, 2),
@@ -280,6 +288,8 @@ class HotelFinancialReportService
             'bookings' => 0,
             'gross_revenue' => 0.0,
             'revenue' => 0.0,
+            'payments_collected' => 0.0,
+            'settled_stay_revenue' => 0.0,
             'refunds' => 0.0,
             'refund_expense' => 0.0,
             'custom_expenses' => 0.0,
@@ -299,18 +309,15 @@ class HotelFinancialReportService
     }
 
     /**
-     * @param  array<string, float>  $revenueByBooking
      * @return array{cash: float, online: float, amenity: float}
      */
-    private function paymentBreakdown(Collection $bookings, array $revenueByBooking, Carbon $from, Carbon $to): array
+    private function paymentBreakdownFromCollections(Carbon $from, Carbon $to): array
     {
         $cash = 0.0;
         $online = 0.0;
-
-        foreach ($bookings as $booking) {
-            $bookingId = (string) $booking->id;
-            $amount = (float) ($revenueByBooking[$bookingId] ?? (float) ($booking->total_amount ?? 0));
-            if ($this->paymentChannel($booking) === 'cash') {
+        foreach ($this->paymentCollectionRows($from, $to, isoTimestamps: true) as $row) {
+            $amount = (float) ($row['amount'] ?? 0);
+            if (($row['payment_channel'] ?? '') === 'cash') {
                 $cash += $amount;
             } else {
                 $online += $amount;
@@ -328,6 +335,188 @@ class HotelFinancialReportService
             'online' => round($online, 2),
             'amenity' => round($amenity, 2),
         ];
+    }
+
+    /**
+     * Payment / collection charges recorded in the window (FO check-in deposits + finals).
+     *
+     * @return Collection<int, BillingCharge>
+     */
+    public function paymentChargesInRange(Carbon $from, Carbon $to): Collection
+    {
+        return $this->withTenant(function () use ($from, $to) {
+            return BillingCharge::query()
+                ->where('type', BillingChargeTypes::PARTIAL_PAYMENT)
+                ->where('created_at', '>=', $from)
+                ->where('created_at', '<=', $to)
+                ->orderByDesc('created_at')
+                ->get([
+                    'id',
+                    'booking_id',
+                    'room_id',
+                    'amount',
+                    'label',
+                    'type',
+                    'created_at',
+                    'metadata',
+                    'created_by',
+                ]);
+        });
+    }
+
+    /**
+     * One report row per payment taken (check-in deposit, balance, etc.).
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function paymentCollectionRows(Carbon $from, Carbon $to, bool $isoTimestamps = true): array
+    {
+        return $this->withTenant(function () use ($from, $to, $isoTimestamps) {
+            $charges = $this->paymentChargesInRange($from, $to);
+            if ($charges->isEmpty()) {
+                // Legacy: fully paid stays with no payment charge rows.
+                return $this->legacyPaidBookingRows($from, $to, $isoTimestamps);
+            }
+
+            $bookingIds = $charges
+                ->map(fn ($c) => (string) ($c->booking_id ?? ''))
+                ->filter(fn ($id) => $id !== '')
+                ->unique()
+                ->values()
+                ->all();
+
+            $bookings = $bookingIds === []
+                ? collect()
+                : Booking::query()
+                    ->whereIn('id', $bookingIds)
+                    ->get()
+                    ->keyBy(fn ($b) => (string) $b->id);
+
+            return $charges->map(function ($charge) use ($bookings, $isoTimestamps) {
+                $bookingId = (string) ($charge->booking_id ?? '');
+                $booking = $bookingId !== '' ? $bookings->get($bookingId) : null;
+                $amount = abs((float) ($charge->amount ?? 0));
+                $createdAt = SafeModelAttributes::carbonFromModel($charge, 'created_at');
+                $meta = is_array($charge->metadata ?? null) ? $charge->metadata : [];
+                $method = trim((string) ($meta['payment_method'] ?? ''));
+                if ($method === '' && $booking) {
+                    $method = $this->paymentMethodLabel($booking);
+                }
+                $methodLower = strtolower($method);
+                $channel = $methodLower === 'cash'
+                    ? 'cash'
+                    : ($method === ''
+                        ? ($booking ? $this->paymentChannel($booking) : 'unknown')
+                        : 'online');
+
+                $label = trim((string) ($charge->label ?? ''));
+                $description = $label !== '' ? $label : 'Payment received';
+                $reference = trim((string) ($booking?->booking_reference ?? ''));
+                if ($reference === '') {
+                    $reference = $bookingId !== '' ? $bookingId : (string) ($charge->id ?? '');
+                }
+
+                $paidAtValue = $isoTimestamps
+                    ? $createdAt?->toIso8601String()
+                    : $createdAt?->format('M d, Y g:i A');
+
+                return [
+                    'category' => 'Booking',
+                    'reference' => $reference,
+                    'guest_name' => (string) ($booking?->guest_name ?? ''),
+                    'room_number' => $booking
+                        ? $this->roomNumberForBooking($booking)
+                        : $this->roomNumberByRoomId((string) ($charge->room_id ?? '')),
+                    'description' => $description,
+                    'payment_method' => $method,
+                    'payment_channel' => $channel,
+                    'amount' => round($amount, 2),
+                    'paid_at' => $paidAtValue,
+                    'paid_at_sort' => $createdAt?->toIso8601String() ?? '',
+                    'charge_id' => (string) ($charge->id ?? ''),
+                    'booking_id' => $bookingId,
+                ];
+            })
+                ->sortByDesc(fn ($row) => $row['paid_at_sort'] ?? '')
+                ->values()
+                ->all();
+        });
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function legacyPaidBookingRows(Carbon $from, Carbon $to, bool $isoTimestamps): array
+    {
+        $bookings = $this->paidBookingsInRange($from, $to);
+        $revenueByBooking = $this->recognizedRevenueByBooking($bookings);
+
+        return $bookings
+            ->map(function ($booking) use ($revenueByBooking, $isoTimestamps) {
+                $bookingId = (string) $booking->id;
+                $amount = (float) ($revenueByBooking[$bookingId] ?? (float) ($booking->total_amount ?? 0));
+                $paidAt = $this->paymentDateForBooking($booking);
+
+                return [
+                    'category' => 'Booking',
+                    'reference' => (string) ($booking->booking_reference ?? $bookingId),
+                    'guest_name' => (string) ($booking->guest_name ?? ''),
+                    'room_number' => $this->roomNumberForBooking($booking),
+                    'description' => 'Room stay',
+                    'payment_method' => $this->paymentMethodLabel($booking),
+                    'payment_channel' => $this->paymentChannel($booking),
+                    'amount' => round($amount, 2),
+                    'paid_at' => $isoTimestamps
+                        ? $paidAt?->toIso8601String()
+                        : $paidAt?->format('M d, Y g:i A'),
+                    'paid_at_sort' => $paidAt?->toIso8601String() ?? '',
+                ];
+            })
+            ->sortByDesc(fn ($row) => $row['paid_at_sort'] ?? '')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function amenityTransactionRows(Carbon $from, Carbon $to, bool $isoTimestamps): array
+    {
+        return BillingCharge::query()
+            ->where('type', 'amenity')
+            ->whereBetween('created_at', [$from, $to])
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(function ($charge) use ($isoTimestamps) {
+                $amount = (float) ($charge->amount ?? 0);
+                $createdAt = SafeModelAttributes::carbonFromModel($charge, 'created_at');
+
+                return [
+                    'category' => 'Amenity',
+                    'reference' => (string) ($charge->id ?? ''),
+                    'guest_name' => '',
+                    'room_number' => $this->roomNumberByRoomId((string) ($charge->room_id ?? '')),
+                    'description' => (string) ($charge->label ?? 'Amenity'),
+                    'payment_method' => '',
+                    'payment_channel' => 'amenity',
+                    'amount' => round($amount, 2),
+                    'paid_at' => $isoTimestamps
+                        ? $createdAt?->toIso8601String()
+                        : $createdAt?->format('M d, Y g:i A'),
+                    'paid_at_sort' => $createdAt?->toIso8601String() ?? '',
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, float>  $revenueByBooking
+     * @return array{cash: float, online: float, amenity: float}
+     */
+    private function paymentBreakdown(Collection $bookings, array $revenueByBooking, Carbon $from, Carbon $to): array
+    {
+        return $this->paymentBreakdownFromCollections($from, $to);
     }
 
     /**

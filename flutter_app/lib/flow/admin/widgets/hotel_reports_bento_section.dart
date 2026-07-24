@@ -119,6 +119,7 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
       }
 
       final gross = parseJsonDouble(summary['gross_revenue']);
+      final collected = parseJsonDouble(summary['payments_collected']);
       final expenses = parseJsonDouble(summary['expenses']);
       final fallbackExpenses = parseJsonDouble(summary['refund_expense']) +
           parseJsonDouble(summary['reseller_commissions_paid']) +
@@ -127,6 +128,9 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
       // show the correct total when custom_expenses is present separately.
       final resolvedExpenses =
           expenses >= fallbackExpenses - 0.009 ? expenses : fallbackExpenses;
+      final salesTotal = gross > 0.009
+          ? gross
+          : (collected > 0.009 ? collected : salesFromTxns);
 
       double periodGross(String key) {
         final row = profit[key];
@@ -138,7 +142,7 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
       final guests = (totals?['total_guests'] as num?)?.toInt() ?? 0;
 
       setState(() {
-        _sales = gross > 0.009 ? gross : salesFromTxns;
+        _sales = salesTotal;
         _expenses = resolvedExpenses;
         _cashSales = cashFromTxns;
         _dailyRevenue = periodGross('daily');

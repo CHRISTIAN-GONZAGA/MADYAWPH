@@ -821,72 +821,12 @@ class ReportController extends Controller
      */
     private function financialSummary(Carbon $from, Carbon $to): array
     {
-        $bookings = $this->paidBookingsInRange($from, $to);
-        $revenueMap = $this->recognizedRevenueByBooking($bookings);
-        $grossRevenue = (float) collect($revenueMap)->sum();
-
-        $charges = BillingCharge::query()
-            ->whereBetween('created_at', [$from, $to])
-            ->get(['amount', 'type']);
-
-        $refunds = (float) $charges
-            ->filter(fn ($c) => (string) ($c->type ?? '') === 'refund')
-            ->sum(fn ($c) => (float) ($c->amount ?? 0));
-
-        $amenityRevenue = (float) $charges
-            ->filter(fn ($c) => (string) ($c->type ?? '') === 'amenity')
-            ->sum(fn ($c) => max(0, (float) ($c->amount ?? 0)));
-
-        $roomRevenue = (float) $charges
-            ->filter(fn ($c) => in_array((string) ($c->type ?? ''), ['room', 'extend-stay', 'early-check-in', 'late-checkout'], true))
-            ->sum(fn ($c) => max(0, (float) ($c->amount ?? 0)));
-
-        $transferAdjustments = 0.0;
-        try {
-            $transferAdjustments = (float) RoomTransfer::query()
-                ->whereBetween('transferred_at', [$from, $to])
-                ->sum('price_adjustment');
-        } catch (\Throwable) {
-            $transferAdjustments = 0.0;
+        $hotelId = (string) (request()->user()?->hotel_id ?? TenantContext::id() ?? '');
+        if ($hotelId === '') {
+            return $this->emptyFinancialSummary($from, $to);
         }
 
-        $resellerCommissions = $this->resellerCommissionTotal($from, $to);
-        $customExpenses = $this->customExpenseTotal($from, $to);
-        $netRevenue = $grossRevenue + $refunds + $transferAdjustments;
-        $refundExpense = abs(min(0, $refunds));
-        if ($refunds > 0) {
-            $refundExpense += $refunds;
-            $netRevenue -= $refunds;
-        }
-        $cancelledPaid = (int) $bookings
-            ->filter(fn ($b) => strtolower((string) ($b->status?->value ?? $b->status ?? '')) === 'cancelled')
-            ->count();
-        $retentionPercent = CancellationRetentionSupport::retentionPercentForHotel(
-            (string) ($bookings->first()?->hotel_id ?? '')
-        );
-        $totalExpenses = $refundExpense + $resellerCommissions + $customExpenses;
-        $profitAfterReseller = $netRevenue - $resellerCommissions - $customExpenses;
-
-        return [
-            'from' => $from->toDateString(),
-            'to' => $to->toDateString(),
-            'bookings' => (int) $bookings->count(),
-            'gross_revenue' => round($grossRevenue, 2),
-            'revenue' => round($grossRevenue, 2),
-            'refunds' => round($refunds, 2),
-            'refund_expense' => round($refundExpense, 2),
-            'custom_expenses' => round($customExpenses, 2),
-            'amenity_revenue' => round($amenityRevenue, 2),
-            'room_revenue' => round($roomRevenue > 0 ? $roomRevenue : $grossRevenue, 2),
-            'transfer_adjustments' => round($transferAdjustments, 2),
-            'reseller_commissions_paid' => round($resellerCommissions, 2),
-            'expenses' => round($totalExpenses, 2),
-            'net_revenue' => round($netRevenue - $customExpenses, 2),
-            'profit' => round($profitAfterReseller, 2),
-            'profit_before_reseller_payouts' => round($netRevenue - $customExpenses, 2),
-            'cancelled_bookings' => $cancelledPaid,
-            'cancellation_retention_percent' => round($retentionPercent, 2),
-        ];
+        return HotelFinancialReportService::forHotel($hotelId)->financialSummary($from, $to);
     }
 
     /**
@@ -904,6 +844,21 @@ class ReportController extends Controller
     }
 
     /**
+     * Parse client report bounds in app timezone (naive ISO from Flutter = hotel local day).
+     */
+    private function parseReportBound(string $value, bool $end = false): Carbon
+    {
+        $tz = (string) (config('app.timezone') ?: 'Asia/Manila');
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) === 1) {
+            $day = Carbon::parse($value, $tz);
+
+            return $end ? $day->endOfDay() : $day->startOfDay();
+        }
+
+        return Carbon::parse($value, $tz);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function emptyFinancialSummary(Carbon $from, Carbon $to): array
@@ -914,6 +869,8 @@ class ReportController extends Controller
             'bookings' => 0,
             'gross_revenue' => 0.0,
             'revenue' => 0.0,
+            'payments_collected' => 0.0,
+            'settled_stay_revenue' => 0.0,
             'refunds' => 0.0,
             'refund_expense' => 0.0,
             'custom_expenses' => 0.0,
@@ -1319,6 +1276,23 @@ class ReportController extends Controller
             })
             ->get(['id', 'room_id', 'total_amount', 'payment_status', 'status', 'created_at', 'check_in_date', 'check_out_date', 'nights']);
 
+        $bookingIds = $bookings->map(fn ($b) => (string) $b->id)->filter()->values()->all();
+        $chargesByBooking = [];
+        if ($bookingIds !== []) {
+            $chargeRows = BillingCharge::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
+                ->whereIn('booking_id', $bookingIds)
+                ->get(['booking_id', 'amount', 'type']);
+            foreach ($chargeRows as $charge) {
+                $bid = (string) ($charge->booking_id ?? '');
+                if ($bid === '' || BillingChargeTypes::isCredit($charge->type ?? '')) {
+                    continue;
+                }
+                $chargesByBooking[$bid] = ($chargesByBooking[$bid] ?? 0.0)
+                    + max(0, (float) ($charge->amount ?? 0));
+            }
+        }
+
         $byRoom = [];
         foreach ($rooms as $room) {
             $rid = (string) $room->id;
@@ -1344,10 +1318,16 @@ class ReportController extends Controller
                 continue;
             }
             $byRoom[$rid]['bookings_count']++;
-            $paid = strtolower((string) ($booking->payment_status ?? '')) === 'paid';
-            if ($paid || in_array(strtolower((string) ($booking->status?->value ?? $booking->status ?? '')), ['completed', 'checked_in', 'confirmed', 'booked'], true)) {
-                $byRoom[$rid]['revenue'] += (float) ($booking->total_amount ?? 0);
+            $bid = (string) $booking->id;
+            $stayRevenue = (float) ($chargesByBooking[$bid] ?? 0);
+            if ($stayRevenue <= 0.009) {
+                // Fallback only for unpaid/partial balances still stored on booking.
+                $status = strtolower((string) ($booking->payment_status ?? ''));
+                if ($status !== 'paid') {
+                    $stayRevenue = (float) ($booking->total_amount ?? 0);
+                }
             }
+            $byRoom[$rid]['revenue'] += $stayRevenue;
 
             try {
                 $stayIn = Carbon::parse($booking->check_in_date)->startOfDay();
@@ -1466,8 +1446,8 @@ class ReportController extends Controller
             'staff_name' => ['nullable', 'string', 'max:160'],
         ]);
 
-        $from = Carbon::parse($validated['time_in']);
-        $to = Carbon::parse($validated['time_out']);
+        $from = $this->parseReportBound($validated['time_in'], end: false);
+        $to = $this->parseReportBound($validated['time_out'], end: true);
         $staffName = trim((string) ($validated['staff_name'] ?? ''));
 
         return response()->json(
@@ -1484,8 +1464,8 @@ class ReportController extends Controller
             'title' => ['nullable', 'string', 'max:200'],
         ]);
 
-        $from = Carbon::parse($validated['time_in']);
-        $to = Carbon::parse($validated['time_out']);
+        $from = $this->parseReportBound($validated['time_in'], end: false);
+        $to = $this->parseReportBound($validated['time_out'], end: true);
         $staffName = trim((string) ($validated['staff_name'] ?? ''));
         $title = trim((string) ($validated['title'] ?? 'Shift revenue summary'));
         if ($title === '') {
@@ -1525,8 +1505,8 @@ class ReportController extends Controller
             return response()->json(['message' => 'Hotel context is required.'], 422);
         }
 
-        $from = Carbon::parse($validated['time_in']);
-        $to = Carbon::parse($validated['time_out']);
+        $from = $this->parseReportBound($validated['time_in'], end: false);
+        $to = $this->parseReportBound($validated['time_out'], end: true);
         $staffName = trim((string) ($validated['staff_name'] ?? ''));
 
         $recipients = HotelNotificationRecipients::salesReportEmails($hotelId);
@@ -1610,87 +1590,26 @@ class ReportController extends Controller
      */
     private function buildShiftReportPayload(Carbon $from, Carbon $to, ?string $staffName = null): array
     {
-        $summary = $this->safeFinancialSummary($from, $to);
-        $hotelId = (string) (request()->user()?->hotel_id ?? '');
-        if ($hotelId !== '') {
-            $roomCounts = app(FrontDeskActivityReportService::class)->shiftRoomCounts(
-                $hotelId,
-                $from,
-                $to,
-                $staffName,
-            );
-            $summary = array_merge($summary, $roomCounts);
-        } else {
-            $summary['rooms_checked_in'] = 0;
-            $summary['rooms_checked_out'] = 0;
+        $hotelId = (string) (request()->user()?->hotel_id ?? TenantContext::id() ?? '');
+        if ($hotelId === '') {
+            $empty = $this->emptyFinancialSummary($from, $to);
+            $empty['rooms_checked_in'] = 0;
+            $empty['rooms_checked_out'] = 0;
+
+            return [
+                'shift' => [
+                    'time_in' => $from->toIso8601String(),
+                    'time_out' => $to->toIso8601String(),
+                    'staff_name' => $staffName ?? '',
+                ],
+                'summary' => $empty,
+                'booking_transactions' => [],
+                'amenity_transactions' => [],
+                'transactions' => [],
+            ];
         }
-        $bookings = $this->paidBookingsInRange($from, $to);
-        $revenueByBooking = $this->recognizedRevenueByBooking($bookings);
 
-        $bookingRows = $bookings
-            ->map(function ($booking) use ($revenueByBooking) {
-                $bookingId = (string) $booking->id;
-                $amount = (float) ($revenueByBooking[$bookingId] ?? (float) ($booking->total_amount ?? 0));
-                $paidAt = $this->paymentDateForBooking($booking);
-
-                return [
-                    'category' => 'Booking',
-                    'reference' => (string) ($booking->booking_reference ?? $bookingId),
-                    'guest_name' => (string) ($booking->guest_name ?? ''),
-                    'room_number' => $this->roomNumberForBooking($booking),
-                    'description' => 'Room stay',
-                    'payment_method' => $this->paymentMethodLabel($booking),
-                    'payment_channel' => $this->paymentChannel($booking),
-                    'amount' => round($amount, 2),
-                    'paid_at' => $paidAt?->toIso8601String(),
-                ];
-            })
-            ->sortByDesc(fn ($row) => $row['paid_at'] ?? '')
-            ->values()
-            ->all();
-
-        $amenityCharges = BillingCharge::query()
-            ->where('type', 'amenity')
-            ->whereBetween('created_at', [$from, $to])
-            ->orderByDesc('created_at')
-            ->get();
-
-        $amenityRows = $amenityCharges
-            ->map(function ($charge) {
-                $amount = (float) ($charge->amount ?? 0);
-                $createdAt = SafeModelAttributes::carbonFromModel($charge, 'created_at');
-
-                return [
-                    'category' => 'Amenity',
-                    'reference' => (string) ($charge->id ?? ''),
-                    'guest_name' => '',
-                    'room_number' => $this->roomNumberByRoomId((string) ($charge->room_id ?? '')),
-                    'description' => (string) ($charge->label ?? 'Amenity'),
-                    'payment_method' => '',
-                    'payment_channel' => 'amenity',
-                    'amount' => round($amount, 2),
-                    'paid_at' => $createdAt?->toIso8601String(),
-                ];
-            })
-            ->values()
-            ->all();
-
-        $allRows = collect($bookingRows)
-            ->merge($amenityRows)
-            ->sortByDesc(fn ($row) => $row['paid_at'] ?? '')
-            ->values()
-            ->all();
-
-        return [
-            'shift' => [
-                'time_in' => $from->toIso8601String(),
-                'time_out' => $to->toIso8601String(),
-                'staff_name' => $staffName ?? '',
-            ],
-            'summary' => $summary,
-            'booking_transactions' => $bookingRows,
-            'amenity_transactions' => $amenityRows,
-            'transactions' => $allRows,
-        ];
+        return HotelFinancialReportService::forHotel($hotelId)
+            ->buildShiftReportPayload($from, $to, $staffName);
     }
 }
