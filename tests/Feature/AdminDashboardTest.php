@@ -203,4 +203,49 @@ class AdminDashboardTest extends TestCase
             'staff_threads',
         ]);
     }
+
+    public function test_dashboard_latest_booking_includes_payment_status_for_guests(): void
+    {
+        $hotel = Hotel::create(['name' => 'Paid Guest Hotel', 'location' => 'City']);
+        $this->seedHotelCredits($hotel);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'admin_paid_guest',
+            'email' => 'admin-paid-guest@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '501',
+            'category_name' => 'Deluxe',
+            'room_type' => 'Deluxe',
+            'price_per_night' => 2500,
+            'status' => 'checked_in',
+            'current_guest_name' => 'Paid In Full Guest',
+        ]);
+        Booking::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'booking_reference' => 'BK-PAID-GUEST-1',
+            'guest_name' => 'Paid In Full Guest',
+            'guest_phone' => '09170005555',
+            'check_in_date' => now()->toDateString(),
+            'check_out_date' => now()->addDay()->toDateString(),
+            'nights' => 1,
+            'total_amount' => 0,
+            'payment_status' => 'paid',
+            'paid_at' => now(),
+            'payment_method' => 'Cash',
+            'status' => 'checked_in',
+        ]);
+
+        $response = $this->actingAs($admin)->getJson('/api/v1/admin/dashboard');
+        $response->assertOk();
+
+        $rooms = collect($response->json('rooms') ?? []);
+        $row = $rooms->firstWhere('room_number', '501');
+        $this->assertNotNull($row);
+        $this->assertSame('paid', (string) ($row['latest_booking']['payment_status'] ?? ''));
+    }
 }

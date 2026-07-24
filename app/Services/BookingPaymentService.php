@@ -280,17 +280,20 @@ class BookingPaymentService
         $summary = $this->billSummary($booking);
         $totalDue = (float) $summary['total_due'];
         $amountPaid = (float) ($summary['amount_paid'] ?? 0);
+        $balanceDue = (float) ($summary['balance_due'] ?? $totalDue);
         $updates = ['total_amount' => $totalDue];
 
-        if ($amountPaid > 0.009) {
-            $status = $this->derivePaymentStatus(
-                $amountPaid,
-                $totalDue,
-                (string) ($booking->payment_status ?? 'unpaid'),
-            );
-            $updates['payment_status'] = $status;
-            $updates['paid_at'] = $status === 'paid' ? ($booking->paid_at ?? now()) : null;
-        }
+        // Always keep payment_status aligned with the live bill (full pay before
+        // check-in, deposits, and checkout settlement).
+        $status = $this->derivePaymentStatus(
+            $amountPaid,
+            $balanceDue,
+            (string) ($booking->payment_status ?? 'unpaid'),
+        );
+        $updates['payment_status'] = $status;
+        $updates['paid_at'] = $status === 'paid'
+            ? ($booking->paid_at ?? now())
+            : null;
 
         $booking->update($updates);
 

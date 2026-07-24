@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -31,6 +33,7 @@ class HotelReportsBentoSection extends StatefulWidget {
 
 class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
   bool _loading = true;
+  bool _loadingSecondary = false;
   String? _error;
 
   double _sales = 0;
@@ -68,22 +71,83 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
     }
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _load({bool soft = false}) async {
+    final hasTiles = _sales > 0.009 || _expenses > 0.009 || _dailyRevenue > 0.009;
+    if (!soft || !hasTiles) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    } else {
+      setState(() {
+        _loadingSecondary = true;
+        _error = null;
+      });
+    }
     try {
       final today = DateUtils.dateOnly(DateTime.now());
       final end = _endOfDay(today);
+      // Primary: lightweight shift summary so tiles paint quickly.
+      final shiftRes = await portalDio().get<Map<String, dynamic>>(
+        '/reports/shift-summary',
+        queryParameters: {
+          'time_in': today.toIso8601String(),
+          'time_out': end.toIso8601String(),
+          'summary_only': true,
+        },
+      );
+      if (!mounted) return;
+
+      final shift = shiftRes.data ?? const <String, dynamic>{};
+      final summary =
+          (shift['summary'] as Map?)?.cast<String, dynamic>() ?? const {};
+      final gross = parseJsonDouble(summary['gross_revenue']);
+      final collected = parseJsonDouble(summary['payments_collected']);
+      final cashCollected = parseJsonDouble(summary['cash_collected']);
+      final expenses = parseJsonDouble(summary['expenses']);
+      final fallbackExpenses = parseJsonDouble(summary['refund_expense']) +
+          parseJsonDouble(summary['reseller_commissions_paid']) +
+          parseJsonDouble(summary['custom_expenses']);
+      final resolvedExpenses =
+          expenses >= fallbackExpenses - 0.009 ? expenses : fallbackExpenses;
+      final salesTotal = gross > 0.009
+          ? gross
+          : (collected > 0.009 ? collected : 0.0);
+
+      setState(() {
+        _sales = salesTotal;
+        _expenses = resolvedExpenses;
+        _cashSales = cashCollected > 0.009 ? cashCollected : _cashSales;
+        _dailyRevenue = salesTotal;
+        _demoGuests = widget.rooms
+            .where((r) => AdminDashboardModels.statusOf(r) == 'checked_in')
+            .length;
+        _loading = false;
+        _loadingSecondary = true;
+      });
+
+      // Secondary: period tiles + demographics (does not block first paint).
+      unawaited(_loadSecondary(today));
+    } on DioException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = dioErrorMessage(e);
+        _loading = false;
+        _loadingSecondary = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '$e';
+        _loading = false;
+        _loadingSecondary = false;
+      });
+    }
+  }
+
+  Future<void> _loadSecondary(DateTime today) async {
+    try {
       final results = await Future.wait([
-        portalDio().get<Map<String, dynamic>>(
-          '/reports/shift-summary',
-          queryParameters: {
-            'time_in': today.toIso8601String(),
-            'time_out': end.toIso8601String(),
-          },
-        ),
         portalDio().get<Map<String, dynamic>>(
           '/reports/profit-overview',
           queryParameters: {
@@ -97,40 +161,8 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
         ),
       ]);
       if (!mounted) return;
-
-      final shift = results[0].data ?? const <String, dynamic>{};
-      final profit = results[1].data ?? const <String, dynamic>{};
-      final demo = results[2].data ?? const <String, dynamic>{};
-
-      final summary =
-          (shift['summary'] as Map?)?.cast<String, dynamic>() ?? const {};
-      final bookings = ((shift['booking_transactions'] as List?) ?? const [])
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
-
-      var cashFromTxns = 0.0;
-      var salesFromTxns = 0.0;
-      for (final t in bookings) {
-        final amount = parseJsonDouble(t['amount']);
-        salesFromTxns += amount;
-        final method = (t['payment_method'] ?? '').toString().toLowerCase();
-        if (method == 'cash') cashFromTxns += amount;
-      }
-
-      final gross = parseJsonDouble(summary['gross_revenue']);
-      final collected = parseJsonDouble(summary['payments_collected']);
-      final expenses = parseJsonDouble(summary['expenses']);
-      final fallbackExpenses = parseJsonDouble(summary['refund_expense']) +
-          parseJsonDouble(summary['reseller_commissions_paid']) +
-          parseJsonDouble(summary['custom_expenses']);
-      // Prefer the larger so older API payloads (expenses without custom) still
-      // show the correct total when custom_expenses is present separately.
-      final resolvedExpenses =
-          expenses >= fallbackExpenses - 0.009 ? expenses : fallbackExpenses;
-      final salesTotal = gross > 0.009
-          ? gross
-          : (collected > 0.009 ? collected : salesFromTxns);
+      final profit = results[0].data ?? const <String, dynamic>{};
+      final demo = results[1].data ?? const <String, dynamic>{};
 
       double periodGross(String key) {
         final row = profit[key];
@@ -139,31 +171,19 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
       }
 
       final totals = (demo['totals'] as Map?)?.cast<String, dynamic>();
-      final guests = (totals?['total_guests'] as num?)?.toInt() ?? 0;
+      final guests = (totals?['total_guests'] as num?)?.toInt() ?? _demoGuests;
 
       setState(() {
-        _sales = salesTotal;
-        _expenses = resolvedExpenses;
-        _cashSales = cashFromTxns;
         _dailyRevenue = periodGross('daily');
         _weeklyRevenue = periodGross('weekly');
         _monthlyRevenue = periodGross('monthly');
         _annualRevenue = periodGross('annual');
         _demoGuests = guests;
-        _loading = false;
+        _loadingSecondary = false;
       });
-    } on DioException catch (e) {
+    } catch (_) {
       if (!mounted) return;
-      setState(() {
-        _error = dioErrorMessage(e);
-        _loading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = '$e';
-        _loading = false;
-      });
+      setState(() => _loadingSecondary = false);
     }
   }
 
@@ -181,7 +201,7 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
       initialExpanded: section,
     );
     if (!mounted) return;
-    await _load();
+    await _load(soft: true);
   }
 
   void _openPeriod(_BentoPeriod period, String label) {
@@ -245,7 +265,8 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
               visualDensity: VisualDensity.compact,
             ),
           ),
-        if (_loading) const LinearProgressIndicator(minHeight: 2),
+        if (_loading || _loadingSecondary)
+          const LinearProgressIndicator(minHeight: 2),
         if (_error != null) ...[
           Text(_error!, style: TextStyle(color: scheme.error, fontSize: 12)),
           TextButton(onPressed: _load, child: const Text('Retry')),

@@ -223,6 +223,8 @@ class AdminDashboardApiController extends Controller
                             'nights' => (int) ($booking->nights ?? 0),
                             'billing_mode' => (string) ($booking->billing_mode ?? ''),
                             'status' => (string) ($booking->status?->value ?? $booking->status ?? ''),
+                            'payment_status' => (string) ($booking->payment_status ?? 'unpaid'),
+                            'payment_method' => SafeModelAttributes::paymentMethodLabel($booking),
                             'total_amount' => SafeModelAttributes::rawFloat($booking, 'total_amount'),
                             'created_at' => SafeModelAttributes::carbonFromModel($booking, 'created_at', 'updated_at')?->toISOString(),
                             'booking_type' => BookingTypeResolver::resolveForBooking($booking),

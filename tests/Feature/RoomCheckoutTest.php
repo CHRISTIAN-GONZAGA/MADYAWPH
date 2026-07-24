@@ -230,6 +230,20 @@ class RoomCheckoutTest extends TestCase
             'payment_status' => 'unpaid',
             'status' => BookingStatus::CONFIRMED,
         ]);
+        $booking = Booking::withoutGlobalScopes()
+            ->where('hotel_id', (string) $hotel->id)
+            ->where('booking_reference', 'BK-UNPAID-1')
+            ->first();
+        BillingCharge::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'booking_id' => (string) $booking->id,
+            'room_id' => (string) $room->id,
+            'type' => 'room',
+            'label' => 'Room stay',
+            'amount' => 1000,
+            'quantity' => 1,
+            'created_by' => (string) $admin->id,
+        ]);
 
         Sanctum::actingAs($admin);
 

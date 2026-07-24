@@ -383,46 +383,23 @@ class ReportController extends Controller
                 'anchor_date' => ['nullable', 'date'],
             ]);
             $anchor = isset($validated['anchor_date'])
-                ? Carbon::parse($validated['anchor_date'])
+                ? Carbon::parse($validated['anchor_date'], config('app.timezone') ?: 'Asia/Manila')
                 : now();
+            $hotelId = (string) ($request->user()?->hotel_id ?? TenantContext::id() ?? '');
+            if ($hotelId === '') {
+                return response()->json([
+                    'anchor_date' => $anchor->toDateString(),
+                    'daily' => $this->emptyFinancialSummary($anchor->copy()->startOfDay(), $anchor->copy()->endOfDay()),
+                    'weekly' => $this->emptyFinancialSummary($anchor->copy()->startOfWeek(), $anchor->copy()->endOfWeek()),
+                    'monthly' => $this->emptyFinancialSummary($anchor->copy()->startOfMonth(), $anchor->copy()->endOfMonth()),
+                    'annual' => $this->emptyFinancialSummary($anchor->copy()->startOfYear(), $anchor->copy()->endOfYear()),
+                    'reseller_payments' => [],
+                ]);
+            }
 
-            return response()->json([
-                'anchor_date' => $anchor->toDateString(),
-                'daily' => $this->safeFinancialSummary(
-                    $anchor->copy()->startOfDay(),
-                    $anchor->copy()->endOfDay()
-                ),
-                'weekly' => $this->safeFinancialSummary(
-                    $anchor->copy()->startOfWeek(),
-                    $anchor->copy()->endOfWeek()
-                ),
-                'monthly' => $this->safeFinancialSummary(
-                    $anchor->copy()->startOfMonth(),
-                    $anchor->copy()->endOfMonth()
-                ),
-                'annual' => $this->safeFinancialSummary(
-                    $anchor->copy()->startOfYear(),
-                    $anchor->copy()->endOfYear()
-                ),
-                'reseller_payments' => [
-                    'daily' => $this->resellerCommissionSummary(
-                        $anchor->copy()->startOfDay(),
-                        $anchor->copy()->endOfDay()
-                    ),
-                    'weekly' => $this->resellerCommissionSummary(
-                        $anchor->copy()->startOfWeek(),
-                        $anchor->copy()->endOfWeek()
-                    ),
-                    'monthly' => $this->resellerCommissionSummary(
-                        $anchor->copy()->startOfMonth(),
-                        $anchor->copy()->endOfMonth()
-                    ),
-                    'annual' => $this->resellerCommissionSummary(
-                        $anchor->copy()->startOfYear(),
-                        $anchor->copy()->endOfYear()
-                    ),
-                ],
-            ]);
+            return response()->json(
+                HotelFinancialReportService::forHotel($hotelId)->buildProfitOverview($anchor)
+            );
         } catch (\Throwable $e) {
             report($e);
 
@@ -448,24 +425,7 @@ class ReportController extends Controller
                     $anchor->copy()->startOfYear(),
                     $anchor->copy()->endOfYear()
                 ),
-                'reseller_payments' => [
-                    'daily' => $this->resellerCommissionSummary(
-                        $anchor->copy()->startOfDay(),
-                        $anchor->copy()->endOfDay()
-                    ),
-                    'weekly' => $this->resellerCommissionSummary(
-                        $anchor->copy()->startOfWeek(),
-                        $anchor->copy()->endOfWeek()
-                    ),
-                    'monthly' => $this->resellerCommissionSummary(
-                        $anchor->copy()->startOfMonth(),
-                        $anchor->copy()->endOfMonth()
-                    ),
-                    'annual' => $this->resellerCommissionSummary(
-                        $anchor->copy()->startOfYear(),
-                        $anchor->copy()->endOfYear()
-                    ),
-                ],
+                'reseller_payments' => [],
             ]);
         }
     }
@@ -870,6 +830,8 @@ class ReportController extends Controller
             'gross_revenue' => 0.0,
             'revenue' => 0.0,
             'payments_collected' => 0.0,
+            'cash_collected' => 0.0,
+            'online_collected' => 0.0,
             'settled_stay_revenue' => 0.0,
             'refunds' => 0.0,
             'refund_expense' => 0.0,
@@ -1444,14 +1406,21 @@ class ReportController extends Controller
             'time_in' => ['required', 'date'],
             'time_out' => ['required', 'date', 'after:time_in'],
             'staff_name' => ['nullable', 'string', 'max:160'],
+            'summary_only' => ['nullable', 'boolean'],
         ]);
 
         $from = $this->parseReportBound($validated['time_in'], end: false);
         $to = $this->parseReportBound($validated['time_out'], end: true);
         $staffName = trim((string) ($validated['staff_name'] ?? ''));
+        $summaryOnly = filter_var($validated['summary_only'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
         return response()->json(
-            $this->buildShiftReportPayload($from, $to, $staffName !== '' ? $staffName : null)
+            $this->buildShiftReportPayload(
+                $from,
+                $to,
+                $staffName !== '' ? $staffName : null,
+                $summaryOnly,
+            )
         );
     }
 
@@ -1588,8 +1557,12 @@ class ReportController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function buildShiftReportPayload(Carbon $from, Carbon $to, ?string $staffName = null): array
-    {
+    private function buildShiftReportPayload(
+        Carbon $from,
+        Carbon $to,
+        ?string $staffName = null,
+        bool $summaryOnly = false,
+    ): array {
         $hotelId = (string) (request()->user()?->hotel_id ?? TenantContext::id() ?? '');
         if ($hotelId === '') {
             $empty = $this->emptyFinancialSummary($from, $to);
@@ -1610,6 +1583,6 @@ class ReportController extends Controller
         }
 
         return HotelFinancialReportService::forHotel($hotelId)
-            ->buildShiftReportPayload($from, $to, $staffName);
+            ->buildShiftReportPayload($from, $to, $staffName, $summaryOnly);
     }
 }

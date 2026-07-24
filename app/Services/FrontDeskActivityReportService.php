@@ -158,13 +158,49 @@ class FrontDeskActivityReportService
                 ->all();
         }
 
-        $checkIns = $this->activityLogs($hotelId, self::ACTION_CHECK_IN, $from, $to, $userIds)->count();
-        $checkOuts = $this->activityLogs($hotelId, self::ACTION_CHECK_OUT, $from, $to, $userIds)->count();
+        $checkIns = $this->activityLogCount($hotelId, self::ACTION_CHECK_IN, $from, $to, $userIds);
+        $checkOuts = $this->activityLogCount($hotelId, self::ACTION_CHECK_OUT, $from, $to, $userIds);
 
         return [
             'rooms_checked_in' => $checkIns,
             'rooms_checked_out' => $checkOuts,
         ];
+    }
+
+    /**
+     * @param  list<string>|null  $userIds
+     */
+    private function activityLogCount(
+        string $hotelId,
+        string $action,
+        ?Carbon $from,
+        ?Carbon $to,
+        ?array $userIds = null,
+    ): int {
+        $prefix = $action === self::ACTION_CHECK_IN
+            ? self::CHECK_IN_PREFIX
+            : self::CHECK_OUT_PREFIX;
+
+        $query = ActivityLog::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where('action', 'like', $prefix.'%');
+
+        if ($from !== null && $to !== null) {
+            $query->whereBetween('created_at', [$from, $to]);
+        } elseif ($from !== null) {
+            $query->where('created_at', '>=', $from);
+        } elseif ($to !== null) {
+            $query->where('created_at', '<=', $to);
+        }
+
+        if ($userIds !== null) {
+            if ($userIds === []) {
+                return 0;
+            }
+            $query->whereIn('user_id', $userIds);
+        }
+
+        return (int) $query->count();
     }
 
     private function assertAction(string $action): void

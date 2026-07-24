@@ -32,9 +32,13 @@ class HotelFinancialReportService
      *
      * @return array<string, mixed>
      */
-    public function buildShiftReportPayload(Carbon $from, Carbon $to, ?string $staffName = null): array
-    {
-        return $this->withTenant(function () use ($from, $to, $staffName) {
+    public function buildShiftReportPayload(
+        Carbon $from,
+        Carbon $to,
+        ?string $staffName = null,
+        bool $summaryOnly = false,
+    ): array {
+        return $this->withTenant(function () use ($from, $to, $staffName, $summaryOnly) {
             $summary = $this->safeFinancialSummary($from, $to);
             $roomCounts = app(FrontDeskActivityReportService::class)->shiftRoomCounts(
                 $this->hotelId,
@@ -43,6 +47,20 @@ class HotelFinancialReportService
                 $staffName,
             );
             $summary = array_merge($summary, $roomCounts);
+
+            if ($summaryOnly) {
+                return [
+                    'shift' => [
+                        'time_in' => $from->toIso8601String(),
+                        'time_out' => $to->toIso8601String(),
+                        'staff_name' => $staffName ?? '',
+                    ],
+                    'summary' => $summary,
+                    'booking_transactions' => [],
+                    'amenity_transactions' => [],
+                    'transactions' => [],
+                ];
+            }
 
             $bookingRows = $this->paymentCollectionRows($from, $to, isoTimestamps: true);
             $amenityRows = $this->amenityTransactionRows($from, $to, isoTimestamps: true);
@@ -63,6 +81,97 @@ class HotelFinancialReportService
                 'booking_transactions' => $bookingRows,
                 'amenity_transactions' => $amenityRows,
                 'transactions' => $allRows,
+            ];
+        });
+    }
+
+    /**
+     * Fast profit tiles: one year of source rows, sliced into day/week/month/year.
+     *
+     * @return array<string, mixed>
+     */
+    public function buildProfitOverview(Carbon $anchor): array
+    {
+        return $this->withTenant(function () use ($anchor) {
+            $periods = [
+                'daily' => [$anchor->copy()->startOfDay(), $anchor->copy()->endOfDay()],
+                'weekly' => [$anchor->copy()->startOfWeek(), $anchor->copy()->endOfWeek()],
+                'monthly' => [$anchor->copy()->startOfMonth(), $anchor->copy()->endOfMonth()],
+                'annual' => [$anchor->copy()->startOfYear(), $anchor->copy()->endOfYear()],
+            ];
+            /** @var Carbon $yearFrom */
+            $yearFrom = $periods['annual'][0];
+            /** @var Carbon $yearTo */
+            $yearTo = $periods['annual'][1];
+
+            $charges = BillingCharge::query()
+                ->where('created_at', '>=', $yearFrom)
+                ->where('created_at', '<=', $yearTo)
+                ->get(['amount', 'type', 'created_at', 'booking_id', 'metadata']);
+
+            $expenses = HotelExpense::query()
+                ->where('hotel_id', $this->hotelId)
+                ->where('expense_date', '>=', $yearFrom)
+                ->where('expense_date', '<=', $yearTo)
+                ->get(['amount', 'expense_date']);
+
+            $resellerPayments = ResellerCommissionPayment::query()
+                ->whereBetween('created_at', [$yearFrom, $yearTo])
+                ->get(['amount', 'reseller_category', 'reseller_id', 'created_at']);
+
+            $transfers = collect();
+            try {
+                $transfers = RoomTransfer::query()
+                    ->whereBetween('transferred_at', [$yearFrom, $yearTo])
+                    ->get(['price_adjustment', 'transferred_at']);
+            } catch (\Throwable) {
+                $transfers = collect();
+            }
+
+            $paidBookings = $this->paidBookingsInRange($yearFrom, $yearTo);
+            $revenueMap = $this->recognizedRevenueByBooking($paidBookings);
+            $retentionPercent = CancellationRetentionSupport::retentionPercentForHotel($this->hotelId);
+
+            $summaries = [];
+            $resellerSummaries = [];
+            foreach ($periods as $key => [$from, $to]) {
+                $summaries[$key] = $this->financialSummaryFromPreload(
+                    $from,
+                    $to,
+                    $charges,
+                    $expenses,
+                    $resellerPayments,
+                    $transfers,
+                    $paidBookings,
+                    $revenueMap,
+                    $retentionPercent,
+                );
+                $windowPayments = $resellerPayments->filter(function ($p) use ($from, $to) {
+                    $at = SafeModelAttributes::carbonFromModel($p, 'created_at');
+
+                    return $at !== null
+                        && $at->greaterThanOrEqualTo($from)
+                        && $at->lessThanOrEqualTo($to);
+                });
+                $byCategory = $windowPayments->groupBy('reseller_category')
+                    ->map(fn ($g) => round((float) $g->sum(fn ($p) => (float) ($p->amount ?? 0)), 2))
+                    ->all();
+                $resellerSummaries[$key] = [
+                    'from' => $from->toDateString(),
+                    'to' => $to->toDateString(),
+                    'payment_count' => (int) $windowPayments->count(),
+                    'total_paid' => round((float) $windowPayments->sum(fn ($p) => (float) ($p->amount ?? 0)), 2),
+                    'by_category' => $byCategory,
+                ];
+            }
+
+            return [
+                'anchor_date' => $anchor->toDateString(),
+                'daily' => $summaries['daily'],
+                'weekly' => $summaries['weekly'],
+                'monthly' => $summaries['monthly'],
+                'annual' => $summaries['annual'],
+                'reseller_payments' => $resellerSummaries,
             ];
         });
     }
@@ -178,10 +287,19 @@ class HotelFinancialReportService
     public function financialSummary(Carbon $from, Carbon $to): array
     {
         return $this->withTenant(function () use ($from, $to) {
-            $paymentCharges = $this->paymentChargesInRange($from, $to);
+            // One charge scan covers payments + refunds + amenity/room revenue.
+            $charges = BillingCharge::query()
+                ->where('created_at', '>=', $from)
+                ->where('created_at', '<=', $to)
+                ->get(['amount', 'type', 'booking_id', 'metadata']);
+
+            $paymentCharges = $charges->filter(
+                fn ($c) => BillingChargeTypes::isPartialPayment($c->type ?? '')
+            );
             $collections = (float) $paymentCharges->sum(
                 fn ($c) => abs((float) ($c->amount ?? 0))
             );
+            [$cashCollected, $onlineCollected] = $this->splitCashOnline($paymentCharges);
 
             $bookings = $this->paidBookingsInRange($from, $to);
             $revenueMap = $this->recognizedRevenueByBooking($bookings);
@@ -191,10 +309,6 @@ class HotelFinancialReportService
             // (partial or final). Fall back to settled-stay accrual only when
             // legacy paid bookings have no payment charge rows.
             $grossRevenue = $collections > 0.009 ? $collections : $accruedRevenue;
-
-            $charges = BillingCharge::query()
-                ->whereBetween('created_at', [$from, $to])
-                ->get(['amount', 'type']);
 
             $refunds = (float) $charges
                 ->filter(fn ($c) => (string) ($c->type ?? '') === 'refund')
@@ -245,6 +359,8 @@ class HotelFinancialReportService
                 'gross_revenue' => round($grossRevenue, 2),
                 'revenue' => round($grossRevenue, 2),
                 'payments_collected' => round($collections, 2),
+                'cash_collected' => round($cashCollected, 2),
+                'online_collected' => round($onlineCollected, 2),
                 'settled_stay_revenue' => round($accruedRevenue, 2),
                 'refunds' => round($refunds, 2),
                 'refund_expense' => round($refundExpense, 2),
@@ -261,6 +377,139 @@ class HotelFinancialReportService
                 'cancellation_retention_percent' => round($retentionPercent, 2),
             ];
         });
+    }
+
+    /**
+     * @param  Collection<int, mixed>  $charges
+     * @param  Collection<int, mixed>  $expenses
+     * @param  Collection<int, mixed>  $resellerPayments
+     * @param  Collection<int, mixed>  $transfers
+     * @param  Collection<int, Booking>  $paidBookingsYear
+     * @param  array<string, float>  $revenueMapYear
+     * @return array<string, mixed>
+     */
+    private function financialSummaryFromPreload(
+        Carbon $from,
+        Carbon $to,
+        Collection $charges,
+        Collection $expenses,
+        Collection $resellerPayments,
+        Collection $transfers,
+        Collection $paidBookingsYear,
+        array $revenueMapYear,
+        float $retentionPercent,
+    ): array {
+        $inWindow = function ($model, string $field) use ($from, $to): bool {
+            $at = SafeModelAttributes::carbonFromModel($model, $field);
+            if ($at === null) {
+                return false;
+            }
+
+            return $at->greaterThanOrEqualTo($from) && $at->lessThanOrEqualTo($to);
+        };
+
+        $windowCharges = $charges->filter(fn ($c) => $inWindow($c, 'created_at'));
+        $paymentCharges = $windowCharges->filter(
+            fn ($c) => BillingChargeTypes::isPartialPayment($c->type ?? '')
+        );
+        $collections = (float) $paymentCharges->sum(fn ($c) => abs((float) ($c->amount ?? 0)));
+        [$cashCollected, $onlineCollected] = $this->splitCashOnline($paymentCharges);
+
+        $windowBookings = $paidBookingsYear->filter(function ($booking) use ($from, $to) {
+            $paidAt = $this->paymentDateForBooking($booking);
+
+            return $paidAt !== null && $paidAt->greaterThanOrEqualTo($from) && $paidAt->lessThanOrEqualTo($to);
+        });
+        $accruedRevenue = (float) $windowBookings->sum(
+            fn ($b) => (float) ($revenueMapYear[(string) $b->id] ?? 0)
+        );
+        $grossRevenue = $collections > 0.009 ? $collections : $accruedRevenue;
+
+        $refunds = (float) $windowCharges
+            ->filter(fn ($c) => (string) ($c->type ?? '') === 'refund')
+            ->sum(fn ($c) => (float) ($c->amount ?? 0));
+        $amenityRevenue = (float) $windowCharges
+            ->filter(fn ($c) => (string) ($c->type ?? '') === 'amenity')
+            ->sum(fn ($c) => max(0, (float) ($c->amount ?? 0)));
+        $roomRevenue = (float) $windowCharges
+            ->filter(fn ($c) => in_array((string) ($c->type ?? ''), ['room', 'extend-stay', 'early-check-in', 'late-checkout'], true))
+            ->sum(fn ($c) => max(0, (float) ($c->amount ?? 0)));
+
+        $transferAdjustments = (float) $transfers
+            ->filter(fn ($t) => $inWindow($t, 'transferred_at'))
+            ->sum(fn ($t) => (float) ($t->price_adjustment ?? 0));
+
+        $resellerCommissions = (float) $resellerPayments
+            ->filter(fn ($p) => $inWindow($p, 'created_at'))
+            ->sum(fn ($p) => (float) ($p->amount ?? 0));
+
+        $customExpenses = (float) $expenses
+            ->filter(fn ($e) => $inWindow($e, 'expense_date'))
+            ->sum(fn ($e) => (float) ($e->amount ?? 0));
+
+        $netRevenue = $grossRevenue + $refunds + $transferAdjustments;
+        $refundExpense = abs(min(0, $refunds));
+        if ($refunds > 0) {
+            $refundExpense += $refunds;
+            $netRevenue -= $refunds;
+        }
+        $cancelledPaid = (int) $windowBookings
+            ->filter(fn ($b) => strtolower((string) ($b->status?->value ?? $b->status ?? '')) === 'cancelled')
+            ->count();
+        $totalExpenses = $refundExpense + $resellerCommissions + $customExpenses;
+        $profitAfterReseller = $netRevenue - $resellerCommissions - $customExpenses;
+        $paymentBookingCount = (int) $paymentCharges
+            ->map(fn ($c) => (string) ($c->booking_id ?? ''))
+            ->filter(fn ($id) => $id !== '')
+            ->unique()
+            ->count();
+
+        return [
+            'from' => $from->toDateString(),
+            'to' => $to->toDateString(),
+            'bookings' => $paymentBookingCount > 0 ? $paymentBookingCount : (int) $windowBookings->count(),
+            'gross_revenue' => round($grossRevenue, 2),
+            'revenue' => round($grossRevenue, 2),
+            'payments_collected' => round($collections, 2),
+            'cash_collected' => round($cashCollected, 2),
+            'online_collected' => round($onlineCollected, 2),
+            'settled_stay_revenue' => round($accruedRevenue, 2),
+            'refunds' => round($refunds, 2),
+            'refund_expense' => round($refundExpense, 2),
+            'custom_expenses' => round($customExpenses, 2),
+            'amenity_revenue' => round($amenityRevenue, 2),
+            'room_revenue' => round($roomRevenue > 0 ? $roomRevenue : $grossRevenue, 2),
+            'transfer_adjustments' => round($transferAdjustments, 2),
+            'reseller_commissions_paid' => round($resellerCommissions, 2),
+            'expenses' => round($totalExpenses, 2),
+            'net_revenue' => round($netRevenue - $customExpenses, 2),
+            'profit' => round($profitAfterReseller, 2),
+            'profit_before_reseller_payouts' => round($netRevenue - $customExpenses, 2),
+            'cancelled_bookings' => $cancelledPaid,
+            'cancellation_retention_percent' => round($retentionPercent, 2),
+        ];
+    }
+
+    /**
+     * @param  Collection<int, mixed>  $paymentCharges
+     * @return array{0: float, 1: float}
+     */
+    private function splitCashOnline(Collection $paymentCharges): array
+    {
+        $cash = 0.0;
+        $online = 0.0;
+        foreach ($paymentCharges as $charge) {
+            $amount = abs((float) ($charge->amount ?? 0));
+            $meta = is_array($charge->metadata ?? null) ? $charge->metadata : [];
+            $method = strtolower(trim((string) ($meta['payment_method'] ?? '')));
+            if ($method === '' || $method === 'cash') {
+                $cash += $amount;
+            } else {
+                $online += $amount;
+            }
+        }
+
+        return [$cash, $online];
     }
 
     /**
@@ -289,6 +538,8 @@ class HotelFinancialReportService
             'gross_revenue' => 0.0,
             'revenue' => 0.0,
             'payments_collected' => 0.0,
+            'cash_collected' => 0.0,
+            'online_collected' => 0.0,
             'settled_stay_revenue' => 0.0,
             'refunds' => 0.0,
             'refund_expense' => 0.0,
@@ -392,7 +643,16 @@ class HotelFinancialReportService
                     ->get()
                     ->keyBy(fn ($b) => (string) $b->id);
 
-            return $charges->map(function ($charge) use ($bookings, $isoTimestamps) {
+            $roomIds = $charges
+                ->map(fn ($c) => (string) ($c->room_id ?? ''))
+                ->merge($bookings->map(fn ($b) => (string) ($b->room_id ?? '')))
+                ->filter(fn ($id) => $id !== '')
+                ->unique()
+                ->values()
+                ->all();
+            $roomNumbers = $this->roomNumbersByIds($roomIds);
+
+            return $charges->map(function ($charge) use ($bookings, $isoTimestamps, $roomNumbers) {
                 $bookingId = (string) ($charge->booking_id ?? '');
                 $booking = $bookingId !== '' ? $bookings->get($bookingId) : null;
                 $amount = abs((float) ($charge->amount ?? 0));
@@ -420,13 +680,13 @@ class HotelFinancialReportService
                     ? $createdAt?->toIso8601String()
                     : $createdAt?->format('M d, Y g:i A');
 
+                $roomId = (string) ($booking?->room_id ?? $charge->room_id ?? '');
+
                 return [
                     'category' => 'Booking',
                     'reference' => $reference,
                     'guest_name' => (string) ($booking?->guest_name ?? ''),
-                    'room_number' => $booking
-                        ? $this->roomNumberForBooking($booking)
-                        : $this->roomNumberByRoomId((string) ($charge->room_id ?? '')),
+                    'room_number' => $roomNumbers[$roomId] ?? '-',
                     'description' => $description,
                     'payment_method' => $method,
                     'payment_channel' => $channel,
@@ -630,9 +890,27 @@ class HotelFinancialReportService
         if ($roomId === '') {
             return '-';
         }
-        $room = Room::query()->find($roomId);
+        $map = $this->roomNumbersByIds([$roomId]);
 
-        return (string) ($room?->room_number ?? '-');
+        return $map[$roomId] ?? '-';
+    }
+
+    /**
+     * @param  list<string>  $roomIds
+     * @return array<string, string>
+     */
+    private function roomNumbersByIds(array $roomIds): array
+    {
+        $roomIds = array_values(array_unique(array_filter(array_map('strval', $roomIds))));
+        if ($roomIds === []) {
+            return [];
+        }
+
+        return Room::query()
+            ->whereIn('id', $roomIds)
+            ->get(['id', 'room_number'])
+            ->mapWithKeys(fn ($room) => [(string) $room->id => (string) ($room->room_number ?? '-')])
+            ->all();
     }
 
     private function customExpenseTotal(Carbon $from, Carbon $to): float

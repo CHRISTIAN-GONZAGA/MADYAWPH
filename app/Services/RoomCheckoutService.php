@@ -364,9 +364,9 @@ class RoomCheckoutService
         }
 
         if ($requirePaid && $booking) {
-            $bill = app(BookingPaymentService::class)->billSummary($booking);
+            $payments = app(BookingPaymentService::class);
+            $bill = $payments->billSummary($booking);
             $balanceDue = (float) ($bill['balance_due'] ?? $bill['total_due'] ?? 0);
-            $paymentStatus = strtolower((string) ($booking->getAttributes()['payment_status'] ?? 'unpaid'));
 
             if ($balanceDue > 0.009) {
                 throw ValidationException::withMessages([
@@ -376,10 +376,18 @@ class RoomCheckoutService
                 ]);
             }
 
+            // Balance is settled — keep payment_status in sync (full pay before
+            // check-in / final settlement can leave balance 0 while status lagged).
+            $payments->syncBookingTotalFromCharges($booking);
+            $booking->refresh();
+            $paymentStatus = strtolower((string) ($booking->getAttributes()['payment_status'] ?? 'unpaid'));
             if ($paymentStatus !== 'paid') {
-                throw ValidationException::withMessages([
-                    'payment_status' => ['Mark the stay as fully paid before checkout.'],
+                $booking->update([
+                    'payment_status' => 'paid',
+                    'paid_at' => $booking->paid_at ?? now(),
+                    'total_amount' => 0,
                 ]);
+                $booking->refresh();
             }
         }
 
@@ -429,6 +437,10 @@ class RoomCheckoutService
 
         if ($booking) {
             $this->stayTimingFeeService->applyLateCheckoutFeeIfNeeded($booking, $room, now(), $actor);
+            $booking->refresh();
+
+            // Re-sync bill so "paid in full" stays marked paid after fees/charges.
+            app(BookingPaymentService::class)->syncBookingTotalFromCharges($booking);
             $booking->refresh();
 
             $paidAt = SafeModelAttributes::carbonFromModel($booking, 'paid_at');

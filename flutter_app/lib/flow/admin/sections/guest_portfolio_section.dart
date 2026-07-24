@@ -190,16 +190,31 @@ class _GuestCard extends StatelessWidget {
   final Map<String, dynamic> data;
   final bool isHistory;
 
+  String _paymentLabel(Object? raw) {
+    switch (raw.toString().toLowerCase().trim()) {
+      case 'paid':
+        return 'Paid';
+      case 'partial':
+        return 'Partial';
+      case 'unpaid':
+        return 'Unpaid';
+      case '':
+        return '';
+      default:
+        return raw.toString();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final guest = (data['guest_name'] ?? 'Guest').toString();
     final roomNo = (data['room_number'] ?? '').toString();
+    final payment = _paymentLabel(data['payment_status']);
     final summary = [
       if (roomNo.isNotEmpty) 'Room $roomNo',
       if (isHistory && (data['check_out'] ?? '').toString().isNotEmpty)
         'Out: ${data['check_out']}',
-      if (!isHistory && (data['payment_status'] ?? '').toString().isNotEmpty)
-        data['payment_status'],
+      if (payment.isNotEmpty) payment,
     ].join(' · ');
 
     return Card(
@@ -249,8 +264,7 @@ class _GuestCard extends StatelessWidget {
                   _row('Nationality', data['guest_nationality'].toString()),
                 if ((data['free_breakfast'] ?? '').toString().isNotEmpty)
                   _row('Complimentary items', data['free_breakfast'].toString()),
-                if ((data['payment_status'] ?? '').toString().isNotEmpty)
-                  _row('Payment', data['payment_status'].toString()),
+                if (payment.isNotEmpty) _row('Payment', payment),
                 if ((data['booking_reference'] ?? '').toString().isNotEmpty)
                   _row('Reference', data['booking_reference'].toString()),
                 if ((data['guest_id_url'] ?? '').toString().isNotEmpty) ...[
