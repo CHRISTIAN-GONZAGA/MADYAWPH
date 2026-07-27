@@ -23,6 +23,7 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
   int _tab = 0;
   Map<String, dynamic>? _member;
   List<Map<String, dynamic>> _activeBookings = [];
+  List<Map<String, dynamic>> _completedStays = [];
   bool _loading = true;
   String? _error;
 
@@ -52,6 +53,13 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
               .map((e) => Map<String, dynamic>.from(e))
               .toList()
           : <Map<String, dynamic>>[];
+      final rawCompleted = res.data?['completed_stays'];
+      final completed = rawCompleted is List
+          ? rawCompleted
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList()
+          : <Map<String, dynamic>>[];
       if (member != null) {
         await AuthStorage.setMemberProfile(
           shidId: (member['member_shid_id'] ?? '').toString(),
@@ -64,6 +72,7 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
       setState(() {
         _member = member;
         _activeBookings = active;
+        _completedStays = completed;
         _loading = false;
       });
     } on DioException catch (e) {
@@ -120,6 +129,7 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
             error: _error,
             member: _member,
             activeBookings: _activeBookings,
+            completedStays: _completedStays,
             onRetry: _load,
           ),
         ],
@@ -150,6 +160,7 @@ class _MembershipPanel extends StatelessWidget {
     required this.error,
     required this.member,
     required this.activeBookings,
+    required this.completedStays,
     required this.onRetry,
   });
 
@@ -157,6 +168,7 @@ class _MembershipPanel extends StatelessWidget {
   final String? error;
   final Map<String, dynamic>? member;
   final List<Map<String, dynamic>> activeBookings;
+  final List<Map<String, dynamic>> completedStays;
   final Future<void> Function() onRetry;
 
   @override
@@ -220,6 +232,8 @@ class _MembershipPanel extends StatelessWidget {
               _PointsWalletCard(member: m),
               const SizedBox(height: 20),
               _ActiveBookingsSection(bookings: activeBookings),
+              const SizedBox(height: 20),
+              _CompletedStaysSection(stays: completedStays),
               const SizedBox(height: 20),
               if (discount > 0)
                 Container(
@@ -427,6 +441,137 @@ class _ActiveBookingsSection extends StatelessWidget {
         else
           ...bookings.map((b) => _ActiveBookingCard(booking: b)),
       ],
+    );
+  }
+}
+
+class _CompletedStaysSection extends StatelessWidget {
+  const _CompletedStaysSection({required this.stays});
+
+  final List<Map<String, dynamic>> stays;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Completed stays',
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Past stays linked to your membership after hotel checkout.',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+        ),
+        const SizedBox(height: 12),
+        if (stays.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: scheme.outlineVariant),
+            ),
+            child: Text(
+              'No completed stays yet. Walk-in and online stays appear here after checkout when your QR was scanned.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    height: 1.4,
+                  ),
+            ),
+          )
+        else
+          ...stays.map((stay) => _CompletedStayCard(stay: stay)),
+      ],
+    );
+  }
+}
+
+class _CompletedStayCard extends StatelessWidget {
+  const _CompletedStayCard({required this.stay});
+
+  final Map<String, dynamic> stay;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final hotel = (stay['hotel_name'] ?? '').toString();
+    final room = (stay['room_number'] ?? '').toString();
+    final roomName = (stay['room_display_name'] ?? '').toString();
+    final checkIn = (stay['check_in_date'] ?? '').toString();
+    final checkOut = (stay['check_out_date'] ?? '').toString();
+    final payLabel =
+        (stay['payment_method_label'] ?? 'Cash at hotel').toString();
+    final amountPaid = (stay['amount_paid'] as num?)?.toDouble() ?? 0;
+    final total = (stay['total_amount'] as num?)?.toDouble() ?? 0;
+    final ref = (stay['reference'] ?? '').toString();
+    final source = (stay['booking_source'] ?? '').toString();
+    final sourceLabel = source == 'admin-walk-in' ? 'Walk-in' : 'Online';
+
+    final roomLine = room.isNotEmpty
+        ? 'Room $room${roomName.isNotEmpty ? ' · $roomName' : ''}'
+        : (roomName.isNotEmpty ? roomName : 'Room');
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              hotel.isEmpty ? 'Hotel' : hotel,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            Text(roomLine),
+            if (checkIn.isNotEmpty || checkOut.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                checkIn.isNotEmpty && checkOut.isNotEmpty
+                    ? '$checkIn → $checkOut'
+                    : (checkIn.isNotEmpty ? checkIn : checkOut),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
+            const SizedBox(height: 8),
+            Text(
+              'Paid: ₱${amountPaid.toStringAsFixed(2)} via $payLabel'
+              '${total > 0 ? ' · Total ₱${total.toStringAsFixed(2)}' : ''}',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              [
+                sourceLabel,
+                if (ref.isNotEmpty) ref,
+              ].where((s) => s.isNotEmpty).join(' · '),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

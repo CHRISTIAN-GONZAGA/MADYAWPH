@@ -142,6 +142,65 @@ final class MemberActiveBookingsService
         return array_values($items);
     }
 
+    /**
+     * Completed stays linked to a membership (walk-in, online, etc.) after checkout.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function listCompletedForShid(string $shid, int $limit = 50): array
+    {
+        $shid = strtoupper(trim($shid));
+        if ($shid === '') {
+            return [];
+        }
+
+        $bookings = Booking::withoutGlobalScopes()
+            ->where('member_shid_id', $shid)
+            ->where('status', BookingStatus::COMPLETED->value)
+            ->orderByDesc('checked_out_at')
+            ->orderByDesc('check_out_date')
+            ->limit(max(1, min(100, $limit)))
+            ->get();
+
+        $hotelNames = $this->hotelNamesForIds(
+            $bookings->pluck('hotel_id')->map(fn ($id) => (string) $id)->all()
+        );
+        $roomNumbers = $this->roomNumbersForIds(
+            $bookings->pluck('room_id')->map(fn ($id) => (string) $id)->all()
+        );
+
+        $items = [];
+        foreach ($bookings as $booking) {
+            $bill = $this->bookingPayments->billSummary($booking);
+            $method = $this->normalizePaymentMethod(
+                $booking->getRawOriginal('payment_method') ?? $booking->payment_method
+            );
+
+            $items[] = [
+                'kind' => 'completed_stay',
+                'reference' => (string) ($booking->booking_reference ?? ''),
+                'booking_id' => (string) $booking->id,
+                'hotel_id' => (string) ($booking->hotel_id ?? ''),
+                'hotel_name' => $hotelNames[(string) $booking->hotel_id] ?? 'Hotel',
+                'room_id' => (string) ($booking->room_id ?? ''),
+                'room_number' => $roomNumbers[(string) $booking->room_id]['room_number'] ?? '',
+                'room_display_name' => $roomNumbers[(string) $booking->room_id]['display_name'] ?? '',
+                'check_in_date' => $this->formatDate($booking->check_in_date),
+                'check_out_date' => $this->formatDate($booking->check_out_date),
+                'checked_out_at' => optional($booking->checked_out_at)->toISOString(),
+                'status' => $this->asString($booking->status),
+                'booking_source' => (string) ($booking->booking_source ?? ''),
+                'payment_method' => $method,
+                'payment_method_label' => $this->bookingPaymentMethodLabel($booking, $method),
+                'amount_paid' => (float) ($bill['amount_paid'] ?? 0),
+                'total_amount' => (float) ($bill['subtotal'] ?? $booking->total_amount ?? 0),
+                'payment_status' => $this->asString($bill['payment_status'] ?? $booking->payment_status ?? 'unpaid'),
+            ];
+        }
+
+        return $items;
+    }
+
     private function paymentMethodLabel(string $method): string
     {
         $normalized = strtolower(trim($method));

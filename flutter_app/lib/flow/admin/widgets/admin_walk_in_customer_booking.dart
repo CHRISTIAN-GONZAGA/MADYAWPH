@@ -191,7 +191,9 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Text(
-                      '${memberDiscountPercent.toStringAsFixed(0)}% off — $memberShidId',
+                      memberDiscountPercent > 0
+                          ? '${memberDiscountPercent.toStringAsFixed(0)}% off this stay — $memberShidId'
+                          : 'Member linked (no discount this stay) — $memberShidId',
                       style: TextStyle(
                         color: Theme.of(dialogContext).colorScheme.primary,
                         fontWeight: FontWeight.w600,
@@ -240,9 +242,19 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                   Padding(
                     padding: const EdgeInsets.only(top: 4, bottom: 4),
                     child: Text(
-                      'Central admin member discount applied automatically.',
+                      'Member discount applies on this stay (every 5th booking rule).',
                       style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
                             color: Theme.of(dialogContext).colorScheme.primary,
+                          ),
+                    ),
+                  )
+                else if (memberShidId.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4, bottom: 4),
+                    child: Text(
+                      'Membership linked — full price this stay; discount on every 5th booking.',
+                      style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(dialogContext).colorScheme.onSurfaceVariant,
                           ),
                     ),
                   ),

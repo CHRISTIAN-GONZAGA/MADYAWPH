@@ -82,7 +82,7 @@ class MemberActiveBookingsTest extends TestCase
         Booking::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_id' => (string) $room->id,
-            'booking_reference' => 'BK-PAST-1',
+            'booking_reference' => 'BK-COMPLETED-1',
             'guest_name' => 'Active Booker',
             'check_in_date' => Carbon::today()->subDays(5)->toDateString(),
             'check_out_date' => Carbon::today()->subDay()->toDateString(),
@@ -90,8 +90,9 @@ class MemberActiveBookingsTest extends TestCase
             'total_amount' => 4000,
             'payment_method' => 'Cash',
             'payment_status' => 'paid',
-            'status' => BookingStatus::CONFIRMED,
+            'status' => BookingStatus::COMPLETED,
             'member_shid_id' => $shid,
+            'checked_out_at' => Carbon::today()->subDay(),
         ]);
 
         $token = MemberPortalStore::issue([
@@ -118,5 +119,10 @@ class MemberActiveBookingsTest extends TestCase
         $this->assertSame('EXT-ACTIVE-1', $reservation['reference']);
         $this->assertSame('Cash at hotel', $reservation['payment_method_label']);
         $this->assertEqualsWithDelta(4800.0, (float) $reservation['total_amount'], 0.01);
+
+        $completed = collect($response->json('completed_stays'));
+        $this->assertCount(1, $completed);
+        $this->assertSame('BK-COMPLETED-1', $completed->first()['reference']);
+        $this->assertSame('Active Stay Hotel', $completed->first()['hotel_name']);
     }
 }

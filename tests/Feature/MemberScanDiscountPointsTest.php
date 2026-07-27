@@ -57,6 +57,24 @@ class MemberScanDiscountPointsTest extends TestCase
             ->approve($member, User::factory()->create());
         $approved->forceFill(['points_balance' => 50000])->save();
 
+        // Discount applies on every 5th linked booking — seed four prior stays.
+        $priorHotel = Hotel::create(['name' => 'Prior Hotel', 'location' => 'Butuan']);
+        for ($i = 1; $i <= 4; $i++) {
+            Booking::withoutGlobalScopes()->create([
+                'hotel_id' => (string) $priorHotel->id,
+                'booking_reference' => 'BK-PRIOR-'.$i,
+                'room_id' => 'room-prior-'.$i,
+                'guest_name' => 'Scan Member',
+                'check_in_date' => Carbon::today()->subDays(10 - $i)->toDateString(),
+                'check_out_date' => Carbon::today()->subDays(9 - $i)->toDateString(),
+                'nights' => 1,
+                'total_amount' => 1000,
+                'status' => BookingStatus::COMPLETED->value,
+                'member_shid_id' => (string) $approved->member_shid_id,
+                'checked_out_at' => Carbon::today()->subDays(9 - $i),
+            ]);
+        }
+
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_number' => '808',

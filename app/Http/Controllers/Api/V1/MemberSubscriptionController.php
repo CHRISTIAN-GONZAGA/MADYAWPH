@@ -179,6 +179,9 @@ class MemberSubscriptionController extends Controller
             'active_bookings' => $shid !== ''
                 ? $this->activeBookings->listForShid($shid)
                 : [],
+            'completed_stays' => $shid !== ''
+                ? $this->activeBookings->listCompletedForShid($shid)
+                : [],
         ]);
     }
 

@@ -15,16 +15,21 @@ class MemberScanResult {
     required this.pointsBalance,
     required this.pointsBalancePesos,
     required this.pointsPerPeso,
+    this.discountEligible = false,
+    this.discountEveryNth = 5,
     this.paidInFullWithPoints = false,
     this.discountAppliedOnBooking = false,
   });
 
   final String shid;
   final String name;
+  /// Actual discount % for this booking (0 when not an Nth-booking milestone).
   final double discountPercent;
   final int pointsBalance;
   final double pointsBalancePesos;
   final double pointsPerPeso;
+  final bool discountEligible;
+  final int discountEveryNth;
   final bool paidInFullWithPoints;
   final bool discountAppliedOnBooking;
 
@@ -87,7 +92,11 @@ Future<MemberScanResult?> _validatePayload(
     return MemberScanResult(
       shid: (res.data?['member_shid_id'] ?? '').toString(),
       name: (res.data?['full_name'] ?? '').toString(),
-      discountPercent: (res.data?['discount_percent'] as num?)?.toDouble() ?? 0,
+      discountPercent:
+          (res.data?['next_booking_discount_percent'] as num?)?.toDouble() ?? 0,
+      discountEligible: res.data?['next_booking_discount_eligible'] == true,
+      discountEveryNth:
+          (res.data?['discount_every_nth_booking'] as num?)?.toInt() ?? 5,
       pointsBalance: (res.data?['points_balance'] as num?)?.toInt() ?? 0,
       pointsBalancePesos:
           (res.data?['points_balance_pesos'] as num?)?.toDouble() ?? 0,
@@ -143,11 +152,11 @@ Future<MemberScanResult?> showMemberScanActions(
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      working.discountPercent > 0
+                      working.discountEligible && working.discountPercent > 0
                           ? (discountAlreadyApplied
                               ? '${working.discountPercent.toStringAsFixed(0)}% member discount is applied.'
                               : '${working.discountPercent.toStringAsFixed(0)}% member discount will be applied automatically.')
-                          : 'No member discount is configured by central admin right now.',
+                          : 'Member linked — no discount this stay (every ${working.discountEveryNth}th booking qualifies).',
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ),
@@ -194,7 +203,11 @@ Future<MemberScanResult?> showMemberScanActions(
             actions: [
               TextButton(
                 onPressed: busy ? null : () => Navigator.pop(ctx, working),
-                child: const Text('Continue with discount'),
+                child: Text(
+                  working.discountEligible && working.discountPercent > 0
+                      ? 'Continue with discount'
+                      : 'Continue',
+                ),
               ),
               if (canPayFull &&
                   bookingId != null &&
@@ -221,6 +234,8 @@ Future<MemberScanResult?> showMemberScanActions(
                                 shid: working.shid,
                                 name: working.name,
                                 discountPercent: working.discountPercent,
+                                discountEligible: working.discountEligible,
+                                discountEveryNth: working.discountEveryNth,
                                 pointsBalance:
                                     (working.pointsBalance - pointsNeeded)
                                         .clamp(0, working.pointsBalance),
@@ -332,14 +347,15 @@ Future<MemberScanResult?> scanMemberForBooking(
             billMap['total_due'] ??
             due,
       );
-      discountAlreadyApplied = res.data?['discount_applied'] == true ||
-          member.discountPercent > 0;
+      discountAlreadyApplied = res.data?['discount_applied'] == true;
       member = MemberScanResult(
         shid: member.shid,
         name: member.name,
         discountPercent:
             (res.data?['discount_percent'] as num?)?.toDouble() ??
                 member.discountPercent,
+        discountEligible: member.discountEligible,
+        discountEveryNth: member.discountEveryNth,
         pointsBalance: (quoteMap['points_available'] as num?)?.toInt() ??
             member.pointsBalance,
         pointsBalancePesos:
@@ -354,7 +370,7 @@ Future<MemberScanResult?> scanMemberForBooking(
         context,
         discountAlreadyApplied
             ? 'Member linked. ${member.discountPercent.toStringAsFixed(0)}% discount applied.'
-            : 'Member linked to this stay.',
+            : 'Member linked to this stay (no discount on this booking).',
       );
     } on DioException catch (e) {
       if (!context.mounted) return member;
