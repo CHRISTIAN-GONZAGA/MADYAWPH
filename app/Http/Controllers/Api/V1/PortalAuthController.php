@@ -117,6 +117,12 @@ class PortalAuthController extends Controller
             ], 422);
         }
 
+        if (\App\Support\HotelRegistrationStatus::isRejected($hotel)) {
+            return response()->json([
+                'message' => 'This hotel registration was rejected. Contact MADYAWPH support.',
+            ], 422);
+        }
+
         $gateHash = $hotel->access_password;
         if (! is_string($gateHash) || trim($gateHash) === ''
             || ! Hash::check((string) $validated['password'], $gateHash)) {
@@ -129,6 +135,8 @@ class PortalAuthController extends Controller
             'ok' => true,
             'hotel_id' => (string) $hotel->id,
             'hotel_name' => (string) $hotel->name,
+            'registration_status' => \App\Support\HotelRegistrationStatus::of($hotel),
+            'registration_pending' => \App\Support\HotelRegistrationStatus::isPending($hotel),
         ]);
     }
 
@@ -345,6 +353,13 @@ class PortalAuthController extends Controller
         $activeHotelId = $this->normalizeHotelId($validated['hotel_id']);
         if ($activeHotelId === '') {
             return response()->json(['message' => 'Sign in to your property first.'], 422);
+        }
+
+        $hotelGate = Hotel::withoutGlobalScopes()->find($activeHotelId);
+        if ($hotelGate && \App\Support\HotelRegistrationStatus::isRejected($hotelGate)) {
+            return response()->json([
+                'message' => 'This hotel registration was rejected. Contact MADYAWPH support.',
+            ], 422);
         }
 
         $user = $this->findPortalUserForHotel($activeHotelId, $identifierField, $identifier);
@@ -670,6 +685,7 @@ class PortalAuthController extends Controller
             'total_rooms' => $totalRooms,
             'subscription_trial_ends_at' => now()->addMonth(),
             'subscription_status' => \App\Services\HotelSubscriptionService::STATUS_TRIAL,
+            'registration_status' => \App\Support\HotelRegistrationStatus::PENDING,
         ]);
 
         HotelCredit::withoutGlobalScopes()->create([
@@ -750,8 +766,9 @@ class PortalAuthController extends Controller
                 'rooms_per_tier' => app(\App\Services\PlatformSettingsService::class)->registrationCreditBandMaxRooms(),
             ],
             'message' => $emailVerified
-                ? 'Hotel registered. Your email has been verified.'
-                : 'Hotel registered successfully.',
+                ? 'Hotel registered. Your email is verified. Central admin must approve before guests can find this hotel.'
+                : 'Hotel registered. Central admin must approve before guests can find this hotel.',
+            'registration_status' => \App\Support\HotelRegistrationStatus::PENDING,
             'registration_password' => $ownerPassword,
             'passwords_verified' => $passwordsVerified,
             'portal_accounts' => [

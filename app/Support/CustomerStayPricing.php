@@ -17,9 +17,10 @@ final class CustomerStayPricing
     public const DEFAULT_HOURLY_CHECK_OUT_HOUR = 11;
 
     /**
-     * Clock-based stay window for hourly rooms: check-in uses wall-clock time on the
-     * selected calendar day; check-out = check-in + block_hours.
-     * Nightly rooms keep overnight date semantics (checkout date at 11:00).
+     * Clock-based stay window: check-in uses wall-clock time on the selected day.
+     * Same-day hourly stays: check-out = check-in + block_hours.
+     * Multi-day hourly and nightly stays: check-out = selected checkout day at 11:00
+     * so long stays (e.g. 5 nights) keep the guest-selected range.
      *
      * @return array{
      *   check_in: Carbon,
@@ -47,7 +48,7 @@ final class CustomerStayPricing
         }
 
         if (RoomBillingSupport::isHourly($room)) {
-            return self::resolveHourlyWindow($room, $inDay, $clock);
+            return self::resolveHourlyWindow($room, $inDay, $outDay, $clock);
         }
 
         $checkIn = $inDay->copy()->setTime(
@@ -88,16 +89,25 @@ final class CustomerStayPricing
         ?CarbonInterface $nightlyCheckOutDate = null,
     ): array {
         $clock = $now !== null ? Carbon::parse($now) : now();
+        $inDay = $clock->copy()->startOfDay();
 
         if (RoomBillingSupport::isHourly($room)) {
-            return self::resolveHourlyWindow($room, $clock->copy()->startOfDay(), $clock);
+            // Preserve multi-day checkout when checking in a pre-booked long stay.
+            if ($nightlyCheckOutDate !== null) {
+                $outDay = Carbon::parse($nightlyCheckOutDate)->startOfDay();
+                if ($outDay->greaterThan($inDay)) {
+                    return self::resolveHourlyWindow($room, $inDay, $outDay, $clock);
+                }
+            }
+
+            return self::resolveHourlyWindow($room, $inDay, $inDay, $clock);
         }
 
         $outDay = $nightlyCheckOutDate !== null
             ? Carbon::parse($nightlyCheckOutDate)->startOfDay()
-            : $clock->copy()->startOfDay()->addDay();
-        if ($outDay->lessThanOrEqualTo($clock->copy()->startOfDay())) {
-            $outDay = $clock->copy()->startOfDay()->addDay();
+            : $inDay->copy()->addDay();
+        if ($outDay->lessThanOrEqualTo($inDay)) {
+            $outDay = $inDay->copy()->addDay();
         }
 
         $checkOut = $outDay->copy()->setTime(self::DEFAULT_HOURLY_CHECK_OUT_HOUR, 0);
@@ -122,15 +132,27 @@ final class CustomerStayPricing
      *   check_out_time: string
      * }
      */
-    private static function resolveHourlyWindow(Room $room, Carbon $inDay, Carbon $clock): array
-    {
+    private static function resolveHourlyWindow(
+        Room $room,
+        Carbon $inDay,
+        Carbon $outDay,
+        Carbon $clock,
+    ): array {
         $blockHours = max(1, RoomBillingSupport::hourlyConfig($room)['block_hours']);
         $checkIn = $inDay->copy()->setTime(
             (int) $clock->format('H'),
             (int) $clock->format('i'),
             (int) $clock->format('s'),
         );
-        $checkOut = $checkIn->copy()->addHours($blockHours);
+
+        if ($outDay->greaterThan($inDay)) {
+            $checkOut = $outDay->copy()->setTime(self::DEFAULT_HOURLY_CHECK_OUT_HOUR, 0);
+            if (! $checkOut->greaterThan($checkIn)) {
+                $checkOut = $checkIn->copy()->addHours($blockHours);
+            }
+        } else {
+            $checkOut = $checkIn->copy()->addHours($blockHours);
+        }
 
         return [
             'check_in' => $checkIn,

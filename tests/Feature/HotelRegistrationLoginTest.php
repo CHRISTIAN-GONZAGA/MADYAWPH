@@ -40,9 +40,11 @@ class HotelRegistrationLoginTest extends TestCase
         $response->assertJsonPath('registration_password', 'OwnerSecret9');
         $response->assertJsonPath('passwords_verified', true);
         $response->assertJsonPath('email_verified', false);
+        $response->assertJsonPath('registration_status', 'pending');
 
         $hotel = Hotel::withoutGlobalScopes()->find($hotelId);
         $this->assertSame('owner@palmresort.test', (string) ($hotel?->owner_email ?? ''));
+        $this->assertSame('pending', (string) ($hotel?->registration_status ?? ''));
 
         $credit = HotelCredit::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)

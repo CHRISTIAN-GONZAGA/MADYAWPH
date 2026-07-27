@@ -587,10 +587,13 @@ class HotelAvailabilityService
                 'barangay',
                 'picker_banner_url',
                 'latitude',
-                'longitude'
+                'longitude',
+                'registration_status'
             )
             ->orderBy('name')
-            ->get();
+            ->get()
+            ->filter(fn (Hotel $hotel) => \App\Support\HotelRegistrationStatus::isPubliclyListed($hotel))
+            ->values();
 
         $stats = HotelDirectory::priceStatsForHotels(
             $hotels->map(fn ($h) => (string) $h->id)->all()

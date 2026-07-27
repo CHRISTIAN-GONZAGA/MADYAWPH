@@ -379,6 +379,12 @@ class PlatformAdminController extends Controller
                         'city' => (string) ($h->city ?? ''),
                         'location' => (string) ($h->location ?? ''),
                         'access_username' => (string) ($h->access_username ?? ''),
+                        'owner_email' => (string) ($h->owner_email ?? ''),
+                        'contact_number' => (string) ($h->contact_number ?? ''),
+                        'total_rooms' => (int) ($h->total_rooms ?? 0),
+                        'registration_status' => \App\Support\HotelRegistrationStatus::of($h),
+                        'registration_reviewed_at' => optional($h->registration_reviewed_at)->toISOString(),
+                        'created_at' => optional($h->created_at)->toISOString(),
                         'current_credits' => $balance,
                         'is_depleted' => $balance <= 0,
                         'is_low_balance' => $balance > 0 && $balance < (float) config('services.hotel_credits.low_balance_threshold', 3000),
@@ -387,6 +393,125 @@ class PlatformAdminController extends Controller
 
             return response()->json(['data' => $hotels]);
         });
+    }
+
+    public function pendingHotelRegistrations(): JsonResponse
+    {
+        return $this->safePlatformResponse('pending hotel registrations', function () {
+            $rows = Hotel::withoutGlobalScopes()
+                ->orderByDesc('created_at')
+                ->limit(200)
+                ->get()
+                ->filter(fn (Hotel $h) => \App\Support\HotelRegistrationStatus::isPending($h))
+                ->values()
+                ->map(fn (Hotel $h) => $this->serializeHotelRegistration($h));
+
+            return response()->json(['data' => $rows]);
+        });
+    }
+
+    public function approveHotelRegistration(Request $request, string $hotelId): JsonResponse
+    {
+        $hotel = Hotel::withoutGlobalScopes()->findOrFail($hotelId);
+        if (\App\Support\HotelRegistrationStatus::isRejected($hotel)) {
+            return response()->json([
+                'message' => 'Rejected hotels cannot be approved. Create a new registration.',
+            ], 422);
+        }
+
+        $hotel->forceFill([
+            'registration_status' => \App\Support\HotelRegistrationStatus::APPROVED,
+            'registration_reviewed_at' => now(),
+            'registration_reviewed_by' => (string) $request->user()->id,
+            'registration_reject_notes' => null,
+        ])->save();
+
+        Cache::forget(PortalAuthController::HOTELS_DIRECTORY_CACHE_KEY);
+
+        $this->activityLog->log(
+            'platform',
+            $request->user(),
+            'Platform approved hotel registration',
+            ['hotel_id' => $hotelId, 'hotel_name' => (string) $hotel->name]
+        );
+
+        return response()->json([
+            'ok' => true,
+            'hotel' => $this->serializeHotelRegistration($hotel->fresh() ?? $hotel),
+        ]);
+    }
+
+    public function rejectHotelRegistration(Request $request, string $hotelId): JsonResponse
+    {
+        $validated = $request->validate([
+            'notes' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $hotel = Hotel::withoutGlobalScopes()->findOrFail($hotelId);
+        $hotel->forceFill([
+            'registration_status' => \App\Support\HotelRegistrationStatus::REJECTED,
+            'registration_reviewed_at' => now(),
+            'registration_reviewed_by' => (string) $request->user()->id,
+            'registration_reject_notes' => $validated['notes'] ?? null,
+        ])->save();
+
+        try {
+            $userIds = User::withoutGlobalScopes()
+                ->where('hotel_id', (string) $hotel->id)
+                ->pluck('id')
+                ->map(fn ($id) => (string) $id)
+                ->all();
+            if ($userIds !== []) {
+                \Laravel\Sanctum\PersonalAccessToken::query()
+                    ->whereIn('tokenable_id', $userIds)
+                    ->delete();
+            }
+        } catch (Throwable $e) {
+            Log::warning('Could not revoke tokens for rejected hotel', [
+                'hotel_id' => $hotelId,
+                'message' => $e->getMessage(),
+            ]);
+        }
+
+        Cache::forget(PortalAuthController::HOTELS_DIRECTORY_CACHE_KEY);
+
+        $this->activityLog->log(
+            'platform',
+            $request->user(),
+            'Platform rejected hotel registration',
+            [
+                'hotel_id' => $hotelId,
+                'hotel_name' => (string) $hotel->name,
+                'notes' => $validated['notes'] ?? null,
+            ]
+        );
+
+        return response()->json([
+            'ok' => true,
+            'hotel' => $this->serializeHotelRegistration($hotel->fresh() ?? $hotel),
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeHotelRegistration(Hotel $h): array
+    {
+        return [
+            'id' => (string) $h->id,
+            'name' => (string) $h->name,
+            'city' => (string) ($h->city ?? ''),
+            'location' => (string) ($h->location ?? ''),
+            'owner_email' => (string) ($h->owner_email ?? ''),
+            'contact_number' => (string) ($h->contact_number ?? ''),
+            'access_username' => (string) ($h->access_username ?? ''),
+            'total_rooms' => (int) ($h->total_rooms ?? 0),
+            'status' => \App\Support\HotelRegistrationStatus::of($h),
+            'registration_status' => \App\Support\HotelRegistrationStatus::of($h),
+            'registration_reviewed_at' => optional($h->registration_reviewed_at)->toISOString(),
+            'registration_reject_notes' => (string) ($h->registration_reject_notes ?? ''),
+            'created_at' => optional($h->created_at)->toISOString(),
+        ];
     }
 
     public function hotelCredits(string $hotelId): JsonResponse

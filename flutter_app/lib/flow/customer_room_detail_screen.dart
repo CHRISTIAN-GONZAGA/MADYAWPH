@@ -291,18 +291,19 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
       showAppMessage(context, 'Select check-in.');
       return;
     }
-    if (HourlyBilling.isHourly(widget.room)) {
-      final inDay = _checkInDate ?? DateTime.tryParse(_checkInCtrl.text.trim());
-      if (inDay != null) {
-        final day = DateTime(inDay.year, inDay.month, inDay.day);
-        _checkInDate = day;
-        _checkOutDate = day;
-        _checkOutCtrl.text = day.toIso8601String().split('T').first;
-      }
-    }
     if (_checkOutCtrl.text.trim().isEmpty) {
       showAppMessage(context, 'Select check-in and check-out.');
       return;
+    }
+    final inParsed = _checkInDate ?? DateTime.tryParse(_checkInCtrl.text.trim());
+    final outParsed = _checkOutDate ?? DateTime.tryParse(_checkOutCtrl.text.trim());
+    if (inParsed != null && outParsed != null) {
+      final inDay = DateTime(inParsed.year, inParsed.month, inParsed.day);
+      final outDay = DateTime(outParsed.year, outParsed.month, outParsed.day);
+      if (outDay.isBefore(inDay)) {
+        showAppMessage(context, 'Check-out must be on or after check-in.');
+        return;
+      }
     }
 
     final payload = <String, dynamic>{

@@ -67,8 +67,11 @@ class HourlyBilling {
     );
   }
 
-  /// Clock-based stay window: check-in = selected date + current wall-clock time;
-  /// hourly checkout = check-in + [blockHours]; nightly uses overnight checkout date at 11:00.
+  /// Clock-based stay window: check-in = selected date + current wall-clock time.
+  ///
+  /// Hourly same-day (or no checkout day): check-in + [blockHours].
+  /// Hourly multi-day / nightly: checkout calendar day at 11:00 so long stays
+  /// (e.g. 5 nights) keep the selected checkout instead of collapsing to 1 block.
   static ({DateTime checkIn, DateTime checkOut}) clockBasedStayWindow(
     Map<String, dynamic> room,
     DateTime checkInDate, {
@@ -76,28 +79,27 @@ class HourlyBilling {
     DateTime? now,
   }) {
     final clock = now ?? DateTime.now();
+    final inDay = DateTime(checkInDate.year, checkInDate.month, checkInDate.day);
     final checkIn = DateTime(
-      checkInDate.year,
-      checkInDate.month,
-      checkInDate.day,
+      inDay.year,
+      inDay.month,
+      inDay.day,
       clock.hour,
       clock.minute,
       clock.second,
     );
 
-    if (isHourly(room)) {
+    final outDayRaw = checkOutDate ?? inDay.add(const Duration(days: 1));
+    final outDay = DateTime(outDayRaw.year, outDayRaw.month, outDayRaw.day);
+    final multiDay = outDay.isAfter(inDay);
+
+    if (isHourly(room) && !multiDay) {
       final hours = blockHours(room);
       final safeHours = hours < 1 ? 1 : hours;
       return (checkIn: checkIn, checkOut: checkIn.add(Duration(hours: safeHours)));
     }
 
-    final outDay = checkOutDate ?? checkInDate.add(const Duration(days: 1));
-    final sameOrBefore = !outDay.isAfter(
-      DateTime(checkInDate.year, checkInDate.month, checkInDate.day),
-    );
-    final resolvedOut = sameOrBefore
-        ? checkInDate.add(const Duration(days: 1))
-        : outDay;
+    final resolvedOut = multiDay ? outDay : inDay.add(const Duration(days: 1));
     return (
       checkIn: checkIn,
       checkOut: DateTime(

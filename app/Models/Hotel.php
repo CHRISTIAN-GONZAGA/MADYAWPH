@@ -31,6 +31,10 @@ class Hotel extends Model
         'subscription_trial_ends_at',
         'subscription_paid_until',
         'subscription_status',
+        'registration_status',
+        'registration_reviewed_at',
+        'registration_reviewed_by',
+        'registration_reject_notes',
     ];
 
     protected function casts(): array
@@ -39,6 +43,7 @@ class Hotel extends Model
             'total_rooms' => 'integer',
             'subscription_trial_ends_at' => 'datetime',
             'subscription_paid_until' => 'datetime',
+            'registration_reviewed_at' => 'datetime',
         ];
     }
 

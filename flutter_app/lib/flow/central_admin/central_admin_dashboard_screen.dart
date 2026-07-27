@@ -55,6 +55,7 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
   List<dynamic> _creditRequests = const [];
   List<dynamic> _memberRequests = const [];
   List<dynamic> _subscriptionRequests = const [];
+  List<dynamic> _hotelRegistrations = const [];
   List<dynamic> _hotels = const [];
   bool _loading = true;
   String? _error;
@@ -72,6 +73,14 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
   int get _pendingSubscriptions => _subscriptionRequests
       .whereType<Map<String, dynamic>>()
       .where((e) => (e['status'] ?? '') == 'pending')
+      .length;
+
+  int get _pendingHotelRegistrations => _hotelRegistrations
+      .whereType<Map<String, dynamic>>()
+      .where((e) {
+        final s = (e['status'] ?? e['registration_status'] ?? '').toString();
+        return s == 'pending';
+      })
       .length;
 
   int get _depletedHotels => _hotels
@@ -142,6 +151,13 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
         if (!mounted) return;
         setState(() {
           _subscriptionRequests = (res.data?['data'] as List?) ?? const [];
+        });
+      }),
+      guard('Hotel registrations', () async {
+        final res = await portalDio().get<Map<String, dynamic>>('/platform/hotel-registrations');
+        if (!mounted) return;
+        setState(() {
+          _hotelRegistrations = (res.data?['data'] as List?) ?? const [];
         });
       }),
       guard('Hotels', () async {
@@ -396,6 +412,31 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
     }
   }
 
+  Future<void> _approveHotelRegistration(String id) async {
+    HapticFeedback.lightImpact();
+    try {
+      await portalDio().post('/platform/hotel-registrations/$id/approve');
+      if (!mounted) return;
+      showAppMessage(context, 'Hotel registration approved.');
+      await _loadAll();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
+  Future<void> _rejectHotelRegistration(String id) async {
+    try {
+      await portalDio().post('/platform/hotel-registrations/$id/reject');
+      if (!mounted) return;
+      showAppMessage(context, 'Hotel registration rejected.');
+      await _loadAll();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
   Future<void> _approveCredit(String id) async {
     HapticFeedback.lightImpact();
     try {
@@ -540,8 +581,10 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
 
   @override
   Widget build(BuildContext context) {
-    final pendingTotal =
-        _pendingCredits + _pendingMembers + _pendingSubscriptions;
+    final pendingTotal = _pendingCredits +
+        _pendingMembers +
+        _pendingSubscriptions +
+        _pendingHotelRegistrations;
 
     return AppScaffold(
       extendBody: false,
@@ -661,12 +704,15 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
                       creditRequests: _creditRequests,
                       memberRequests: _memberRequests,
                       subscriptionRequests: _subscriptionRequests,
+                      hotelRegistrations: _hotelRegistrations,
                       onApproveCredit: _approveCredit,
                       onRejectCredit: _rejectCredit,
                       onApproveMember: _approveMember,
                       onRejectMember: _rejectMember,
                       onApproveSubscription: _approveSubscription,
                       onRejectSubscription: _rejectSubscription,
+                      onApproveHotelRegistration: _approveHotelRegistration,
+                      onRejectHotelRegistration: _rejectHotelRegistration,
                     ),
                     _QrSettingsSection(
                       settings: _settings ?? const {},
@@ -1454,12 +1500,15 @@ class _ApprovalsSection extends StatelessWidget {
     required this.creditRequests,
     required this.memberRequests,
     required this.subscriptionRequests,
+    required this.hotelRegistrations,
     required this.onApproveCredit,
     required this.onRejectCredit,
     required this.onApproveMember,
     required this.onRejectMember,
     required this.onApproveSubscription,
     required this.onRejectSubscription,
+    required this.onApproveHotelRegistration,
+    required this.onRejectHotelRegistration,
   });
 
   final int tab;
@@ -1467,42 +1516,53 @@ class _ApprovalsSection extends StatelessWidget {
   final List<dynamic> creditRequests;
   final List<dynamic> memberRequests;
   final List<dynamic> subscriptionRequests;
+  final List<dynamic> hotelRegistrations;
   final void Function(String id) onApproveCredit;
   final void Function(String id) onRejectCredit;
   final void Function(String id) onApproveMember;
   final void Function(String id) onRejectMember;
   final void Function(String id) onApproveSubscription;
   final void Function(String id) onRejectSubscription;
+  final void Function(String id) onApproveHotelRegistration;
+  final void Function(String id) onRejectHotelRegistration;
 
   @override
   Widget build(BuildContext context) {
     final list = switch (tab) {
       1 => memberRequests,
       2 => subscriptionRequests,
+      3 => hotelRegistrations,
       _ => creditRequests,
     };
     final pending = list
         .whereType<Map<String, dynamic>>()
-        .where((e) => (e['status'] ?? '') == 'pending')
+        .where((e) {
+          final s = (e['status'] ?? e['registration_status'] ?? '').toString();
+          return s == 'pending';
+        })
         .toList();
 
     return Column(
       children: [
-        _PlatformSectionHeader(
+        const _PlatformSectionHeader(
           icon: Icons.pending_actions_outlined,
           title: 'Approvals',
-          subtitle: 'Credits, members, and hotel subscriptions',
+          subtitle: 'Credits, members, subscriptions, and new hotels',
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: SegmentedButton<int>(
-            segments: const [
-              ButtonSegment(value: 0, label: Text('Credits')),
-              ButtonSegment(value: 1, label: Text('Members')),
-              ButtonSegment(value: 2, label: Text('Hotels')),
-            ],
-            selected: {tab},
-            onSelectionChanged: (s) => onTabChanged(s.first),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SegmentedButton<int>(
+              segments: const [
+                ButtonSegment(value: 0, label: Text('Credits')),
+                ButtonSegment(value: 1, label: Text('Members')),
+                ButtonSegment(value: 2, label: Text('Subs')),
+                ButtonSegment(value: 3, label: Text('New hotels')),
+              ],
+              selected: {tab},
+              onSelectionChanged: (s) => onTabChanged(s.first),
+            ),
           ),
         ),
         Expanded(
@@ -1512,6 +1572,7 @@ class _ApprovalsSection extends StatelessWidget {
                     switch (tab) {
                       1 => 'No pending member requests.',
                       2 => 'No pending hotel subscription payments.',
+                      3 => 'No pending hotel registrations.',
                       _ => 'No pending credit top-ups.',
                     },
                   ),
@@ -1545,12 +1606,23 @@ class _ApprovalsSection extends StatelessWidget {
                             onRejectMember((item['id'] ?? '').toString()),
                       );
                     }
-                    return _SubscriptionCard(
+                    if (tab == 2) {
+                      return _SubscriptionCard(
+                        item: item,
+                        onApprove: () => onApproveSubscription(
+                          (item['id'] ?? '').toString(),
+                        ),
+                        onReject: () => onRejectSubscription(
+                          (item['id'] ?? '').toString(),
+                        ),
+                      );
+                    }
+                    return _HotelRegistrationCard(
                       item: item,
-                      onApprove: () => onApproveSubscription(
+                      onApprove: () => onApproveHotelRegistration(
                         (item['id'] ?? '').toString(),
                       ),
-                      onReject: () => onRejectSubscription(
+                      onReject: () => onRejectHotelRegistration(
                         (item['id'] ?? '').toString(),
                       ),
                     );
@@ -1601,6 +1673,86 @@ class _SubscriptionCard extends StatelessWidget {
                 FilledButton(onPressed: onApprove, child: const Text('Approve')),
                 const SizedBox(width: 8),
                 OutlinedButton(onPressed: onReject, child: const Text('Reject')),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HotelRegistrationCard extends StatelessWidget {
+  const _HotelRegistrationCard({
+    required this.item,
+    required this.onApprove,
+    required this.onReject,
+  });
+
+  final Map<String, dynamic> item;
+  final VoidCallback onApprove;
+  final VoidCallback onReject;
+
+  @override
+  Widget build(BuildContext context) {
+    final rooms = ((item['total_rooms'] as num?)?.toInt() ?? 0);
+    final location = (item['location'] ?? item['city'] ?? '').toString();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: _kPlatformNavy.withValues(alpha: 0.12),
+                  child: const Icon(Icons.apartment_outlined, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        (item['name'] ?? 'Hotel').toString(),
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      Text(
+                        rooms > 0
+                            ? '$rooms room${rooms == 1 ? '' : 's'}'
+                            : 'New hotel registration',
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (location.isNotEmpty) Text(location),
+            Text((item['owner_email'] ?? '').toString()),
+            Text((item['contact_number'] ?? '').toString()),
+            Text(
+              'Username: ${(item['access_username'] ?? '—')}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: onReject,
+                    child: const Text('Reject'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: onApprove,
+                    child: const Text('Approve'),
+                  ),
+                ),
               ],
             ),
           ],

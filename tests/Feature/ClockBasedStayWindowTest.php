@@ -376,7 +376,7 @@ class ClockBasedStayWindowTest extends TestCase
         $this->assertFalse($overlap);
     }
 
-    public function test_customer_stay_pricing_hourly_ignores_checkout_date(): void
+    public function test_customer_stay_pricing_hourly_respects_multi_day_checkout(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-17 16:45:00'));
         $room = new Room([
@@ -385,14 +385,24 @@ class ClockBasedStayWindowTest extends TestCase
             'price_per_block' => 1000,
         ]);
 
-        $window = CustomerStayPricing::resolveStayWindow(
+        $sameDay = CustomerStayPricing::resolveStayWindow(
             $room,
             Carbon::parse('2026-07-17'),
-            Carbon::parse('2026-07-18'),
+            Carbon::parse('2026-07-17'),
         );
+        $this->assertSame('16:45', $sameDay['check_in_time']);
+        $this->assertSame('19:45', $sameDay['check_out_time']);
+        $this->assertSame('2026-07-17', $sameDay['check_out_date']);
 
-        $this->assertSame('16:45', $window['check_in_time']);
-        $this->assertSame('19:45', $window['check_out_time']);
+        $fiveNights = CustomerStayPricing::resolveStayWindow(
+            $room,
+            Carbon::parse('2026-07-17'),
+            Carbon::parse('2026-07-22'),
+        );
+        $this->assertSame('16:45', $fiveNights['check_in_time']);
+        $this->assertSame('2026-07-17', $fiveNights['check_in_date']);
+        $this->assertSame('2026-07-22', $fiveNights['check_out_date']);
+        $this->assertSame('11:00', $fiveNights['check_out_time']);
     }
 
     /**

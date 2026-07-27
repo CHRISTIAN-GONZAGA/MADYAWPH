@@ -117,10 +117,13 @@ final class HotelDirectory
                 'street_address',
                 'latitude',
                 'longitude',
-                'picker_banner_url'
+                'picker_banner_url',
+                'registration_status'
             )
             ->orderBy('name')
-            ->get();
+            ->get()
+            ->filter(fn (Hotel $hotel) => \App\Support\HotelRegistrationStatus::isPubliclyListed($hotel))
+            ->values();
 
         $priceStats = self::priceStatsForHotels(
             $hotels->pluck('id')->map(fn ($id) => (string) $id)->all()

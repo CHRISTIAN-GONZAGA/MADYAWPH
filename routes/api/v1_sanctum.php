@@ -453,20 +453,17 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
                 ? Carbon::parse($validated['check_out_at'])
                 : null;
 
-            // Hourly rooms: always use wall-clock now + block_hours (ignore stale schedule).
-            if (RoomBillingSupport::isHourly($room)) {
-                $window = CustomerStayPricing::resolveClockCheckInWindow($room);
-                $checkIn = $window['check_in'];
-                $checkOut = $window['check_out'];
-            } elseif ($checkIn === null) {
-                $nightlyOut = $checkOut
-                    ?? ($activeBooking?->check_out_date
-                        ? Carbon::parse($activeBooking->check_out_date)
-                        : null);
+            // Prefer the booked multi-day checkout (long stays) over a fresh 1-block window.
+            $scheduledOut = $checkOut
+                ?? ($activeBooking?->check_out_date
+                    ? Carbon::parse($activeBooking->check_out_date)
+                    : null);
+
+            if ($checkIn === null || RoomBillingSupport::isHourly($room)) {
                 $window = CustomerStayPricing::resolveClockCheckInWindow(
                     $room,
                     null,
-                    $nightlyOut,
+                    $scheduledOut,
                 );
                 $checkIn = $window['check_in'];
                 $checkOut = $window['check_out'];
@@ -3285,6 +3282,9 @@ Route::middleware('role:central_admin')->prefix('platform')->group(function () {
     Route::get('/hotels/{hotelId}/credits', [$platform, 'hotelCredits']);
     Route::post('/hotels/{hotelId}/credits/grant', [$platform, 'grantHotelCredits']);
     Route::delete('/hotels/{hotelId}', [$platform, 'deleteHotel']);
+    Route::get('/hotel-registrations', [$platform, 'pendingHotelRegistrations']);
+    Route::post('/hotel-registrations/{hotelId}/approve', [$platform, 'approveHotelRegistration']);
+    Route::post('/hotel-registrations/{hotelId}/reject', [$platform, 'rejectHotelRegistration']);
     Route::get('/credit-requests', [$platform, 'creditRequests']);
     Route::post('/credit-requests/{id}/approve', [$platform, 'approveCreditRequest']);
     Route::post('/credit-requests/{id}/reject', [$platform, 'rejectCreditRequest']);
