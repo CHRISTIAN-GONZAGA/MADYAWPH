@@ -42,7 +42,7 @@ class GuestPortalApiController extends Controller
     public function resolvePortalQr(Request $request, GuestPortalQrService $guestPortalQrService, AppEmailService $appEmailService): JsonResponse
     {
         $validated = $request->validate([
-            'payload' => ['required', 'string', 'max:512'],
+            'payload' => ['required', 'string', 'max:1024'],
         ]);
 
         $resolved = $guestPortalQrService->resolve((string) $validated['payload']);

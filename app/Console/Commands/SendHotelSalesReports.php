@@ -14,18 +14,18 @@ use Illuminate\Support\Facades\Log;
 class SendHotelSalesReports extends Command
 {
     protected $signature = 'hotel:send-sales-reports
-                            {--period=daily : daily or monthly}
+                            {--period=daily : daily, weekly, or monthly}
                             {--hotel= : Optional hotel id to limit the run}
                             {--date= : Anchor date (Y-m-d) for testing; defaults to today}
                             {--force : Send even if this period was already emailed}';
 
-    protected $description = 'Email daily or monthly sales reports to each hotel owner Gmail.';
+    protected $description = 'Email daily, weekly, or monthly sales reports to each hotel owner Gmail.';
 
     public function handle(AppEmailService $appEmailService): int
     {
         $period = strtolower(trim((string) $this->option('period')));
-        if (! in_array($period, ['daily', 'monthly'], true)) {
-            $this->error('Invalid --period. Use daily or monthly.');
+        if (! in_array($period, ['daily', 'weekly', 'monthly'], true)) {
+            $this->error('Invalid --period. Use daily, weekly, or monthly.');
 
             return self::FAILURE;
         }
@@ -83,7 +83,12 @@ class SendHotelSalesReports extends Command
                 );
 
                 if ($result->sent) {
-                    Cache::put($cacheKey, true, $period === 'daily' ? now()->addDays(3) : now()->addDays(40));
+                    $ttl = match ($period) {
+                        'daily' => now()->addDays(3),
+                        'weekly' => now()->addDays(10),
+                        default => now()->addDays(40),
+                    };
+                    Cache::put($cacheKey, true, $ttl);
                     $sent++;
                     $this->line("Sent {$period} report to {$hotelName}");
                 } else {
@@ -118,6 +123,17 @@ class SendHotelSalesReports extends Command
                 $target->copy()->startOfMonth()->startOfDay(),
                 $target->copy()->endOfMonth()->endOfDay(),
                 $target->format('Y-m'),
+            ];
+        }
+
+        if ($period === 'weekly') {
+            // Previous calendar week (Mon–Sun relative to Carbon week settings).
+            $target = $anchor->copy()->subWeek();
+
+            return [
+                $target->copy()->startOfWeek()->startOfDay(),
+                $target->copy()->endOfWeek()->endOfDay(),
+                $target->copy()->startOfWeek()->format('o-\WW'),
             ];
         }
 

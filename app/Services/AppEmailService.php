@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Mail\AppInstallScanMail;
 use App\Mail\GuestCheckInWelcomeMail;
 use App\Mail\GuestPortalRoomLoginMail;
 use App\Mail\GuestPortalRoomScanMail;
@@ -93,6 +94,60 @@ class AppEmailService
             'Could not send welcome email.',
             ['hotel' => $hotelName, 'room' => $roomNumber],
         );
+    }
+
+    /**
+     * Notify platform contacts when the MADYAW app-install QR is scanned.
+     *
+     * @param  list<string>  $emails
+     */
+    public function sendAppInstallScanNotification(
+        array $emails,
+        ?string $scannedAt = null,
+    ): EmailSendResult {
+        $recipients = collect($emails)
+            ->map(fn (string $email) => $this->normalizeEmail($email))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($recipients === []) {
+            return new EmailSendResult(
+                false,
+                null,
+                '',
+                'No recipients configured for app-install QR scan notifications.',
+            );
+        }
+
+        if ($blocked = $this->messagingGate($recipients[0])) {
+            return $blocked;
+        }
+
+        $mailable = new AppInstallScanMail(scannedAt: $scannedAt);
+
+        try {
+            Mail::mailer($this->activeMailer())->to($recipients)->send($mailable);
+
+            Log::info('App install QR scan email sent', [
+                'recipients' => count($recipients),
+                'provider' => $this->providerName(),
+            ]);
+
+            return new EmailSendResult(true, $this->providerName(), $recipients[0]);
+        } catch (Throwable $e) {
+            Log::warning('App install QR scan email failed', [
+                'message' => $e->getMessage(),
+            ]);
+
+            return new EmailSendResult(
+                false,
+                $this->providerName(),
+                $recipients[0],
+                config('app.debug') ? $e->getMessage() : 'Could not send app QR scan notification email.',
+            );
+        }
     }
 
     /**
@@ -334,7 +389,7 @@ class AppEmailService
     }
 
     /**
-     * Daily or monthly sales report for the hotel owner.
+     * Daily, weekly, or monthly sales report for the hotel owner.
      *
      * @param  list<string>  $ownerEmails
      * @param  array<string, mixed>  $report

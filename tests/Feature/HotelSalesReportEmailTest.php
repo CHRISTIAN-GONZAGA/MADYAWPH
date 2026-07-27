@@ -142,6 +142,38 @@ class HotelSalesReportEmailTest extends TestCase
         });
     }
 
+    public function test_weekly_sales_report_command_emails_owner(): void
+    {
+        config([
+            'services.messaging.email_enabled' => true,
+            'mail.default' => 'array',
+            'mail.from.address' => 'noreply@madyaw.test',
+        ]);
+        Mail::fake();
+
+        $hotel = Hotel::create([
+            'name' => 'Weekly Hotel',
+            'location' => 'Manila',
+            'owner_email' => 'weekly-owner@gmail.com',
+        ]);
+
+        $exit = Artisan::call('hotel:send-sales-reports', [
+            '--period' => 'weekly',
+            '--hotel' => (string) $hotel->id,
+            '--date' => now()->startOfWeek()->toDateString(),
+            '--force' => true,
+        ]);
+
+        $this->assertSame(0, $exit);
+
+        Mail::assertSent(HotelSalesReportMail::class, function (HotelSalesReportMail $mail) {
+            return $mail->periodLabel === 'weekly'
+                && $mail->hasTo('weekly-owner@gmail.com')
+                && is_array($mail->report['daily_breakdown'] ?? null)
+                && count($mail->report['daily_breakdown']) >= 7;
+        });
+    }
+
     public function test_sales_report_skips_hotel_without_owner_email(): void
     {
         Mail::fake();

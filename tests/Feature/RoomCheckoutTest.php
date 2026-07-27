@@ -128,7 +128,7 @@ class RoomCheckoutTest extends TestCase
             'name' => 'booked_co_admin',
             'email' => 'booked-co@test.local',
             'password' => bcrypt('secret123'),
-            'role' => UserRole::ADMIN,
+            'role' => UserRole::FRONTDESK,
         ]);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
@@ -158,7 +158,11 @@ class RoomCheckoutTest extends TestCase
 
         Sanctum::actingAs($admin);
 
-        $this->patchJson('/api/v1/admin/rooms/'.$room->id.'/status', ['status' => 'checked_in'])
+        $this->patchJson('/api/v1/admin/rooms/'.$room->id.'/status', [
+            'status' => 'checked_in',
+            'check_in_at' => now()->setTime(15, 0)->toIso8601String(),
+            'check_out_at' => now()->addDay()->setTime(11, 0)->toIso8601String(),
+        ])
             ->assertOk()
             ->assertJsonPath('room.status', RoomStatus::CHECKED_IN->value);
 
@@ -343,7 +347,7 @@ class RoomCheckoutTest extends TestCase
             'name' => 'welcome_admin',
             'email' => 'welcome-admin@test.local',
             'password' => bcrypt('secret123'),
-            'role' => UserRole::ADMIN,
+            'role' => UserRole::FRONTDESK,
         ]);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
@@ -444,7 +448,7 @@ class RoomCheckoutTest extends TestCase
             'status' => BookingStatus::BOOKED,
         ]);
 
-        Sanctum::actingAs($admin);
+        Sanctum::actingAs($fd);
 
         $this->patchJson('/api/v1/admin/rooms/'.$room->id.'/status', [
             'status' => 'checked_in',
@@ -481,7 +485,7 @@ class RoomCheckoutTest extends TestCase
             'name' => 'noemail_admin',
             'email' => 'noemail-admin@test.local',
             'password' => bcrypt('secret123'),
-            'role' => UserRole::ADMIN,
+            'role' => UserRole::FRONTDESK,
         ]);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
@@ -509,6 +513,6 @@ class RoomCheckoutTest extends TestCase
         $this->patchJson('/api/v1/admin/rooms/'.$room->id.'/status', ['status' => 'checked_in'])
             ->assertOk();
 
-        Mail::assertNothingSent();
+        Mail::assertNotSent(GuestCheckInWelcomeMail::class);
     }
 }

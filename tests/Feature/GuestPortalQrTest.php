@@ -32,7 +32,8 @@ class GuestPortalQrTest extends TestCase
             ->assertOk();
 
         $payload = (string) $show->json('qr_payload');
-        $this->assertStringStartsWith(GuestPortalQrCode::PREFIX.':', $payload);
+        $this->assertStringContainsString('/qr/hotel/', $payload);
+        $this->assertStringStartsWith(rtrim((string) config('app.url'), '/'), $payload);
 
         $regen = $this->actingAs($admin, 'sanctum')
             ->postJson('/api/v1/admin/hotel/guest-portal-qr')
@@ -205,7 +206,8 @@ class GuestPortalQrTest extends TestCase
             ->assertOk();
 
         $payload = (string) $qr->json('qr_payload');
-        $this->assertStringStartsWith(GuestPortalQrCode::ROOM_PREFIX.':', $payload);
+        $this->assertStringContainsString('/qr/room/', $payload);
+        $this->assertStringStartsWith(rtrim((string) config('app.url'), '/'), $payload);
 
         $resolved = $this->postJson('/api/v1/guest/portal/resolve', ['payload' => $payload])
             ->assertOk()

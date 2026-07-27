@@ -8,28 +8,26 @@ use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-/** Notifies the hotel owner that a room QR was scanned (before password entry). */
-class GuestPortalRoomScanMail extends Mailable
+/** Notifies platform contacts that the MADYAW app-install QR was scanned. */
+class AppInstallScanMail extends Mailable
 {
     use Queueable, SerializesModels;
 
     public function __construct(
-        public readonly string $hotelName,
-        public readonly string $roomNumber,
         public readonly ?string $scannedAt = null,
     ) {}
 
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: "Room {$this->roomNumber} QR has been scanned — {$this->hotelName}",
+            subject: 'App QR has been scanned — MADYAW',
         );
     }
 
     public function content(): Content
     {
         return new Content(
-            view: 'mail.guest-portal-room-scan',
+            view: 'mail.app-install-scan',
         );
     }
 }

@@ -13,10 +13,11 @@
                 <tr>
                     <td>
                         <h1 style="margin:0 0 12px;font-size:22px;color:#1a237e;line-height:1.3;">
-                            Room QR scanned
+                            Room {{ $roomNumber }} QR has been scanned
                         </h1>
                         <p style="margin:0 0 20px;font-size:15px;line-height:1.55;color:#4a5568;">
-                            Someone scanned the guest QR code for a room at <strong>{{ $hotelName }}</strong>.
+                            Someone scanned the guest QR code for room <strong>{{ $roomNumber }}</strong>
+                            at <strong>{{ $hotelName }}</strong> (phone camera or in-app scanner).
                             They have not entered the room password yet.
                         </p>
 

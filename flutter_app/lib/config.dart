@@ -36,10 +36,23 @@ String _normalizeApiBaseUrl(String raw) {
   return '$s/api/v1';
 }
 
-/// Direct HTTPS link to the Android APK for "Share app" install QR.
-/// Override at build time, e.g.:
-/// flutter build apk --dart-define=APP_INSTALL_URL=https://your-host/downloads/madyaw.apk
+/// Origin of the API host (scheme + host, no `/api/v1`), used for public QR landings.
+String get kApiOrigin {
+  final base = kApiBaseUrl;
+  final idx = base.indexOf('/api/v1');
+  if (idx != -1) return base.substring(0, idx);
+  return base;
+}
+
+/// Default Google Drive folder with the MADYAW Android APK (copy / open link).
+/// Override at build time with `--dart-define=APP_INSTALL_URL=...`
+const String kDefaultAppInstallUrl =
+    'https://drive.google.com/drive/folders/1MExvBsaikbFZir3r_dNqsyTIomEiT28A?usp=drive_link';
+
 final String kAppInstallUrl = const String.fromEnvironment(
   'APP_INSTALL_URL',
-  defaultValue: '',
+  defaultValue: kDefaultAppInstallUrl,
 ).trim();
+
+/// Tracking URL for the share-app QR (emails on scan, then redirects to Drive).
+String get kAppInstallQrUrl => '$kApiOrigin/qr/app';

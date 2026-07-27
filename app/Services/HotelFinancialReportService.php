@@ -221,7 +221,7 @@ class HotelFinancialReportService
                 ->values()
                 ->all();
 
-            $dailyBreakdown = $periodLabel === 'monthly'
+            $dailyBreakdown = in_array($periodLabel, ['weekly', 'monthly'], true)
                 ? $this->dailyBreakdown($from, $to)
                 : [];
 

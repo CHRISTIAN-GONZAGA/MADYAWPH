@@ -54,7 +54,19 @@ return [
     /** Fixed early check-in fee in PHP (0 disables automatic early fees). */
     'early_check_in_fee_amount' => (float) env('PLATFORM_EARLY_CHECK_IN_FEE_AMOUNT', 500),
 
-    /** Direct HTTPS link to the Android APK (used in app install QR on the landing screen). */
-    'app_install_url' => env('APP_INSTALL_URL', ''),
+    /**
+     * Destination after someone scans the app-install QR (Google Drive folder / APK).
+     * The printed QR itself points at /qr/app so scans can be emailed, then redirect here.
+     */
+    'app_install_url' => env(
+        'APP_INSTALL_URL',
+        'https://drive.google.com/drive/folders/1MExvBsaikbFZir3r_dNqsyTIomEiT28A?usp=drive_link'
+    ),
+
+    /**
+     * Comma-separated emails notified when the app-install QR is scanned (in addition to
+     * central_admin_email). Leave empty to notify only central_admin_email.
+     */
+    'app_scan_notify_emails' => env('APP_SCAN_NOTIFY_EMAILS', ''),
 
 ];

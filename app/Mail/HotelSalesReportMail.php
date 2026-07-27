@@ -8,7 +8,7 @@ use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-/** Daily or monthly hotel sales report for the property owner. */
+/** Daily, weekly, or monthly hotel sales report for the property owner. */
 class HotelSalesReportMail extends Mailable
 {
     use Queueable, SerializesModels;

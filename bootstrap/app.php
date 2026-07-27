@@ -32,6 +32,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('hotel:purge-old-bookings')->dailyAt('02:00');
         $schedule->command('hotel:auto-checkout')->everyFifteenMinutes();
         $schedule->command('hotel:send-sales-reports --period=daily')->dailyAt('06:30');
+        $schedule->command('hotel:send-sales-reports --period=weekly')->weeklyOn(1, '07:00');
         $schedule->command('hotel:send-sales-reports --period=monthly')->monthlyOn(1, '07:00');
     })
     ->withMiddleware(function (Middleware $middleware): void {

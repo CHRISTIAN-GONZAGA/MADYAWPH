@@ -151,6 +151,8 @@ class PlatformSettingsService
             'member_points_per_check_in' => $this->memberPointsPerCheckIn(),
             'member_points_per_peso' => $this->memberPointsPerPeso(),
             'app_install_url' => trim((string) config('platform.app_install_url', '')),
+            /** Tracking URL encoded in the share-app QR (emails on scan, then redirects). */
+            'app_install_qr_url' => rtrim((string) config('app.url', ''), '/').'/qr/app',
             'member_subscription_qr_url' => ChatAttachmentUrl::fromStoredUrl(
                 filled($row->member_subscription_qr_url ?? null)
                     ? (string) $row->member_subscription_qr_url
