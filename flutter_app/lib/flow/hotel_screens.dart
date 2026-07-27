@@ -1841,15 +1841,42 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
   int _creditBandMax = 20;
   double _creditWithin = 5000;
   double _creditOver = 10000;
+  List<Map<String, dynamic>> _creditRules = const [];
 
   int _estimatedWelcomeCredits() {
     final n = int.tryParse(_totalRooms.text.trim()) ?? 0;
     if (n < 1) return 0;
+    if (_creditRules.isNotEmpty) {
+      for (final rule in _creditRules) {
+        final min = (rule['min_rooms'] as num?)?.toInt() ?? 1;
+        final maxRaw = rule['max_rooms'];
+        final max = maxRaw == null ? null : (maxRaw as num?)?.toInt();
+        if (n < min) continue;
+        if (max == null || n <= max) {
+          return ((rule['credits'] as num?)?.toDouble() ?? 0).round();
+        }
+      }
+      final last = _creditRules.last;
+      return ((last['credits'] as num?)?.toDouble() ?? 0).round();
+    }
     return n <= _creditBandMax ? _creditWithin.round() : _creditOver.round();
   }
 
   String _welcomeCreditsHelper() {
     final estimate = _estimatedWelcomeCredits();
+    if (_creditRules.isNotEmpty) {
+      final lines = _creditRules.map((rule) {
+        final min = (rule['min_rooms'] as num?)?.toInt() ?? 1;
+        final maxRaw = rule['max_rooms'];
+        final credits = ((rule['credits'] as num?)?.toDouble() ?? 0).round();
+        if (maxRaw == null) {
+          return '$min+ rooms → ₱$credits';
+        }
+        final max = (maxRaw as num?)?.toInt() ?? min;
+        return min == max ? '$min room(s) → ₱$credits' : '$min–$max rooms → ₱$credits';
+      }).join('; ');
+      return 'Welcome credits: $lines. Estimated: ₱$estimate.';
+    }
     return 'Welcome credits: 1–$_creditBandMax rooms → ₱${_creditWithin.round()}; '
         '${_creditBandMax + 1}+ rooms → ₱${_creditOver.round()}. '
         'Estimated: ₱$estimate.';
@@ -1866,6 +1893,15 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
       final res = await publicDio().get<Map<String, dynamic>>('/platform/info');
       if (!mounted) return;
       setState(() {
+        final rawRules = res.data?['registration_credit_rules'];
+        if (rawRules is List && rawRules.isNotEmpty) {
+          _creditRules = rawRules
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
+        } else {
+          _creditRules = const [];
+        }
         _creditBandMax =
             ((res.data?['registration_credit_band_max_rooms'] as num?)
                         ?.toDouble() ??

@@ -25,6 +25,7 @@ class PlatformSetting extends Model
         'registration_credit_band_max_rooms',
         'registration_credit_within_band',
         'registration_credit_over_band',
+        'registration_credit_rules',
     ];
 
     protected function casts(): array
@@ -44,6 +45,7 @@ class PlatformSetting extends Model
             'registration_credit_band_max_rooms' => 'integer',
             'registration_credit_within_band' => 'float',
             'registration_credit_over_band' => 'float',
+            'registration_credit_rules' => 'array',
         ];
     }
 }

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\PlatformSetting;
 use App\Support\ChatAttachmentUrl;
+use App\Support\RegistrationCreditRules;
 
 class PlatformSettingsService
 {
@@ -117,6 +118,46 @@ class PlatformSettingsService
         return max(0.0, (float) config('platform.registration_credit_over_band', 10000));
     }
 
+    /**
+     * @return list<array{min_rooms: int, max_rooms: int|null, credits: float}>
+     */
+    public function registrationCreditRules(): array
+    {
+        $row = $this->row();
+        $raw = $row->registration_credit_rules ?? null;
+        if (is_array($raw) && $raw !== []) {
+            $normalized = RegistrationCreditRules::normalize($raw);
+            if ($normalized !== []) {
+                return $normalized;
+            }
+        }
+
+        return RegistrationCreditRules::fromLegacyBands(
+            $this->registrationCreditBandMaxRooms(),
+            $this->registrationCreditWithinBand(),
+            $this->registrationCreditOverBand(),
+        );
+    }
+
+    /**
+     * @param  list<array{min_rooms: int, max_rooms: int|null, credits: float}>  $rules
+     * @return list<array{min_rooms: int, max_rooms: int|null, credits: float}>
+     */
+    public function saveRegistrationCreditRules(array $rules): array
+    {
+        $validated = RegistrationCreditRules::validate($rules);
+        $legacy = RegistrationCreditRules::legacyBandFields($validated);
+        $row = $this->row();
+        $row->update([
+            'registration_credit_rules' => $validated,
+            'registration_credit_band_max_rooms' => $legacy['registration_credit_band_max_rooms'],
+            'registration_credit_within_band' => $legacy['registration_credit_within_band'],
+            'registration_credit_over_band' => $legacy['registration_credit_over_band'],
+        ]);
+
+        return $validated;
+    }
+
     public function bookingConfirmFeePercent(): float
     {
         $row = $this->row();
@@ -203,6 +244,9 @@ class PlatformSettingsService
             'registration_credit_band_max_rooms' => $this->registrationCreditBandMaxRooms(),
             'registration_credit_within_band' => $this->registrationCreditWithinBand(),
             'registration_credit_over_band' => $this->registrationCreditOverBand(),
+            'registration_credit_rules' => RegistrationCreditRules::publicRules(
+                $this->registrationCreditRules()
+            ),
             'app_install_url' => trim((string) config('platform.app_install_url', '')),
             'app_install_qr_url' => rtrim((string) config('app.url', ''), '/').'/qr/app',
             'member_subscription_qr_url' => $this->safeAttachmentUrl($this->row()->member_subscription_qr_url ?? null),

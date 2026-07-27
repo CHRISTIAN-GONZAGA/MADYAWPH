@@ -177,6 +177,25 @@ class MemberFeeDiscountCreditsTest extends TestCase
         $this->assertNotNull($member->id);
     }
 
+    public function test_registration_credits_multi_tier(): void
+    {
+        PlatformSetting::query()->updateOrCreate(
+            ['key' => 'global'],
+            [
+                'registration_credit_rules' => [
+                    ['min_rooms' => 1, 'max_rooms' => 10, 'credits' => 5000],
+                    ['min_rooms' => 11, 'max_rooms' => 20, 'credits' => 10000],
+                    ['min_rooms' => 21, 'max_rooms' => null, 'credits' => 12000],
+                ],
+            ],
+        );
+
+        $this->assertSame(5000, HotelRegistrationCredits::freeCreditsForRoomCount(1));
+        $this->assertSame(5000, HotelRegistrationCredits::freeCreditsForRoomCount(10));
+        $this->assertSame(10000, HotelRegistrationCredits::freeCreditsForRoomCount(11));
+        $this->assertSame(12000, HotelRegistrationCredits::freeCreditsForRoomCount(21));
+    }
+
     public function test_registration_credits_two_band(): void
     {
         PlatformSetting::query()->updateOrCreate(
@@ -207,18 +226,19 @@ class MemberFeeDiscountCreditsTest extends TestCase
 
         $this->actingAs($admin, 'sanctum')
             ->patchJson('/api/v1/platform/settings/registration-credits', [
-                'registration_credit_band_max_rooms' => 15,
-                'registration_credit_within_band' => 4500,
-                'registration_credit_over_band' => 9000,
+                'registration_credit_rules' => [
+                    ['min_rooms' => 1, 'max_rooms' => 15, 'credits' => 4500],
+                    ['min_rooms' => 16, 'max_rooms' => null, 'credits' => 9000],
+                ],
             ])
             ->assertOk()
-            ->assertJsonPath('registration_credit_band_max_rooms', 15)
-            ->assertJsonPath('registration_credit_within_band', 4500)
-            ->assertJsonPath('registration_credit_over_band', 9000);
+            ->assertJsonPath('registration_credit_rules.0.credits', 4500)
+            ->assertJsonPath('registration_credit_rules.1.credits', 9000);
 
         $this->getJson('/api/v1/platform/info')
             ->assertOk()
             ->assertJsonPath('member_monthly_fee', 0)
-            ->assertJsonPath('registration_credit_band_max_rooms', 15);
+            ->assertJsonPath('registration_credit_rules.0.min_rooms', 1)
+            ->assertJsonPath('registration_credit_rules.1.credits', 9000);
     }
 }

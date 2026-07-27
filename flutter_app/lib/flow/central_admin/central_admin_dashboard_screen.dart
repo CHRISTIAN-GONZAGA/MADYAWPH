@@ -28,6 +28,12 @@ TextStyle _platformSubtitleStyle() => const TextStyle(
       fontWeight: FontWeight.w500,
     );
 
+EdgeInsets _centralAdminListPadding(BuildContext context) {
+  return EdgeInsets.only(
+    bottom: 32 + MediaQuery.paddingOf(context).bottom,
+  );
+}
+
 /// Developer-only platform control panel (not hotel admin).
 class CentralAdminDashboardScreen extends StatefulWidget {
   const CentralAdminDashboardScreen({super.key});
@@ -289,19 +295,13 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
     }
   }
 
-  Future<void> _updateRegistrationCredits({
-    required int bandMaxRooms,
-    required double withinBand,
-    required double overBand,
-  }) async {
+  Future<void> _updateRegistrationCredits(
+    List<Map<String, dynamic>> rules,
+  ) async {
     try {
       await portalDio().patch<Map<String, dynamic>>(
         '/platform/settings/registration-credits',
-        data: {
-          'registration_credit_band_max_rooms': bandMaxRooms,
-          'registration_credit_within_band': withinBand,
-          'registration_credit_over_band': overBand,
-        },
+        data: {'registration_credit_rules': rules},
       );
       if (!mounted) return;
       showAppMessage(context, 'Registration free credits updated.');
@@ -540,9 +540,11 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
 
   @override
   Widget build(BuildContext context) {
-    final pendingTotal = _pendingCredits + _pendingMembers;
+    final pendingTotal =
+        _pendingCredits + _pendingMembers + _pendingSubscriptions;
 
     return AppScaffold(
+      extendBody: false,
       appBar: AppBar(
         toolbarHeight: 76,
         elevation: 0,
@@ -860,7 +862,7 @@ class _OverviewSection extends StatelessWidget {
     final period = (revenue['period'] ?? 'month').toString();
 
     return ListView(
-        padding: const EdgeInsets.only(bottom: 24),
+        padding: _centralAdminListPadding(context),
         children: [
           _PlatformSectionHeader(
             icon: Icons.dashboard_outlined,
@@ -1104,7 +1106,7 @@ class _RevenueSection extends StatelessWidget {
     final to = (revenue['to'] ?? '').toString();
 
     return ListView(
-      padding: const EdgeInsets.only(bottom: 24),
+      padding: _centralAdminListPadding(context),
       children: [
         _PlatformSectionHeader(
           icon: Icons.insights_outlined,
@@ -1227,7 +1229,7 @@ class _GuestsSection extends StatelessWidget {
     final to = (guests['to'] ?? '').toString();
 
     return ListView(
-      padding: const EdgeInsets.only(bottom: 24),
+      padding: _centralAdminListPadding(context),
       children: [
         _PlatformSectionHeader(
           icon: Icons.groups_outlined,
@@ -1515,7 +1517,12 @@ class _ApprovalsSection extends StatelessWidget {
                   ),
                 )
               : ListView.separated(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    16,
+                    16,
+                    16 + MediaQuery.paddingOf(context).bottom,
+                  ),
                   itemCount: pending.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 12),
                   itemBuilder: (_, i) {
@@ -1720,6 +1727,76 @@ class _MemberCard extends StatelessWidget {
   }
 }
 
+class _RegCreditRuleDraft {
+  _RegCreditRuleDraft({
+    required this.minRooms,
+    required this.maxRooms,
+    required this.credits,
+  });
+
+  final TextEditingController minRooms;
+  final TextEditingController maxRooms;
+  final TextEditingController credits;
+
+  void dispose() {
+    minRooms.dispose();
+    maxRooms.dispose();
+    credits.dispose();
+  }
+
+  Map<String, dynamic> toPayload() {
+    final min = int.parse(minRooms.text.trim());
+    final maxRaw = maxRooms.text.trim();
+    return {
+      'min_rooms': min,
+      'max_rooms': maxRaw.isEmpty ? null : int.parse(maxRaw),
+      'credits': double.parse(credits.text.trim()),
+    };
+  }
+
+  static List<_RegCreditRuleDraft> fromSettings(Map<String, dynamic> settings) {
+    final raw = settings['registration_credit_rules'];
+    if (raw is List && raw.isNotEmpty) {
+      return raw
+          .whereType<Map>()
+          .map(
+            (e) => _RegCreditRuleDraft(
+              minRooms: TextEditingController(
+                text: '${(e['min_rooms'] as num?)?.toInt() ?? 1}',
+              ),
+              maxRooms: TextEditingController(
+                text: e['max_rooms'] == null ? '' : '${e['max_rooms']}',
+              ),
+              credits: TextEditingController(
+                text: '${(e['credits'] as num?)?.round() ?? 0}',
+              ),
+            ),
+          )
+          .toList();
+    }
+
+    final bandMax =
+        (settings['registration_credit_band_max_rooms'] as num?)?.toInt() ?? 20;
+    final within =
+        (settings['registration_credit_within_band'] as num?)?.round() ?? 5000;
+    final over =
+        (settings['registration_credit_over_band'] as num?)?.round() ?? 10000;
+
+    return [
+      _RegCreditRuleDraft(
+        minRooms: TextEditingController(text: '1'),
+        maxRooms: TextEditingController(text: '$bandMax'),
+        credits: TextEditingController(text: '$within'),
+      ),
+      _RegCreditRuleDraft(
+        minRooms: TextEditingController(text: '${bandMax + 1}'),
+        maxRooms: TextEditingController(text: ''),
+        credits: TextEditingController(text: '$over'),
+      ),
+    ];
+  }
+}
+
 class _QrSettingsSection extends StatefulWidget {
   const _QrSettingsSection({
     required this.settings,
@@ -1743,11 +1820,8 @@ class _QrSettingsSection extends StatefulWidget {
   final VoidCallback onUploadSubscription;
   final Future<void> Function(double amount) onUpdateHotelSubscriptionFee;
   final Future<void> Function(double amount) onUpdateMemberMonthlyFee;
-  final Future<void> Function({
-    required int bandMaxRooms,
-    required double withinBand,
-    required double overBand,
-  }) onUpdateRegistrationCredits;
+  final Future<void> Function(List<Map<String, dynamic>> rules)
+      onUpdateRegistrationCredits;
   final Future<void> Function(double percent) onUpdateBookingFeePercent;
   final Future<void> Function(double percent) onUpdateMinCheckInPaymentPercent;
   final Future<void> Function({
@@ -1772,9 +1846,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
   late final TextEditingController _feePercentCtrl;
   late final TextEditingController _hotelSubFeeCtrl;
   late final TextEditingController _memberMonthlyFeeCtrl;
-  late final TextEditingController _regBandMaxCtrl;
-  late final TextEditingController _regWithinCtrl;
-  late final TextEditingController _regOverCtrl;
+  late List<_RegCreditRuleDraft> _regRules;
   late final TextEditingController _minCheckInPercentCtrl;
   late final TextEditingController _lateGraceCtrl;
   late final TextEditingController _lateFeeCtrl;
@@ -1806,15 +1878,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     _memberMonthlyFeeCtrl = TextEditingController(
       text: _memberMonthlyFeeText(widget.settings),
     );
-    _regBandMaxCtrl = TextEditingController(
-      text: _regBandMaxText(widget.settings),
-    );
-    _regWithinCtrl = TextEditingController(
-      text: _regWithinText(widget.settings),
-    );
-    _regOverCtrl = TextEditingController(
-      text: _regOverText(widget.settings),
-    );
+    _regRules = _RegCreditRuleDraft.fromSettings(widget.settings);
     _minCheckInPercentCtrl = TextEditingController(
       text: _minCheckInPercentText(widget.settings),
     );
@@ -1884,18 +1948,45 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     if (memberFee != _memberMonthlyFeeCtrl.text) {
       _memberMonthlyFeeCtrl.text = memberFee;
     }
-    final regBand = _regBandMaxText(widget.settings);
-    if (regBand != _regBandMaxCtrl.text) {
-      _regBandMaxCtrl.text = regBand;
+    if (oldWidget.settings['registration_credit_rules'] !=
+            widget.settings['registration_credit_rules'] ||
+        oldWidget.settings['registration_credit_band_max_rooms'] !=
+            widget.settings['registration_credit_band_max_rooms']) {
+      _reloadRegRulesFromSettings(widget.settings);
     }
-    final regWithin = _regWithinText(widget.settings);
-    if (regWithin != _regWithinCtrl.text) {
-      _regWithinCtrl.text = regWithin;
+  }
+
+  void _reloadRegRulesFromSettings(Map<String, dynamic> settings) {
+    for (final rule in _regRules) {
+      rule.dispose();
     }
-    final regOver = _regOverText(widget.settings);
-    if (regOver != _regOverCtrl.text) {
-      _regOverCtrl.text = regOver;
-    }
+    _regRules = _RegCreditRuleDraft.fromSettings(settings);
+  }
+
+  void _addRegRule() {
+    setState(() {
+      var nextMin = 1;
+      if (_regRules.isNotEmpty) {
+        final last = _regRules.last;
+        final lastMax = int.tryParse(last.maxRooms.text.trim());
+        nextMin = (lastMax ?? int.tryParse(last.minRooms.text.trim()) ?? 1) + 1;
+      }
+      _regRules.add(
+        _RegCreditRuleDraft(
+          minRooms: TextEditingController(text: '$nextMin'),
+          maxRooms: TextEditingController(text: ''),
+          credits: TextEditingController(text: '0'),
+        ),
+      );
+    });
+  }
+
+  void _removeRegRule(int index) {
+    if (_regRules.length <= 1) return;
+    setState(() {
+      _regRules[index].dispose();
+      _regRules.removeAt(index);
+    });
   }
 
   @override
@@ -1903,9 +1994,9 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     _feePercentCtrl.dispose();
     _hotelSubFeeCtrl.dispose();
     _memberMonthlyFeeCtrl.dispose();
-    _regBandMaxCtrl.dispose();
-    _regWithinCtrl.dispose();
-    _regOverCtrl.dispose();
+    for (final rule in _regRules) {
+      rule.dispose();
+    }
     _minCheckInPercentCtrl.dispose();
     _lateGraceCtrl.dispose();
     _lateFeeCtrl.dispose();
@@ -1929,26 +2020,6 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     if (raw == null) return '300';
     return (raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 300)
         .toStringAsFixed(raw is num && raw % 1 == 0 ? 0 : 2);
-  }
-
-  static String _regBandMaxText(Map<String, dynamic> settings) {
-    final raw = settings['registration_credit_band_max_rooms'];
-    if (raw == null) return '20';
-    return '${raw is num ? raw.toInt() : int.tryParse('$raw') ?? 20}';
-  }
-
-  static String _regWithinText(Map<String, dynamic> settings) {
-    final raw = settings['registration_credit_within_band'];
-    if (raw == null) return '5000';
-    return (raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 5000)
-        .toStringAsFixed(0);
-  }
-
-  static String _regOverText(Map<String, dynamic> settings) {
-    final raw = settings['registration_credit_over_band'];
-    if (raw == null) return '10000';
-    return (raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 10000)
-        .toStringAsFixed(0);
   }
 
   static String _minCheckInPercentText(Map<String, dynamic> settings) {
@@ -2130,7 +2201,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     );
 
     return ListView(
-      padding: const EdgeInsets.only(bottom: 24),
+      padding: _centralAdminListPadding(context),
       children: [
         const _PlatformSectionHeader(
           icon: Icons.qr_code_2_outlined,
@@ -2265,75 +2336,135 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Two-band: rooms 1–N get the within-band amount; N+1 and above get the over-band amount.',
+                        'Add one or more room-count bands. Leave max rooms blank on the last rule for “and above”. Ranges must connect without gaps (e.g. 1–10, 11–20, 21+).',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       const SizedBox(height: 12),
-                      TextField(
-                        controller: _regBandMaxCtrl,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Band max rooms (N)',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: _regWithinCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'Credits for 1–N rooms',
-                          prefixText: '₱ ',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: _regOverCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'Credits for N+1 rooms and up',
-                          prefixText: '₱ ',
-                          border: OutlineInputBorder(),
-                        ),
+                      ...List.generate(_regRules.length, (index) {
+                        final rule = _regRules[index];
+                        final isLast = index == _regRules.length - 1;
+                        return Card(
+                          margin: EdgeInsets.only(
+                            bottom: index == _regRules.length - 1 ? 0 : 10,
+                          ),
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest
+                              .withValues(alpha: 0.35),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      'Rule ${index + 1}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    if (_regRules.length > 1)
+                                      IconButton(
+                                        tooltip: 'Remove rule',
+                                        onPressed: () => _removeRegRule(index),
+                                        icon: const Icon(Icons.delete_outline),
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: rule.minRooms,
+                                        keyboardType: TextInputType.number,
+                                        decoration: const InputDecoration(
+                                          labelText: 'From room #',
+                                          border: OutlineInputBorder(),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: TextField(
+                                        controller: rule.maxRooms,
+                                        keyboardType: TextInputType.number,
+                                        decoration: InputDecoration(
+                                          labelText: isLast
+                                              ? 'To room # (optional)'
+                                              : 'To room #',
+                                          hintText: isLast ? 'Open-ended' : null,
+                                          border: const OutlineInputBorder(),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                TextField(
+                                  controller: rule.credits,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Free wallet credits',
+                                    prefixText: '₱ ',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: _addRegRule,
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add another rule'),
                       ),
                       const SizedBox(height: 12),
                       FilledButton(
                         onPressed: _savingRegCredits
                             ? null
                             : () async {
-                                final band = int.tryParse(
-                                  _regBandMaxCtrl.text.trim(),
-                                );
-                                final within = double.tryParse(
-                                  _regWithinCtrl.text.trim(),
-                                );
-                                final over = double.tryParse(
-                                  _regOverCtrl.text.trim(),
-                                );
-                                if (band == null ||
-                                    band < 1 ||
-                                    within == null ||
-                                    within < 0 ||
-                                    over == null ||
-                                    over < 0) {
-                                  showAppMessage(
-                                    context,
-                                    'Enter valid band rooms and credit amounts.',
-                                    isError: true,
+                                final payload = <Map<String, dynamic>>[];
+                                for (final rule in _regRules) {
+                                  final min =
+                                      int.tryParse(rule.minRooms.text.trim());
+                                  final maxRaw = rule.maxRooms.text.trim();
+                                  final max = maxRaw.isEmpty
+                                      ? null
+                                      : int.tryParse(maxRaw);
+                                  final credits = double.tryParse(
+                                    rule.credits.text.trim(),
                                   );
-                                  return;
+                                  if (min == null ||
+                                      min < 1 ||
+                                      credits == null ||
+                                      credits < 0 ||
+                                      (maxRaw.isNotEmpty &&
+                                          (max == null || max < min))) {
+                                    showAppMessage(
+                                      context,
+                                      'Check each rule: valid room range and credit amount.',
+                                      isError: true,
+                                    );
+                                    return;
+                                  }
+                                  payload.add({
+                                    'min_rooms': min,
+                                    'max_rooms': max,
+                                    'credits': credits,
+                                  });
                                 }
                                 setState(() => _savingRegCredits = true);
                                 try {
                                   await widget.onUpdateRegistrationCredits(
-                                    bandMaxRooms: band,
-                                    withinBand: within,
-                                    overBand: over,
+                                    payload,
                                   );
                                 } finally {
                                   if (mounted) {
@@ -2349,7 +2480,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                                   strokeWidth: 2,
                                 ),
                               )
-                            : const Text('Save registration credits'),
+                            : const Text('Save registration credit rules'),
                       ),
                     ],
                   ),
@@ -2879,7 +3010,7 @@ class _HotelsSectionState extends State<_HotelsSection> {
         .length;
 
     return ListView(
-      padding: const EdgeInsets.only(bottom: 24),
+      padding: _centralAdminListPadding(context),
       children: [
         const _PlatformSectionHeader(
           icon: Icons.apartment_outlined,

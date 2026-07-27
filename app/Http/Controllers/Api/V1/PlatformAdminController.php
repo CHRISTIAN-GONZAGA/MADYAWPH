@@ -21,6 +21,7 @@ use App\Services\PlatformSettingsService;
 use App\Support\ChatAttachmentUrl;
 use App\Support\EnumHelper;
 use App\Support\PriceRounding;
+use App\Support\RegistrationCreditRules;
 use App\Support\RoomImageUploadRules;
 use App\Support\RoomMediaStorage;
 use Illuminate\Http\JsonResponse;
@@ -160,23 +161,40 @@ class PlatformAdminController extends Controller
     public function updateRegistrationCredits(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'registration_credit_band_max_rooms' => ['required', 'integer', 'min:1', 'max:5000'],
-            'registration_credit_within_band' => ['required', 'numeric', 'min:0', 'max:1000000'],
-            'registration_credit_over_band' => ['required', 'numeric', 'min:0', 'max:1000000'],
+            'registration_credit_rules' => ['required', 'array', 'min:1', 'max:25'],
+            'registration_credit_rules.*.min_rooms' => ['required', 'integer', 'min:1', 'max:5000'],
+            'registration_credit_rules.*.max_rooms' => ['nullable', 'integer', 'min:1', 'max:5000'],
+            'registration_credit_rules.*.credits' => ['required', 'numeric', 'min:0', 'max:1000000'],
+            // Legacy two-band payload (still accepted for older clients).
+            'registration_credit_band_max_rooms' => ['sometimes', 'integer', 'min:1', 'max:5000'],
+            'registration_credit_within_band' => ['sometimes', 'numeric', 'min:0', 'max:1000000'],
+            'registration_credit_over_band' => ['sometimes', 'numeric', 'min:0', 'max:1000000'],
         ]);
 
-        $row = $this->settings->row();
-        $row->update([
-            'registration_credit_band_max_rooms' => (int) $validated['registration_credit_band_max_rooms'],
-            'registration_credit_within_band' => round((float) $validated['registration_credit_within_band'], 2),
-            'registration_credit_over_band' => round((float) $validated['registration_credit_over_band'], 2),
-        ]);
+        try {
+            $rules = isset($validated['registration_credit_rules'])
+                ? $this->settings->saveRegistrationCreditRules(
+                    RegistrationCreditRules::normalize($validated['registration_credit_rules'])
+                )
+                : $this->settings->saveRegistrationCreditRules(
+                    RegistrationCreditRules::fromLegacyBands(
+                        (int) $validated['registration_credit_band_max_rooms'],
+                        (float) $validated['registration_credit_within_band'],
+                        (float) $validated['registration_credit_over_band'],
+                    )
+                );
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        $legacy = RegistrationCreditRules::legacyBandFields($rules);
 
         return response()->json([
             'ok' => true,
-            'registration_credit_band_max_rooms' => $this->settings->registrationCreditBandMaxRooms(),
-            'registration_credit_within_band' => $this->settings->registrationCreditWithinBand(),
-            'registration_credit_over_band' => $this->settings->registrationCreditOverBand(),
+            'registration_credit_rules' => RegistrationCreditRules::publicRules($rules),
+            'registration_credit_band_max_rooms' => $legacy['registration_credit_band_max_rooms'],
+            'registration_credit_within_band' => $legacy['registration_credit_within_band'],
+            'registration_credit_over_band' => $legacy['registration_credit_over_band'],
         ]);
     }
 
