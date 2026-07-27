@@ -3273,6 +3273,8 @@ Route::middleware('role:central_admin')->prefix('platform')->group(function () {
     Route::post('/settings/member-qr', [$platform, 'uploadMemberQr']);
     Route::post('/settings/hotel-subscription-qr', [$platform, 'uploadHotelSubscriptionQr']);
     Route::patch('/settings/hotel-subscription-fee', [$platform, 'updateHotelSubscriptionFee']);
+    Route::patch('/settings/member-monthly-fee', [$platform, 'updateMemberMonthlyFee']);
+    Route::patch('/settings/registration-credits', [$platform, 'updateRegistrationCredits']);
     Route::patch('/settings/booking-fee-percent', [$platform, 'updateBookingFeePercent']);
     Route::patch('/settings/min-check-in-payment-percent', [$platform, 'updateMinCheckInPaymentPercent']);
     Route::patch('/settings/late-checkout-fee', [$platform, 'updateLateCheckoutFee']);

@@ -75,7 +75,8 @@ class QrScanWebTest extends TestCase
 
         $this->get($url)
             ->assertOk()
-            ->assertSee('Room 312 QR scanned')
+            ->assertSee('Room 312')
+            ->assertSee('Open in MADYAW')
             ->assertSee('Download MADYAW');
 
         Mail::assertSent(GuestPortalRoomScanMail::class, function (GuestPortalRoomScanMail $mail) {

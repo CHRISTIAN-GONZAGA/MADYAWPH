@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../dio_client.dart';
+import '../services/guest_room_deep_link.dart';
 import '../flow/root_flow.dart';
 import '../widgets/theme_fab.dart';
 import 'madyaw_intro_screen.dart';
@@ -25,6 +26,13 @@ class _AppBootstrapState extends State<AppBootstrap> {
   void _onIntroDone() {
     if (!mounted) return;
     setState(() => _showIntro = false);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      GuestRoomDeepLink.consumePendingIfAny();
+      // Navigator may not be ready on the first frame after intro.
+      Future<void>.delayed(const Duration(milliseconds: 400), () {
+        GuestRoomDeepLink.consumePendingIfAny();
+      });
+    });
   }
 
   @override

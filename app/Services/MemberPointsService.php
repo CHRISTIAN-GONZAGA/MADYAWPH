@@ -446,7 +446,10 @@ class MemberPointsService
         string $shidOrPayload,
         User $actor,
     ): array {
-        $discount = $this->members->resolveBookingMemberDiscount($shidOrPayload);
+        $discount = $this->members->resolveBookingMemberDiscount(
+            $shidOrPayload,
+            (string) $booking->id,
+        );
         $shid = (string) ($discount['member_shid_id'] ?? '');
         if ($shid === '') {
             throw ValidationException::withMessages([

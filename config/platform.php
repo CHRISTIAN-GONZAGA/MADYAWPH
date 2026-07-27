@@ -15,8 +15,19 @@ return [
     'central_admin_password' => env('CENTRAL_ADMIN_PASSWORD', ''),
     'central_admin_email' => env('CENTRAL_ADMIN_EMAIL', 'platform@madyawph.local'),
 
-    /** Monthly member subscription price (PHP). */
+    /** Monthly member subscription price (PHP). 0 = FREE (no payment / QR required). */
     'member_monthly_fee' => (float) env('PLATFORM_MEMBER_MONTHLY_FEE', 300),
+
+    /**
+     * Free registration wallet credits (two-band).
+     * Rooms 1..band_max → within_band amount; rooms above → over_band amount.
+     */
+    'registration_credit_band_max_rooms' => (int) env('PLATFORM_REG_CREDIT_BAND_MAX_ROOMS', 20),
+    'registration_credit_within_band' => (float) env('PLATFORM_REG_CREDIT_WITHIN_BAND', 5000),
+    'registration_credit_over_band' => (float) env('PLATFORM_REG_CREDIT_OVER_BAND', 10000),
+
+    /** Member booking discount applies only on every Nth successful linked booking. */
+    'member_discount_every_nth_booking' => (int) env('PLATFORM_MEMBER_DISCOUNT_EVERY_NTH', 5),
 
     /** Monthly hotel SaaS subscription fee after free trial (PHP). */
     'hotel_subscription_fee' => (float) env('PLATFORM_HOTEL_SUBSCRIPTION_FEE', 1500),

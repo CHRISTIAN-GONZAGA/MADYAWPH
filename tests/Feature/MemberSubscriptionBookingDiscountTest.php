@@ -59,6 +59,8 @@ class MemberSubscriptionBookingDiscountTest extends TestCase
         $response->assertOk();
         $response->assertJsonPath('valid', true);
         $response->assertJsonPath('discount_percent', 12.5);
+        $response->assertJsonPath('next_booking_discount_eligible', false);
+        $response->assertJsonPath('next_booking_discount_percent', 0);
         $response->assertJsonPath('member_shid_id', 'SHID-TEST1234');
     }
 }

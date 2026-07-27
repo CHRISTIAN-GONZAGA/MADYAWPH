@@ -10,7 +10,7 @@ import '../widgets/app_scaffold.dart';
 import '../widgets/chat_attachment.dart';
 import 'member_login_screen.dart';
 
-/// Guest membership registration (₱300/month, QR Ph, platform approval).
+/// Guest membership registration (paid via QR Ph, or FREE when fee is 0).
 class MemberRegistrationScreen extends StatefulWidget {
   const MemberRegistrationScreen({super.key});
 
@@ -30,11 +30,14 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
   String _memberQrRaw = '';
   double _fee = 300;
   double _discountPercent = 10;
+  int _discountEveryNth = 5;
   int _pointsPerBooking = 1000;
   double _pointsPerPeso = 10;
   bool _loading = true;
   bool _submitting = false;
   String? _error;
+
+  bool get _isFree => _fee <= 0;
 
   String get _memberQrUrl => _memberQrRaw.trim().isEmpty
       ? ''
@@ -69,6 +72,11 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
             (res.data?['member_booking_discount_percent'] as num?)
                     ?.toDouble() ??
                 10;
+        _discountEveryNth =
+            ((res.data?['member_discount_every_nth_booking'] as num?)
+                        ?.toDouble() ??
+                    5)
+                .round();
         _pointsPerBooking =
             ((res.data?['member_points_per_check_in'] as num?)?.toDouble() ??
                     1000)
@@ -138,9 +146,12 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
         _emailCtrl.text.trim().isEmpty ||
         _phoneCtrl.text.trim().isEmpty ||
         _usernameCtrl.text.trim().isEmpty ||
-        _passwordCtrl.text.isEmpty ||
-        _refCtrl.text.trim().isEmpty) {
+        _passwordCtrl.text.isEmpty) {
       setState(() => _error = 'Please complete all fields.');
+      return;
+    }
+    if (!_isFree && _refCtrl.text.trim().isEmpty) {
+      setState(() => _error = 'Please enter your payment reference.');
       return;
     }
     if (_passwordCtrl.text != _password2Ctrl.text) {
@@ -164,7 +175,8 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
           'username': username,
           'password': password,
           'password_confirmation': password,
-          'payment_reference': _refCtrl.text.trim(),
+          if (_refCtrl.text.trim().isNotEmpty)
+            'payment_reference': _refCtrl.text.trim(),
         },
       );
       final requestId = (res.data?['request_id'] ?? '').toString();
@@ -207,7 +219,9 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '₱${_fee.toStringAsFixed(0)} / month — unlock member rates, points, and your digital membership ID.',
+                    _isFree
+                        ? 'FREE membership — unlock member rates, points, and your digital membership ID.'
+                        : '₱${_fee.toStringAsFixed(0)} / month — unlock member rates, points, and your digital membership ID.',
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                           color: scheme.onSurfaceVariant,
                         ),
@@ -216,16 +230,19 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
                   _MemberBenefitsCard(
                     fee: _fee,
                     discountPercent: _discountPercent,
+                    discountEveryNth: _discountEveryNth,
                     pointsPerBooking: _pointsPerBooking,
                     pointsPerPeso: _pointsPerPeso,
                   ),
-                  const SizedBox(height: 20),
-                  _MemberQrPhPaymentCard(
-                    fee: _fee,
-                    qrUrl: _memberQrUrl,
-                    onShowQr: _showQrPhDialog,
-                    onRefresh: _loadPlatform,
-                  ),
+                  if (!_isFree) ...[
+                    const SizedBox(height: 20),
+                    _MemberQrPhPaymentCard(
+                      fee: _fee,
+                      qrUrl: _memberQrUrl,
+                      onShowQr: _showQrPhDialog,
+                      onRefresh: _loadPlatform,
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   Text(
                     'Your details',
@@ -263,11 +280,19 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
                   controller: _password2Ctrl,
                   labelText: 'Confirm password',
                 ),
-                const SizedBox(height: 12),
-                AppInput(
-                  controller: _refCtrl,
-                  label: 'Payment reference / transaction ID',
-                ),
+                if (!_isFree) ...[
+                  const SizedBox(height: 12),
+                  AppInput(
+                    controller: _refCtrl,
+                    label: 'Payment reference / transaction ID',
+                  ),
+                ] else ...[
+                  const SizedBox(height: 12),
+                  AppInput(
+                    controller: _refCtrl,
+                    label: 'Payment reference (optional)',
+                  ),
+                ],
                 if (_error != null) ...[
                   const SizedBox(height: 16),
                   Container(
@@ -311,20 +336,24 @@ class _MemberBenefitsCard extends StatelessWidget {
   const _MemberBenefitsCard({
     required this.fee,
     required this.discountPercent,
+    required this.discountEveryNth,
     required this.pointsPerBooking,
     required this.pointsPerPeso,
   });
 
   final double fee;
   final double discountPercent;
+  final int discountEveryNth;
   final int pointsPerBooking;
   final double pointsPerPeso;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final isFree = fee <= 0;
+    final every = discountEveryNth < 1 ? 5 : discountEveryNth;
     final discountLabel = discountPercent > 0
-        ? '${discountPercent.toStringAsFixed(discountPercent % 1 == 0 ? 0 : 1)}% off room bookings'
+        ? '${discountPercent.toStringAsFixed(discountPercent % 1 == 0 ? 0 : 1)}% off every ${every}th booking'
         : 'Member booking rates when the platform discount is active';
     final pointsRate = pointsPerPeso % 1 == 0
         ? pointsPerPeso.toStringAsFixed(0)
@@ -335,7 +364,7 @@ class _MemberBenefitsCard extends StatelessWidget {
         icon: Icons.percent_outlined,
         title: discountLabel,
         detail:
-            'Sign in as a member when you book — your discount applies automatically. No membership ID typing needed.',
+            'Sign in as a member when you book — discount applies on every ${every}th successful booking only (not every stay).',
       ),
       (
         icon: Icons.stars_outlined,
@@ -363,9 +392,10 @@ class _MemberBenefitsCard extends StatelessWidget {
       ),
       (
         icon: Icons.verified_user_outlined,
-        title: 'Active monthly membership',
-        detail:
-            '₱${fee.toStringAsFixed(0)} / month after platform approval of your registration payment.',
+        title: isFree ? 'FREE membership' : 'Active monthly membership',
+        detail: isFree
+            ? 'Register for FREE — after platform approval you can log in with your username and password.'
+            : '₱${fee.toStringAsFixed(0)} / month after platform approval of your registration payment.',
       ),
     ];
 

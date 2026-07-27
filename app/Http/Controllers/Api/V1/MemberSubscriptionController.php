@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\MemberSubscriptionRequest;
+use App\Services\MemberActiveBookingsService;
 use App\Services\MemberSubscriptionService;
 use App\Services\PlatformSettingsService;
 use App\Support\MemberPortalStore;
@@ -17,6 +18,7 @@ class MemberSubscriptionController extends Controller
     public function __construct(
         private readonly PlatformSettingsService $settings,
         private readonly MemberSubscriptionService $members,
+        private readonly MemberActiveBookingsService $activeBookings,
     ) {
     }
 
@@ -27,8 +29,7 @@ class MemberSubscriptionController extends Controller
 
     public function register(Request $request): JsonResponse
     {
-        $fee = (float) $this->settings->row()->member_monthly_fee
-            ?: (float) config('platform.member_monthly_fee', 300);
+        $fee = $this->settings->memberMonthlyFee();
 
         $validated = $request->validate([
             'full_name' => ['required', 'string', 'max:120'],
@@ -36,7 +37,11 @@ class MemberSubscriptionController extends Controller
             'phone' => ['required', 'string', 'max:30'],
             'username' => ['required', 'string', 'min:3', 'max:40', 'regex:/^[A-Za-z0-9._-]+$/'],
             'password' => ['required', 'string', 'confirmed', Password::min(6)->max(72)],
-            'payment_reference' => ['required', 'string', 'max:120'],
+            'payment_reference' => [
+                $fee > 0 ? 'required' : 'nullable',
+                'string',
+                'max:120',
+            ],
         ]);
 
         $email = strtolower(trim((string) $validated['email']));
@@ -80,6 +85,14 @@ class MemberSubscriptionController extends Controller
             ], 422);
         }
 
+        $paymentReference = trim((string) ($validated['payment_reference'] ?? ''));
+        if ($fee > 0 && $paymentReference === '') {
+            return response()->json([
+                'message' => 'Payment reference is required.',
+                'errors' => ['payment_reference' => ['Enter your payment reference / transaction ID.']],
+            ], 422);
+        }
+
         $row = MemberSubscriptionRequest::create([
             'full_name' => trim((string) $validated['full_name']),
             'email' => $email,
@@ -87,7 +100,7 @@ class MemberSubscriptionController extends Controller
             'username' => $username,
             'password' => (string) $validated['password'],
             'amount' => $fee,
-            'payment_reference' => trim((string) $validated['payment_reference']),
+            'payment_reference' => $paymentReference !== '' ? $paymentReference : ($fee <= 0 ? 'FREE' : ''),
             'status' => 'pending',
         ]);
 
@@ -97,7 +110,9 @@ class MemberSubscriptionController extends Controller
             'status' => 'pending',
             'username' => $username,
             'amount' => $fee,
-            'message' => 'Your membership is being reviewed. After approval, log in with your username and password.',
+            'message' => $fee <= 0
+                ? 'Your free membership is being reviewed. After approval, log in with your username and password.'
+                : 'Your membership is being reviewed. After approval, log in with your username and password.',
         ], 201);
     }
 
@@ -157,9 +172,13 @@ class MemberSubscriptionController extends Controller
     {
         /** @var MemberSubscriptionRequest $member */
         $member = $request->attributes->get('member');
+        $shid = (string) ($member->member_shid_id ?? '');
 
         return response()->json([
             'member' => $this->members->serializeForClient($member),
+            'active_bookings' => $shid !== ''
+                ? $this->activeBookings->listForShid($shid)
+                : [],
         ]);
     }
 
@@ -198,6 +217,7 @@ class MemberSubscriptionController extends Controller
         }
 
         $discount = $this->members->resolveBookingMemberDiscount((string) $member->member_shid_id);
+        $policyPercent = $this->members->memberBookingDiscountPercent();
         $points = (float) ($member->points_balance ?? 0);
         $pointsPerPeso = max(0.01, (float) $this->settings->memberPointsPerPeso());
 
@@ -207,7 +227,13 @@ class MemberSubscriptionController extends Controller
             'member_qr_payload' => $this->members->qrPayloadFor($member),
             'full_name' => (string) $member->full_name,
             'member_valid_until' => optional($member->member_valid_until)->toISOString(),
-            'discount_percent' => $discount['percent'],
+            /** Platform policy % (configured by central admin). */
+            'discount_percent' => $policyPercent,
+            /** Actual % that applies if a booking is linked right now (0 when not an Nth booking). */
+            'next_booking_discount_percent' => (float) ($discount['percent'] ?? 0),
+            'next_booking_discount_eligible' => (bool) ($discount['discount_eligible'] ?? false),
+            'next_booking_ordinal' => (int) ($discount['booking_ordinal'] ?? 0),
+            'discount_every_nth_booking' => (int) ($discount['discount_every_nth'] ?? 5),
             'discount_type' => $discount['type'],
             'points_balance' => (int) round($points),
             'points_balance_pesos' => round($points / $pointsPerPeso, 2),

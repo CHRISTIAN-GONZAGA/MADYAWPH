@@ -5,6 +5,7 @@ import 'intro/app_bootstrap.dart';
 import 'locale_controller.dart';
 import 'navigation_keys.dart';
 import 'portal_session_lifecycle.dart';
+import 'services/guest_room_deep_link.dart';
 import 'theme_controller.dart';
 import 'ui/app_theme.dart';
 import 'ui/design_tokens.dart';
@@ -15,6 +16,7 @@ Future<void> main() async {
     loadThemeSeedColor(),
     loadThemeMode(),
     AppLocales.hydrate(),
+    GuestRoomDeepLink.initialize(),
   ]);
   runApp(const MadyawPhApp());
 }

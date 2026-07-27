@@ -717,10 +717,16 @@ class PortalAuthController extends Controller
             'welcome_credits' => [
                 'total_rooms' => $totalRooms,
                 'free_credits' => $freeCredits,
-                'max_free_credits' => HotelRegistrationCredits::MAX_FREE_CREDITS,
+                'max_free_credits' => max(
+                    (int) round(app(\App\Services\PlatformSettingsService::class)->registrationCreditWithinBand()),
+                    (int) round(app(\App\Services\PlatformSettingsService::class)->registrationCreditOverBand()),
+                ),
                 'tier_label' => HotelRegistrationCredits::tierRangeLabel($totalRooms),
-                'credits_per_tier' => HotelRegistrationCredits::CREDITS_PER_TIER,
-                'rooms_per_tier' => HotelRegistrationCredits::ROOMS_PER_TIER,
+                'band_max_rooms' => app(\App\Services\PlatformSettingsService::class)->registrationCreditBandMaxRooms(),
+                'within_band_credits' => (int) round(app(\App\Services\PlatformSettingsService::class)->registrationCreditWithinBand()),
+                'over_band_credits' => (int) round(app(\App\Services\PlatformSettingsService::class)->registrationCreditOverBand()),
+                'credits_per_tier' => (int) round(app(\App\Services\PlatformSettingsService::class)->registrationCreditWithinBand()),
+                'rooms_per_tier' => app(\App\Services\PlatformSettingsService::class)->registrationCreditBandMaxRooms(),
             ],
             'message' => $emailVerified
                 ? 'Hotel registered. Your email has been verified.'

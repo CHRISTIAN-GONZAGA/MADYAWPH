@@ -1838,12 +1838,48 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
   bool _locatingGps = false;
   String? _error;
   ({double lat, double lng})? _previewCoords;
+  int _creditBandMax = 20;
+  double _creditWithin = 5000;
+  double _creditOver = 10000;
 
   int _estimatedWelcomeCredits() {
     final n = int.tryParse(_totalRooms.text.trim()) ?? 0;
     if (n < 1) return 0;
-    final uncapped = ((n + 19) ~/ 20) * 10000;
-    return uncapped > 20000 ? 20000 : uncapped;
+    return n <= _creditBandMax ? _creditWithin.round() : _creditOver.round();
+  }
+
+  String _welcomeCreditsHelper() {
+    final estimate = _estimatedWelcomeCredits();
+    return 'Welcome credits: 1–$_creditBandMax rooms → ₱${_creditWithin.round()}; '
+        '${_creditBandMax + 1}+ rooms → ₱${_creditOver.round()}. '
+        'Estimated: ₱$estimate.';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRegistrationCredits();
+  }
+
+  Future<void> _loadRegistrationCredits() async {
+    try {
+      final res = await publicDio().get<Map<String, dynamic>>('/platform/info');
+      if (!mounted) return;
+      setState(() {
+        _creditBandMax =
+            ((res.data?['registration_credit_band_max_rooms'] as num?)
+                        ?.toDouble() ??
+                    20)
+                .round();
+        _creditWithin =
+            (res.data?['registration_credit_within_band'] as num?)
+                    ?.toDouble() ??
+                5000;
+        _creditOver =
+            (res.data?['registration_credit_over_band'] as num?)?.toDouble() ??
+                10000;
+      });
+    } catch (_) {}
   }
 
   @override
@@ -2312,10 +2348,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
         decoration: InputDecoration(
           labelText: 'Total number of rooms *',
           border: const OutlineInputBorder(),
-          helperText:
-              'Welcome credits: 1–20 rooms → ₱10,000; 21+ rooms → ₱20,000 '
-              '(maximum free credits). '
-              'Estimated: ₱${_estimatedWelcomeCredits()}.',
+          helperText: _welcomeCreditsHelper(),
         ),
         keyboardType: TextInputType.number,
         textInputAction: TextInputAction.next,

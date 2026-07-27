@@ -877,6 +877,37 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
             ),
             if (_paymentMethod == 'Online') ...[
               const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: scheme.errorContainer.withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: scheme.error.withValues(alpha: 0.35),
+                  ),
+                ),
+                child: Text(
+                  'FULL PAYMENT REQUIRED',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: scheme.error,
+                        letterSpacing: 0.6,
+                      ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Online (QR Ph) bookings must be paid in full before your stay is confirmed. '
+                'Scan the hotel QR below and complete payment, then submit your booking request.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      height: 1.4,
+                    ),
+              ),
+              const SizedBox(height: 12),
               if (_qrLoading)
                 const Center(child: CircularProgressIndicator())
               else if (_paymentQrUrl.isEmpty)

@@ -131,6 +131,46 @@ class PlatformAdminController extends Controller
         ]);
     }
 
+    public function updateMemberMonthlyFee(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'member_monthly_fee' => ['required', 'numeric', 'min:0', 'max:50000'],
+        ]);
+
+        $row = $this->settings->row();
+        $row->update([
+            'member_monthly_fee' => round((float) $validated['member_monthly_fee'], 2),
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'member_monthly_fee' => $this->settings->memberMonthlyFee(),
+        ]);
+    }
+
+    public function updateRegistrationCredits(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'registration_credit_band_max_rooms' => ['required', 'integer', 'min:1', 'max:5000'],
+            'registration_credit_within_band' => ['required', 'numeric', 'min:0', 'max:1000000'],
+            'registration_credit_over_band' => ['required', 'numeric', 'min:0', 'max:1000000'],
+        ]);
+
+        $row = $this->settings->row();
+        $row->update([
+            'registration_credit_band_max_rooms' => (int) $validated['registration_credit_band_max_rooms'],
+            'registration_credit_within_band' => round((float) $validated['registration_credit_within_band'], 2),
+            'registration_credit_over_band' => round((float) $validated['registration_credit_over_band'], 2),
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'registration_credit_band_max_rooms' => $this->settings->registrationCreditBandMaxRooms(),
+            'registration_credit_within_band' => $this->settings->registrationCreditWithinBand(),
+            'registration_credit_over_band' => $this->settings->registrationCreditOverBand(),
+        ]);
+    }
+
     public function subscriptionRequests(\App\Services\HotelSubscriptionService $subscriptions): JsonResponse
     {
         $rows = \App\Models\HotelSubscriptionPaymentRequest::query()

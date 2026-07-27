@@ -231,6 +231,49 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
     }
   }
 
+  Future<void> _updateMemberMonthlyFee(double amount) async {
+    try {
+      await portalDio().patch<Map<String, dynamic>>(
+        '/platform/settings/member-monthly-fee',
+        data: {'member_monthly_fee': amount},
+      );
+      if (!mounted) return;
+      showAppMessage(
+        context,
+        amount <= 0
+            ? 'Member subscription set to FREE.'
+            : 'Member monthly fee updated.',
+      );
+      await _loadAll();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
+  Future<void> _updateRegistrationCredits({
+    required int bandMaxRooms,
+    required double withinBand,
+    required double overBand,
+  }) async {
+    try {
+      await portalDio().patch<Map<String, dynamic>>(
+        '/platform/settings/registration-credits',
+        data: {
+          'registration_credit_band_max_rooms': bandMaxRooms,
+          'registration_credit_within_band': withinBand,
+          'registration_credit_over_band': overBand,
+        },
+      );
+      if (!mounted) return;
+      showAppMessage(context, 'Registration free credits updated.');
+      await _loadAll();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
   Future<void> _updateMemberPointsSettings({
     required double pointsPerCheckIn,
     required double pointsPerPeso,
@@ -591,6 +634,8 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
                       onUploadMember: () => _uploadQr(kind: 'member'),
                       onUploadSubscription: () => _uploadQr(kind: 'subscription'),
                       onUpdateHotelSubscriptionFee: _updateHotelSubscriptionFee,
+                      onUpdateMemberMonthlyFee: _updateMemberMonthlyFee,
+                      onUpdateRegistrationCredits: _updateRegistrationCredits,
                       onUpdateBookingFeePercent: _updateBookingFeePercent,
                       onUpdateMinCheckInPaymentPercent:
                           _updateMinCheckInPaymentPercent,
@@ -1644,6 +1689,8 @@ class _QrSettingsSection extends StatefulWidget {
     required this.onUploadMember,
     required this.onUploadSubscription,
     required this.onUpdateHotelSubscriptionFee,
+    required this.onUpdateMemberMonthlyFee,
+    required this.onUpdateRegistrationCredits,
     required this.onUpdateBookingFeePercent,
     required this.onUpdateMinCheckInPaymentPercent,
     required this.onUpdateLateCheckoutFee,
@@ -1657,6 +1704,12 @@ class _QrSettingsSection extends StatefulWidget {
   final VoidCallback onUploadMember;
   final VoidCallback onUploadSubscription;
   final Future<void> Function(double amount) onUpdateHotelSubscriptionFee;
+  final Future<void> Function(double amount) onUpdateMemberMonthlyFee;
+  final Future<void> Function({
+    required int bandMaxRooms,
+    required double withinBand,
+    required double overBand,
+  }) onUpdateRegistrationCredits;
   final Future<void> Function(double percent) onUpdateBookingFeePercent;
   final Future<void> Function(double percent) onUpdateMinCheckInPaymentPercent;
   final Future<void> Function({
@@ -1680,6 +1733,10 @@ class _QrSettingsSection extends StatefulWidget {
 class _QrSettingsSectionState extends State<_QrSettingsSection> {
   late final TextEditingController _feePercentCtrl;
   late final TextEditingController _hotelSubFeeCtrl;
+  late final TextEditingController _memberMonthlyFeeCtrl;
+  late final TextEditingController _regBandMaxCtrl;
+  late final TextEditingController _regWithinCtrl;
+  late final TextEditingController _regOverCtrl;
   late final TextEditingController _minCheckInPercentCtrl;
   late final TextEditingController _lateGraceCtrl;
   late final TextEditingController _lateFeeCtrl;
@@ -1690,6 +1747,8 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
   late final TextEditingController _pointsPerPesoCtrl;
   var _savingFee = false;
   var _savingHotelSubFee = false;
+  var _savingMemberMonthlyFee = false;
+  var _savingRegCredits = false;
   var _savingMinCheckIn = false;
   var _savingLateCheckout = false;
   var _savingEarlyCheckIn = false;
@@ -1705,6 +1764,18 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     _hotelSubFeeCtrl = TextEditingController(
       text: ((widget.settings['hotel_subscription_fee'] as num?)?.toDouble() ?? 1500)
           .toStringAsFixed(0),
+    );
+    _memberMonthlyFeeCtrl = TextEditingController(
+      text: _memberMonthlyFeeText(widget.settings),
+    );
+    _regBandMaxCtrl = TextEditingController(
+      text: _regBandMaxText(widget.settings),
+    );
+    _regWithinCtrl = TextEditingController(
+      text: _regWithinText(widget.settings),
+    );
+    _regOverCtrl = TextEditingController(
+      text: _regOverText(widget.settings),
     );
     _minCheckInPercentCtrl = TextEditingController(
       text: _minCheckInPercentText(widget.settings),
@@ -1771,12 +1842,32 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     if (ptsPeso != _pointsPerPesoCtrl.text) {
       _pointsPerPesoCtrl.text = ptsPeso;
     }
+    final memberFee = _memberMonthlyFeeText(widget.settings);
+    if (memberFee != _memberMonthlyFeeCtrl.text) {
+      _memberMonthlyFeeCtrl.text = memberFee;
+    }
+    final regBand = _regBandMaxText(widget.settings);
+    if (regBand != _regBandMaxCtrl.text) {
+      _regBandMaxCtrl.text = regBand;
+    }
+    final regWithin = _regWithinText(widget.settings);
+    if (regWithin != _regWithinCtrl.text) {
+      _regWithinCtrl.text = regWithin;
+    }
+    final regOver = _regOverText(widget.settings);
+    if (regOver != _regOverCtrl.text) {
+      _regOverCtrl.text = regOver;
+    }
   }
 
   @override
   void dispose() {
     _feePercentCtrl.dispose();
     _hotelSubFeeCtrl.dispose();
+    _memberMonthlyFeeCtrl.dispose();
+    _regBandMaxCtrl.dispose();
+    _regWithinCtrl.dispose();
+    _regOverCtrl.dispose();
     _minCheckInPercentCtrl.dispose();
     _lateGraceCtrl.dispose();
     _lateFeeCtrl.dispose();
@@ -1793,6 +1884,33 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     if (raw == null) return '8';
     return (raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 8)
         .toStringAsFixed(raw is num && raw % 1 == 0 ? 0 : 1);
+  }
+
+  static String _memberMonthlyFeeText(Map<String, dynamic> settings) {
+    final raw = settings['member_monthly_fee'];
+    if (raw == null) return '300';
+    return (raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 300)
+        .toStringAsFixed(raw is num && raw % 1 == 0 ? 0 : 2);
+  }
+
+  static String _regBandMaxText(Map<String, dynamic> settings) {
+    final raw = settings['registration_credit_band_max_rooms'];
+    if (raw == null) return '20';
+    return '${raw is num ? raw.toInt() : int.tryParse('$raw') ?? 20}';
+  }
+
+  static String _regWithinText(Map<String, dynamic> settings) {
+    final raw = settings['registration_credit_within_band'];
+    if (raw == null) return '5000';
+    return (raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 5000)
+        .toStringAsFixed(0);
+  }
+
+  static String _regOverText(Map<String, dynamic> settings) {
+    final raw = settings['registration_credit_over_band'];
+    if (raw == null) return '10000';
+    return (raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 10000)
+        .toStringAsFixed(0);
   }
 
   static String _minCheckInPercentText(Map<String, dynamic> settings) {
@@ -2006,8 +2124,16 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
               const SizedBox(height: 16),
               _QrUploadCard(
                 title: 'Become a member',
-                subtitle:
-                    'Guests pay ₱${widget.settings['member_monthly_fee'] ?? 300}/month.',
+                subtitle: () {
+                  final fee =
+                      (widget.settings['member_monthly_fee'] as num?)
+                              ?.toDouble() ??
+                          300;
+                  if (fee <= 0) {
+                    return 'Membership is FREE — QR Ph is hidden in the guest app.';
+                  }
+                  return 'Guests pay ₱${fee.toStringAsFixed(0)}/month via QR Ph.';
+                }(),
                 imageUrl: memberQr,
                 onUpload: widget.onUploadMember,
               ),
@@ -2018,6 +2144,178 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                     'Shown when a hotel trial ends. Monthly fee ₱${widget.settings['hotel_subscription_fee'] ?? 1500}.',
                 imageUrl: hotelSubQr,
                 onUpload: widget.onUploadSubscription,
+              ),
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Member monthly fee',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Set to 0 for FREE membership (no payment reference / QR required).',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _memberMonthlyFeeCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Monthly fee (0 = FREE)',
+                          prefixText: '₱ ',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      FilledButton(
+                        onPressed: _savingMemberMonthlyFee
+                            ? null
+                            : () async {
+                                final v = double.tryParse(
+                                  _memberMonthlyFeeCtrl.text.trim(),
+                                );
+                                if (v == null || v < 0) {
+                                  showAppMessage(
+                                    context,
+                                    'Enter a fee of 0 or more.',
+                                    isError: true,
+                                  );
+                                  return;
+                                }
+                                setState(() => _savingMemberMonthlyFee = true);
+                                try {
+                                  await widget.onUpdateMemberMonthlyFee(v);
+                                } finally {
+                                  if (mounted) {
+                                    setState(
+                                      () => _savingMemberMonthlyFee = false,
+                                    );
+                                  }
+                                }
+                              },
+                        child: _savingMemberMonthlyFee
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text('Save member fee'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Hotel registration free credits',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Two-band: rooms 1–N get the within-band amount; N+1 and above get the over-band amount.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _regBandMaxCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Band max rooms (N)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _regWithinCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Credits for 1–N rooms',
+                          prefixText: '₱ ',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _regOverCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Credits for N+1 rooms and up',
+                          prefixText: '₱ ',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      FilledButton(
+                        onPressed: _savingRegCredits
+                            ? null
+                            : () async {
+                                final band = int.tryParse(
+                                  _regBandMaxCtrl.text.trim(),
+                                );
+                                final within = double.tryParse(
+                                  _regWithinCtrl.text.trim(),
+                                );
+                                final over = double.tryParse(
+                                  _regOverCtrl.text.trim(),
+                                );
+                                if (band == null ||
+                                    band < 1 ||
+                                    within == null ||
+                                    within < 0 ||
+                                    over == null ||
+                                    over < 0) {
+                                  showAppMessage(
+                                    context,
+                                    'Enter valid band rooms and credit amounts.',
+                                    isError: true,
+                                  );
+                                  return;
+                                }
+                                setState(() => _savingRegCredits = true);
+                                try {
+                                  await widget.onUpdateRegistrationCredits(
+                                    bandMaxRooms: band,
+                                    withinBand: within,
+                                    overBand: over,
+                                  );
+                                } finally {
+                                  if (mounted) {
+                                    setState(() => _savingRegCredits = false);
+                                  }
+                                }
+                              },
+                        child: _savingRegCredits
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text('Save registration credits'),
+                      ),
+                    ],
+                  ),
+                ),
               ),
               const SizedBox(height: 16),
               Card(
@@ -2331,7 +2629,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Applied when a signed-in member books in the customer app, or when hotel staff scan a membership QR / enter SHID on a walk-in.',
+                        'Percent off applied only on every 5th successful booking linked to the member (1–4 full price, 5th discounted, then repeat).',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       const SizedBox(height: 12),

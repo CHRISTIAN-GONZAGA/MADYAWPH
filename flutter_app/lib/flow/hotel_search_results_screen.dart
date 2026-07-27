@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../auth_storage.dart';
+import '../dio_client.dart';
 import '../locale_controller.dart';
 import '../ui/app_visual.dart';
 import '../widgets/chat_attachment.dart';
@@ -220,19 +221,52 @@ class HotelSearchResultsScreen extends StatelessWidget {
   }
 }
 
-class _MemberPromoBanner extends StatelessWidget {
+class _MemberPromoBanner extends StatefulWidget {
   const _MemberPromoBanner({required this.onTap});
 
   final VoidCallback onTap;
 
   @override
+  State<_MemberPromoBanner> createState() => _MemberPromoBannerState();
+}
+
+class _MemberPromoBannerState extends State<_MemberPromoBanner> {
+  double? _fee;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFee();
+  }
+
+  Future<void> _loadFee() async {
+    try {
+      final res = await publicDio().get<Map<String, dynamic>>('/platform/info');
+      if (!mounted) return;
+      setState(() {
+        _fee = (res.data?['member_monthly_fee'] as num?)?.toDouble() ?? 300;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _fee = 300);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final fee = _fee;
+    final subtitle = fee == null
+        ? 'Exclusive perks & priority booking'
+        : fee <= 0
+            ? 'FREE — exclusive perks & priority booking'
+            : '₱${fee.toStringAsFixed(0)}/month — exclusive perks & priority booking';
+
     return Material(
       elevation: 2,
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: onTap,
+        onTap: widget.onTap,
         child: Ink(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
@@ -266,7 +300,7 @@ class _MemberPromoBanner extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '₱300/month — exclusive perks & priority booking',
+                      subtitle,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: Colors.white70,
                           ),

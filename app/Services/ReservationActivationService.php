@@ -127,6 +127,25 @@ class ReservationActivationService
         }
         if (! empty($meta['member_shid_id'])) {
             $bookingAttrs['member_shid_id'] = (string) $meta['member_shid_id'];
+            // Re-evaluate every-Nth discount at activation so pending reservations cannot lock a stale %.
+            $memberDiscount = app(MemberSubscriptionService::class)
+                ->resolveBookingMemberDiscount((string) $meta['member_shid_id']);
+            if ($memberDiscount['discount_eligible'] && (float) $memberDiscount['percent'] > 0) {
+                $bookingAttrs['discount_type'] = 'member';
+                $bookingAttrs['discount_percent'] = (float) $memberDiscount['percent'];
+                $total = app(MemberSubscriptionService::class)->applyPercentToAmount(
+                    (float) ($charge['amount'] ?? $total),
+                    (float) $memberDiscount['percent'],
+                );
+                $bookingAttrs['total_amount'] = $total;
+            } else {
+                // Keep membership link for points; drop member % if this is not an eligible Nth booking.
+                if (strtolower((string) ($bookingAttrs['discount_type'] ?? '')) === 'member') {
+                    unset($bookingAttrs['discount_type'], $bookingAttrs['discount_percent']);
+                    $total = PriceRounding::nearest50((float) ($charge['amount'] ?? $total));
+                    $bookingAttrs['total_amount'] = $total;
+                }
+            }
         }
 
         $booking = Booking::withoutGlobalScopes()->create(array_merge(

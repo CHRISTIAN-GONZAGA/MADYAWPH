@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Enums\BookingStatus;
+use App\Models\Booking;
 use App\Models\MemberSubscriptionRequest;
 use App\Support\PriceRounding;
 use Illuminate\Support\Str;
@@ -16,6 +18,11 @@ final class MemberSubscriptionService
     public function memberBookingDiscountPercent(): float
     {
         return max(0.0, min(100.0, $this->settings->memberBookingDiscountPercent()));
+    }
+
+    public function memberDiscountEveryNthBooking(): int
+    {
+        return $this->settings->memberDiscountEveryNthBooking();
     }
 
     public function generateShidId(): string
@@ -92,35 +99,104 @@ final class MemberSubscriptionService
     }
 
     /**
-     * @return array{type: string, percent: float, member_shid_id: ?string, member_name: ?string}
+     * Count non-cancelled bookings already linked to this membership.
      */
-    public function resolveBookingMemberDiscount(?string $shidOrPayload): array
+    public function countLinkedBookings(string $shid, ?string $excludeBookingId = null): int
     {
+        $shid = strtoupper(trim($shid));
+        if ($shid === '') {
+            return 0;
+        }
+
+        $query = Booking::withoutGlobalScopes()
+            ->where('member_shid_id', $shid)
+            ->where(function ($q) {
+                $q->whereNull('status')
+                    ->orWhere('status', '!=', BookingStatus::CANCELLED->value);
+            });
+
+        if ($excludeBookingId !== null && $excludeBookingId !== '') {
+            $query->where(function ($q) use ($excludeBookingId) {
+                $q->where('id', '!=', $excludeBookingId)
+                    ->where('_id', '!=', $excludeBookingId);
+            });
+        }
+
+        return (int) $query->count();
+    }
+
+    /**
+     * Next booking ordinal for a member (1-based). Cancelled bookings do not count.
+     */
+    public function nextBookingOrdinal(string $shid, ?string $excludeBookingId = null): int
+    {
+        return $this->countLinkedBookings($shid, $excludeBookingId) + 1;
+    }
+
+    public function isNthBookingDiscountEligible(int $ordinal): bool
+    {
+        $every = $this->memberDiscountEveryNthBooking();
+        if ($every < 1 || $ordinal < 1) {
+            return false;
+        }
+
+        return ($ordinal % $every) === 0;
+    }
+
+    /**
+     * @return array{
+     *     type: string,
+     *     percent: float,
+     *     member_shid_id: ?string,
+     *     member_name: ?string,
+     *     booking_ordinal: int,
+     *     discount_eligible: bool,
+     *     discount_every_nth: int
+     * }
+     */
+    public function resolveBookingMemberDiscount(
+        ?string $shidOrPayload,
+        ?string $excludeBookingId = null,
+    ): array {
         $member = $this->findActiveMember($shidOrPayload);
+        $every = $this->memberDiscountEveryNthBooking();
         if ($member === null) {
             return [
                 'type' => 'none',
                 'percent' => 0.0,
                 'member_shid_id' => null,
                 'member_name' => null,
+                'booking_ordinal' => 0,
+                'discount_eligible' => false,
+                'discount_every_nth' => $every,
             ];
         }
 
+        $shid = (string) $member->member_shid_id;
+        $ordinal = $this->nextBookingOrdinal($shid, $excludeBookingId);
+        $eligible = $this->isNthBookingDiscountEligible($ordinal);
         $percent = $this->memberBookingDiscountPercent();
-        if ($percent <= 0) {
+
+        if (! $eligible || $percent <= 0) {
             return [
                 'type' => 'none',
                 'percent' => 0.0,
-                'member_shid_id' => (string) $member->member_shid_id,
+                'member_shid_id' => $shid,
                 'member_name' => (string) $member->full_name,
+                'booking_ordinal' => $ordinal,
+                'discount_eligible' => false,
+                'discount_every_nth' => $every,
             ];
         }
 
         return [
             'type' => 'member',
             'percent' => $percent,
-            'member_shid_id' => (string) $member->member_shid_id,
+            'member_shid_id' => $shid,
             'member_name' => (string) $member->full_name,
+            'booking_ordinal' => $ordinal,
+            'discount_eligible' => true,
+            'discount_every_nth' => $every,
         ];
     }
 
@@ -143,6 +219,9 @@ final class MemberSubscriptionService
         $qr = $approved && $shid !== '' ? $this->qrPayloadFor($row) : null;
         $points = (float) ($row->points_balance ?? 0);
         $pointsPerPeso = max(0.01, (float) $this->settings->memberPointsPerPeso());
+        $linked = $shid !== '' ? $this->countLinkedBookings($shid) : 0;
+        $every = $this->memberDiscountEveryNthBooking();
+        $nextOrdinal = $linked + 1;
 
         return [
             'id' => (string) $row->id,
@@ -155,6 +234,10 @@ final class MemberSubscriptionService
             'member_qr_payload' => $qr,
             'member_valid_until' => optional($row->member_valid_until)->toISOString(),
             'member_discount_percent' => $this->memberBookingDiscountPercent(),
+            'member_discount_every_nth_booking' => $every,
+            'member_bookings_count' => $linked,
+            'next_booking_ordinal' => $nextOrdinal,
+            'next_booking_discount_eligible' => $this->isNthBookingDiscountEligible($nextOrdinal),
             'amount' => (float) ($row->amount ?? 0),
             'points_balance' => (int) round($points),
             'points_balance_pesos' => round($points / $pointsPerPeso, 2),

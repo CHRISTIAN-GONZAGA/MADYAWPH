@@ -415,6 +415,25 @@ class _OnlinePaymentPendingCardState extends State<_OnlinePaymentPendingCard> {
                   ),
             ),
             const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: scheme.errorContainer.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: scheme.error.withValues(alpha: 0.35)),
+              ),
+              child: Text(
+                'FULL PAYMENT REQUIRED',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w900,
+                      color: scheme.error,
+                      letterSpacing: 0.6,
+                    ),
+              ),
+            ),
+            const SizedBox(height: 8),
             if (paymentRef.isNotEmpty)
               SelectableText(
                 'Reference: $paymentRef',

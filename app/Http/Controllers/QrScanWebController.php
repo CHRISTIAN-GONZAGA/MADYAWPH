@@ -74,17 +74,22 @@ class QrScanWebController extends Controller
         );
 
         $install = $this->appInstallDestination();
+        $roomDeepLink = url('/qr/room/'.rawurlencode($hotelId).'/'.rawurlencode($roomId).'/'.rawurlencode($token));
+        $customScheme = 'madyaw://guest/room/'
+            .rawurlencode($hotelId).'/'
+            .rawurlencode($roomId).'/'
+            .rawurlencode($token);
 
-        return view('qr_scan_landing', [
+        return view('qr_room_landing', [
             'title' => 'Room '.$roomNumber,
-            'heading' => 'Room '.$roomNumber.' QR scanned',
-            'message' => $hotelName !== ''
-                ? "You're at {$hotelName}. Open the MADYAW app to sign in with your room password."
-                : 'Open the MADYAW app to sign in with your room password.',
-            'detail' => $roomNumber !== '' ? 'Room '.$roomNumber : null,
-            'ctaUrl' => $install !== '' ? $install : null,
-            'ctaLabel' => $install !== '' ? 'Download MADYAW' : null,
-            'footer' => 'If you already have MADYAW, open the app and use Guest access / Scan QR.',
+            'heading' => 'Room '.$roomNumber.' — guest access',
+            'message' => 'Sign in with your room password in MADYAW to open guest chat and hotel services.',
+            'roomNumber' => $roomNumber,
+            'hotelName' => $hotelName,
+            'roomDeepLink' => $roomDeepLink,
+            'customSchemeUrl' => $customScheme,
+            'apkDownloadUrl' => $install !== '' ? $install : null,
+            'footer' => 'Your room password was provided at check-in. If the app is not installed yet, download MADYAW first, then tap Open in MADYAW.',
         ]);
     }
 

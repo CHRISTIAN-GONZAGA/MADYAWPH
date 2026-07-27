@@ -2,40 +2,65 @@
 
 namespace App\Support;
 
+use App\Services\PlatformSettingsService;
+
 /**
  * Free wallet credits granted when a hotel registers, based on declared room count.
  *
- * Any room count → ₱10,000 free credits (hard cap).
+ * Two-band rules (central-admin configurable):
+ * - rooms 1..band_max → within_band amount
+ * - rooms > band_max → over_band amount
  */
 final class HotelRegistrationCredits
 {
+    /** @deprecated Kept for API payload compatibility; prefer settings helpers. */
     public const ROOMS_PER_TIER = 20;
 
-    public const CREDITS_PER_TIER = 10000;
+    /** @deprecated Kept for API payload compatibility; prefer settings helpers. */
+    public const CREDITS_PER_TIER = 5000;
 
-    /** Maximum free registration credits granted to any hotel. */
+    /** @deprecated Soft upper hint only; actual caps come from settings. */
     public const MAX_FREE_CREDITS = 10000;
 
     public static function freeCreditsForRoomCount(int $roomCount): int
     {
         $roomCount = max(1, min($roomCount, 5000));
-        $tier = (int) ceil($roomCount / self::ROOMS_PER_TIER);
+        [$bandMax, $within, $over] = self::bandSettings();
 
-        return min(self::MAX_FREE_CREDITS, $tier * self::CREDITS_PER_TIER);
+        return (int) round($roomCount <= $bandMax ? $within : $over);
     }
 
     public static function tierRangeLabel(int $roomCount): string
     {
         $roomCount = max(1, $roomCount);
-        $credits = self::freeCreditsForRoomCount($roomCount);
-        if ($credits >= self::MAX_FREE_CREDITS) {
-            return 'max free credits';
+        [$bandMax] = self::bandSettings();
+
+        if ($roomCount <= $bandMax) {
+            return '1–'.$bandMax.' rooms';
         }
 
-        $tier = (int) ceil($roomCount / self::ROOMS_PER_TIER);
-        $low = ($tier - 1) * self::ROOMS_PER_TIER + 1;
-        $high = $tier * self::ROOMS_PER_TIER;
+        return ($bandMax + 1).'+ rooms';
+    }
 
-        return "{$low}–{$high} rooms";
+    /**
+     * @return array{0: int, 1: float, 2: float}
+     */
+    public static function bandSettings(): array
+    {
+        try {
+            $settings = app(PlatformSettingsService::class);
+
+            return [
+                $settings->registrationCreditBandMaxRooms(),
+                $settings->registrationCreditWithinBand(),
+                $settings->registrationCreditOverBand(),
+            ];
+        } catch (\Throwable) {
+            return [
+                max(1, (int) config('platform.registration_credit_band_max_rooms', 20)),
+                max(0.0, (float) config('platform.registration_credit_within_band', 5000)),
+                max(0.0, (float) config('platform.registration_credit_over_band', 10000)),
+            ];
+        }
     }
 }
