@@ -84,38 +84,76 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
       _loading = true;
       _error = null;
     });
-    try {
-      final results = await Future.wait([
-        portalDio().get<Map<String, dynamic>>('/platform/settings'),
-        portalDio().get<Map<String, dynamic>>(
+
+    final errors = <String>[];
+
+    Future<void> guard(String label, Future<void> Function() task) async {
+      try {
+        await task();
+      } on DioException catch (e) {
+        errors.add('$label: ${dioErrorMessage(e)}');
+      }
+    }
+
+    await Future.wait([
+      guard('Settings', () async {
+        final res = await portalDio().get<Map<String, dynamic>>('/platform/settings');
+        if (!mounted) return;
+        setState(() => _settings = res.data);
+      }),
+      guard('Revenue', () async {
+        final res = await portalDio().get<Map<String, dynamic>>(
           '/platform/revenue-analytics',
           queryParameters: {'period': _revenuePeriod},
-        ),
-        portalDio().get<Map<String, dynamic>>(
+        );
+        if (!mounted) return;
+        setState(() => _revenue = res.data);
+      }),
+      guard('Guests', () async {
+        final res = await portalDio().get<Map<String, dynamic>>(
           '/platform/guest-demographics',
           queryParameters: {'period': _guestsPeriod},
-        ),
-        portalDio().get<Map<String, dynamic>>('/platform/credit-requests'),
-        portalDio().get<Map<String, dynamic>>('/platform/member-requests'),
-        portalDio().get<Map<String, dynamic>>('/platform/subscription-requests'),
-        portalDio().get<Map<String, dynamic>>('/platform/hotels'),
-      ]);
-      setState(() {
-        _settings = results[0].data;
-        _revenue = results[1].data;
-        _guests = results[2].data;
-        _creditRequests = (results[3].data?['data'] as List?) ?? const [];
-        _memberRequests = (results[4].data?['data'] as List?) ?? const [];
-        _subscriptionRequests = (results[5].data?['data'] as List?) ?? const [];
-        _hotels = (results[6].data?['data'] as List?) ?? const [];
-        _loading = false;
-      });
-    } on DioException catch (e) {
-      setState(() {
-        _error = dioErrorMessage(e);
-        _loading = false;
-      });
-    }
+        );
+        if (!mounted) return;
+        setState(() => _guests = res.data);
+      }),
+      guard('Credit requests', () async {
+        final res = await portalDio().get<Map<String, dynamic>>('/platform/credit-requests');
+        if (!mounted) return;
+        setState(() {
+          _creditRequests = (res.data?['data'] as List?) ?? const [];
+        });
+      }),
+      guard('Member requests', () async {
+        final res = await portalDio().get<Map<String, dynamic>>('/platform/member-requests');
+        if (!mounted) return;
+        setState(() {
+          _memberRequests = (res.data?['data'] as List?) ?? const [];
+        });
+      }),
+      guard('Subscription requests', () async {
+        final res = await portalDio().get<Map<String, dynamic>>('/platform/subscription-requests');
+        if (!mounted) return;
+        setState(() {
+          _subscriptionRequests = (res.data?['data'] as List?) ?? const [];
+        });
+      }),
+      guard('Hotels', () async {
+        final res = await portalDio().get<Map<String, dynamic>>('/platform/hotels');
+        if (!mounted) return;
+        setState(() {
+          _hotels = (res.data?['data'] as List?) ?? const [];
+        });
+      }),
+    ]);
+
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      _error = errors.isEmpty
+          ? null
+          : errors.join('\n');
+    });
   }
 
   Future<void> _reloadRevenue() async {

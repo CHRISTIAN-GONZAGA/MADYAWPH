@@ -7,6 +7,7 @@ use App\Models\HotelSubscriptionPaymentRequest;
 use App\Models\PlatformSetting;
 use App\Models\User;
 use App\Support\ChatAttachmentUrl;
+use App\Support\EnumHelper;
 use Carbon\Carbon;
 use Illuminate\Validation\ValidationException;
 
@@ -242,9 +243,9 @@ class HotelSubscriptionService
             'hotel_name' => (string) ($r->hotel_name ?? ''),
             'amount' => (float) ($r->amount ?? 0),
             'payment_reference' => (string) ($r->payment_reference ?? ''),
-            'status' => (string) ($r->status ?? ''),
+            'status' => EnumHelper::toString($r->status ?? ''),
             'requested_by_name' => (string) ($r->requested_by_name ?? ''),
-            'requested_by_role' => (string) ($r->requested_by_role ?? ''),
+            'requested_by_role' => EnumHelper::toString($r->requested_by_role ?? ''),
             'notes' => (string) ($r->notes ?? ''),
             'period_months' => (int) ($r->period_months ?? 1),
             'created_at' => optional($r->created_at)?->toIso8601String(),

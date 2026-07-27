@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\BookingStatus;
 use App\Models\Booking;
 use App\Models\MemberSubscriptionRequest;
+use App\Support\EnumHelper;
 use App\Support\PriceRounding;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -214,7 +215,7 @@ final class MemberSubscriptionService
      */
     public function serializeForClient(MemberSubscriptionRequest $row): array
     {
-        $approved = (string) ($row->status ?? '') === 'approved';
+        $approved = EnumHelper::toString($row->status ?? '') === 'approved';
         $shid = trim((string) ($row->member_shid_id ?? ''));
         $qr = $approved && $shid !== '' ? $this->qrPayloadFor($row) : null;
         $points = (float) ($row->points_balance ?? 0);
@@ -225,7 +226,7 @@ final class MemberSubscriptionService
 
         return [
             'id' => (string) $row->id,
-            'status' => (string) ($row->status ?? 'pending'),
+            'status' => EnumHelper::toString($row->status ?? 'pending'),
             'full_name' => (string) ($row->full_name ?? ''),
             'email' => (string) ($row->email ?? ''),
             'phone' => (string) ($row->phone ?? ''),

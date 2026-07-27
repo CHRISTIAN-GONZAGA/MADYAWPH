@@ -436,28 +436,49 @@ class PortalAuthController extends Controller
             return response()->json(['message' => 'Invalid platform credentials.'], 422);
         }
 
-        $user = app(\App\Services\CentralAdminAccountService::class)->ensureUser();
+        try {
+            $user = app(\App\Services\CentralAdminAccountService::class)->ensureUser();
 
-        PersonalAccessToken::query()
-            ->where('tokenable_id', (string) $user->getAuthIdentifier())
-            ->where('tokenable_type', $user->getMorphClass())
-            ->delete();
+            PersonalAccessToken::query()
+                ->where('tokenable_type', $user->getMorphClass())
+                ->where(function ($query) use ($user) {
+                    $id = (string) $user->getAuthIdentifier();
+                    $query->where('tokenable_id', $id);
+                    if (preg_match('/^[a-f0-9]{24}$/i', $id) === 1
+                        && class_exists(\MongoDB\BSON\ObjectId::class)) {
+                        try {
+                            $query->orWhere('tokenable_id', new \MongoDB\BSON\ObjectId($id));
+                        } catch (\Throwable) {
+                            // ignore invalid ObjectId
+                        }
+                    }
+                })
+                ->delete();
 
-        $token = $user->createToken('flutter-central-admin')->plainTextToken;
+            $token = $user->createToken('flutter-central-admin')->plainTextToken;
 
-        return response()->json([
-            'token' => $token,
-            'token_type' => 'Bearer',
-            'user' => [
-                'id' => (string) $user->id,
-                'hotel_id' => '',
-                'name' => (string) ($user->name ?? ''),
-                'email' => (string) ($user->email ?? ''),
+            return response()->json([
+                'token' => $token,
+                'token_type' => 'Bearer',
+                'user' => [
+                    'id' => (string) $user->id,
+                    'hotel_id' => '',
+                    'name' => (string) ($user->name ?? ''),
+                    'email' => (string) ($user->email ?? ''),
+                    'role' => UserRole::CENTRAL_ADMIN->value,
+                ],
                 'role' => UserRole::CENTRAL_ADMIN->value,
-            ],
-            'role' => UserRole::CENTRAL_ADMIN->value,
-            'central_admin' => true,
-        ]);
+                'central_admin' => true,
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Server error during platform sign-in.',
+            ], 500);
+        }
     }
 
     public function forgotSend(Request $request): JsonResponse

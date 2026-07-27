@@ -19,13 +19,16 @@ use App\Services\PlatformHotelCreditService;
 use App\Services\PlatformRevenueAnalyticsService;
 use App\Services\PlatformSettingsService;
 use App\Support\ChatAttachmentUrl;
+use App\Support\EnumHelper;
 use App\Support\PriceRounding;
 use App\Support\RoomImageUploadRules;
 use App\Support\RoomMediaStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Api\V1\PortalAuthController;
+use Throwable;
 
 class PlatformAdminController extends Controller
 {
@@ -41,29 +44,35 @@ class PlatformAdminController extends Controller
 
     public function revenueAnalytics(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'period' => ['nullable', 'in:day,week,month,year'],
-        ]);
+        return $this->safePlatformResponse('revenue analytics', function () use ($request) {
+            $validated = $request->validate([
+                'period' => ['nullable', 'in:day,week,month,year'],
+            ]);
 
-        return response()->json(
-            $this->revenueAnalytics->summarize($validated['period'] ?? 'month')
-        );
+            return response()->json(
+                $this->revenueAnalytics->summarize($validated['period'] ?? 'month')
+            );
+        });
     }
 
     public function guestDemographics(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'period' => ['nullable', 'in:day,week,month,year'],
-        ]);
+        return $this->safePlatformResponse('guest demographics', function () use ($request) {
+            $validated = $request->validate([
+                'period' => ['nullable', 'in:day,week,month,year'],
+            ]);
 
-        return response()->json(
-            $this->guestDemographics->summarize($validated['period'] ?? 'month')
-        );
+            return response()->json(
+                $this->guestDemographics->summarize($validated['period'] ?? 'month')
+            );
+        });
     }
 
     public function settings(): JsonResponse
     {
-        return response()->json($this->settings->adminPayload());
+        return $this->safePlatformResponse('platform settings', function () {
+            return response()->json($this->settings->adminPayload());
+        });
     }
 
     public function uploadCreditWalletQr(Request $request): JsonResponse
@@ -173,15 +182,17 @@ class PlatformAdminController extends Controller
 
     public function subscriptionRequests(\App\Services\HotelSubscriptionService $subscriptions): JsonResponse
     {
-        $rows = \App\Models\HotelSubscriptionPaymentRequest::query()
-            ->orderByDesc('created_at')
-            ->limit(200)
-            ->get()
-            ->map(fn ($r) => $subscriptions->serializeRequest($r))
-            ->values()
-            ->all();
+        return $this->safePlatformResponse('subscription requests', function () use ($subscriptions) {
+            $rows = \App\Models\HotelSubscriptionPaymentRequest::query()
+                ->orderByDesc('created_at')
+                ->limit(200)
+                ->get()
+                ->map(fn ($r) => $subscriptions->serializeRequest($r))
+                ->values()
+                ->all();
 
-        return response()->json(['data' => $rows]);
+            return response()->json(['data' => $rows]);
+        });
     }
 
     public function approveSubscriptionRequest(
@@ -332,30 +343,32 @@ class PlatformAdminController extends Controller
 
     public function hotels(): JsonResponse
     {
-        $creditRows = HotelCredit::withoutGlobalScopes()
-            ->get()
-            ->keyBy(fn (HotelCredit $c) => (string) $c->hotel_id);
+        return $this->safePlatformResponse('hotels', function () {
+            $creditRows = HotelCredit::withoutGlobalScopes()
+                ->get()
+                ->keyBy(fn (HotelCredit $c) => (string) $c->hotel_id);
 
-        $hotels = Hotel::withoutGlobalScopes()
-            ->orderBy('name')
-            ->get()
-            ->map(function (Hotel $h) use ($creditRows) {
-                $credit = $creditRows->get((string) $h->id);
-                $balance = (float) ($credit->current_credits ?? 0);
+            $hotels = Hotel::withoutGlobalScopes()
+                ->orderBy('name')
+                ->get()
+                ->map(function (Hotel $h) use ($creditRows) {
+                    $credit = $creditRows->get((string) $h->id);
+                    $balance = (float) ($credit->current_credits ?? 0);
 
-                return [
-                    'id' => (string) $h->id,
-                    'name' => (string) $h->name,
-                    'city' => (string) ($h->city ?? ''),
-                    'location' => (string) ($h->location ?? ''),
-                    'access_username' => (string) ($h->access_username ?? ''),
-                    'current_credits' => $balance,
-                    'is_depleted' => $balance <= 0,
-                    'is_low_balance' => $balance > 0 && $balance < (float) config('services.hotel_credits.low_balance_threshold', 3000),
-                ];
-            });
+                    return [
+                        'id' => (string) $h->id,
+                        'name' => (string) $h->name,
+                        'city' => (string) ($h->city ?? ''),
+                        'location' => (string) ($h->location ?? ''),
+                        'access_username' => (string) ($h->access_username ?? ''),
+                        'current_credits' => $balance,
+                        'is_depleted' => $balance <= 0,
+                        'is_low_balance' => $balance > 0 && $balance < (float) config('services.hotel_credits.low_balance_threshold', 3000),
+                    ];
+                });
 
-        return response()->json(['data' => $hotels]);
+            return response()->json(['data' => $hotels]);
+        });
     }
 
     public function hotelCredits(string $hotelId): JsonResponse
@@ -421,13 +434,15 @@ class PlatformAdminController extends Controller
 
     public function creditRequests(): JsonResponse
     {
-        $rows = CreditWalletRequest::query()
-            ->orderByDesc('created_at')
-            ->limit(200)
-            ->get()
-            ->map(fn (CreditWalletRequest $r) => $this->serializeCreditRequest($r));
+        return $this->safePlatformResponse('credit requests', function () {
+            $rows = CreditWalletRequest::query()
+                ->orderByDesc('created_at')
+                ->limit(200)
+                ->get()
+                ->map(fn (CreditWalletRequest $r) => $this->serializeCreditRequest($r));
 
-        return response()->json(['data' => $rows]);
+            return response()->json(['data' => $rows]);
+        });
     }
 
     public function approveCreditRequest(Request $request, string $id): JsonResponse
@@ -457,13 +472,15 @@ class PlatformAdminController extends Controller
 
     public function memberRequests(): JsonResponse
     {
-        $rows = MemberSubscriptionRequest::query()
-            ->orderByDesc('created_at')
-            ->limit(200)
-            ->get()
-            ->map(fn (MemberSubscriptionRequest $r) => $this->serializeMemberRequest($r));
+        return $this->safePlatformResponse('member requests', function () {
+            $rows = MemberSubscriptionRequest::query()
+                ->orderByDesc('created_at')
+                ->limit(200)
+                ->get()
+                ->map(fn (MemberSubscriptionRequest $r) => $this->serializeMemberRequest($r));
 
-        return response()->json(['data' => $rows]);
+            return response()->json(['data' => $rows]);
+        });
     }
 
     public function approveMemberRequest(Request $request, string $id): JsonResponse
@@ -491,6 +508,25 @@ class PlatformAdminController extends Controller
         ]);
     }
 
+    private function safePlatformResponse(string $context, callable $callback): JsonResponse
+    {
+        try {
+            return $callback();
+        } catch (Throwable $e) {
+            report($e);
+            Log::error('Platform admin endpoint failed', [
+                'context' => $context,
+                'message' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Server error while loading '.$context.'.',
+            ], 500);
+        }
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -502,7 +538,7 @@ class PlatformAdminController extends Controller
             'hotel_name' => (string) ($r->hotel_name ?? ''),
             'amount' => (float) ($r->amount ?? 0),
             'payment_reference' => (string) ($r->payment_reference ?? ''),
-            'status' => (string) ($r->status ?? 'pending'),
+            'status' => EnumHelper::toString($r->status ?? 'pending'),
             'requested_by_name' => (string) ($r->requested_by_name ?? ''),
             'created_at' => optional($r->created_at)->toISOString(),
             'reviewed_at' => optional($r->reviewed_at)->toISOString(),
@@ -522,7 +558,7 @@ class PlatformAdminController extends Controller
             'phone' => (string) ($r->phone ?? ''),
             'amount' => (float) ($r->amount ?? 0),
             'payment_reference' => (string) ($r->payment_reference ?? ''),
-            'status' => (string) ($r->status ?? 'pending'),
+            'status' => EnumHelper::toString($r->status ?? 'pending'),
             'member_shid_id' => (string) ($r->member_shid_id ?? ''),
             'member_valid_until' => optional($r->member_valid_until)->toISOString(),
             'created_at' => optional($r->created_at)->toISOString(),

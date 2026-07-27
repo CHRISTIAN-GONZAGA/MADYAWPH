@@ -205,23 +205,24 @@ class PlatformSettingsService
             'registration_credit_over_band' => $this->registrationCreditOverBand(),
             'app_install_url' => trim((string) config('platform.app_install_url', '')),
             'app_install_qr_url' => rtrim((string) config('app.url', ''), '/').'/qr/app',
-            'member_subscription_qr_url' => ChatAttachmentUrl::fromStoredUrl(
-                filled($this->row()->member_subscription_qr_url ?? null)
-                    ? (string) $this->row()->member_subscription_qr_url
-                    : null
-            ),
-            'credit_wallet_qr_url' => ChatAttachmentUrl::fromStoredUrl(
-                filled($this->row()->credit_wallet_qr_url ?? null)
-                    ? (string) $this->row()->credit_wallet_qr_url
-                    : null
-            ),
-            'hotel_subscription_qr_url' => ChatAttachmentUrl::fromStoredUrl(
-                filled($this->row()->hotel_subscription_qr_url ?? null)
-                    ? (string) $this->row()->hotel_subscription_qr_url
-                    : null
-            ),
+            'member_subscription_qr_url' => $this->safeAttachmentUrl($this->row()->member_subscription_qr_url ?? null),
+            'credit_wallet_qr_url' => $this->safeAttachmentUrl($this->row()->credit_wallet_qr_url ?? null),
+            'hotel_subscription_qr_url' => $this->safeAttachmentUrl($this->row()->hotel_subscription_qr_url ?? null),
             'hotel_subscription_fee' => $this->hotelSubscriptionFee(),
         ];
+    }
+
+    private function safeAttachmentUrl(mixed $stored): ?string
+    {
+        if (! filled($stored)) {
+            return null;
+        }
+
+        try {
+            return ChatAttachmentUrl::fromStoredUrl((string) $stored);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     public function hotelSubscriptionFee(): float
