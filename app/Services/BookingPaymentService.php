@@ -157,6 +157,24 @@ class BookingPaymentService
             ]
         );
 
+        app(PaymentTransactionLogService::class)->recordForBooking(
+            $booking,
+            $actor,
+            $newStatus === 'paid'
+                ? "Payment transaction: paid in full for {$booking->booking_reference}"
+                : "Payment transaction: partial payment for {$booking->booking_reference}",
+            [
+                'amount' => $amount,
+                'amount_paid' => $amountPaid,
+                'balance_due' => $newBalance,
+                'payment_method' => $method,
+                'payment_reference' => (string) ($reference ?? ''),
+                'payment_status' => $newStatus,
+                'charge_id' => (string) $charge->id,
+                'source' => 'front_desk_partial_payment',
+            ],
+        );
+
         return [
             'ok' => true,
             'booking' => $booking->fresh(),
@@ -275,6 +293,22 @@ class BookingPaymentService
             ]
         );
 
+        app(PaymentTransactionLogService::class)->recordForBooking(
+            $booking,
+            $actor,
+            "Payment transaction: status {$wasStatus} → {$newStatus} for {$booking->booking_reference}",
+            [
+                'from' => $wasStatus,
+                'to' => $newStatus,
+                'payment_reference' => (string) ($booking->payment_reference ?? ''),
+                'payment_method' => $normalizedMethod,
+                'settled_amount' => $settledAmount,
+                'amount_tendered' => $amountTendered,
+                'change_due' => $changeDue,
+                'source' => 'front_desk_payment_status',
+            ],
+        );
+
         return [
             'ok' => true,
             'booking' => $booking->fresh(),
@@ -317,9 +351,10 @@ class BookingPaymentService
     {
         return match (strtolower(trim($methodRaw))) {
             '', 'cash' => 'Cash',
-            'gcash', 'g-cash' => 'GCash',
+            'gcash', 'g-cash', 'ewallet', 'e-wallet', 'qrph', 'qr ph', 'online' => 'GCash',
             'paymaya', 'maya', 'pay maya' => 'PayMaya',
             'credit card', 'credit_card', 'card' => 'Credit Card',
+            'bank transfer', 'bank_transfer', 'ebank', 'e-bank', 'bank' => 'Bank Transfer',
             'member points', 'member_points', 'points' => 'Member Points',
             default => null,
         };

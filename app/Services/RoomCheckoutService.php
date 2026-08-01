@@ -57,7 +57,9 @@ class RoomCheckoutService
         }
 
         if ($to === RoomStatus::CHECKED_OUT->value) {
-            $room = $this->checkoutGuest($room, $actor);
+            $active = $this->findActiveBooking((string) $room->hotel_id, (string) $room->id);
+            $requirePaid = ! \App\Support\OrgBookingSupport::isOrgBooking($active);
+            $room = $this->checkoutGuest($room, $actor, $requirePaid);
 
             return [
                 'room' => $room,
@@ -231,15 +233,6 @@ class RoomCheckoutService
 
         $this->sendGuestCheckInWelcomeEmail($fresh, $booking, $accessCode);
         $this->sendStaffGuestCheckInAlert($fresh, $booking, $actor);
-
-        try {
-            app(MemberPointsService::class)->awardCheckInPoints($booking?->fresh() ?? $booking, $actor);
-        } catch (\Throwable $e) {
-            Log::warning('Member check-in points award failed', [
-                'booking_id' => $booking ? (string) $booking->id : null,
-                'error' => $e->getMessage(),
-            ]);
-        }
 
         return $fresh;
     }
@@ -454,6 +447,15 @@ class RoomCheckoutService
             $booking->update($updates);
             $this->clearCheckoutReminders($hotelId, (string) $booking->id);
             $this->closeLinkedReservations($booking);
+
+            try {
+                app(MemberPointsService::class)->awardBookingPoints($booking->fresh() ?? $booking, $actor);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Member points award failed on checkout', [
+                    'booking_id' => (string) $booking->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         $chatDeleted = $this->clearGuestChat($hotelId, $roomId);

@@ -46,6 +46,8 @@ class BookingTypeAndGuestPasswordTest extends TestCase
             'check_in' => Carbon::today()->toDateString(),
             'check_out' => Carbon::today()->addDay()->toDateString(),
             'discount_type' => 'none',
+            'payment_method' => 'Online',
+            'payment_reference' => 'REF-TEST-1E30CE8F',
         ])->assertOk()->assertJsonPath('reservation.status', 'pending_approval');
 
         $reservation = ExternalReservation::withoutGlobalScopes()->first();

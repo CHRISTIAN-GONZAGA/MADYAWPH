@@ -223,7 +223,8 @@ class RoomController extends Controller
             (string) $room->id
         );
         StayManagementPolicy::denyUnlessCanManage($bookingBefore, $room);
-        $room = $this->roomCheckoutService->checkoutGuest($room, $request->user());
+        $requirePaid = ! \App\Support\OrgBookingSupport::isOrgBooking($bookingBefore);
+        $room = $this->roomCheckoutService->checkoutGuest($room, $request->user(), $requirePaid);
         $bookingId = $bookingBefore ? (string) $bookingBefore->id : null;
         $booking = $bookingId
             ? Booking::withoutGlobalScopes()->find($bookingId)

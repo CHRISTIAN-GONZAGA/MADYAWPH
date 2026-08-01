@@ -431,7 +431,22 @@ class _BookingsSectionState extends State<BookingsSection>
               AdminDashboardModels.formatDisplayDate(r['check_out_date']),
             ),
             _detailRow('Status', _reservationStatusLabel(status)),
-            _detailRow('Total', '₱${(r['total_amount'] as num?) ?? 0}'),
+            _detailRow(
+              'Payment',
+              (r['payment_method'] ?? 'Online').toString(),
+            ),
+            _detailRow(
+              'Payment reference',
+              (r['payment_reference'] ??
+                      ((r['metadata'] is Map)
+                          ? (r['metadata']['payment_reference'] ?? '—')
+                          : '—'))
+                  .toString(),
+            ),
+            _detailRow(
+              'Total paid',
+              '₱${((r['amount_paid'] as num?) ?? (r['estimated_total'] as num?) ?? (r['total_amount'] as num?) ?? 0).toStringAsFixed(2)}',
+            ),
             const SizedBox(height: 12),
             if (pending) ...[
               if (widget.isFrontDesk)
@@ -505,9 +520,84 @@ class _BookingsSectionState extends State<BookingsSection>
       return;
     }
     if (_busy || id.isEmpty) return;
+
+    Map<String, dynamic>? reservation;
+    for (final raw in widget.reservations) {
+      if (raw is! Map) continue;
+      final map = Map<String, dynamic>.from(raw);
+      if (_resolveId(map) == id) {
+        reservation = map;
+        break;
+      }
+    }
+    final meta = reservation?['metadata'];
+    final metaMap = meta is Map
+        ? Map<String, dynamic>.from(meta)
+        : const <String, dynamic>{};
+    final guestName =
+        (reservation?['guest_name'] ?? metaMap['guest_name'] ?? 'Guest')
+            .toString();
+    final payRef = (reservation?['payment_reference'] ??
+            metaMap['payment_reference'] ??
+            '—')
+        .toString();
+    final totalPaid = (reservation?['amount_paid'] as num?)?.toDouble() ??
+        (reservation?['estimated_total'] as num?)?.toDouble() ??
+        (metaMap['amount_paid'] as num?)?.toDouble() ??
+        (metaMap['estimated_total'] as num?)?.toDouble() ??
+        (reservation?['total_amount'] as num?)?.toDouble() ??
+        0;
+
+    final reviewOk = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Review online payment'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Confirm these details before approving:',
+                  style: Theme.of(ctx).textTheme.bodyMedium),
+              const SizedBox(height: 12),
+              Text('Guest: $guestName',
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              Text('Payment reference: $payRef'),
+              const SizedBox(height: 6),
+              Text(
+                'Total paid: ₱${totalPaid.toStringAsFixed(2)}',
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Online bookings are prepaid in full. Approving confirms the payment and activates the stay.',
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Approve'),
+          ),
+        ],
+      ),
+    );
+    if (reviewOk != true || !mounted) return;
+
     if (!await _confirmAction(
-      'Approve reservation?',
-      'This holds or activates the stay and may deduct platform credits from your hotel wallet.',
+      'Confirm approval?',
+      'Approve this prepaid online booking for $guestName?\n\n'
+      'Ref: $payRef\n'
+      'Total paid: ₱${totalPaid.toStringAsFixed(2)}\n\n'
+      'This may deduct platform credits from your hotel wallet.',
     )) {
       return;
     }

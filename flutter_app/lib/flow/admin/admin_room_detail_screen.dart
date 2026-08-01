@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:gloretto_mobile/widgets/app_notice.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../dio_client.dart';
 import '../../utils/money_format.dart';
@@ -52,6 +53,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   bool _scanningMember = false;
   bool _extendingStay = false;
   late final String _roomId;
+  String? _roomQrPayload;
 
   static Map<String, dynamic>? _asMap(dynamic value) {
     if (value is Map<String, dynamic>) return value;
@@ -232,6 +234,21 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         _error = '$e';
         _loading = false;
       });
+    }
+    await _loadRoomQr();
+  }
+
+  Future<void> _loadRoomQr() async {
+    if (_roomId.isEmpty) return;
+    try {
+      final res = await portalDio().get<Map<String, dynamic>>(
+        '/admin/rooms/$_roomId/guest-portal-qr',
+      );
+      if (!mounted) return;
+      final payload = (res.data?['qr_payload'] ?? '').toString();
+      setState(() => _roomQrPayload = payload.isEmpty ? null : payload);
+    } catch (_) {
+      // QR is optional chrome; ignore load failures.
     }
   }
 
@@ -467,6 +484,9 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     }
 
     final current = (booking?['payment_status'] ?? 'unpaid').toString();
+    final isOrgBooking = booking?['is_org_booking'] == true ||
+        (booking?['booking_source'] ?? '').toString() == 'admin-org' ||
+        (booking?['org_name'] ?? '').toString().trim().isNotEmpty;
     final currentMethodRaw = (booking?['payment_method'] ?? '').toString().trim();
     String method = (() {
       final lower = currentMethodRaw.toLowerCase();
@@ -477,6 +497,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       if (lower == 'credit card' || lower == 'credit_card' || lower == 'card') {
         return 'Credit Card';
       }
+      if (lower.contains('bank')) return 'Bank Transfer';
       return 'Cash';
     })();
     final billTotalRaw = billSummary?['total_due'] ?? billSummary?['balance_due'];
@@ -484,7 +505,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         ? parseJsonDouble(billTotalRaw)
         : parseJsonDouble(booking?['total_amount']);
     final amountPaid = parseJsonDouble(billSummary?['amount_paid']);
-    // Checkout always collects full payment — unpaid is not offered.
+    // Org charge accounts may check out with balance; others must settle first.
     var paymentReady = current == 'paid' && totalDue <= 0.009;
     var remainingDue = totalDue;
     var paidSoFar = amountPaid;
@@ -518,7 +539,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
           final canSavePayment = !paymentReady || !balanceCleared
               ? tenderOk && refOk
               : false;
-          final canCheckout = paymentReady && balanceCleared;
+          final canCheckout = isOrgBooking || (paymentReady && balanceCleared);
 
           return AlertDialog(
             title: const Text('Check out guest'),
@@ -550,13 +571,24 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ),
-                  if (!balanceCleared)
+                  if (!balanceCleared && !isOrgBooking)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: Text(
                         'Checkout is blocked until the full balance is paid.',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: Theme.of(context).colorScheme.error,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ),
+                  if (!balanceCleared && isOrgBooking)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        'Organization charge account — checkout allowed with outstanding balance. '
+                        'Collect later in Gov/Org Booking.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               fontWeight: FontWeight.w600,
                             ),
                       ),
@@ -1642,6 +1674,12 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     );
     final paymentStatus =
         (booking?['payment_status'] ?? 'unpaid').toString().toLowerCase();
+    final bookingSource =
+        (booking?['booking_source'] ?? '').toString().toLowerCase();
+    final bookingType =
+        (booking?['booking_type'] ?? '').toString().toLowerCase();
+    final isOnlinePrepaid = paymentStatus == 'paid' &&
+        (bookingSource == 'app-customer' || bookingType == 'online');
 
     final roomNo = (room['room_number'] ?? '').toString();
     final status = AdminDashboardModels.statusOf(room);
@@ -1664,11 +1702,48 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Room $roomNo',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Room $roomNo',
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
                     ),
+                  ),
+                  if (_roomQrPayload != null && _roomQrPayload!.isNotEmpty) ...[
+                    const SizedBox(width: 12),
+                    InkWell(
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => AdminRoomGuestQrScreen(
+                              roomId: _roomId,
+                              roomNumber: roomNo,
+                            ),
+                          ),
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.black12),
+                        ),
+                        child: QrImageView(
+                          data: _roomQrPayload!,
+                          size: 72,
+                          backgroundColor: Colors.white,
+                          padding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
               const SizedBox(height: 8),
               Text('Status: ${roomStatusLabel(status)}'),
@@ -1798,18 +1873,39 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                               fontWeight: FontWeight.w700,
                             ),
                       ),
-                      if (amountPaid > 0)
+                      if (amountPaid > 0 || isOnlinePrepaid)
                         Text(
-                          'Paid so far: ${formatPeso(amountPaid)}',
+                          isOnlinePrepaid
+                              ? 'Total paid (online): ${formatPeso(amountPaid > 0 ? amountPaid : chargesTotal)}'
+                              : 'Paid so far: ${formatPeso(amountPaid)}',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
-                      Text(
-                        'Balance due: ${formatPeso(balanceDue)}',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: accent,
-                            ),
-                      ),
+                      if (!isOnlinePrepaid)
+                        Text(
+                          'Balance due: ${formatPeso(balanceDue)}',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: accent,
+                              ),
+                        )
+                      else
+                        Text(
+                          'Fully prepaid online — no front desk payment adjustment needed.',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: Colors.green.shade800,
+                              ),
+                        ),
+                      if ((booking?['payment_reference'] ?? '')
+                          .toString()
+                          .trim()
+                          .isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Reference: ${(booking?['payment_reference'] ?? '').toString()}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1857,27 +1953,29 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.tonalIcon(
-              onPressed: (_recordingPartialPayment || balanceDue <= 0)
-                  ? null
-                  : _recordPartialPayment,
-              icon: _recordingPartialPayment
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.payments_outlined),
-              label: Text(
-                _recordingPartialPayment
-                    ? 'Recording…'
-                    : 'Partial payment',
+          if (!isOnlinePrepaid) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonalIcon(
+                onPressed: (_recordingPartialPayment || balanceDue <= 0)
+                    ? null
+                    : _recordPartialPayment,
+                icon: _recordingPartialPayment
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.payments_outlined),
+                label: Text(
+                  _recordingPartialPayment
+                      ? 'Recording…'
+                      : 'Partial payment',
+                ),
               ),
             ),
-          ),
+          ],
           const SizedBox(height: 10),
           SizedBox(
             width: double.infinity,

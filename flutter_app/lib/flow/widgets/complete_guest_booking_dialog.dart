@@ -210,6 +210,7 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
   TimeOfDay? _checkOutTime;
   var _discountType = 'none';
   var _paymentMethod = 'Cash';
+  late final TextEditingController _paymentRefCtrl;
   var _bookingMode = BookingModeOptions.defaultValue;
   XFile? _guestIdFile;
   XFile? _discountIdFile;
@@ -228,6 +229,8 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
     _checkInCtrl = TextEditingController();
     _checkOutCtrl = TextEditingController();
     _bookingModeOtherCtrl = TextEditingController();
+    _paymentRefCtrl = TextEditingController();
+    _paymentMethod = config.showOnlinePayment ? 'Online' : 'Cash';
     _checkInDate = config.initialCheckIn;
     _checkOutDate = config.initialCheckOut;
     if (_checkInDate != null) {
@@ -247,6 +250,11 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
             )
           : const TimeOfDay(hour: 11, minute: 0);
     }
+    if (config.showOnlinePayment) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadPaymentQr();
+      });
+    }
   }
 
   @override
@@ -257,6 +265,7 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
     _checkInCtrl.dispose();
     _checkOutCtrl.dispose();
     _bookingModeOtherCtrl.dispose();
+    _paymentRefCtrl.dispose();
     super.dispose();
   }
 
@@ -399,6 +408,13 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
       _snack('Specify the booking mode or choose another option.');
       return;
     }
+    if (config.showOnlinePayment) {
+      final ref = _paymentRefCtrl.text.trim();
+      if (ref.length < 4) {
+        _snack('Enter your GCash / Maya / QR Ph payment reference.');
+        return;
+      }
+    }
 
     Navigator.of(context).pop(
       CompleteGuestBookingPayload(
@@ -408,7 +424,9 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
         checkIn: _checkInCtrl.text.trim(),
         checkOut: _checkOutCtrl.text.trim(),
         discountType: _discountType,
-        paymentMethod: _paymentMethod,
+        paymentMethod: config.showOnlinePayment ? 'Online' : _paymentMethod,
+        paymentReference:
+            config.showOnlinePayment ? _paymentRefCtrl.text.trim() : '',
         checkInTime: config.showAdminTimeSlots ? _checkInTime : null,
         checkOutTime: config.showAdminTimeSlots ? _checkOutTime : null,
         guestIdFile: _guestIdFile,
@@ -499,10 +517,13 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
             DropdownMenuItem(value: 'PayMaya', child: Text('PayMaya')),
             DropdownMenuItem(value: 'Credit Card', child: Text('Credit Card')),
           ]
-        : const [
-            DropdownMenuItem(value: 'Cash', child: Text('Cash at hotel')),
-            DropdownMenuItem(value: 'Online', child: Text('Online (QR Ph)')),
-          ];
+        : config.showOnlinePayment
+            ? const [
+                DropdownMenuItem(value: 'Online', child: Text('Online (QR Ph)')),
+              ]
+            : const [
+                DropdownMenuItem(value: 'Cash', child: Text('Cash at hotel')),
+              ];
 
     final formFields = _buildFormFields(
       context,
@@ -723,15 +744,12 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
             border: OutlineInputBorder(),
           ),
           items: paymentItems,
-          onChanged: (v) async {
-            final next = v ?? 'Cash';
-            setState(() => _paymentMethod = next);
-            if (next == 'Online' &&
-                config.showOnlinePayment &&
-                _paymentQrUrl.isEmpty) {
-              await _loadPaymentQr();
-            }
-          },
+          onChanged: config.showOnlinePayment
+              ? null
+              : (v) async {
+                  final next = v ?? 'Cash';
+                  setState(() => _paymentMethod = next);
+                },
         ),
         if (_paymentMethod == 'Online' && config.showOnlinePayment) ...[
           const SizedBox(height: 12),
@@ -739,7 +757,7 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
             const Center(child: CircularProgressIndicator())
           else if (_paymentQrUrl.isEmpty)
             const Text(
-              'Hotel has not uploaded a payment QR yet. You may still submit — pay at the desk if needed.',
+              'Hotel has not uploaded a payment QR yet. Online booking is unavailable until they do.',
               style: TextStyle(fontSize: 12),
             )
           else
@@ -747,7 +765,7 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
               child: Column(
                 children: [
                   const Text(
-                    'Scan to pay via GCash / Maya / QR Ph',
+                    'Scan to pay the full amount via GCash / Maya / QR Ph',
                     style: TextStyle(fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 8),
@@ -760,6 +778,12 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
                 ],
               ),
             ),
+          const SizedBox(height: 12),
+          AppInput(
+            controller: _paymentRefCtrl,
+            label: 'Payment reference',
+            hint: 'GCash / Maya / QR Ph transaction ID',
+          ),
         ],
       ],
       const SizedBox(height: 10),

@@ -41,6 +41,8 @@ class CustomerPortalBookingTest extends TestCase
             'check_in' => $checkIn,
             'check_out' => $checkOut,
             'discount_type' => 'none',
+            'payment_method' => 'Online',
+            'payment_reference' => 'REF-TODAY-BOOKING-001',
         ]);
 
         $response->assertOk();
@@ -76,6 +78,8 @@ class CustomerPortalBookingTest extends TestCase
             'check_in' => Carbon::today()->toDateString(),
             'check_out' => Carbon::today()->addDay()->toDateString(),
             'discount_type' => 'pwd',
+            'payment_method' => 'Online',
+            'payment_reference' => 'REF-PWD-DISCOUNT-001',
         ]);
 
         $response->assertStatus(422);
@@ -103,6 +107,8 @@ class CustomerPortalBookingTest extends TestCase
             'check_in' => Carbon::today()->toDateString(),
             'check_out' => Carbon::today()->addDay()->toDateString(),
             'discount_type' => 'pwd',
+            'payment_method' => 'Online',
+            'payment_reference' => 'REF-PWD-ONCE-001',
             'discount_id_file' => UploadedFile::fake()->create('pwd-id.jpg', 100, 'image/jpeg'),
         ], ['Accept' => 'application/json']);
 
@@ -114,13 +120,16 @@ class CustomerPortalBookingTest extends TestCase
         $booking = Booking::withoutGlobalScopes()->latest('created_at')->first();
         $this->assertNotNull($booking);
         $this->assertEqualsWithDelta(800.0, (float) $booking->total_amount, 0.01);
+        $this->assertSame('paid', (string) ($booking->payment_status ?? ''));
 
         $charges = BillingCharge::withoutGlobalScopes()
             ->where('booking_id', (string) $booking->id)
             ->get();
-        $this->assertCount(1, $charges);
-        $this->assertSame('room', (string) $charges->first()->type);
-        $this->assertEqualsWithDelta(800.0, (float) $charges->sum('amount'), 0.01);
+        $this->assertGreaterThanOrEqual(1, $charges->where('type', 'room')->count());
+        $roomCharge = $charges->firstWhere('type', 'room');
+        $this->assertNotNull($roomCharge);
+        $this->assertEqualsWithDelta(800.0, (float) $roomCharge->amount, 0.01);
+        $this->assertEqualsWithDelta(0.0, (float) $charges->sum('amount'), 0.01);
     }
 
     public function test_student_discount_type_is_rejected(): void
@@ -174,6 +183,8 @@ class CustomerPortalBookingTest extends TestCase
             'check_in' => $checkIn,
             'check_out' => $checkOut,
             'discount_type' => 'none',
+            'payment_method' => 'Online',
+            'payment_reference' => 'REF-RESERVE-001',
         ]);
 
         $response->assertOk();
@@ -206,6 +217,7 @@ class CustomerPortalBookingTest extends TestCase
             'check_out' => $checkOut,
             'discount_type' => 'none',
             'payment_method' => 'Online',
+            'payment_reference' => 'GCASH-REF-998877',
             'rooms' => 1,
             'adults' => 2,
             'children' => 0,
@@ -214,8 +226,20 @@ class CustomerPortalBookingTest extends TestCase
         $response->assertOk();
         $response->assertJsonPath('reservation.payment_method', 'Online');
         $paymentRef = (string) $response->json('reservation.payment_reference');
-        $this->assertStringStartsWith('PAY', $paymentRef);
+        $this->assertSame('GCASH-REF-998877', $paymentRef);
         $this->assertGreaterThan(0, (float) $response->json('reservation.estimated_total'));
+
+        $this->postJson('/api/v1/customer/reservations', [
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'guest_name' => 'Cash Attempt',
+            'guest_email' => 'cash@example.com',
+            'guest_phone' => '09175550000',
+            'check_in' => $checkIn,
+            'check_out' => $checkOut,
+            'discount_type' => 'none',
+            'payment_method' => 'Cash',
+        ])->assertStatus(422);
 
         $show = $this->getJson('/api/v1/customer/reservations/'.$response->json('reservation.external_reference').'?'.http_build_query([
             'hotel_id' => (string) $hotel->id,
@@ -250,6 +274,8 @@ class CustomerPortalBookingTest extends TestCase
             'check_in' => $checkIn,
             'check_out' => $checkOut,
             'discount_type' => 'none',
+            'payment_method' => 'Online',
+            'payment_reference' => 'REF-SAMEDAY-001',
         ]);
 
         $response->assertOk();
@@ -296,6 +322,8 @@ class CustomerPortalBookingTest extends TestCase
             'check_in' => $checkIn,
             'check_out' => $checkOut,
             'discount_type' => 'none',
+            'payment_method' => 'Online',
+            'payment_reference' => 'REF-CONFLICT-001',
         ]);
 
         $response->assertStatus(422);
@@ -323,6 +351,8 @@ class CustomerPortalBookingTest extends TestCase
             'check_in' => Carbon::today()->toDateString(),
             'check_out' => Carbon::today()->addDay()->toDateString(),
             'discount_type' => 'none',
+            'payment_method' => 'Online',
+            'payment_reference' => 'REF-TODAY-APPROVE',
         ]);
         $response->assertOk();
 
@@ -336,5 +366,8 @@ class CustomerPortalBookingTest extends TestCase
             $room->status?->value ?? (string) $room->status
         );
         $this->assertSame(1, Booking::withoutGlobalScopes()->count());
+        $booking = Booking::withoutGlobalScopes()->first();
+        $this->assertSame('paid', (string) ($booking->payment_status ?? ''));
+        $this->assertSame('REF-TODAY-APPROVE', (string) ($booking->payment_reference ?? ''));
     }
 }

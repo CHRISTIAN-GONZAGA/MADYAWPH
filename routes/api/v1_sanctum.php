@@ -444,7 +444,17 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
         $activeBooking = $roomCheckoutService->resolveActiveBookingForRoom($hotelId, $room);
 
         if ($nextStatus === RoomStatus::CHECKED_IN->value) {
-            FrontDeskBookingGate::assertCanCreateBookings($request->user());
+            $isOrgBooking = \App\Support\OrgBookingSupport::isOrgBooking($activeBooking);
+            if (! $isOrgBooking) {
+                FrontDeskBookingGate::assertCanCreateBookings($request->user());
+            } else {
+                $role = strtolower((string) ($request->user()?->roleValue() ?? ''));
+                if (! in_array($role, ['frontdesk', 'admin', 'super_admin'], true)) {
+                    return response()->json([
+                        'message' => 'Only hotel staff can check in organization bookings.',
+                    ], 403);
+                }
+            }
 
             $checkIn = isset($validated['check_in_at'])
                 ? Carbon::parse($validated['check_in_at'])
@@ -473,7 +483,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             $payAmount = isset($validated['check_in_payment_amount'])
                 ? round((float) $validated['check_in_payment_amount'], 2)
                 : 0.0;
-            if ($activeBooking) {
+            if ($activeBooking && ! $isOrgBooking) {
                 $bill = $bookingPaymentService->billSummary($activeBooking);
                 $balanceDue = (float) ($bill['balance_due'] ?? 0);
                 $minPercent = \App\Support\MinCheckInPaymentSupport::percentForHotel($hotelId);
@@ -505,6 +515,16 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
                         ]
                     );
                 }
+            } elseif ($activeBooking && $isOrgBooking && $payAmount > 0) {
+                $paymentInfo = $bookingPaymentService->applyPartialPayment(
+                    $activeBooking,
+                    $request->user(),
+                    [
+                        'amount' => $payAmount,
+                        'payment_method' => $validated['payment_method'] ?? 'Cash',
+                        'note' => 'Organization check-in payment',
+                    ]
+                );
             }
 
             $room = $roomCheckoutService->checkInRoom($room, $request->user(), $checkIn, $checkOut);
@@ -696,6 +716,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             'payment_method' => ['required', 'in:Cash,GCash,PayMaya,Credit Card'],
             'payment_reference' => ['nullable', 'string', 'max:120'],
             'check_in_now' => ['nullable', 'boolean'],
+            'check_in_payment_amount' => ['nullable', 'numeric', 'min:0'],
             'discount_type' => ['nullable', 'string', 'in:none,pwd,senior'],
             'adults' => ['nullable', 'integer', 'min:1', 'max:20'],
             'children' => ['nullable', 'integer', 'min:0', 'max:20'],
@@ -810,6 +831,22 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
         }
 
         if ($request->boolean('check_in_now')) {
+            $payAmount = round((float) ($validated['check_in_payment_amount'] ?? 0), 2);
+            $paymentGate = \App\Support\MinCheckInPaymentSupport::enforceAndCollect(
+                $booking->fresh() ?? $booking,
+                $request->user(),
+                $payAmount,
+                $paymentMethod,
+            );
+            if ($paymentGate !== null) {
+                try {
+                    $bookingService->adminCancel($booking, $request->user());
+                } catch (\Throwable) {
+                }
+
+                return $paymentGate;
+            }
+
             $checkIn = Carbon::parse($validated['check_in_at']);
             $checkOut = Carbon::parse($validated['check_out_at']);
             $roomCheckoutService->checkInRoom($room->fresh() ?? $room, $request->user(), $checkIn, $checkOut);
@@ -876,6 +913,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             'payment_method' => ['required', 'in:Cash,GCash,PayMaya,Credit Card'],
             'payment_reference' => ['nullable', 'string', 'max:120'],
             'check_in_now' => ['nullable', 'boolean'],
+            'check_in_payment_amount' => ['nullable', 'numeric', 'min:0'],
             'discount_type' => ['nullable', 'string', 'in:none,pwd,senior'],
             'adults' => ['nullable', 'integer', 'min:1', 'max:20'],
             'children' => ['nullable', 'integer', 'min:0', 'max:20'],
@@ -948,6 +986,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
         );
 
         $createdBookings = [];
+        $createdRooms = [];
         $presented = [];
 
         try {
@@ -1012,19 +1051,11 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
                 }
 
                 if ($request->boolean('check_in_now')) {
-                    $checkIn = Carbon::parse($validated['check_in_at']);
-                    $checkOut = Carbon::parse($validated['check_out_at']);
-                    $roomCheckoutService->checkInRoom(
-                        $room->fresh() ?? $room,
-                        $request->user(),
-                        $checkIn,
-                        $checkOut
-                    );
-                    $booking->refresh();
-                    $room->refresh();
+                    // Payment + check-in applied after all rooms are created (see below).
                 }
 
                 $createdBookings[] = $booking;
+                $createdRooms[] = $room->fresh() ?? $room;
                 $presented[] = AdminBookingPresenter::present($booking, $room->fresh() ?? $room);
             }
         } catch (\Throwable $e) {
@@ -1035,6 +1066,89 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
                 }
             }
             throw $e;
+        }
+
+        if ($request->boolean('check_in_now') && $createdBookings !== []) {
+            $payAmount = round((float) ($validated['check_in_payment_amount'] ?? 0), 2);
+            $minPercent = \App\Support\MinCheckInPaymentSupport::percentForHotel($hotelId);
+            $reqs = [];
+            $sumMinDue = 0.0;
+            $sumBalance = 0.0;
+            foreach ($createdBookings as $booking) {
+                $req = \App\Support\MinCheckInPaymentSupport::requirementsForBooking(
+                    $booking->fresh() ?? $booking
+                );
+                $reqs[] = $req;
+                $sumMinDue += $req['min_due'];
+                $sumBalance += $req['balance_due'];
+            }
+
+            if ($minPercent > 0 && $sumBalance > 0 && $payAmount + 0.009 < $sumMinDue) {
+                foreach ($createdBookings as $booking) {
+                    try {
+                        $bookingService->adminCancel($booking, $request->user());
+                    } catch (\Throwable) {
+                    }
+                }
+
+                return \App\Support\MinCheckInPaymentSupport::insufficientPaymentResponse(
+                    $minPercent,
+                    $sumMinDue,
+                    $sumBalance,
+                );
+            }
+
+            $remaining = $payAmount;
+            $count = count($createdBookings);
+            $checkIn = Carbon::parse($validated['check_in_at']);
+            $checkOut = Carbon::parse($validated['check_out_at']);
+            foreach ($createdBookings as $i => $booking) {
+                $req = $reqs[$i];
+                if ($i === $count - 1) {
+                    $apply = min($remaining, $req['balance_due']);
+                } else {
+                    $apply = $req['min_due'];
+                    if ($sumBalance > 0 && $payAmount > $sumMinDue) {
+                        $extraPool = $payAmount - $sumMinDue;
+                        $apply = $req['min_due'] + round($extraPool * ($req['balance_due'] / $sumBalance), 2);
+                    }
+                    $apply = min($apply, $req['balance_due'], $remaining);
+                }
+                $remaining = max(0, round($remaining - $apply, 2));
+
+                $paymentGate = \App\Support\MinCheckInPaymentSupport::enforceAndCollect(
+                    $booking->fresh() ?? $booking,
+                    $request->user(),
+                    $apply,
+                    $paymentMethod,
+                );
+                if ($paymentGate !== null) {
+                    foreach ($createdBookings as $toCancel) {
+                        try {
+                            $bookingService->adminCancel($toCancel, $request->user());
+                        } catch (\Throwable) {
+                        }
+                    }
+
+                    return $paymentGate;
+                }
+
+                $roomForCheckIn = $createdRooms[$i]
+                    ?? Room::withoutGlobalScopes()->find((string) $booking->room_id);
+                if ($roomForCheckIn) {
+                    $roomCheckoutService->checkInRoom(
+                        $roomForCheckIn->fresh() ?? $roomForCheckIn,
+                        $request->user(),
+                        $checkIn,
+                        $checkOut
+                    );
+                }
+                $booking->refresh();
+                $presented[$i] = AdminBookingPresenter::present(
+                    $booking,
+                    Room::withoutGlobalScopes()->find((string) $booking->room_id)
+                );
+            }
         }
 
         $guestWelcomeSms = null;
@@ -1058,6 +1172,240 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             'guest_welcome_sms' => $guestWelcomeSms,
         ], 201);
     })->middleware(['booking.frontdesk', 'prevent.double.booking', 'role:admin,frontdesk'])->name('api.v1.admin.bookings.bulk');
+
+    Route::get('/admin/org-bookings/outstanding', function (
+        Request $request,
+        \App\Services\OrgBookingService $orgBookingService,
+    ) {
+        $hotelId = (string) $request->user()->hotel_id;
+
+        return response()->json([
+            'ok' => true,
+            'accounts' => $orgBookingService->outstandingAccounts($hotelId),
+        ]);
+    })->middleware('role:admin,frontdesk,super_admin')->name('api.v1.admin.org-bookings.outstanding');
+
+    Route::post('/admin/org-bookings/pay', function (
+        Request $request,
+        \App\Services\OrgBookingService $orgBookingService,
+        BookingPaymentService $paymentService,
+    ) {
+        $validated = $request->validate([
+            'org_key' => ['required', 'string', 'max:255'],
+            'amount' => ['required', 'numeric', 'min:0.01'],
+            'payment_method' => ['required', 'string', 'max:40'],
+            'payment_reference' => ['nullable', 'string', 'max:120'],
+            'booking_ids' => ['nullable', 'array'],
+            'booking_ids.*' => ['string', 'max:64'],
+        ]);
+
+        $methodRaw = (string) $validated['payment_method'];
+        $normalized = $paymentService->normalizePaymentMethod($methodRaw);
+        if ($normalized === null) {
+            return response()->json([
+                'message' => 'Unsupported payment method. Use Cash, GCash (eWallet/QR Ph), or Bank Transfer.',
+                'errors' => ['payment_method' => ['Unsupported payment method.']],
+            ], 422);
+        }
+
+        return response()->json(
+            $orgBookingService->payOrganization(
+                hotelId: (string) $request->user()->hotel_id,
+                orgKey: (string) $validated['org_key'],
+                amount: (float) $validated['amount'],
+                paymentMethod: $normalized,
+                paymentReference: $validated['payment_reference'] ?? null,
+                actor: $request->user(),
+                bookingIds: $validated['booking_ids'] ?? null,
+            )
+        );
+    })->middleware('role:admin,frontdesk,super_admin')->name('api.v1.admin.org-bookings.pay');
+
+    Route::post('/admin/org-bookings', function (
+        Request $request,
+        BookingService $bookingService,
+        RoomCheckoutService $roomCheckoutService,
+        HotelCreditBookingFeeService $walletFeeService,
+    ) {
+        if ($request->has('check_in_now')) {
+            $parsed = filter_var(
+                $request->input('check_in_now'),
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE
+            );
+            if ($parsed !== null) {
+                $request->merge(['check_in_now' => $parsed]);
+            }
+        }
+
+        $validated = $request->validate([
+            'room_id' => ['required', 'string'],
+            'guest_name' => ['required', 'string', 'max:255'],
+            'guest_email' => ['nullable', 'email', 'max:255'],
+            'guest_phone' => ['nullable', 'string', 'max:50'],
+            'check_in_at' => ['required', 'date'],
+            'check_out_at' => ['required', 'date', 'after:check_in_at'],
+            'check_in_now' => ['nullable', 'boolean'],
+            'adults' => ['nullable', 'integer', 'min:1', 'max:20'],
+            'children' => ['nullable', 'integer', 'min:0', 'max:20'],
+            'org_name' => ['required', 'string', 'max:255'],
+            'org_type' => ['nullable', 'string', 'in:government,organization'],
+            'org_contact_person' => ['required', 'string', 'max:255'],
+            'org_contact_phone' => ['required', 'string', 'max:50'],
+            'org_contact_email' => ['nullable', 'email', 'max:255'],
+            'org_address' => ['nullable', 'string', 'max:500'],
+            'org_tin' => ['nullable', 'string', 'max:80'],
+            'org_po_number' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $orgFields = \App\Support\OrgBookingSupport::validatedOrgFields($validated);
+        $room = Room::withoutGlobalScopes()
+            ->where('hotel_id', (string) $request->user()->hotel_id)
+            ->findOrFail($validated['room_id']);
+
+        $bookingData = array_merge($validated, $orgFields, [
+            'hotel_id' => (string) $room->hotel_id,
+            'source' => \App\Enums\BookingSource::ADMIN->value,
+            'booking_type' => \App\Enums\BookingType::LOCAL->value,
+            'payment_method' => 'Cash',
+            'guest_name' => trim((string) $validated['guest_name']),
+        ]);
+        unset(
+            $bookingData['org_type'],
+            $bookingData['check_in_now'],
+        );
+        $bookingData = array_merge($bookingData, $orgFields);
+
+        $booking = $bookingService->create($bookingData, $request->user());
+        $walletFeeService->deductForBooking($booking, $room, (string) $request->user()->id);
+
+        if ($request->boolean('check_in_now')) {
+            $checkIn = Carbon::parse((string) $validated['check_in_at']);
+            $checkOut = Carbon::parse((string) $validated['check_out_at']);
+            $roomCheckoutService->checkInRoom($room->fresh() ?? $room, $request->user(), $checkIn, $checkOut);
+        }
+
+        $freshRoom = Room::withoutGlobalScopes()->find((string) $room->id);
+
+        return response()->json([
+            'ok' => true,
+            'booking' => AdminBookingPresenter::present($booking->fresh() ?? $booking, $freshRoom),
+            'room_access_password' => $request->boolean('check_in_now')
+                ? (string) ($freshRoom?->current_access_code ?? '')
+                : null,
+        ], 201);
+    })->middleware(['prevent.double.booking', 'role:admin,frontdesk,super_admin'])->name('api.v1.admin.org-bookings.store');
+
+    Route::post('/admin/org-bookings/bulk', function (
+        Request $request,
+        BookingService $bookingService,
+        RoomCheckoutService $roomCheckoutService,
+        HotelCreditBookingFeeService $walletFeeService,
+    ) {
+        if ($request->has('check_in_now')) {
+            $parsed = filter_var(
+                $request->input('check_in_now'),
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE
+            );
+            if ($parsed !== null) {
+                $request->merge(['check_in_now' => $parsed]);
+            }
+        }
+
+        $validated = $request->validate([
+            'room_ids' => ['required', 'array', 'min:1', 'max:20'],
+            'room_ids.*' => ['required', 'string'],
+            'guest_name' => ['required', 'string', 'max:255'],
+            'guest_email' => ['nullable', 'email', 'max:255'],
+            'guest_phone' => ['nullable', 'string', 'max:50'],
+            'check_in_at' => ['required', 'date'],
+            'check_out_at' => ['required', 'date', 'after:check_in_at'],
+            'check_in_now' => ['nullable', 'boolean'],
+            'adults' => ['nullable', 'integer', 'min:1', 'max:20'],
+            'children' => ['nullable', 'integer', 'min:0', 'max:20'],
+            'org_name' => ['required', 'string', 'max:255'],
+            'org_type' => ['nullable', 'string', 'in:government,organization'],
+            'org_contact_person' => ['required', 'string', 'max:255'],
+            'org_contact_phone' => ['required', 'string', 'max:50'],
+            'org_contact_email' => ['nullable', 'email', 'max:255'],
+            'org_address' => ['nullable', 'string', 'max:500'],
+            'org_tin' => ['nullable', 'string', 'max:80'],
+            'org_po_number' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $orgFields = \App\Support\OrgBookingSupport::validatedOrgFields($validated);
+        $hotelId = (string) $request->user()->hotel_id;
+        $roomIds = array_values(array_unique(array_map('strval', $validated['room_ids'])));
+        $rooms = Room::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->whereIn('_id', $roomIds)
+            ->get();
+        if ($rooms->count() !== count($roomIds)) {
+            // Mongo may use id instead of _id in whereIn depending on driver.
+            $rooms = Room::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
+                ->get()
+                ->filter(fn (Room $r) => in_array((string) $r->id, $roomIds, true))
+                ->values();
+        }
+        if ($rooms->count() !== count($roomIds)) {
+            return response()->json([
+                'message' => 'One or more selected rooms were not found in this hotel.',
+            ], 422);
+        }
+
+        $createdBookings = [];
+        $presented = [];
+        try {
+            foreach ($rooms as $room) {
+                $bookingData = array_merge($validated, $orgFields, [
+                    'hotel_id' => $hotelId,
+                    'room_id' => (string) $room->id,
+                    'source' => \App\Enums\BookingSource::ADMIN->value,
+                    'booking_type' => \App\Enums\BookingType::LOCAL->value,
+                    'payment_method' => 'Cash',
+                    'guest_name' => trim((string) $validated['guest_name']),
+                ]);
+                unset($bookingData['room_ids'], $bookingData['check_in_now']);
+                $bookingData = array_merge($bookingData, $orgFields);
+
+                $booking = $bookingService->create($bookingData, $request->user());
+                $walletFeeService->deductForBooking($booking, $room, (string) $request->user()->id);
+
+                if ($request->boolean('check_in_now')) {
+                    $checkIn = Carbon::parse((string) $validated['check_in_at']);
+                    $checkOut = Carbon::parse((string) $validated['check_out_at']);
+                    $roomCheckoutService->checkInRoom(
+                        $room->fresh() ?? $room,
+                        $request->user(),
+                        $checkIn,
+                        $checkOut,
+                    );
+                }
+
+                $createdBookings[] = $booking;
+                $presented[] = AdminBookingPresenter::present(
+                    $booking->fresh() ?? $booking,
+                    $room->fresh() ?? $room,
+                );
+            }
+        } catch (\Throwable $e) {
+            foreach ($createdBookings as $booking) {
+                try {
+                    $bookingService->adminCancel($booking, $request->user());
+                } catch (\Throwable) {
+                }
+            }
+            throw $e;
+        }
+
+        return response()->json([
+            'ok' => true,
+            'count' => count($presented),
+            'bookings' => $presented,
+        ], 201);
+    })->middleware(['prevent.double.booking', 'role:admin,frontdesk,super_admin'])->name('api.v1.admin.org-bookings.bulk');
 
     Route::patch('/admin/bookings/{booking}', function (
         Request $request,

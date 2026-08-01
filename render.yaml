@@ -3,6 +3,10 @@
 #
 # After linking this repo, set secrets in the dashboard (APP_KEY, MONGODB_URI, etc.)
 # or sync from .env.render.example.
+#
+# IMPORTANT: The cron service must have the SAME mail secrets as the web service
+# (MESSAGING_EMAIL_ENABLED, MAIL_*, RESEND_API_KEY). Without them, daily/weekly/
+# monthly owner sales reports never leave the scheduler container.
 
 services:
   - type: web
@@ -20,6 +24,8 @@ services:
         value: production
       - key: APP_DEBUG
         value: false
+      - key: APP_TIMEZONE
+        value: Asia/Manila
       - key: FILESYSTEM_UPLOAD_DISK
         value: uploads
       - key: FILESYSTEM_UPLOAD_ROOT
@@ -51,8 +57,19 @@ services:
         sync: false
       - key: SANCTUM_STATEFUL_DOMAINS
         sync: false
+      - key: MESSAGING_EMAIL_ENABLED
+        sync: false
+      - key: MAIL_MAILER
+        sync: false
+      - key: MAIL_FROM_ADDRESS
+        sync: false
+      - key: MAIL_FROM_NAME
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
 
   # Runs scheduled tasks: auto-checkout, reservation activation, booking purge, owner sales reports.
+  # Must mirror mail + timezone env from the web service or owner report emails will silently fail.
   - type: cron
     name: madyawph-scheduler
     runtime: docker
@@ -62,11 +79,34 @@ services:
     envVars:
       - key: APP_ENV
         value: production
+      - key: APP_DEBUG
+        value: false
+      - key: APP_TIMEZONE
+        value: Asia/Manila
       - key: DB_CONNECTION
         value: mongodb
+      - key: CACHE_STORE
+        value: file
+      - key: QUEUE_CONNECTION
+        value: sync
+      - key: STRICT_TENANT_SCOPING
+        value: true
       - key: APP_KEY
+        sync: false
+      - key: APP_URL
         sync: false
       - key: MONGODB_URI
         sync: false
       - key: MONGODB_DATABASE
+        sync: false
+      # Required for hotel:send-sales-reports (daily/weekly/monthly owner Gmail)
+      - key: MESSAGING_EMAIL_ENABLED
+        sync: false
+      - key: MAIL_MAILER
+        sync: false
+      - key: MAIL_FROM_ADDRESS
+        sync: false
+      - key: MAIL_FROM_NAME
+        sync: false
+      - key: RESEND_API_KEY
         sync: false

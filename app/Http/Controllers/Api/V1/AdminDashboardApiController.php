@@ -247,6 +247,10 @@ class AdminDashboardApiController extends Controller
                             'created_at' => SafeModelAttributes::carbonFromModel($booking, 'created_at', 'updated_at')?->toISOString(),
                             'booking_type' => BookingTypeResolver::resolveForBooking($booking),
                             'booking_source' => (string) ($booking->booking_source ?? ''),
+                            'is_org_booking' => \App\Support\OrgBookingSupport::isOrgBooking($booking),
+                            'org_name' => (string) ($booking->org_name ?? ''),
+                            'org_type' => (string) ($booking->org_type ?? ''),
+                            'org_contact_person' => (string) ($booking->org_contact_person ?? ''),
                         ] : null,
                         'balance_due' => round($balanceDue, 2),
                         'amount_paid' => round($amountPaid, 2),
@@ -330,7 +334,19 @@ class AdminDashboardApiController extends Controller
                     };
                 })
                 ->take(40)
-                ->values(),
+                ->values()
+                ->map(function (ExternalReservation $r) {
+                    $meta = is_array($r->metadata) ? $r->metadata : [];
+
+                    return array_merge($r->toArray(), [
+                        'payment_method' => (string) ($meta['payment_method'] ?? ''),
+                        'payment_reference' => (string) ($meta['payment_reference'] ?? ''),
+                        'estimated_total' => (float) ($meta['estimated_total'] ?? 0),
+                        'amount_paid' => (float) ($meta['amount_paid'] ?? $meta['estimated_total'] ?? 0),
+                        'total_amount' => (float) ($meta['estimated_total'] ?? 0),
+                        'payment_status' => (string) ($meta['payment_status'] ?? ''),
+                    ]);
+                }),
             'reminders' => CheckoutReminder::query()->latest()->limit(30)->get(),
             'reviews' => StayReview::query()->latest()->limit(30)->get(),
             'transfers' => RoomTransfer::query()->latest()->limit(30)->get(),

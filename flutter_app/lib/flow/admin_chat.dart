@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:async';
 
 import '../dio_client.dart';
+import '../services/chat_notification_sound.dart';
 import '../widgets/admin_notification_badge.dart';
 import 'admin/admin_dashboard_header.dart';
 import '../widgets/chat_attachment.dart';
@@ -287,6 +288,7 @@ class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
   bool _sending = false;
   final _ctrl = TextEditingController();
   Timer? _poll;
+  int _lastGuestMessageCount = 0;
 
   @override
   void initState() {
@@ -300,6 +302,14 @@ class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
     _poll?.cancel();
     _ctrl.dispose();
     super.dispose();
+  }
+
+  int _guestMessageCount(List<dynamic> messages) {
+    return messages.where((m) {
+      if (m is! Map) return false;
+      final role = (m['sender_role'] ?? m['role'] ?? '').toString().toLowerCase();
+      return role == 'guest' || role == 'staff';
+    }).length;
   }
 
   Future<void> _load({bool silent = false}) async {
@@ -319,8 +329,17 @@ class _AdminChatRoomScreenState extends State<AdminChatRoomScreen> {
           'translate': locale == 'en' ? '0' : '1',
         },
       );
+      if (!mounted) return;
+      final next = (res.data?['messages'] as List?) ?? const [];
+      final guestCount = _guestMessageCount(next);
+      if (silent &&
+          guestCount > _lastGuestMessageCount &&
+          _lastGuestMessageCount > 0) {
+        unawaited(ChatNotificationSound.playNewMessage());
+      }
       setState(() {
-        _messages = (res.data?['messages'] as List?) ?? const [];
+        _messages = next;
+        _lastGuestMessageCount = guestCount;
         _loading = false;
       });
     } on DioException catch (e) {

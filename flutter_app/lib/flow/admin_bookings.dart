@@ -58,6 +58,89 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
 
   Future<void> _approve(String id) async {
     if (_busy || id.isEmpty) return;
+
+    Map<String, dynamic>? reservation;
+    for (final raw in _reservations) {
+      if (raw is! Map) continue;
+      final map = Map<String, dynamic>.from(raw);
+      if ((map['id'] ?? map['_id'] ?? '').toString() == id) {
+        reservation = map;
+        break;
+      }
+    }
+    final meta = reservation?['metadata'];
+    final metaMap = meta is Map
+        ? Map<String, dynamic>.from(meta)
+        : const <String, dynamic>{};
+    final guestName =
+        (reservation?['guest_name'] ?? 'Guest').toString();
+    final payRef = (reservation?['payment_reference'] ??
+            metaMap['payment_reference'] ??
+            '—')
+        .toString();
+    final totalPaid = (reservation?['amount_paid'] as num?)?.toDouble() ??
+        (reservation?['estimated_total'] as num?)?.toDouble() ??
+        (metaMap['amount_paid'] as num?)?.toDouble() ??
+        (metaMap['estimated_total'] as num?)?.toDouble() ??
+        0;
+
+    final reviewOk = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Review online payment'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Guest: $guestName',
+                style: const TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 6),
+            Text('Payment reference: $payRef'),
+            const SizedBox(height: 6),
+            Text(
+              'Total paid: ₱${totalPaid.toStringAsFixed(2)}',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Approve'),
+          ),
+        ],
+      ),
+    );
+    if (reviewOk != true || !mounted) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirm approval?'),
+        content: Text(
+          'Approve prepaid online booking for $guestName?\n\n'
+          'Ref: $payRef\n'
+          'Total paid: ₱${totalPaid.toStringAsFixed(2)}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Go back'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
     if (!await guardHotelCreditsBeforeApproval(
       context,
       currentCredits: _currentCredits,

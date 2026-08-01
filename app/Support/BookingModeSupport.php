@@ -13,6 +13,7 @@ final class BookingModeSupport
         'x',
         'website',
         'email',
+        'org-account',
         'other',
     ];
 
@@ -42,6 +43,7 @@ final class BookingModeSupport
             'x' => 'X (Twitter)',
             'website' => 'Website',
             'email' => 'Email',
+            'org-account' => 'Gov / Org account',
             'other' => 'Other',
             default => $mode,
         };

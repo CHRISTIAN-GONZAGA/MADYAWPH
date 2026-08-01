@@ -76,6 +76,7 @@ class ClockBasedStayWindowTest extends TestCase
             'check_out_at' => $checkOut->toIso8601String(),
             'payment_method' => 'Cash',
             'check_in_now' => true,
+            'check_in_payment_amount' => 1000,
         ])->assertCreated();
 
         $room->refresh();
@@ -193,6 +194,8 @@ class ClockBasedStayWindowTest extends TestCase
             'check_in' => $today,
             'check_out' => $today,
             'discount_type' => 'none',
+            'payment_method' => 'Online',
+            'payment_reference' => 'REF-TEST-B9B71177',
         ])->assertOk();
 
         $reservation = ExternalReservation::withoutGlobalScopes()->latest('created_at')->first();

@@ -27,6 +27,12 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
   }
 
   final isHourly = HourlyBilling.isHourly(room);
+  final bookingMap = room['latest_booking'] is Map
+      ? Map<String, dynamic>.from(room['latest_booking'] as Map)
+      : const <String, dynamic>{};
+  final isOrgBooking = bookingMap['is_org_booking'] == true ||
+      (bookingMap['booking_source'] ?? '').toString() == 'admin-org' ||
+      (bookingMap['org_name'] ?? '').toString().trim().isNotEmpty;
   final scheduledOut =
       AdminDashboardModels.stayEndDate(room) ?? DateTime.now().add(const Duration(days: 1));
 
@@ -47,19 +53,18 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
         room['total_amount'] ??
         0,
   );
-  double minPercent = 50;
+  double minPercent = isOrgBooking ? 0 : 50;
   double minDue = 0;
   final paymentCtrl = TextEditingController();
   var paymentMethod = 'Cash';
   var loadingPolicy = true;
 
   try {
-    final booking = room['latest_booking'] is Map
-        ? Map<String, dynamic>.from(room['latest_booking'] as Map)
-        : const <String, dynamic>{};
+    final booking = bookingMap;
     final bookingId = AdminDashboardModels.documentIdOf(booking);
     final futures = <Future>[
-      portalDio().get<Map<String, dynamic>>('/admin/settings/min-check-in-payment'),
+      if (!isOrgBooking)
+        portalDio().get<Map<String, dynamic>>('/admin/settings/min-check-in-payment'),
     ];
     if (bookingId.isNotEmpty) {
       futures.add(
@@ -69,20 +74,28 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
       );
     }
     final results = await Future.wait(futures);
-    final policy = results[0].data as Map<String, dynamic>?;
-    minPercent = parseJsonDouble(policy?['min_check_in_payment_percent'] ?? 50);
-    if (results.length > 1) {
-      final bill = results[1].data as Map<String, dynamic>?;
+    var billIndex = 0;
+    if (!isOrgBooking) {
+      final policy = results[0].data as Map<String, dynamic>?;
+      minPercent = parseJsonDouble(policy?['min_check_in_payment_percent'] ?? 50);
+      billIndex = 1;
+    }
+    if (results.length > billIndex) {
+      final bill = results[billIndex].data as Map<String, dynamic>?;
       balanceDue = parseJsonDouble(
         bill?['balance_due'] ?? bill?['total_due'] ?? balanceDue,
       );
     }
-    minDue = (balanceDue * (minPercent / 100)).clamp(0, double.infinity);
+    minDue = isOrgBooking
+        ? 0
+        : (balanceDue * (minPercent / 100)).clamp(0, double.infinity);
     if (minDue > 0) {
       paymentCtrl.text = minDue.toStringAsFixed(2);
     }
   } catch (_) {
-    minDue = (balanceDue * (minPercent / 100)).clamp(0, double.infinity);
+    minDue = isOrgBooking
+        ? 0
+        : (balanceDue * (minPercent / 100)).clamp(0, double.infinity);
     if (minDue > 0) {
       paymentCtrl.text = minDue.toStringAsFixed(2);
     }
@@ -130,11 +143,16 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
               Text(
                 loadingPolicy
                     ? 'Loading payment policy…'
-                    : 'Balance due: ₱${balanceDue.toStringAsFixed(2)}\n'
-                        'Company policy: at least ${minPercent.toStringAsFixed(minPercent % 1 == 0 ? 0 : 1)}%'
-                        '${minDue > 0 ? ' (₱${minDue.toStringAsFixed(2)})' : ''}.',
+                    : isOrgBooking
+                        ? 'Government / org charge account — check-in allowed without payment.\n'
+                            'Outstanding balance: ₱${balanceDue.toStringAsFixed(2)} '
+                            '(collect later in Gov/Org Booking).'
+                        : 'Balance due: ₱${balanceDue.toStringAsFixed(2)}\n'
+                            'Company policy: at least ${minPercent.toStringAsFixed(minPercent % 1 == 0 ? 0 : 1)}%'
+                            '${minDue > 0 ? ' (₱${minDue.toStringAsFixed(2)})' : ''}.',
                 style: Theme.of(ctx).textTheme.bodySmall,
               ),
+              if (!isOrgBooking) ...[
               const SizedBox(height: 10),
               TextField(
                 controller: paymentCtrl,
@@ -166,6 +184,7 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
                   if (v != null) setLocal(() => paymentMethod = v);
                 },
               ),
+              ],
             ],
           ),
         ),
@@ -177,7 +196,10 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
           FilledButton(
             onPressed: () {
               final paid = double.tryParse(paymentCtrl.text.trim()) ?? 0;
-              if (minPercent > 0 && balanceDue > 0 && paid + 0.009 < minDue) {
+              if (!isOrgBooking &&
+                  minPercent > 0 &&
+                  balanceDue > 0 &&
+                  paid + 0.009 < minDue) {
                 showAppMessage(
                   ctx,
                   'Enter at least ₱${minDue.toStringAsFixed(2)} '
@@ -195,7 +217,7 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
     ),
   );
 
-  final payAmount = double.tryParse(paymentCtrl.text.trim()) ?? 0;
+  final payAmount = isOrgBooking ? 0.0 : (double.tryParse(paymentCtrl.text.trim()) ?? 0);
   paymentCtrl.dispose();
   if (ok != true || !context.mounted) return false;
 

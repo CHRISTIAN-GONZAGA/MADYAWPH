@@ -181,6 +181,8 @@ class AdminReservationService
             $meta['pending_date_change'] = [
                 'check_in_date' => $checkIn->toDateString(),
                 'check_out_date' => $checkOut->toDateString(),
+                'check_in_at' => $checkIn->toIso8601String(),
+                'check_out_at' => $checkOut->toIso8601String(),
                 'requested_by' => (string) $actor->id,
                 'requested_by_name' => (string) ($actor->name ?? $actor->email ?? 'Front desk'),
                 'requested_at' => now()->toISOString(),
@@ -206,37 +208,34 @@ class AdminReservationService
 
     public function approveReschedule(ExternalReservation $reservation, User $actor): ExternalReservation
     {
-        return DB::transaction(function () use ($reservation, $actor): ExternalReservation {
-            $reservation = ExternalReservation::withoutGlobalScopes()
-                ->lockForUpdate()
-                ->findOrFail($reservation->id);
+        // Do not wrap reschedule() in another DB::transaction — MongoDB rejects nested txs.
+        $reservation = ExternalReservation::withoutGlobalScopes()->findOrFail($reservation->id);
 
-            $meta = is_array($reservation->metadata) ? $reservation->metadata : [];
-            $pending = is_array($meta['pending_date_change'] ?? null) ? $meta['pending_date_change'] : [];
-            if (($pending['status'] ?? '') !== 'pending') {
-                throw ValidationException::withMessages([
-                    'reservation' => 'No pending date change for this reservation.',
-                ]);
-            }
+        $meta = is_array($reservation->metadata) ? $reservation->metadata : [];
+        $pending = is_array($meta['pending_date_change'] ?? null) ? $meta['pending_date_change'] : [];
+        if (($pending['status'] ?? '') !== 'pending') {
+            throw ValidationException::withMessages([
+                'reservation' => 'No pending date change for this reservation.',
+            ]);
+        }
 
-            $updated = $this->reschedule($reservation, [
-                'check_in_at' => (string) ($pending['check_in_date'] ?? ''),
-                'check_out_at' => (string) ($pending['check_out_date'] ?? ''),
-            ], $actor);
+        $updated = $this->reschedule($reservation, [
+            'check_in_at' => (string) ($pending['check_in_at'] ?? $pending['check_in_date'] ?? ''),
+            'check_out_at' => (string) ($pending['check_out_at'] ?? $pending['check_out_date'] ?? ''),
+        ], $actor);
 
-            $freshMeta = is_array($updated->metadata) ? $updated->metadata : [];
-            unset($freshMeta['pending_date_change']);
-            $updated->update(['metadata' => $freshMeta]);
+        $freshMeta = is_array($updated->metadata) ? $updated->metadata : [];
+        unset($freshMeta['pending_date_change']);
+        $updated->update(['metadata' => $freshMeta]);
 
-            $this->activityLogService->log(
-                (string) $updated->hotel_id,
-                $actor,
-                "Approved date change for reservation {$updated->external_reference}",
-                ['reservation_id' => (string) $updated->id]
-            );
+        $this->activityLogService->log(
+            (string) $updated->hotel_id,
+            $actor,
+            "Approved date change for reservation {$updated->external_reference}",
+            ['reservation_id' => (string) $updated->id]
+        );
 
-            return $updated->fresh();
-        });
+        return $updated->fresh();
     }
 
     public function rejectReschedule(ExternalReservation $reservation, User $actor): ExternalReservation

@@ -19,6 +19,7 @@ import 'manual_booking_dialog.dart';
 import 'multi_room_booking_summary.dart';
 import 'online_payment_qr_block.dart';
 import 'device_guest_welcome_sms.dart';
+import 'walk_in_check_in_deposit_dialog.dart';
 
 /// Group walk-in booking — same steps as single room: calendar → guest form → submit.
 Future<bool> showAdminMultiRoomWalkInBooking({
@@ -516,6 +517,8 @@ Future<bool> showAdminMultiRoomWalkInBooking({
                   guestsFemale: guestsFemale,
                   guestNationality: guestNationality,
                   checkInNow: false,
+                  rooms: rooms,
+                  memberDiscountPercent: memberDiscountPercent,
                 );
                 if (built != null) {
                   Navigator.of(dialogContext).pop(built);
@@ -549,6 +552,8 @@ Future<bool> showAdminMultiRoomWalkInBooking({
                   guestsFemale: guestsFemale,
                   guestNationality: guestNationality,
                   checkInNow: true,
+                  rooms: rooms,
+                  memberDiscountPercent: memberDiscountPercent,
                 );
                 if (built != null) {
                   Navigator.of(dialogContext).pop(built);
@@ -572,13 +577,23 @@ Future<bool> showAdminMultiRoomWalkInBooking({
   if (payload == null || !context.mounted) return false;
 
   final checkInNow = payload['check_in_now'] == true;
+  double? checkInPaymentAmount;
   if (checkInNow) {
+    final estimated = (payload['estimated_total'] as num?)?.toDouble() ?? 0.0;
+    final deposit = await showWalkInCheckInDepositDialog(
+      context,
+      balanceDue: estimated,
+      roomLabel: '${rooms.length} rooms',
+    );
+    if (deposit == null || !context.mounted) return false;
+    checkInPaymentAmount = deposit;
     await DeviceGuestWelcomeSms.ensurePermission();
   }
   try {
     final result = await submitAdminBulkWalkInBooking(
       rooms: rooms,
       checkInNow: checkInNow,
+      checkInPaymentAmount: checkInPaymentAmount,
       payload: CompleteGuestBookingPayload(
         guestName: (payload['guest_name'] ?? '').toString(),
         guestEmail: (payload['guest_email'] ?? '').toString(),
@@ -686,6 +701,8 @@ Map<String, dynamic>? _buildMultiRoomWalkInPayload({
   required int guestsFemale,
   required String guestNationality,
   required bool checkInNow,
+  required List<Map<String, dynamic>> rooms,
+  double memberDiscountPercent = 0,
 }) {
   final name = nameCtrl.text.trim();
   final email = emailCtrl.text.trim();
@@ -745,6 +762,21 @@ Map<String, dynamic>? _buildMultiRoomWalkInPayload({
     return null;
   }
 
+  final lines = computeMultiRoomChargeLines(
+    rooms: rooms,
+    checkIn: checkInDate,
+    checkOut: checkOutDate,
+  );
+  final gross = multiRoomGrossTotal(lines);
+  final discountPct = memberDiscountPercent > 0
+      ? memberDiscountPercent
+      : switch (discountType) {
+          'pwd' => 20.0,
+          'senior' => 20.0,
+          _ => 0.0,
+        };
+  final estimatedTotal = HourlyBilling.round50(gross * (1 - (discountPct / 100)));
+
   return {
     'guest_name': name,
     'guest_email': email,
@@ -765,6 +797,7 @@ Map<String, dynamic>? _buildMultiRoomWalkInPayload({
     'guests_female': guestsFemale,
     'guest_nationality': guestNationality,
     'check_in_now': checkInNow,
+    'estimated_total': estimatedTotal,
   };
 }
 

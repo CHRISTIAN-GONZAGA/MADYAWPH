@@ -218,14 +218,7 @@ class BookingService
                 );
             }
 
-            try {
-                app(MemberPointsService::class)->awardBookingPoints($booking, $actor);
-            } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning('Member booking points award failed', [
-                    'booking_id' => (string) $booking->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
+            // Member points are awarded on checkout (completed stay), not at check-in.
 
             return $booking;
         });
@@ -511,6 +504,10 @@ class BookingService
                 'pending_date_change' => [
                     'check_in_date' => $stay['check_in_date'],
                     'check_out_date' => $stay['check_out_date'],
+                    'check_in_at' => $stay['check_in']->toIso8601String(),
+                    'check_out_at' => $stay['check_out']->toIso8601String(),
+                    'check_in_time' => $stay['check_in_time'],
+                    'check_out_time' => $stay['check_out_time'],
                     'requested_by' => (string) $actor->id,
                     'requested_by_name' => (string) ($actor->name ?? $actor->email ?? 'Front desk'),
                     'requested_at' => now()->toISOString(),
@@ -535,31 +532,41 @@ class BookingService
 
     public function approveReschedule(Booking $booking, User $actor): Booking
     {
-        return DB::transaction(function () use ($booking, $actor): Booking {
-            $booking = Booking::withoutGlobalScopes()->lockForUpdate()->findOrFail($booking->id);
-            $pending = is_array($booking->pending_date_change) ? $booking->pending_date_change : [];
-            if (($pending['status'] ?? '') !== 'pending') {
-                throw ValidationException::withMessages([
-                    'booking' => 'No pending date change for this booking.',
-                ]);
-            }
+        // Do not wrap reschedule() in another DB::transaction — MongoDB rejects nested txs.
+        $booking = Booking::withoutGlobalScopes()->findOrFail($booking->id);
+        $pending = is_array($booking->pending_date_change) ? $booking->pending_date_change : [];
+        if (($pending['status'] ?? '') !== 'pending') {
+            throw ValidationException::withMessages([
+                'booking' => 'No pending date change for this booking.',
+            ]);
+        }
 
-            $updated = $this->reschedule($booking, [
-                'check_in_at' => (string) ($pending['check_in_date'] ?? ''),
-                'check_out_at' => (string) ($pending['check_out_date'] ?? ''),
-            ], $actor);
+        $rescheduleData = [];
+        if (! empty($pending['check_in_at']) && ! empty($pending['check_out_at'])) {
+            $rescheduleData = [
+                'check_in_at' => (string) $pending['check_in_at'],
+                'check_out_at' => (string) $pending['check_out_at'],
+            ];
+        } else {
+            $rescheduleData = [
+                'check_in_date' => (string) ($pending['check_in_date'] ?? ''),
+                'check_out_date' => (string) ($pending['check_out_date'] ?? ''),
+                'check_in_time' => $pending['check_in_time'] ?? null,
+                'check_out_time' => $pending['check_out_time'] ?? null,
+            ];
+        }
 
-            $updated->update(['pending_date_change' => null]);
+        $updated = $this->reschedule($booking, $rescheduleData, $actor);
+        $updated->update(['pending_date_change' => null]);
 
-            $this->activityLogService->log(
-                (string) $updated->hotel_id,
-                $actor,
-                "Approved date change for booking {$updated->booking_reference}",
-                ['booking_id' => (string) $updated->id]
-            );
+        $this->activityLogService->log(
+            (string) $updated->hotel_id,
+            $actor,
+            "Approved date change for booking {$updated->booking_reference}",
+            ['booking_id' => (string) $updated->id]
+        );
 
-            return $updated->fresh();
-        });
+        return $updated->fresh();
     }
 
     public function rejectReschedule(Booking $booking, User $actor): Booking

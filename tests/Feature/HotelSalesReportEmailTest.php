@@ -191,4 +191,29 @@ class HotelSalesReportEmailTest extends TestCase
 
         Mail::assertNothingSent();
     }
+
+    public function test_sales_report_aborts_when_email_messaging_disabled(): void
+    {
+        config([
+            'services.messaging.email_enabled' => false,
+            'mail.default' => 'array',
+            'mail.from.address' => 'noreply@madyaw.test',
+        ]);
+        Mail::fake();
+
+        $hotel = Hotel::create([
+            'name' => 'Disabled Mail Hotel',
+            'location' => 'Iloilo',
+            'owner_email' => 'owner-disabled@gmail.com',
+        ]);
+
+        $exit = Artisan::call('hotel:send-sales-reports', [
+            '--period' => 'daily',
+            '--hotel' => (string) $hotel->id,
+            '--force' => true,
+        ]);
+
+        $this->assertSame(1, $exit);
+        Mail::assertNothingSent();
+    }
 }

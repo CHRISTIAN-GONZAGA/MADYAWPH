@@ -48,6 +48,8 @@ class CustomerNonOverlappingReservationBookingTest extends TestCase
             'check_in' => Carbon::today()->toDateString(),
             'check_out' => Carbon::today()->addDay()->toDateString(),
             'discount_type' => 'none',
+            'payment_method' => 'Online',
+            'payment_reference' => 'REF-NONOV-TODAY-001',
         ]);
 
         $response->assertOk();
@@ -91,6 +93,8 @@ class CustomerNonOverlappingReservationBookingTest extends TestCase
             'check_in' => Carbon::today()->addDays(3)->toDateString(),
             'check_out' => Carbon::today()->addDays(5)->toDateString(),
             'discount_type' => 'none',
+            'payment_method' => 'Online',
+            'payment_reference' => 'REF-TEST-1A47CF3A',
         ]);
 
         $response->assertOk();
@@ -134,6 +138,8 @@ class CustomerNonOverlappingReservationBookingTest extends TestCase
             'check_in' => $futureIn->copy()->addDay()->toDateString(),
             'check_out' => $futureOut->copy()->addDay()->toDateString(),
             'discount_type' => 'none',
+            'payment_method' => 'Online',
+            'payment_reference' => 'REF-TEST-C11B1D3B',
         ]);
 
         $response->assertStatus(422);

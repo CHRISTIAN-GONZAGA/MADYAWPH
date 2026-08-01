@@ -9,6 +9,7 @@ import '../auth_storage.dart';
 import '../locale_controller.dart';
 import '../dio_client.dart';
 import '../navigation_keys.dart';
+import '../services/chat_notification_sound.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_input.dart';
@@ -1689,42 +1690,65 @@ class _StaffAdminMessagesScreenState extends State<StaffAdminMessagesScreen> {
   bool _sending = false;
   String? _error;
   final _ctrl = TextEditingController();
+  Timer? _poll;
+  int _lastIncomingCount = 0;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _poll = Timer.periodic(const Duration(seconds: 8), (_) => _load(silent: true));
   }
 
   @override
   void dispose() {
+    _poll?.cancel();
     _ctrl.dispose();
     super.dispose();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final res = await portalDio().get<Map<String, dynamic>>(
         '/staff/chat/admin/messages',
       );
+      if (!mounted) return;
+      final next = (res.data?['messages'] as List<dynamic>?) ?? const [];
+      final incoming = next.where((m) {
+        if (m is! Map) return false;
+        final role = (m['sender_role'] ?? m['role'] ?? '').toString().toLowerCase();
+        return role != 'staff';
+      }).length;
+      if (silent && incoming > _lastIncomingCount && _lastIncomingCount > 0) {
+        unawaited(ChatNotificationSound.playNewMessage());
+      }
       setState(() {
-        _messages = (res.data?['messages'] as List<dynamic>?) ?? const [];
+        _messages = next;
+        _lastIncomingCount = incoming;
         _loading = false;
       });
     } on DioException catch (e) {
-      setState(() {
-        _error = dioErrorMessage(e);
-        _loading = false;
-      });
+      if (!mounted) return;
+      if (!silent) {
+        setState(() {
+          _error = dioErrorMessage(e);
+          _loading = false;
+        });
+      }
     } catch (e) {
-      setState(() {
-        _error = '$e';
-        _loading = false;
-      });
+      if (!mounted) return;
+      if (!silent) {
+        setState(() {
+          _error = '$e';
+          _loading = false;
+        });
+      }
     }
   }
 

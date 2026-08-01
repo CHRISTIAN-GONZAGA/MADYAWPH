@@ -58,7 +58,8 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
   DateTime? _checkInDate;
   DateTime? _checkOutDate;
   var _discountType = 'none';
-  var _paymentMethod = 'Cash';
+  var _paymentMethod = 'Online';
+  final _paymentRefCtrl = TextEditingController();
   XFile? _discountIdFile;
   XFile? _guestIdFile;
   String _paymentQrUrl = '';
@@ -155,6 +156,7 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
         _discountIdFile = null;
       }
     });
+    await _loadPaymentQr();
   }
 
   @override
@@ -165,6 +167,7 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
     _phoneCtrl.dispose();
     _checkInCtrl.dispose();
     _checkOutCtrl.dispose();
+    _paymentRefCtrl.dispose();
     super.dispose();
   }
 
@@ -295,6 +298,22 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
       showAppMessage(context, 'Select check-in and check-out.');
       return;
     }
+    final paymentRef = _paymentRefCtrl.text.trim();
+    if (paymentRef.length < 4) {
+      showAppMessage(
+        context,
+        'Enter your GCash / Maya / QR Ph payment reference after paying in full.',
+      );
+      return;
+    }
+    if (_paymentQrUrl.isEmpty) {
+      showAppMessage(
+        context,
+        'This hotel has not uploaded a payment QR yet. Try again later.',
+        isError: true,
+      );
+      return;
+    }
     final inParsed = _checkInDate ?? DateTime.tryParse(_checkInCtrl.text.trim());
     final outParsed = _checkOutDate ?? DateTime.tryParse(_checkOutCtrl.text.trim());
     if (inParsed != null && outParsed != null) {
@@ -313,7 +332,8 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
       'check_in': _checkInCtrl.text.trim(),
       'check_out': _checkOutCtrl.text.trim(),
       'discount_type': _hasMemberDiscount ? 'none' : _discountType,
-      'payment_method': _paymentMethod,
+      'payment_method': 'Online',
+      'payment_reference': paymentRef,
       'hotel_id': widget.hotelId,
       'adults': _adults,
       'children': _children,
@@ -858,100 +878,77 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
                 suffixIcon: const Icon(Icons.calendar_month_outlined),
               ),
             const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: _paymentMethod,
-              decoration: const InputDecoration(
-                labelText: 'Payment method',
-                border: OutlineInputBorder(),
-              ),
-              items: const [
-                DropdownMenuItem(value: 'Cash', child: Text('Cash at hotel')),
-                DropdownMenuItem(value: 'Online', child: Text('Online (QR Ph)')),
-              ],
-              onChanged: (v) async {
-                final next = v ?? 'Cash';
-                setState(() => _paymentMethod = next);
-                if (next == 'Online' && _paymentQrUrl.isEmpty) {
-                  await _loadPaymentQr();
-                }
-              },
-            ),
-            if (_paymentMethod == 'Online') ...[
-              const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: scheme.errorContainer.withValues(alpha: 0.45),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: scheme.error.withValues(alpha: 0.35),
-                  ),
-                ),
-                child: Text(
-                  'FULL PAYMENT REQUIRED',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: scheme.error,
-                        letterSpacing: 0.6,
-                      ),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: scheme.errorContainer.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: scheme.error.withValues(alpha: 0.35),
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Online (QR Ph) bookings must be paid in full before your stay is confirmed. '
-                'Scan the hotel QR below and complete payment, then submit your booking request.',
+              child: Text(
+                'FULL PAYMENT REQUIRED — ONLINE ONLY',
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                      height: 1.4,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w900,
+                      color: scheme.error,
+                      letterSpacing: 0.6,
                     ),
               ),
-              const SizedBox(height: 12),
-              if (_qrLoading)
-                const Center(child: CircularProgressIndicator())
-              else if (_paymentQrUrl.isEmpty)
-                Text(
-                  'Hotel has not uploaded a payment QR yet. You can still submit a request and pay at the desk.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                )
-              else
-                Center(
-                  child: Column(
-                    children: [
-                      const Text(
-                        'Scan to pay via GCash / Maya / QR Ph',
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 8),
-                      NetworkMediaImage(
-                        url: _paymentQrUrl,
-                        width: 200,
-                        height: 200,
-                        fit: BoxFit.contain,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'After paying, keep your reference ready. The hotel confirms your request before the stay is active.',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
-                      ),
-                    ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Cash at hotel is not available for online bookings. '
+              'Scan the hotel QR, pay the full stay amount, then enter your payment reference below.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    height: 1.4,
                   ),
+            ),
+            const SizedBox(height: 12),
+            if (_qrLoading)
+              const Center(child: CircularProgressIndicator())
+            else if (_paymentQrUrl.isEmpty)
+              Text(
+                'Hotel has not uploaded a payment QR yet. Online booking is unavailable until they do.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.error,
+                    ),
+              )
+            else
+              Center(
+                child: Column(
+                  children: [
+                    const Text(
+                      'Scan to pay via GCash / Maya / QR Ph',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    NetworkMediaImage(
+                      url: _paymentQrUrl,
+                      width: 200,
+                      height: 200,
+                      fit: BoxFit.contain,
+                    ),
+                  ],
                 ),
-            ],
+              ),
+            const SizedBox(height: 12),
+            AppInput(
+              controller: _paymentRefCtrl,
+              label: 'Payment reference *',
+              hint: 'GCash / Maya / QR Ph transaction ID',
+            ),
             const SizedBox(height: 12),
             Text(
               [
                 if (staySummary.isNotEmpty) 'Duration: $staySummary',
-                'Estimated: ₱${estTotal.toStringAsFixed(2)}'
-                    '${discountPct > 0 ? ' → ₱${estAfterDiscount.toStringAsFixed(2)} after discount' : ''}',
-                'Hotel approval required before your stay is confirmed.',
+                'Total to pay: ₱${estAfterDiscount.toStringAsFixed(2)}'
+                    '${discountPct > 0 ? ' (after discount)' : ''}',
+                'Hotel approval required. You will see success once front desk confirms your payment.',
               ].join('\n'),
               style: Theme.of(context).textTheme.bodySmall,
             ),

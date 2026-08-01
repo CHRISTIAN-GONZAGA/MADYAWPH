@@ -22,6 +22,7 @@ use App\Services\GuestRoomAccessCodeService;
 use App\Services\HotelAvailabilityService;
 use App\Services\HotelCreditBookingFeeService;
 use App\Services\MemberSubscriptionService;
+use App\Services\PaymentTransactionLogService;
 use App\Services\RoomPricingService;
 use App\Services\SmsService;
 use App\Support\ChatAttachmentUrl;
@@ -463,9 +464,11 @@ class CustomerPortalApiController extends Controller
                     'discount_percent' => (float) ($validated['discount_percent'] ?? 0) > 0 ? (float) $validated['discount_percent'] : null,
                     'discount_id_url' => $validated['discount_id_url'] ?? null,
                     'guest_id_url' => $validated['guest_id_url'] ?? null,
-                    'payment_method' => $validated['payment_method'] ?? 'Cash',
+                    'payment_method' => $validated['payment_method'] ?? 'Online',
                     'payment_reference' => $validated['payment_reference'] ?? null,
                     'estimated_total' => $total,
+                    'amount_paid' => $total,
+                    'payment_status' => 'paid_pending_approval',
                     'billing_mode' => $charge['billing_mode'],
                     'stay_hours' => $charge['stay_hours'] ?? null,
                     'block_hours' => $charge['block_hours'] ?? null,
@@ -526,6 +529,24 @@ class CustomerPortalApiController extends Controller
             Auth::user(),
             "Reservation request {$reservation->external_reference} pending approval (room {$room->room_number})",
             ['reservation_id' => (string) $reservation->id, 'room_id' => (string) $room->id]
+        );
+
+        app(PaymentTransactionLogService::class)->record(
+            $hotelId,
+            Auth::user() instanceof \App\Models\User ? Auth::user() : null,
+            "Online payment submitted for reservation {$reservation->external_reference}",
+            [
+                'reservation_id' => (string) $reservation->id,
+                'external_reference' => (string) $reservation->external_reference,
+                'room_id' => (string) $room->id,
+                'guest_name' => (string) $reservation->guest_name,
+                'payment_method' => 'Online',
+                'payment_reference' => (string) ((is_array($reservation->metadata) ? $reservation->metadata['payment_reference'] : null) ?? ''),
+                'amount' => (float) ((is_array($reservation->metadata) ? $reservation->metadata['estimated_total'] : 0) ?? 0),
+                'amount_paid' => (float) ((is_array($reservation->metadata) ? $reservation->metadata['amount_paid'] : 0) ?? 0),
+                'payment_status' => 'paid_pending_approval',
+                'source' => 'customer_online_booking',
+            ],
         );
 
         return response()->json([
@@ -625,7 +646,8 @@ class CustomerPortalApiController extends Controller
             'discount_type' => ['nullable', 'string', 'in:none,pwd,senior'],
             'discount_id_file' => ['nullable', 'image', 'max:5120'],
             'guest_id_file' => ['nullable', 'image', 'max:5120'],
-            'payment_method' => ['nullable', 'string', 'in:Cash,Online'],
+            'payment_method' => ['required', 'string', 'in:Online'],
+            'payment_reference' => ['required', 'string', 'min:4', 'max:120'],
             'rooms' => ['nullable', 'integer', 'min:1', 'max:10'],
             'adults' => ['nullable', 'integer', 'min:1', 'max:30'],
             'children' => ['nullable', 'integer', 'min:0', 'max:20'],
@@ -667,14 +689,20 @@ class CustomerPortalApiController extends Controller
      */
     private function mergePaymentIntoValidated(array $validated): array
     {
-        $method = trim((string) ($validated['payment_method'] ?? 'Cash'));
-        if ($method === '') {
-            $method = 'Cash';
+        $method = trim((string) ($validated['payment_method'] ?? ''));
+        if (strcasecmp($method, 'Online') !== 0) {
+            throw ValidationException::withMessages([
+                'payment_method' => ['Online (QR Ph) payment is required for app bookings.'],
+            ]);
         }
-        $validated['payment_method'] = $method;
-        if (strcasecmp($method, 'Online') === 0) {
-            $validated['payment_reference'] = 'PAY'.now()->format('YmdHis').strtoupper(Str::random(5));
+        $reference = trim((string) ($validated['payment_reference'] ?? ''));
+        if ($reference === '') {
+            throw ValidationException::withMessages([
+                'payment_reference' => ['Enter your GCash / Maya / QR Ph payment reference.'],
+            ]);
         }
+        $validated['payment_method'] = 'Online';
+        $validated['payment_reference'] = $reference;
 
         return $validated;
     }

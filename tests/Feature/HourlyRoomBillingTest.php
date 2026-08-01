@@ -643,6 +643,8 @@ class HourlyRoomBillingTest extends TestCase
             'check_in' => $checkIn,
             'check_out' => $checkOut,
             'discount_type' => 'none',
+            'payment_method' => 'Online',
+            'payment_reference' => 'REF-TEST-C74FB61B',
         ]);
 
         $response->assertOk();

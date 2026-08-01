@@ -38,5 +38,6 @@
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
         <env name="STRICT_TENANT_SCOPING" value="true"/>
+        <env name="PLATFORM_MIN_CHECK_IN_PAYMENT_PERCENT" value="0"/>
     </php>
 </phpunit>

@@ -51,17 +51,14 @@ final class HotelNotificationRecipients
     }
 
     /**
-     * Owner inbox for scheduled sales reports (owner registration email, with admin fallback).
+     * Owner inbox for scheduled sales reports.
+     * Prefer the registration owner Gmail, and always include admin/owner portal
+     * accounts so reports still arrive if owner_email is missing or stale.
      *
      * @return list<string>
      */
     public static function salesReportEmails(string $hotelId): array
     {
-        $owner = self::registeredOwnerEmail($hotelId);
-        if ($owner !== []) {
-            return $owner;
-        }
-
         return self::ownerInboxEmails($hotelId);
     }
 

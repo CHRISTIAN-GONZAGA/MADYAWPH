@@ -93,6 +93,7 @@ class GuestSearchToBookingJourneyTest extends TestCase
             'check_out' => $checkOut,
             'discount_type' => 'none',
             'payment_method' => 'Online',
+            'payment_reference' => 'GCASH-JOURNEY-998877',
             'rooms' => 1,
             'adults' => 2,
             'children' => 0,
@@ -101,7 +102,7 @@ class GuestSearchToBookingJourneyTest extends TestCase
         $ref = (string) $reserve->json('reservation.external_reference');
         $payRef = (string) $reserve->json('reservation.payment_reference');
         $this->assertNotEmpty($ref);
-        $this->assertStringStartsWith('PAY', $payRef);
+        $this->assertSame('GCASH-JOURNEY-998877', $payRef);
 
         $poll = $this->getJson('/api/v1/customer/reservations/'.$ref.'?'.http_build_query([
             'hotel_id' => (string) $hotel->id,
@@ -118,7 +119,14 @@ class GuestSearchToBookingJourneyTest extends TestCase
             'password' => bcrypt('secret'),
             'role' => UserRole::ADMIN->value,
         ]);
-        Sanctum::actingAs($admin);
+        $frontDesk = User::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'journey_fd',
+            'email' => 'fd@journey.test',
+            'password' => bcrypt('secret'),
+            'role' => UserRole::FRONTDESK->value,
+        ]);
+        Sanctum::actingAs($frontDesk);
 
         $reservation = ExternalReservation::withoutGlobalScopes()
             ->where('external_reference', $ref)
@@ -137,6 +145,7 @@ class GuestSearchToBookingJourneyTest extends TestCase
         $this->assertContains($status, ['approved', 'reserved', 'booked']);
         $pollAfter->assertJsonPath('reservation.payment_reference', $payRef);
 
+        Sanctum::actingAs($admin);
         $refSearch = $this->getJson('/api/v1/admin/payment-references/search?q='.urlencode($payRef));
         $refSearch->assertOk();
         $this->assertNotEmpty($refSearch->json('results'));

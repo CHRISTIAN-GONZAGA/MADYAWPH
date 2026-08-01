@@ -30,6 +30,7 @@ Future<Map<String, dynamic>> submitAdminWalkInBooking({
   required Map<String, dynamic> room,
   required CompleteGuestBookingPayload payload,
   bool checkInNow = false,
+  double? checkInPaymentAmount,
 }) async {
   final roomId = AdminDashboardModels.roomIdOf(room);
   if (roomId.isEmpty) {
@@ -63,6 +64,8 @@ Future<Map<String, dynamic>> submitAdminWalkInBooking({
     if (payload.paymentReference.trim().isNotEmpty)
       'payment_reference': payload.paymentReference.trim(),
     'check_in_now': checkInNow ? 1 : 0,
+    if (checkInNow && checkInPaymentAmount != null)
+      'check_in_payment_amount': checkInPaymentAmount,
     'adults': payload.adults,
     'children': payload.children,
     'guests_male': payload.guestsMale,
@@ -120,6 +123,7 @@ Future<Map<String, dynamic>> submitAdminBulkWalkInBooking({
   required List<Map<String, dynamic>> rooms,
   required CompleteGuestBookingPayload payload,
   bool checkInNow = false,
+  double? checkInPaymentAmount,
 }) async {
   if (rooms.length < 2) {
     throw StateError('Select at least two rooms for a group booking.');
@@ -161,6 +165,8 @@ Future<Map<String, dynamic>> submitAdminBulkWalkInBooking({
     if (payload.paymentReference.trim().isNotEmpty)
       'payment_reference': payload.paymentReference.trim(),
     'check_in_now': checkInNow ? 1 : 0,
+    if (checkInNow && checkInPaymentAmount != null)
+      'check_in_payment_amount': checkInPaymentAmount,
     'adults': payload.adults,
     'children': payload.children,
     'guests_male': payload.guestsMale,

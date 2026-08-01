@@ -100,6 +100,8 @@ class ReservationActivationService
             ? PaymentMethod::GCASH->value
             : PaymentMethod::CASH->value;
         $paymentRef = (string) ($meta['payment_reference'] ?? '');
+        $isOnlinePaid = strcasecmp((string) ($meta['payment_method'] ?? ''), 'Online') === 0
+            && $paymentRef !== '';
 
         $bookingAttrs = [
             'hotel_id' => $hotelId,
@@ -110,7 +112,8 @@ class ReservationActivationService
             'guest_phone' => $res->guest_phone,
             'payment_method' => $paymentMethod,
             'payment_reference' => $paymentRef !== '' ? $paymentRef : null,
-            'payment_status' => 'unpaid',
+            'payment_status' => $isOnlinePaid ? 'paid' : 'unpaid',
+            'paid_at' => $isOnlinePaid ? now() : null,
             'total_amount' => $total,
             'source' => BookingSource::WEB->value,
             'booking_type' => BookingType::ONLINE->value,
@@ -179,6 +182,40 @@ class ReservationActivationService
             ]),
         ]);
 
+        if ($isOnlinePaid) {
+            BillingCharge::withoutGlobalScopes()->create([
+                'hotel_id' => $hotelId,
+                'booking_id' => (string) $booking->id,
+                'room_id' => (string) $room->id,
+                'type' => \App\Support\BillingChargeTypes::PARTIAL_PAYMENT,
+                'label' => 'Online payment ('.$paymentRef.')',
+                'amount' => -1 * abs($total),
+                'quantity' => 1,
+                'is_manual' => false,
+                'metadata' => [
+                    'payment_method' => 'Online',
+                    'payment_reference' => $paymentRef,
+                    'from_reservation' => (string) $res->external_reference,
+                    'source' => 'online_full_payment',
+                ],
+            ]);
+
+            app(PaymentTransactionLogService::class)->recordForBooking(
+                $booking,
+                null,
+                "Online payment applied on activation for booking {$booking->booking_reference}",
+                [
+                    'payment_method' => 'Online',
+                    'payment_reference' => $paymentRef,
+                    'amount' => $total,
+                    'amount_paid' => $total,
+                    'payment_status' => 'paid',
+                    'source' => 'reservation_activation',
+                    'reservation_id' => (string) $res->id,
+                ],
+            );
+        }
+
         $generatedPassword = $this->guestRoomAccessCodeService->generateUnique();
         $room->update([
             'status' => RoomStatus::BOOKED->value,
@@ -212,14 +249,8 @@ class ReservationActivationService
             ['booking_id' => (string) $booking->id, 'room_id' => (string) $room->id]
         );
 
-        try {
-            app(MemberPointsService::class)->awardBookingPoints($booking);
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('Member booking points award failed on activation', [
-                'booking_id' => (string) $booking->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        // Online stays earn points after checkout; walk-in awards elsewhere.
+        // Do not award member points at activation for online bookings.
 
         return $booking;
     }

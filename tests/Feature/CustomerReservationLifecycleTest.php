@@ -41,6 +41,8 @@ class CustomerReservationLifecycleTest extends TestCase
             'check_in' => $checkIn,
             'check_out' => $checkOut,
             'discount_type' => 'none',
+            'payment_method' => 'Online',
+            'payment_reference' => 'REF-TEST-38FBCE24',
         ]);
 
         $response->assertOk();
@@ -229,6 +231,8 @@ class CustomerReservationLifecycleTest extends TestCase
             'check_in' => $today,
             'check_out' => $today,
             'discount_type' => 'none',
+            'payment_method' => 'Online',
+            'payment_reference' => 'REF-TEST-3AC0F7AA',
         ]);
         $second->assertStatus(422);
     }
@@ -244,7 +248,7 @@ class CustomerReservationLifecycleTest extends TestCase
             'name' => 'admin-future',
             'email' => 'admin-future-'.uniqid('', true).'@test.local',
             'password' => bcrypt('secret123'),
-            'role' => UserRole::ADMIN,
+            'role' => UserRole::FRONTDESK,
         ]);
         HotelCredit::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,

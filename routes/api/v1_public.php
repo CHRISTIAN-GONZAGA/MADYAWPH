@@ -66,6 +66,49 @@ Route::post('/integrations/run-test', function (
     ]);
 })->middleware('throttle:3,1');
 
+Route::post('/integrations/send-sales-reports', function (Request $request) {
+    $expected = (string) config('services.integrations.test_token');
+    $provided = (string) $request->header('X-Integrations-Test-Token', '');
+    if ($expected === '' || ! hash_equals($expected, $provided)) {
+        abort(404);
+    }
+
+    $validated = $request->validate([
+        'period' => ['required', 'in:daily,weekly,monthly'],
+        'hotel' => ['nullable', 'string', 'max:64'],
+        'date' => ['nullable', 'date'],
+        'force' => ['nullable', 'boolean'],
+        'dry_run' => ['nullable', 'boolean'],
+    ]);
+
+    $params = [
+        '--period' => (string) $validated['period'],
+    ];
+    if (! empty($validated['hotel'])) {
+        $params['--hotel'] = (string) $validated['hotel'];
+    }
+    if (! empty($validated['date'])) {
+        $params['--date'] = (string) $validated['date'];
+    }
+    if (! empty($validated['force'])) {
+        $params['--force'] = true;
+    }
+    if (! empty($validated['dry_run'])) {
+        $params['--dry-run'] = true;
+    }
+
+    $exit = \Illuminate\Support\Facades\Artisan::call('hotel:send-sales-reports', $params);
+
+    return response()->json([
+        'ok' => $exit === 0,
+        'exit_code' => $exit,
+        'period' => $validated['period'],
+        'output' => trim(\Illuminate\Support\Facades\Artisan::output()),
+        'email' => app(\App\Services\AppEmailService::class)->status(),
+        'timezone' => (string) config('app.timezone'),
+    ]);
+})->middleware('throttle:6,1');
+
 Route::get('/integrations/status', function (SmsService $smsService, AppEmailService $emailService) {
     $apiKey = (string) config('services.semaphore.api_key');
 
@@ -90,6 +133,20 @@ Route::get('/integrations/status', function (SmsService $smsService, AppEmailSer
         'payments' => [
             'xendit' => (string) config('services.xendit.secret_key') !== '',
             'paymongo' => (string) config('services.paymongo.secret') !== '',
+        ],
+        'owner_sales_reports' => [
+            'timezone' => (string) config('app.timezone', 'Asia/Manila'),
+            'schedule' => [
+                'daily' => '06:30',
+                'weekly' => 'Monday 07:00',
+                'monthly' => '1st 07:00',
+            ],
+            'command' => 'hotel:send-sales-reports',
+            'requires' => [
+                'MESSAGING_EMAIL_ENABLED=true on web AND cron/scheduler',
+                'MAIL_MAILER / MAIL_FROM_ADDRESS / RESEND_API_KEY on web AND cron/scheduler',
+                'hotels.owner_email (or admin portal email) set',
+            ],
         ],
     ]);
 })->middleware('throttle:30,1');

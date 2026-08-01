@@ -20,7 +20,7 @@ class AdminWalkInDefaultStayWindowTest extends TestCase
             'name' => 'admin-walkin',
             'email' => 'admin-walkin@test.local',
             'password' => bcrypt('secret123'),
-            'role' => UserRole::ADMIN,
+            'role' => UserRole::FRONTDESK,
         ]);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
@@ -43,6 +43,7 @@ class AdminWalkInDefaultStayWindowTest extends TestCase
             'check_out_at' => $checkOut->toIso8601String(),
             'payment_method' => 'Cash',
             'check_in_now' => true,
+            'check_in_payment_amount' => 1500,
             'booking_mode' => 'messenger',
         ]);
 
@@ -62,7 +63,7 @@ class AdminWalkInDefaultStayWindowTest extends TestCase
             'name' => 'admin-multipart',
             'email' => 'admin-multipart@test.local',
             'password' => bcrypt('secret123'),
-            'role' => UserRole::ADMIN,
+            'role' => UserRole::FRONTDESK,
         ]);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
@@ -85,6 +86,7 @@ class AdminWalkInDefaultStayWindowTest extends TestCase
             'check_out_at' => $checkOut->toIso8601String(),
             'payment_method' => 'Cash',
             'check_in_now' => 'true',
+            'check_in_payment_amount' => '1500',
         ]);
 
         $response->assertCreated();
@@ -100,7 +102,7 @@ class AdminWalkInDefaultStayWindowTest extends TestCase
             'name' => 'admin-bad',
             'email' => 'admin-bad@test.local',
             'password' => bcrypt('secret123'),
-            'role' => UserRole::ADMIN,
+            'role' => UserRole::FRONTDESK,
         ]);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
@@ -137,7 +139,7 @@ class AdminWalkInDefaultStayWindowTest extends TestCase
             'name' => 'admin-queue',
             'email' => 'admin-queue@test.local',
             'password' => bcrypt('secret123'),
-            'role' => UserRole::ADMIN,
+            'role' => UserRole::FRONTDESK,
         ]);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,

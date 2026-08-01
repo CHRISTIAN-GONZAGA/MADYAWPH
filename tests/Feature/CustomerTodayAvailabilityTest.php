@@ -60,6 +60,8 @@ class CustomerTodayAvailabilityTest extends TestCase
             'check_in' => $checkIn,
             'check_out' => $checkOut,
             'discount_type' => 'none',
+            'payment_method' => 'Online',
+            'payment_reference' => 'REF-TEST-D02D410E',
         ]);
         $booking->assertOk();
         $booking->assertJsonPath('reservation.status', 'pending_approval');
@@ -117,6 +119,8 @@ class CustomerTodayAvailabilityTest extends TestCase
             'check_in' => $checkIn,
             'check_out' => $checkOut,
             'discount_type' => 'none',
+            'payment_method' => 'Online',
+            'payment_reference' => 'REF-TEST-50033E6F',
         ]);
         $booking->assertOk();
         $booking->assertJsonPath('reservation.status', 'pending_approval');

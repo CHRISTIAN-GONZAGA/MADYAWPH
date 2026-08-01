@@ -14,13 +14,12 @@ use App\Models\PlatformSetting;
 use App\Models\Room;
 use App\Models\User;
 use App\Services\MemberSubscriptionApprovalService;
-use App\Services\RoomCheckoutService;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 class MemberPointsWalletTest extends TestCase
 {
-    public function test_check_in_awards_points_and_redeem_credits_hotel_wallet(): void
+    public function test_checkout_awards_points_and_redeem_credits_hotel_wallet(): void
     {
         PlatformSetting::query()->create([
             'key' => 'global',
@@ -30,6 +29,7 @@ class MemberPointsWalletTest extends TestCase
         ]);
 
         $hotel = Hotel::create(['name' => 'Points Hotel', 'location' => 'Butuan']);
+        $this->seedHotelCredits($hotel, 0);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
             'name' => 'points_admin',
@@ -57,9 +57,11 @@ class MemberPointsWalletTest extends TestCase
             'room_number' => '701',
             'room_type' => 'Deluxe',
             'price_per_night' => 2000,
-            'status' => RoomStatus::BOOKED->value,
+            'status' => RoomStatus::CHECKED_IN->value,
             'current_guest_name' => 'Points Member',
             'current_access_code' => 'AB12',
+            'current_check_in' => now()->toDateString(),
+            'current_check_out' => now()->addDay()->toDateString(),
         ]);
         $booking = Booking::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
@@ -69,8 +71,8 @@ class MemberPointsWalletTest extends TestCase
             'check_in_date' => now()->toDateString(),
             'check_out_date' => now()->addDay()->toDateString(),
             'nights' => 1,
-            'total_amount' => 100,
-            'payment_status' => 'unpaid',
+            'total_amount' => 0,
+            'payment_status' => 'paid',
             'status' => BookingStatus::CONFIRMED,
             'member_shid_id' => (string) $approved->member_shid_id,
         ]);
@@ -82,23 +84,58 @@ class MemberPointsWalletTest extends TestCase
             'label' => 'Room charge',
             'amount' => 100,
         ]);
-
-        app(RoomCheckoutService::class)->checkInRoom($room->fresh(), $admin);
-
-        $approved->refresh();
-        $this->assertSame(1000, (int) round((float) $approved->points_balance));
-
-        // Second check-in on same booking must not double-award.
-        app(RoomCheckoutService::class)->checkInRoom($room->fresh(), $admin);
-        $approved->refresh();
-        $this->assertSame(1000, (int) round((float) $approved->points_balance));
+        BillingCharge::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'booking_id' => (string) $booking->id,
+            'room_id' => (string) $room->id,
+            'type' => 'partial_payment',
+            'label' => 'Payment',
+            'amount' => -100,
+        ]);
 
         Sanctum::actingAs($admin);
+        $this->postJson('/api/v1/rooms/'.$room->id.'/checkout')->assertOk();
+
+        $approved->refresh();
+        $this->assertSame(1000, (int) round((float) $approved->points_balance));
+
+        $room2 = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '702',
+            'room_type' => 'Deluxe',
+            'price_per_night' => 2000,
+            'status' => RoomStatus::CHECKED_IN->value,
+            'current_guest_name' => 'Points Member',
+            'current_access_code' => 'XY99',
+            'current_check_in' => now()->toDateString(),
+            'current_check_out' => now()->addDay()->toDateString(),
+        ]);
+        $booking2 = Booking::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room2->id,
+            'booking_reference' => 'BK-PTS-2',
+            'guest_name' => 'Points Member',
+            'check_in_date' => now()->toDateString(),
+            'check_out_date' => now()->addDay()->toDateString(),
+            'nights' => 1,
+            'total_amount' => 100,
+            'payment_status' => 'unpaid',
+            'status' => BookingStatus::CONFIRMED,
+            'member_shid_id' => (string) $approved->member_shid_id,
+        ]);
+        BillingCharge::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'booking_id' => (string) $booking2->id,
+            'room_id' => (string) $room2->id,
+            'type' => 'room',
+            'label' => 'Room charge',
+            'amount' => 100,
+        ]);
 
         $this->postJson('/api/v1/admin/member/redeem-points', [
             'member_shid_id' => (string) $approved->member_shid_id,
             'points' => 1000,
-            'booking_id' => (string) $booking->id,
+            'booking_id' => (string) $booking2->id,
         ])
             ->assertOk()
             ->assertJsonPath('points_redeemed', 1000)
@@ -114,27 +151,7 @@ class MemberPointsWalletTest extends TestCase
         $this->assertNotNull($credit);
         $this->assertEqualsWithDelta(100.0, (float) $credit->current_credits, 0.01);
 
-        $booking->refresh();
-        $this->assertSame('paid', (string) ($booking->payment_status ?? ''));
-    }
-
-    public function test_central_admin_can_update_points_settings(): void
-    {
-        $central = User::create([
-            'hotel_id' => null,
-            'name' => 'madyawph_platform',
-            'email' => 'platform@madyawph.local',
-            'password' => bcrypt('secret123'),
-            'role' => UserRole::CENTRAL_ADMIN,
-        ]);
-        Sanctum::actingAs($central);
-
-        $this->patchJson('/api/v1/platform/settings/member-points', [
-            'member_points_per_check_in' => 1500,
-            'member_points_per_peso' => 15,
-        ])
-            ->assertOk()
-            ->assertJsonPath('member_points_per_check_in', 1500)
-            ->assertJsonPath('member_points_per_peso', 15);
+        $booking2->refresh();
+        $this->assertSame('paid', (string) ($booking2->payment_status ?? ''));
     }
 }

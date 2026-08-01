@@ -63,6 +63,8 @@ class CustomerMemberSessionBookingTest extends TestCase
             'check_in' => Carbon::today()->addDays(2)->toDateString(),
             'check_out' => Carbon::today()->addDays(4)->toDateString(),
             'discount_type' => 'none',
+            'payment_method' => 'Online',
+            'payment_reference' => 'REF-TEST-DD3CA35E',
             'member_shid_id' => (string) $approved->member_shid_id,
         ]);
 
@@ -80,8 +82,9 @@ class CustomerMemberSessionBookingTest extends TestCase
         $this->assertTrue(blank($stored['member_shid_id'] ?? null));
     }
 
-    public function test_logged_in_member_gets_discount_and_earns_points_on_activation(): void
+    public function test_logged_in_member_gets_discount_and_earns_points_on_checkout(): void
     {
+        \Illuminate\Support\Facades\Config::set('platform.member_discount_every_nth_booking', 1);
         PlatformSetting::query()->create([
             'key' => 'global',
             'member_booking_discount_percent' => 15,
@@ -125,9 +128,11 @@ class CustomerMemberSessionBookingTest extends TestCase
                 'guest_name' => 'Logged Member',
                 'guest_email' => 'logged.member@example.com',
                 'guest_phone' => '09170002222',
-                'check_in' => Carbon::today()->addDays(3)->toDateString(),
-                'check_out' => Carbon::today()->addDays(5)->toDateString(),
+                'check_in' => Carbon::today()->toDateString(),
+                'check_out' => Carbon::today()->addDay()->toDateString(),
                 'discount_type' => 'none',
+                'payment_method' => 'Online',
+                'payment_reference' => 'REF-MEMBER-CHECKOUT-001',
             ]);
 
         $response->assertOk();
@@ -157,6 +162,18 @@ class CustomerMemberSessionBookingTest extends TestCase
             $booking->status?->value ?? (string) $booking->status,
             [BookingStatus::CONFIRMED->value, BookingStatus::BOOKED->value]
         );
+
+        $approved->refresh();
+        $this->assertSame(0, (int) round((float) $approved->points_balance));
+
+        $frontDesk = User::factory()->create([
+            'hotel_id' => (string) $hotel->id,
+            'role' => \App\Enums\UserRole::FRONTDESK->value,
+        ]);
+        $room = Room::withoutGlobalScopes()->findOrFail((string) $booking->room_id);
+        app(\App\Services\RoomCheckoutService::class)->checkInRoom($room, $frontDesk);
+        \Laravel\Sanctum\Sanctum::actingAs($frontDesk);
+        $this->postJson('/api/v1/rooms/'.$booking->room_id.'/checkout')->assertOk();
 
         $approved->refresh();
         $this->assertSame(1000, (int) round((float) $approved->points_balance));
@@ -190,6 +207,8 @@ class CustomerMemberSessionBookingTest extends TestCase
                 'check_in' => Carbon::today()->addDays(3)->toDateString(),
                 'check_out' => Carbon::today()->addDays(5)->toDateString(),
                 'discount_type' => 'none',
+            'payment_method' => 'Online',
+            'payment_reference' => 'REF-TEST-50DBD2CA',
             ]);
 
         $response->assertUnauthorized();

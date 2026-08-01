@@ -18,6 +18,7 @@ import 'guest_nationalities.dart';
 import 'manual_booking_dialog.dart';
 import 'online_payment_qr_block.dart';
 import 'device_guest_welcome_sms.dart';
+import 'walk_in_check_in_deposit_dialog.dart';
 
 /// Same booking popup + submit path as [CustomerRoomsScreen] admin walk-in.
 Future<bool> showAdminWalkInCustomerStyleBooking({
@@ -443,6 +444,7 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                   guestsFemale: guestsFemale,
                   guestNationality: guestNationality,
                   checkInNow: false,
+                  estimatedTotal: estAfterDiscount > 0 ? estAfterDiscount : estTotal,
                 );
                 if (built != null) {
                   Navigator.of(dialogContext).pop(built);
@@ -473,6 +475,7 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                   guestsFemale: guestsFemale,
                   guestNationality: guestNationality,
                   checkInNow: true,
+                  estimatedTotal: estAfterDiscount > 0 ? estAfterDiscount : estTotal,
                 );
                 if (built != null) {
                   Navigator.of(dialogContext).pop(built);
@@ -496,13 +499,23 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
   if (payload == null || !context.mounted) return false;
 
   final checkInNow = payload['check_in_now'] == true;
+  double? checkInPaymentAmount;
   if (checkInNow) {
+    final estimated = (payload['estimated_total'] as num?)?.toDouble() ?? 0.0;
+    final deposit = await showWalkInCheckInDepositDialog(
+      context,
+      balanceDue: estimated,
+      roomLabel: 'Room ${room['room_number']}',
+    );
+    if (deposit == null || !context.mounted) return false;
+    checkInPaymentAmount = deposit;
     await DeviceGuestWelcomeSms.ensurePermission();
   }
   try {
     final result = await submitAdminWalkInBooking(
       room: room,
       checkInNow: checkInNow,
+      checkInPaymentAmount: checkInPaymentAmount,
       payload: CompleteGuestBookingPayload(
         guestName: (payload['guest_name'] ?? '').toString(),
         guestEmail: (payload['guest_email'] ?? '').toString(),
@@ -603,6 +616,7 @@ Map<String, dynamic>? _buildWalkInPayload({
   required int guestsFemale,
   required String guestNationality,
   required bool checkInNow,
+  double estimatedTotal = 0,
 }) {
   final name = nameCtrl.text.trim();
   final email = emailCtrl.text.trim();
@@ -666,6 +680,7 @@ Map<String, dynamic>? _buildWalkInPayload({
     'guests_female': guestsFemale,
     'guest_nationality': guestNationality,
     'check_in_now': checkInNow,
+    'estimated_total': estimatedTotal,
   };
 }
 

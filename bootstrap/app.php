@@ -27,13 +27,26 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withSchedule(function (Schedule $schedule): void {
-        $schedule->command('hotel:activate-reservations')->hourly();
-        $schedule->command('hotel:activate-reservations')->dailyAt('00:05');
-        $schedule->command('hotel:purge-old-bookings')->dailyAt('02:00');
-        $schedule->command('hotel:auto-checkout')->everyFifteenMinutes();
-        $schedule->command('hotel:send-sales-reports --period=daily')->dailyAt('06:30');
-        $schedule->command('hotel:send-sales-reports --period=weekly')->weeklyOn(1, '07:00');
-        $schedule->command('hotel:send-sales-reports --period=monthly')->monthlyOn(1, '07:00');
+        $tz = (string) config('app.timezone', 'Asia/Manila');
+
+        $schedule->command('hotel:activate-reservations')->hourly()->timezone($tz);
+        $schedule->command('hotel:activate-reservations')->dailyAt('00:05')->timezone($tz);
+        $schedule->command('hotel:purge-old-bookings')->dailyAt('02:00')->timezone($tz);
+        $schedule->command('hotel:auto-checkout')->everyFifteenMinutes()->timezone($tz);
+
+        // Owner Gmail sales reports — require MESSAGING_EMAIL_ENABLED + mail secrets on the cron service.
+        $schedule->command('hotel:send-sales-reports --period=daily')
+            ->dailyAt('06:30')
+            ->timezone($tz)
+            ->withoutOverlapping(30);
+        $schedule->command('hotel:send-sales-reports --period=weekly')
+            ->weeklyOn(1, '07:00')
+            ->timezone($tz)
+            ->withoutOverlapping(60);
+        $schedule->command('hotel:send-sales-reports --period=monthly')
+            ->monthlyOn(1, '07:00')
+            ->timezone($tz)
+            ->withoutOverlapping(60);
     })
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->redirectGuestsTo(fn () => route('welcome'));

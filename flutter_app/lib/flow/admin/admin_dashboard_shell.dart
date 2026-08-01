@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../dio_client.dart';
+import '../../services/chat_notification_sound.dart';
 import '../../widgets/admin_curved_nav_bar.dart';
 import '../../widgets/hotel_credits_policy.dart';
 import 'admin_dashboard_models.dart';
@@ -15,6 +16,7 @@ import 'sections/amenities_section.dart';
 import 'sections/bookings_section.dart';
 import 'sections/checkout_section.dart';
 import 'sections/guest_portfolio_section.dart';
+import 'sections/gov_org_booking_section.dart';
 import 'sections/multiple_booking_section.dart';
 import 'sections/reports_analytics_section.dart';
 import 'sections/requests_section.dart';
@@ -68,6 +70,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
   int _tab = 0;
   String _bookingListFilter = 'all';
   Map<String, dynamic>? _inbox;
+  int? _lastChatUnread;
   Timer? _chatPoll;
   Timer? _shiftPoll;
   FrontDeskShift? _shift;
@@ -108,6 +111,11 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         icon: Icons.event_note_outlined,
         badgeCount: pendingRes,
         badgeColor: const Color(0xFF6A1B9A),
+      ),
+      const AdminNavItem(
+        label: 'Gov/Org',
+        shortLabel: 'Org',
+        icon: Icons.account_balance_outlined,
       ),
       if (widget.isFrontDesk)
         const AdminNavItem(
@@ -292,7 +300,17 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
       final res =
           await portalDio().get<Map<String, dynamic>>('/admin/chat/inbox');
       if (!mounted) return;
-      setState(() => _inbox = res.data);
+      final chats = widget.data['guestMessages'] as List<dynamic>? ?? [];
+      final nextBadge =
+          adminChatBadgeFromData(inbox: res.data, guestMessages: chats);
+      final prev = _lastChatUnread;
+      setState(() {
+        _inbox = res.data;
+        _lastChatUnread = nextBadge.totalUnread;
+      });
+      if (prev != null && nextBadge.totalUnread > prev) {
+        unawaited(ChatNotificationSound.playNewMessage());
+      }
     } on DioException {
       // Keep last inbox snapshot; guestMessages fallback still drives badge.
     }
@@ -524,6 +542,14 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         ),
         3,
       ),
+      wrapTab(
+        GovOrgBookingSection(
+          key: refreshKey,
+          rooms: _rooms,
+          onChanged: widget.onRefresh,
+        ),
+        4,
+      ),
       if (widget.isFrontDesk)
         wrapTab(
           MultipleBookingSection(
@@ -531,7 +557,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
             rooms: _rooms,
             onBooked: widget.onRefresh,
           ),
-          4,
+          5,
         ),
       wrapTab(
         AmenitiesSection(
@@ -544,7 +570,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           canManageProducts: !widget.isFrontDesk,
           isFrontDesk: widget.isFrontDesk,
         ),
-        widget.isFrontDesk ? 5 : 4,
+        widget.isFrontDesk ? 6 : 5,
       ),
     ];
 
