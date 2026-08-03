@@ -7,9 +7,13 @@ class ReportsAnalyticsSection extends StatelessWidget {
   const ReportsAnalyticsSection({
     super.key,
     this.rooms = const [],
+    this.isFrontDesk = false,
+    this.onRefreshRooms,
   });
 
   final List<Map<String, dynamic>> rooms;
+  final bool isFrontDesk;
+  final Future<void> Function()? onRefreshRooms;
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +37,12 @@ class ReportsAnalyticsSection extends StatelessWidget {
               ),
         ),
         const SizedBox(height: 16),
-        HotelReportsBentoSection(rooms: rooms, showHeader: false),
+        HotelReportsBentoSection(
+          rooms: rooms,
+          showHeader: false,
+          isFrontDesk: isFrontDesk,
+          onRefreshRooms: onRefreshRooms,
+        ),
       ],
     );
   }

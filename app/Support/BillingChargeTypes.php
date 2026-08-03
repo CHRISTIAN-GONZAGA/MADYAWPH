@@ -15,6 +15,9 @@ final class BillingChargeTypes
 
     public const PARTIAL_PAYMENT = 'partial_payment';
 
+    /** Audit-only line for cash change returned to the guest (does not affect balance). */
+    public const CASH_CHANGE = 'cash_change';
+
     /**
      * @return list<string>
      */
@@ -28,6 +31,18 @@ final class BillingChargeTypes
         ];
     }
 
+    /**
+     * Types that must not affect guest balance (informational / audit only).
+     *
+     * @return list<string>
+     */
+    public static function nonBalanceTypes(): array
+    {
+        return [
+            self::CASH_CHANGE,
+        ];
+    }
+
     public static function isCredit(mixed $type): bool
     {
         return in_array(strtolower(trim((string) $type)), self::creditTypes(), true);
@@ -36,5 +51,10 @@ final class BillingChargeTypes
     public static function isPartialPayment(mixed $type): bool
     {
         return strtolower(trim((string) $type)) === self::PARTIAL_PAYMENT;
+    }
+
+    public static function affectsBalance(mixed $type): bool
+    {
+        return ! in_array(strtolower(trim((string) $type)), self::nonBalanceTypes(), true);
     }
 }

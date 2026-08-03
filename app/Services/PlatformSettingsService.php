@@ -22,6 +22,7 @@ class PlatformSettingsService
                 'member_monthly_fee' => (float) config('platform.member_monthly_fee', 300),
                 'booking_confirm_fee_percent' => (float) config('services.hotel_credits.booking_confirm_fee_percent', 8),
                 'min_check_in_payment_percent' => (float) config('platform.min_check_in_payment_percent', 50),
+                'online_booking_deposit_percent' => (float) config('platform.online_booking_deposit_percent', 50),
                 'late_checkout_grace_minutes' => (int) config('platform.late_checkout_grace_minutes', 15),
                 'late_checkout_fee_amount' => (float) config('platform.late_checkout_fee_amount', 500),
                 'early_check_in_grace_minutes' => (int) config('platform.early_check_in_grace_minutes', 15),
@@ -180,6 +181,37 @@ class PlatformSettingsService
         return min(100.0, (float) config('platform.min_check_in_payment_percent', 50));
     }
 
+    /**
+     * Deposit percent required for member / public online app bookings (central admin).
+     */
+    public function onlineBookingDepositPercent(): float
+    {
+        $row = $this->row();
+        $fromDb = $row->online_booking_deposit_percent ?? null;
+        if ($fromDb !== null && (float) $fromDb >= 0) {
+            return min(100.0, max(0.0, (float) $fromDb));
+        }
+
+        return min(100.0, max(0.0, (float) config('platform.online_booking_deposit_percent', 50)));
+    }
+
+    /**
+     * Required online deposit amount for a stay total (rounded to nearest ₱50).
+     */
+    public function onlineBookingDepositAmount(float $stayTotal): float
+    {
+        $total = max(0.0, $stayTotal);
+        $percent = $this->onlineBookingDepositPercent();
+        if ($percent <= 0 || $total <= 0) {
+            return 0.0;
+        }
+        if ($percent >= 100) {
+            return \App\Support\PriceRounding::nearest50($total);
+        }
+
+        return \App\Support\PriceRounding::nearest50($total * ($percent / 100));
+    }
+
     public function lateCheckoutGraceMinutes(): int
     {
         $row = $this->row();
@@ -233,6 +265,7 @@ class PlatformSettingsService
             'member_monthly_fee' => $this->memberMonthlyFee(),
             'booking_confirm_fee_percent' => $this->bookingConfirmFeePercent(),
             'min_check_in_payment_percent' => $this->minCheckInPaymentPercent(),
+            'online_booking_deposit_percent' => $this->onlineBookingDepositPercent(),
             'late_checkout_grace_minutes' => $this->lateCheckoutGraceMinutes(),
             'late_checkout_fee_amount' => $this->lateCheckoutFeeAmount(),
             'early_check_in_grace_minutes' => $this->earlyCheckInGraceMinutes(),

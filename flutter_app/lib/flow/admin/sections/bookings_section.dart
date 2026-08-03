@@ -547,6 +547,12 @@ class _BookingsSectionState extends State<BookingsSection>
         (metaMap['estimated_total'] as num?)?.toDouble() ??
         (reservation?['total_amount'] as num?)?.toDouble() ??
         0;
+    final stayTotal = (metaMap['estimated_total'] as num?)?.toDouble() ??
+        (reservation?['estimated_total'] as num?)?.toDouble() ??
+        totalPaid;
+    final depositPct = (metaMap['deposit_percent'] as num?)?.toDouble();
+    final balanceDue = (metaMap['balance_due'] as num?)?.toDouble() ??
+        (stayTotal - totalPaid).clamp(0, double.infinity);
 
     final reviewOk = await showDialog<bool>(
       context: context,
@@ -567,12 +573,27 @@ class _BookingsSectionState extends State<BookingsSection>
               Text('Payment reference: $payRef'),
               const SizedBox(height: 6),
               Text(
-                'Total paid: ₱${totalPaid.toStringAsFixed(2)}',
+                'Stay total: ₱${stayTotal.toStringAsFixed(2)}',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                depositPct != null && depositPct < 100
+                    ? 'Deposit paid (${depositPct % 1 == 0 ? depositPct.toStringAsFixed(0) : depositPct.toStringAsFixed(1)}%): ₱${totalPaid.toStringAsFixed(2)}'
+                    : 'Amount paid: ₱${totalPaid.toStringAsFixed(2)}',
                 style: const TextStyle(fontWeight: FontWeight.w800),
               ),
+              if (balanceDue > 0.009) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Balance due at hotel: ₱${balanceDue.toStringAsFixed(2)}',
+                ),
+              ],
               const SizedBox(height: 10),
               Text(
-                'Online bookings are prepaid in full. Approving confirms the payment and activates the stay.',
+                depositPct != null && depositPct < 100
+                    ? 'Online bookings require the central-admin deposit percent up front. Approving confirms the deposit and activates the stay; collect any remaining balance later.'
+                    : 'Online booking is prepaid. Approving confirms the payment and activates the stay.',
                 style: Theme.of(ctx).textTheme.bodySmall,
               ),
             ],
@@ -594,9 +615,10 @@ class _BookingsSectionState extends State<BookingsSection>
 
     if (!await _confirmAction(
       'Confirm approval?',
-      'Approve this prepaid online booking for $guestName?\n\n'
+      'Approve this online booking for $guestName?\n\n'
       'Ref: $payRef\n'
-      'Total paid: ₱${totalPaid.toStringAsFixed(2)}\n\n'
+      'Paid now: ₱${totalPaid.toStringAsFixed(2)}\n'
+      '${balanceDue > 0.009 ? 'Balance later: ₱${balanceDue.toStringAsFixed(2)}\n\n' : '\n'}'
       'This may deduct platform credits from your hotel wallet.',
     )) {
       return;

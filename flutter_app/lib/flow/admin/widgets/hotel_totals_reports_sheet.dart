@@ -45,7 +45,7 @@ Future<void> openHotelTotalsReports(
   );
 }
 
-enum _PaymentBucket { cash, ewallet, bank }
+enum _PaymentBucket { cash, ewallet, bank, other }
 
 enum _ReportPeriod { daily, weekly, monthly, annual }
 
@@ -177,10 +177,7 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
       if (!mounted) return;
       final summary = (data['summary'] as Map?)?.cast<String, dynamic>() ??
           const <String, dynamic>{};
-      final bookings = ((data['booking_transactions'] as List?) ?? const [])
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
+      final bookings = _mergeTxnLists(data);
       setState(() {
         _todaySummary = summary;
         _todayBookingTxns = bookings;
@@ -209,6 +206,18 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
     }
   }
 
+  List<Map<String, dynamic>> _mergeTxnLists(Map<String, dynamic> data) {
+    final bookings = ((data['booking_transactions'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+    final amenities = ((data['amenity_transactions'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+    return [...bookings, ...amenities];
+  }
+
   Future<void> _setSalesPeriod(_ReportPeriod period) async {
     if (_salesPeriod == period && _bookingTxns.isNotEmpty) return;
     HapticFeedback.selectionClick();
@@ -222,10 +231,7 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
       if (!mounted) return;
       final summary = (data['summary'] as Map?)?.cast<String, dynamic>() ??
           const <String, dynamic>{};
-      final bookings = ((data['booking_transactions'] as List?) ?? const [])
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
+      final bookings = _mergeTxnLists(data);
       setState(() {
         _salesSummary = summary;
         _bookingTxns = bookings;
@@ -246,8 +252,8 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
     }
   }
 
-  Future<void> _setFinancePeriod(_ReportPeriod period) async {
-    if (_financePeriod == period && _financeTxns.isNotEmpty) return;
+  Future<void> _setFinancePeriod(_ReportPeriod period, {bool force = false}) async {
+    if (!force && _financePeriod == period && _financeTxns.isNotEmpty) return;
     HapticFeedback.selectionClick();
     setState(() {
       _financePeriod = period;
@@ -259,10 +265,7 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
       if (!mounted) return;
       final summary = (data['summary'] as Map?)?.cast<String, dynamic>() ??
           const <String, dynamic>{};
-      final bookings = ((data['booking_transactions'] as List?) ?? const [])
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
+      final bookings = _mergeTxnLists(data);
       setState(() {
         _financeSummary = summary;
         _financeTxns = bookings;
@@ -313,9 +316,9 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
     }
   }
 
-  static _PaymentBucket? _bucketOf(String method) {
+  static _PaymentBucket _bucketOf(String method) {
     final m = method.toLowerCase().trim();
-    if (m.isEmpty) return null;
+    if (m.isEmpty) return _PaymentBucket.other;
     if (m == 'cash') return _PaymentBucket.cash;
     if (m.contains('gcash') ||
         m.contains('g-cash') ||
@@ -323,13 +326,16 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
         m.contains('maya') ||
         m.contains('ewallet') ||
         m.contains('e-wallet') ||
-        m.contains('wallet')) {
+        m.contains('wallet') ||
+        m.contains('qrph') ||
+        m.contains('qr ph')) {
       return _PaymentBucket.ewallet;
     }
     if (m.contains('bank') || m.contains('transfer')) {
       return _PaymentBucket.bank;
     }
-    return null;
+    // Credit card, empty method amenities, and any unknown method.
+    return _PaymentBucket.other;
   }
 
   List<Map<String, dynamic>> _txnsFor(
@@ -354,21 +360,30 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
     return sum;
   }
 
-  double get _cashSales => _totalFor(_PaymentBucket.cash);
-  double get _financeCashSales =>
-      _totalFor(_PaymentBucket.cash, source: _financeTxns);
+  double get _cashSales {
+    final fromSummary = parseJsonDouble(_salesSummary['cash_collected']);
+    if (fromSummary > 0.009) return fromSummary;
+    return _totalFor(_PaymentBucket.cash);
+  }
+
+  double get _financeCashSales {
+    final fromSummary = parseJsonDouble(_financeSummary['cash_collected']);
+    if (fromSummary > 0.009) return fromSummary;
+    return _totalFor(_PaymentBucket.cash, source: _financeTxns);
+  }
 
   double get _salesTxnTotal =>
       _cashSales +
       _totalFor(_PaymentBucket.ewallet) +
-      _totalFor(_PaymentBucket.bank);
+      _totalFor(_PaymentBucket.bank) +
+      _totalFor(_PaymentBucket.other);
 
   double _expensesOf(Map<String, dynamic> summary) {
-    final reported = (summary['expenses'] as num?)?.toDouble();
-    final parts = ((summary['refund_expense'] as num?)?.toDouble() ?? 0) +
-        ((summary['reseller_commissions_paid'] as num?)?.toDouble() ?? 0) +
-        ((summary['custom_expenses'] as num?)?.toDouble() ?? 0);
-    if (reported == null) return parts;
+    final reported = parseJsonDouble(summary['expenses'], double.nan);
+    final parts = parseJsonDouble(summary['refund_expense']) +
+        parseJsonDouble(summary['reseller_commissions_paid']) +
+        parseJsonDouble(summary['custom_expenses']);
+    if (reported.isNaN) return parts;
     // Prefer the larger so older API payloads (expenses without custom) still
     // show the correct total when custom_expenses is present separately.
     return reported >= parts - 0.009 ? reported : parts;
@@ -624,7 +639,7 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
         },
       );
       if (!mounted) return;
-      await _setFinancePeriod(_financePeriod);
+      await _setFinancePeriod(_financePeriod, force: true);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Custom expense saved.')),
       );
@@ -647,7 +662,7 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
         },
       );
       if (!mounted) return;
-      final rows = ((res.data?['data'] as List?) ?? const [])
+      var rows = ((res.data?['data'] as List?) ?? const [])
           .whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
           .toList();
@@ -656,45 +671,121 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
         showDragHandle: true,
         isScrollControlled: true,
         builder: (ctx) {
-          return DraggableScrollableSheet(
-            expand: false,
-            initialChildSize: 0.6,
-            builder: (ctx, sc) {
-              return ListView(
-                controller: sc,
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                children: [
-                  Text(
-                    'Custom expenses · ${_periodLabel(_financePeriod)}',
-                    style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text('Total ${formatPeso(res.data?['total'] ?? 0)}'),
-                  const SizedBox(height: 12),
-                  if (rows.isEmpty)
-                    const Text('No custom expenses in this period.')
-                  else
-                    ...rows.map(
-                      (r) => Card(
-                        child: ListTile(
-                          title: Text((r['label'] ?? 'Expense').toString()),
-                          subtitle: Text(
-                            [
-                              (r['expense_date'] ?? '').toString(),
-                              if ((r['notes'] ?? '').toString().isNotEmpty)
-                                r['notes'].toString(),
-                            ].where((s) => s.isNotEmpty).join(' · '),
-                          ),
-                          trailing: Text(
-                            formatPeso(r['amount']),
-                            style: const TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                        ),
+          return StatefulBuilder(
+            builder: (ctx, setSheet) {
+              return DraggableScrollableSheet(
+                expand: false,
+                initialChildSize: 0.6,
+                builder: (ctx, sc) {
+                  return ListView(
+                    controller: sc,
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                    children: [
+                      Text(
+                        'Custom expenses · ${_periodLabel(_financePeriod)}',
+                        style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
                       ),
-                    ),
-                ],
+                      const SizedBox(height: 8),
+                      Text(
+                        'Total ${formatPeso(rows.fold<double>(0, (s, r) => s + parseJsonDouble(r['amount'])))}',
+                      ),
+                      const SizedBox(height: 12),
+                      if (rows.isEmpty)
+                        const Text('No custom expenses in this period.')
+                      else
+                        ...rows.map(
+                          (r) {
+                            final id = (r['id'] ?? '').toString();
+                            return Card(
+                              child: ListTile(
+                                title: Text((r['label'] ?? 'Expense').toString()),
+                                subtitle: Text(
+                                  [
+                                    (r['expense_date'] ?? '').toString(),
+                                    if ((r['notes'] ?? '').toString().isNotEmpty)
+                                      r['notes'].toString(),
+                                  ].where((s) => s.isNotEmpty).join(' · '),
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      formatPeso(r['amount']),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    if (!widget.isFrontDesk && id.isNotEmpty)
+                                      IconButton(
+                                        tooltip: 'Delete',
+                                        icon: const Icon(Icons.delete_outline),
+                                        onPressed: () async {
+                                          final confirm = await showDialog<bool>(
+                                            context: ctx,
+                                            builder: (dCtx) => AlertDialog(
+                                              title: const Text('Delete expense?'),
+                                              content: Text(
+                                                'Remove "${r['label']}"?',
+                                              ),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(dCtx, false),
+                                                  child: const Text('Cancel'),
+                                                ),
+                                                FilledButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(dCtx, true),
+                                                  child: const Text('Delete'),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                          if (confirm != true) return;
+                                          try {
+                                            await portalDio().delete(
+                                              '/reports/expenses/$id',
+                                            );
+                                            setSheet(() {
+                                              rows = rows
+                                                  .where(
+                                                    (x) =>
+                                                        (x['id'] ?? '')
+                                                            .toString() !=
+                                                        id,
+                                                  )
+                                                  .toList();
+                                            });
+                                            if (mounted) {
+                                              await _setFinancePeriod(
+                                                _financePeriod,
+                                                force: true,
+                                              );
+                                            }
+                                          } on DioException catch (e) {
+                                            if (!ctx.mounted) return;
+                                            ScaffoldMessenger.of(ctx)
+                                                .showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                  dioErrorMessage(e),
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                        },
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                    ],
+                  );
+                },
               );
             },
           );
@@ -830,6 +921,21 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
                     period: _salesPeriod,
                   ),
                 ),
+                if (_txnsFor(_PaymentBucket.other).isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _DetailTile(
+                    label: 'Other',
+                    countLabel:
+                        '${_txnsFor(_PaymentBucket.other).length} payment(s)',
+                    total: _totalFor(_PaymentBucket.other),
+                    color: Colors.blueGrey.shade700,
+                    onTap: () => _openTxnList(
+                      title: 'Other sales · ${_periodLabel(_salesPeriod)}',
+                      rows: _txnsFor(_PaymentBucket.other),
+                      period: _salesPeriod,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -959,9 +1065,9 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
                 _DetailTile(
                   label: 'Reseller commissions',
                   countLabel: 'Commissions paid',
-                  total: (_financeSummary['reseller_commissions_paid'] as num?)
-                          ?.toDouble() ??
-                      0,
+                  total: parseJsonDouble(
+                    _financeSummary['reseller_commissions_paid'],
+                  ),
                   color: Colors.deepOrange.shade700,
                   onTap: () => _showMetricDetail(
                     title:
@@ -981,18 +1087,18 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
                 _DetailTile(
                   label: 'Custom expenses',
                   countLabel: 'Manual expenses in period',
-                  total: (_financeSummary['custom_expenses'] as num?)
-                          ?.toDouble() ??
-                      0,
+                  total: parseJsonDouble(_financeSummary['custom_expenses']),
                   color: Colors.brown.shade700,
                   onTap: () => _openCustomExpenses(),
                 ),
-                const SizedBox(height: 8),
-                FilledButton.tonalIcon(
-                  onPressed: _openAddCustomExpense,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add custom expense'),
-                ),
+                if (!widget.isFrontDesk) ...[
+                  const SizedBox(height: 8),
+                  FilledButton.tonalIcon(
+                    onPressed: _openAddCustomExpense,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add custom expense'),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 _DetailTile(
                   label: 'Total expenses',
@@ -1081,20 +1187,25 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
                 const SizedBox(height: 8),
                 _DetailTile(
                   label: 'Less expenses',
-                  countLabel: 'Refunds + commissions',
+                  countLabel: 'Refunds + commissions + custom',
                   total: _expenses,
                   color: Colors.red.shade700,
                   onTap: () => _showMetricDetail(
                     title: 'Expenses deducted',
                     lines: [
-                      MapEntry('Refunds', formatPeso(
-                        _financeSummary['refund_expense'] ?? 0,
-                      )),
+                      MapEntry(
+                        'Refunds',
+                        formatPeso(_financeSummary['refund_expense'] ?? 0),
+                      ),
                       MapEntry(
                         'Commissions',
                         formatPeso(
                           _financeSummary['reseller_commissions_paid'] ?? 0,
                         ),
+                      ),
+                      MapEntry(
+                        'Custom expenses',
+                        formatPeso(_financeSummary['custom_expenses'] ?? 0),
                       ),
                       MapEntry('Total', formatPeso(_expenses)),
                     ],
@@ -1110,6 +1221,20 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
                     title: 'Cash on hand · ${_periodLabel(_financePeriod)}',
                     lines: [
                       MapEntry('Cash sales', formatPeso(_financeCashSales)),
+                      MapEntry(
+                        'Refunds',
+                        formatPeso(_financeSummary['refund_expense'] ?? 0),
+                      ),
+                      MapEntry(
+                        'Commissions',
+                        formatPeso(
+                          _financeSummary['reseller_commissions_paid'] ?? 0,
+                        ),
+                      ),
+                      MapEntry(
+                        'Custom expenses',
+                        formatPeso(_financeSummary['custom_expenses'] ?? 0),
+                      ),
                       MapEntry('Less expenses', formatPeso(_expenses)),
                       MapEntry('Cash on hand', formatPeso(_cashOnHand)),
                       MapEntry(

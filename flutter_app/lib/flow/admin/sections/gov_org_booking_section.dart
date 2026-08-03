@@ -125,132 +125,179 @@ class _GovOrgBookingSectionState extends State<GovOrgBookingSection>
   Widget build(BuildContext context) {
     final bookable = _bookable;
     final floors = AdminDashboardModels.distinctFloors(bookable);
+    final bottomPad = MediaQuery.paddingOf(context).bottom + 88;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'Gov / Org booking',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Charge rooms to a government or organization account. '
-          'Check-in and checkout are allowed without payment; collect balances here.',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        const SizedBox(height: 12),
-        TabBar(
-          controller: _tabs,
-          tabs: const [
-            Tab(text: 'New booking'),
-            Tab(text: 'Outstanding'),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Expanded(
-          child: TabBarView(
-            controller: _tabs,
-            children: [
-              _buildBookingTab(bookable, floors),
-              _buildOutstandingTab(),
-            ],
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Gov / Org booking',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
           ),
-        ),
-      ],
+          const SizedBox(height: 6),
+          Text(
+            'Charge rooms to a government or organization account. '
+            'Check-in and checkout are allowed without payment; collect balances here.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(height: 1.35),
+          ),
+          const SizedBox(height: 14),
+          Material(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest
+                .withValues(alpha: 0.45),
+            borderRadius: BorderRadius.circular(12),
+            child: TabBar(
+              controller: _tabs,
+              indicatorSize: TabBarIndicatorSize.tab,
+              dividerColor: Colors.transparent,
+              tabs: const [
+                Tab(text: 'New booking'),
+                Tab(text: 'Outstanding'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: TabBarView(
+              controller: _tabs,
+              children: [
+                _buildBookingTab(bookable, floors, bottomPad),
+                _buildOutstandingTab(bottomPad),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildBookingTab(
     List<Map<String, dynamic>> bookable,
     List<int> floors,
+    double bottomPad,
   ) {
     return Column(
       children: [
         Expanded(
           child: bookable.isEmpty
               ? const Center(child: Text('No available rooms to book right now.'))
-              : ListView(
-                  children: [
-                    for (final floor in floors) ...[
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8, bottom: 4),
-                        child: Text(
-                          'Floor $floor',
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
-                        ),
+              : ListView.builder(
+                  padding: EdgeInsets.only(bottom: 12),
+                  itemCount: floors.length,
+                  itemBuilder: (context, floorIndex) {
+                    final floor = floors[floorIndex];
+                    final roomsOnFloor =
+                        AdminDashboardModels.roomsOnFloor(bookable, floor);
+                    return Padding(
+                      padding: EdgeInsets.only(
+                        top: floorIndex == 0 ? 0 : 12,
+                        bottom: 4,
                       ),
-                      ...AdminDashboardModels.roomsOnFloor(bookable, floor).map((room) {
-                        final id = AdminDashboardModels.roomIdOf(room);
-                        final selected = _selected.contains(id);
-                        return CheckboxListTile(
-                          value: selected,
-                          onChanged: _busy
-                              ? null
-                              : (v) {
-                                  setState(() {
-                                    if (v == true) {
-                                      _selected.add(id);
-                                    } else {
-                                      _selected.remove(id);
-                                    }
-                                  });
-                                },
-                          title: Text('Room ${room['room_number'] ?? '—'}'),
-                          subtitle: Text(
-                            [
-                              (room['display_name'] ?? room['room_type'] ?? '')
-                                  .toString(),
-                              if (HourlyBilling.isHourly(room))
-                                '${HourlyBilling.blockHours(room)}h blocks',
-                            ].where((s) => s.trim().isNotEmpty).join(' · '),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Text(
+                              'Floor $floor',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.w700),
+                            ),
                           ),
-                          controlAffinity: ListTileControlAffinity.leading,
-                        );
-                      }),
-                    ],
-                  ],
+                          ...roomsOnFloor.map((room) {
+                            final id = AdminDashboardModels.roomIdOf(room);
+                            final selected = _selected.contains(id);
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              child: CheckboxListTile(
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 4,
+                                ),
+                                value: selected,
+                                onChanged: _busy
+                                    ? null
+                                    : (v) {
+                                        setState(() {
+                                          if (v == true) {
+                                            _selected.add(id);
+                                          } else {
+                                            _selected.remove(id);
+                                          }
+                                        });
+                                      },
+                                title: Text(
+                                  'Room ${room['room_number'] ?? '—'}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  [
+                                    (room['display_name'] ??
+                                            room['room_type'] ??
+                                            '')
+                                        .toString(),
+                                    if (HourlyBilling.isHourly(room))
+                                      '${HourlyBilling.blockHours(room)}h blocks',
+                                  ].where((s) => s.trim().isNotEmpty).join(' · '),
+                                ),
+                                controlAffinity: ListTileControlAffinity.leading,
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    );
+                  },
                 ),
         ),
-        const SizedBox(height: 8),
-        AppPrimaryButton(
-          label: _selected.isEmpty
-              ? 'Select rooms'
-              : 'Book ${_selected.length} room${_selected.length == 1 ? '' : 's'} for org',
-          onPressed: _busy || _selected.isEmpty ? null : _bookSelected,
+        Padding(
+          padding: EdgeInsets.only(top: 8, bottom: bottomPad),
+          child: AppPrimaryButton(
+            label: _selected.isEmpty
+                ? 'Select rooms'
+                : 'Book ${_selected.length} room${_selected.length == 1 ? '' : 's'} for org',
+            onPressed: _busy || _selected.isEmpty ? null : _bookSelected,
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildOutstandingTab() {
+  Widget _buildOutstandingTab(double bottomPad) {
     if (_loadingBalances) {
       return const Center(child: CircularProgressIndicator());
     }
     if (_accounts.isEmpty) {
       return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('No outstanding organization balances.'),
-            const SizedBox(height: 12),
-            OutlinedButton(
-              onPressed: _loadOutstanding,
-              child: const Text('Refresh'),
-            ),
-          ],
+        child: Padding(
+          padding: EdgeInsets.only(bottom: bottomPad),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('No outstanding organization balances.'),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                onPressed: _loadOutstanding,
+                child: const Text('Refresh'),
+              ),
+            ],
+          ),
         ),
       );
     }
     return RefreshIndicator(
       onRefresh: _loadOutstanding,
       child: ListView.separated(
+        padding: EdgeInsets.only(bottom: bottomPad),
         itemCount: _accounts.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 8),
+        separatorBuilder: (_, __) => const SizedBox(height: 12),
         itemBuilder: (context, index) {
           final account = _accounts[index];
           final orgName = (account['org_name'] ?? 'Organization').toString();
@@ -260,7 +307,7 @@ class _GovOrgBookingSectionState extends State<GovOrgBookingSection>
           final contact = (account['org_contact_person'] ?? '').toString();
           return Card(
             child: Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -270,14 +317,16 @@ class _GovOrgBookingSectionState extends State<GovOrgBookingSection>
                           fontWeight: FontWeight.w800,
                         ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
                   Text(
                     '${orgType == 'government' ? 'Government' : 'Organization'}'
                     ' · $count room booking${count == 1 ? '' : 's'}'
                     '${contact.isEmpty ? '' : ' · $contact'}',
-                    style: Theme.of(context).textTheme.bodySmall,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          height: 1.35,
+                        ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
                   Text(
                     'Outstanding: ${formatPeso(balance)}',
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -285,7 +334,7 @@ class _GovOrgBookingSectionState extends State<GovOrgBookingSection>
                           color: Theme.of(context).colorScheme.primary,
                         ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   FilledButton(
                     onPressed: () => _payAccount(account),
                     child: const Text('Record payment'),

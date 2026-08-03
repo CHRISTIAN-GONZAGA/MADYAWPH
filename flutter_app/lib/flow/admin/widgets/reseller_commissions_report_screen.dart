@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
+import '../../../utils/money_format.dart';
 import '../../../widgets/admin_month_calendar.dart';
 import '../../../widgets/app_scaffold.dart';
 import '../../../widgets/app_state_views.dart';
@@ -86,7 +87,9 @@ class _ResellerCommissionsReportScreenState
   @override
   Widget build(BuildContext context) {
     final dayTotal = _byDay[_fmt(_selected)] ?? 0.0;
-    final periods = (_overview?['periods'] as Map?) ?? {};
+    final resellerPayments =
+        (_overview?['reseller_payments'] as Map?)?.cast<String, dynamic>() ??
+            const <String, dynamic>{};
     return AppScaffold(
       appBar: AppBar(
         title: const Text('Reseller commissions'),
@@ -126,13 +129,15 @@ class _ResellerCommissionsReportScreenState
                     ),
                     const SizedBox(height: 16),
                     ...['daily', 'weekly', 'monthly', 'annual'].map((key) {
-                      final row = periods[key];
-                      final paid = row is Map
-                          ? ((row['reseller_commissions_paid'] as num?)
-                                  ?.toDouble() ??
-                              (row['reseller_payments'] as num?)?.toDouble() ??
-                              0)
-                          : 0.0;
+                      final row = resellerPayments[key] ?? _overview?[key];
+                      double paid = 0;
+                      if (row is Map) {
+                        paid = parseJsonDouble(
+                          row['total_paid'] ??
+                              row['reseller_commissions_paid'] ??
+                              row['reseller_payments'],
+                        );
+                      }
                       return Card(
                         child: ListTile(
                           title: Text(key[0].toUpperCase() + key.substring(1)),

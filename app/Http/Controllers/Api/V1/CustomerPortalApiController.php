@@ -23,6 +23,7 @@ use App\Services\HotelAvailabilityService;
 use App\Services\HotelCreditBookingFeeService;
 use App\Services\MemberSubscriptionService;
 use App\Services\PaymentTransactionLogService;
+use App\Services\PlatformSettingsService;
 use App\Services\RoomPricingService;
 use App\Services\SmsService;
 use App\Support\ChatAttachmentUrl;
@@ -308,6 +309,8 @@ class CustomerPortalApiController extends Controller
         return response()->json([
             'qr_url' => ChatAttachmentUrl::fromStoredUrl($stored) ?? '',
             'has_qr' => $stored !== '',
+            'online_booking_deposit_percent' => app(PlatformSettingsService::class)
+                ->onlineBookingDepositPercent(),
         ]);
     }
 
@@ -447,6 +450,12 @@ class CustomerPortalApiController extends Controller
 
             $gross = (float) $charge['amount'];
             $total = $this->applyDiscountToTotal($gross, (float) ($validated['discount_percent'] ?? 0));
+            $platformSettings = app(PlatformSettingsService::class);
+            $depositPercent = $platformSettings->onlineBookingDepositPercent();
+            $depositAmount = $platformSettings->onlineBookingDepositAmount($total);
+            $paymentStatus = ($depositAmount + 0.009 >= $total)
+                ? 'paid_pending_approval'
+                : 'deposit_pending_approval';
 
             return ExternalReservation::query()->create([
                 'hotel_id' => $hotelId,
@@ -467,8 +476,11 @@ class CustomerPortalApiController extends Controller
                     'payment_method' => $validated['payment_method'] ?? 'Online',
                     'payment_reference' => $validated['payment_reference'] ?? null,
                     'estimated_total' => $total,
-                    'amount_paid' => $total,
-                    'payment_status' => 'paid_pending_approval',
+                    'amount_paid' => $depositAmount,
+                    'deposit_percent' => $depositPercent,
+                    'deposit_required' => $depositAmount,
+                    'balance_due' => max(0, round($total - $depositAmount, 2)),
+                    'payment_status' => $paymentStatus,
                     'billing_mode' => $charge['billing_mode'],
                     'stay_hours' => $charge['stay_hours'] ?? null,
                     'block_hours' => $charge['block_hours'] ?? null,
@@ -483,7 +495,7 @@ class CustomerPortalApiController extends Controller
                     'member_shid_id' => filled($validated['member_shid_id'] ?? null)
                         ? (string) $validated['member_shid_id']
                         : null,
-                ]),
+                ], fn ($v) => $v !== null),
             ]);
         });
 
@@ -544,7 +556,8 @@ class CustomerPortalApiController extends Controller
                 'payment_reference' => (string) ((is_array($reservation->metadata) ? $reservation->metadata['payment_reference'] : null) ?? ''),
                 'amount' => (float) ((is_array($reservation->metadata) ? $reservation->metadata['estimated_total'] : 0) ?? 0),
                 'amount_paid' => (float) ((is_array($reservation->metadata) ? $reservation->metadata['amount_paid'] : 0) ?? 0),
-                'payment_status' => 'paid_pending_approval',
+                'payment_status' => (string) ((is_array($reservation->metadata) ? $reservation->metadata['payment_status'] : null) ?? 'deposit_pending_approval'),
+                'deposit_percent' => (float) ((is_array($reservation->metadata) ? $reservation->metadata['deposit_percent'] : 0) ?? 0),
                 'source' => 'customer_online_booking',
             ],
         );
@@ -1095,6 +1108,13 @@ class CustomerPortalApiController extends Controller
             'payment_method' => (string) ($meta['payment_method'] ?? 'Cash'),
             'payment_reference' => (string) ($meta['payment_reference'] ?? ''),
             'estimated_total' => (float) ($meta['estimated_total'] ?? 0),
+            'amount_paid' => (float) ($meta['amount_paid'] ?? 0),
+            'deposit_percent' => isset($meta['deposit_percent']) ? (float) $meta['deposit_percent'] : null,
+            'deposit_required' => isset($meta['deposit_required']) ? (float) $meta['deposit_required'] : null,
+            'balance_due' => isset($meta['balance_due'])
+                ? (float) $meta['balance_due']
+                : max(0, (float) ($meta['estimated_total'] ?? 0) - (float) ($meta['amount_paid'] ?? 0)),
+            'payment_status' => (string) ($meta['payment_status'] ?? ''),
             'billing_mode' => $billingMode,
             'stay_hours' => $stayHours > 0 ? $stayHours : null,
             'block_hours' => $blockHours > 0 ? $blockHours : null,

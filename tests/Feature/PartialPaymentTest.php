@@ -67,15 +67,94 @@ class PartialPaymentTest extends TestCase
         );
     }
 
-    public function test_partial_payment_cannot_exceed_balance(): void
+    public function test_partial_payment_over_balance_settles_with_change(): void
     {
         [$admin, $booking] = $this->seedCheckedInBooking(total: 1500);
 
-        $this->actingAs($admin)
+        $res = $this->actingAs($admin)
             ->postJson("/api/v1/admin/bookings/{$booking->id}/partial-payment", [
                 'amount' => 2000,
+                'payment_method' => 'Cash',
             ])
-            ->assertStatus(422);
+            ->assertOk();
+
+        $res->assertJsonPath('payment_status', 'paid');
+        $res->assertJsonPath('balance_due', 0);
+        $this->assertEqualsWithDelta(500.0, (float) $res->json('change_due'), 0.01);
+
+        $booking->refresh();
+        $this->assertSame('paid', (string) $booking->payment_status);
+
+        $changeCharge = BillingCharge::withoutGlobalScopes()
+            ->where('booking_id', (string) $booking->id)
+            ->where('type', 'cash_change')
+            ->first();
+        $this->assertNotNull($changeCharge);
+        $this->assertEqualsWithDelta(500.0, (float) $changeCharge->amount, 0.01);
+
+        $bill = $this->actingAs($admin)
+            ->getJson("/api/v1/admin/bookings/{$booking->id}/bill-summary")
+            ->assertOk();
+        $bill->assertJsonPath('balance_due', 0);
+        $this->assertEqualsWithDelta(500.0, (float) $bill->json('change_given'), 0.01);
+    }
+
+    public function test_payment_status_overpay_documents_change_transaction(): void
+    {
+        [$admin, $booking] = $this->seedCheckedInBooking(total: 1000);
+
+        // Simulate check-in deposit already on the bill.
+        BillingCharge::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $booking->hotel_id,
+            'booking_id' => (string) $booking->id,
+            'room_id' => (string) $booking->room_id,
+            'type' => 'partial_payment',
+            'label' => 'Partial payment (Cash)',
+            'amount' => -400,
+            'quantity' => 1,
+            'is_manual' => true,
+            'created_by' => (string) $admin->id,
+        ]);
+        $booking->update(['payment_status' => 'partial', 'total_amount' => 600]);
+
+        // Extra fee after check-in (food / violation).
+        BillingCharge::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $booking->hotel_id,
+            'booking_id' => (string) $booking->id,
+            'room_id' => (string) $booking->room_id,
+            'type' => 'amenity',
+            'label' => 'Room service',
+            'amount' => 200,
+            'quantity' => 1,
+            'is_manual' => true,
+            'created_by' => (string) $admin->id,
+        ]);
+
+        $billBefore = $this->actingAs($admin)
+            ->getJson("/api/v1/admin/bookings/{$booking->id}/bill-summary")
+            ->assertOk();
+        $billBefore->assertJsonPath('balance_due', 800);
+        $billBefore->assertJsonPath('amount_paid', 400);
+
+        $res = $this->actingAs($admin)
+            ->postJson("/api/v1/admin/bookings/{$booking->id}/payment-status", [
+                'payment_status' => 'paid',
+                'payment_method' => 'Cash',
+                'amount_tendered' => 1000,
+            ])
+            ->assertOk();
+
+        $this->assertEqualsWithDelta(200.0, (float) $res->json('change_due'), 0.01);
+        $res->assertJsonPath('bill.balance_due', 0);
+        $this->assertEqualsWithDelta(200.0, (float) $res->json('bill.change_given'), 0.01);
+
+        $this->assertSame(
+            1,
+            BillingCharge::withoutGlobalScopes()
+                ->where('booking_id', (string) $booking->id)
+                ->where('type', 'cash_change')
+                ->count()
+        );
     }
 
     /**

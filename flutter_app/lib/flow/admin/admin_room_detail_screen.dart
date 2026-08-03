@@ -533,13 +533,67 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
               : 0.0;
           final balanceCleared = remainingDue <= 0.009;
           final refRequired = methodNeedsReference(method);
-          final refOk = !refRequired || refCtrl.text.trim().isNotEmpty;
+          final refOk = !refRequired || refCtrl.text.trim().isEmpty == false;
           final tenderOk =
               balanceCleared || tendered + 0.009 >= remainingDue;
           final canSavePayment = !paymentReady || !balanceCleared
               ? tenderOk && refOk
               : false;
-          final canCheckout = isOrgBooking || (paymentReady && balanceCleared);
+          final canCheckout = isOrgBooking ||
+              (paymentReady && balanceCleared) ||
+              (tenderOk && refOk && !balanceCleared);
+
+          Future<bool> saveFullPayment() async {
+            if (refRequired && refCtrl.text.trim().isEmpty) {
+              showAppMessage(
+                context,
+                'Enter the $method reference number.',
+                isError: true,
+              );
+              return false;
+            }
+            try {
+              final res = await portalDio().post<Map<String, dynamic>>(
+                '/admin/bookings/$bookingId/payment-status',
+                data: {
+                  'payment_status': 'paid',
+                  'payment_reference': refCtrl.text.trim(),
+                  'payment_method': method,
+                  'amount_tendered': tendered > 0 ? tendered : null,
+                },
+              );
+              if (!context.mounted) return false;
+              final bill = res.data?['bill'];
+              final billMap = bill is Map
+                  ? Map<String, dynamic>.from(bill)
+                  : const <String, dynamic>{};
+              final changeDue = parseJsonDouble(res.data?['change_due']);
+              setLocal(() {
+                remainingDue = parseJsonDouble(
+                  billMap['balance_due'] ?? billMap['total_due'],
+                );
+                paidSoFar = parseJsonDouble(billMap['amount_paid']);
+                paymentReady = remainingDue <= 0.009;
+              });
+              showAppMessage(
+                context,
+                remainingDue > 0.009
+                    ? 'Payment saved, but a balance remains.'
+                    : (changeDue > 0
+                        ? 'Payment recorded. Change due: ${formatPeso(changeDue)}'
+                        : 'Full payment recorded. Ready to check out.'),
+              );
+              return remainingDue <= 0.009;
+            } on DioException catch (e) {
+              if (!context.mounted) return false;
+              showAppMessage(
+                context,
+                dioErrorMessage(e),
+                isError: true,
+              );
+              return false;
+            }
+          }
 
           return AlertDialog(
             title: const Text('Check out guest'),
@@ -567,7 +621,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
                       child: Text(
-                        'Already paid: ${formatPeso(paidSoFar)}',
+                        'Already paid (e.g. check-in): ${formatPeso(paidSoFar)}',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ),
@@ -575,9 +629,9 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: Text(
-                        'Checkout is blocked until the full balance is paid.',
+                        'Remaining includes room balance plus extras (food, amenities, fees). '
+                        'You may tender more than due — change is shown and recorded.',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.error,
                               fontWeight: FontWeight.w600,
                             ),
                       ),
@@ -640,6 +694,9 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                           : 'Amount given by guest',
                       border: const OutlineInputBorder(),
                       prefixText: '₱ ',
+                      helperText: remainingDue > 0
+                          ? 'You may enter more than the due amount; change is calculated.'
+                          : null,
                     ),
                     onChanged: (_) => setLocal(() {}),
                   ),
@@ -688,64 +745,29 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                   onPressed: !canSavePayment
                       ? null
                       : () async {
-                          if (refRequired && refCtrl.text.trim().isEmpty) {
-                            showAppMessage(
-                              context,
-                              'Enter the $method reference number.',
-                              isError: true,
-                            );
-                            return;
-                          }
-                          try {
-                            final res =
-                                await portalDio().post<Map<String, dynamic>>(
-                              '/admin/bookings/$bookingId/payment-status',
-                              data: {
-                                'payment_status': 'paid',
-                                'payment_reference': refCtrl.text.trim(),
-                                'payment_method': method,
-                                'amount_tendered':
-                                    tendered > 0 ? tendered : null,
-                              },
-                            );
-                            if (!context.mounted) return;
-                            final bill = res.data?['bill'];
-                            final billMap = bill is Map
-                                ? Map<String, dynamic>.from(bill)
-                                : const <String, dynamic>{};
-                            final changeDue =
-                                parseJsonDouble(res.data?['change_due']);
-                            setLocal(() {
-                              remainingDue = parseJsonDouble(
-                                billMap['balance_due'] ?? billMap['total_due'],
-                              );
-                              paidSoFar = parseJsonDouble(billMap['amount_paid']);
-                              paymentReady = remainingDue <= 0.009;
-                            });
-                            showAppMessage(
-                              context,
-                              remainingDue > 0.009
-                                  ? 'Payment saved, but a balance remains.'
-                                  : (changeDue > 0
-                                      ? 'Payment recorded. Change due: ${formatPeso(changeDue)}'
-                                      : 'Full payment recorded. Ready to check out.'),
-                            );
-                          } on DioException catch (e) {
-                            if (!context.mounted) return;
-                            showAppMessage(
-                              context,
-                              dioErrorMessage(e),
-                              isError: true,
-                            );
-                          }
+                          await saveFullPayment();
                         },
-                  child: const Text('Save full payment'),
+                  child: const Text('Save payment'),
                 ),
               FilledButton(
-                onPressed: canCheckout
-                    ? () => Navigator.of(dialogContext).pop(true)
-                    : null,
-                child: const Text('Check out guest'),
+                onPressed: !canCheckout
+                    ? null
+                    : () async {
+                        if (!isOrgBooking &&
+                            (!paymentReady || !balanceCleared)) {
+                          final ok = await saveFullPayment();
+                          if (!ok || !context.mounted) return;
+                        }
+                        if (!dialogContext.mounted) return;
+                        Navigator.of(dialogContext).pop(true);
+                      },
+                child: Text(
+                  (!paymentReady || !balanceCleared) && !isOrgBooking
+                      ? (change > 0
+                          ? 'Take change & check out'
+                          : 'Pay & check out')
+                      : 'Check out guest',
+                ),
               ),
             ],
           );
@@ -1400,6 +1422,9 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         builder: (context, setLocal) {
           final amount = double.tryParse(amountCtrl.text.trim()) ?? 0;
           final remainingAfter = (balanceDue - amount).clamp(0, double.infinity);
+          final change = amount > balanceDue + 0.009
+              ? (amount - balanceDue)
+              : 0.0;
           return AlertDialog(
             title: const Text('Partial payment'),
             content: SingleChildScrollView(
@@ -1422,6 +1447,8 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                       labelText: 'Amount received',
                       border: OutlineInputBorder(),
                       prefixText: '₱ ',
+                      helperText:
+                          'You may enter more than the balance; change is calculated.',
                     ),
                     onChanged: (_) => setLocal(() {}),
                   ),
@@ -1462,9 +1489,11 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                   if (amount > 0) ...[
                     const SizedBox(height: 12),
                     Text(
-                      amount >= balanceDue
-                          ? 'This clears the balance in full.'
-                          : 'Balance after payment: ${formatPeso(remainingAfter)}',
+                      change > 0
+                          ? 'Clears the balance. Change: ${formatPeso(change)}'
+                          : amount + 0.009 >= balanceDue
+                              ? 'This clears the balance in full.'
+                              : 'Balance after payment: ${formatPeso(remainingAfter)}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             fontWeight: FontWeight.w600,
                             color: Theme.of(context).colorScheme.primary,
@@ -1480,7 +1509,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                 child: const Text('Cancel'),
               ),
               FilledButton(
-                onPressed: amount <= 0 || amount > balanceDue + 0.009
+                onPressed: amount <= 0
                     ? null
                     : () => Navigator.of(context).pop({
                           'amount': amount,
@@ -1505,11 +1534,14 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
       if (!mounted) return;
       final paid = parseJsonDouble(res.data?['amount']);
       final remaining = parseJsonDouble(res.data?['balance_due']);
+      final changeDue = parseJsonDouble(res.data?['change_due']);
       final status = (res.data?['payment_status'] ?? '').toString();
       showAppMessage(
         context,
         status == 'paid'
-            ? 'Payment of ${formatPeso(paid)} recorded. Balance cleared.'
+            ? (changeDue > 0
+                ? 'Payment recorded. Balance cleared. Change: ${formatPeso(changeDue)}'
+                : 'Payment of ${formatPeso(paid)} recorded. Balance cleared.')
             : 'Partial payment of ${formatPeso(paid)} recorded. Remaining ${formatPeso(remaining)}.',
       );
       await _load();

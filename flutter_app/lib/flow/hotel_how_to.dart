@@ -98,7 +98,7 @@ class _HowToSheet extends StatelessWidget {
                       '**Categories** — Group rooms; availability counts show on the public customer portal.\n\n'
                       '**Staff** — Add staff accounts linked to tasks.\n\n'
                       '**Chat** — Separate **Guests** and **Staff** inboxes; attach photos from gallery or camera.\n\n'
-                      '**Reports & analytics** — Revenue by period, profit overview (daily/weekly/monthly/annual), refunds, room/amenity breakdown, occupancy, transfers, task completion, activity timeline.\n\n'
+                      '**Reports & analytics** — Sales (cash / e-wallet / bank / other), collectibles, expenses (including custom), cash on hand, guest demographics, front desk sales, room insights, amenity sales, reseller commissions, and daily→annual revenue. Front desk uses the shift timeout summary instead of this tab.\n\n'
                       '**Amenity menu** — Paid add-ons guests can order from their room.\n\n'
                       '**Activity logs** — Audit trail of admin/staff actions.',
                 ),

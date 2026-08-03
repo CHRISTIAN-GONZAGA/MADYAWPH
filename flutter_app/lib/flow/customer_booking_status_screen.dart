@@ -400,6 +400,13 @@ class _OnlinePaymentPendingCardState extends State<_OnlinePaymentPendingCard> {
     final scheme = Theme.of(context).colorScheme;
     final paymentRef = (widget.reservation['payment_reference'] ?? '').toString();
     final total = (widget.reservation['estimated_total'] as num?)?.toDouble() ?? 0;
+    final amountPaid = (widget.reservation['amount_paid'] as num?)?.toDouble() ?? total;
+    final depositPct = (widget.reservation['deposit_percent'] as num?)?.toDouble();
+    final depositLabel = depositPct == null
+        ? null
+        : (depositPct % 1 == 0
+            ? '${depositPct.toStringAsFixed(0)}%'
+            : '${depositPct.toStringAsFixed(1)}%');
 
     return Card(
       color: scheme.primaryContainer.withValues(alpha: 0.35),
@@ -424,7 +431,9 @@ class _OnlinePaymentPendingCardState extends State<_OnlinePaymentPendingCard> {
                 border: Border.all(color: scheme.error.withValues(alpha: 0.35)),
               ),
               child: Text(
-                'FULL PAYMENT REQUIRED',
+                depositLabel != null && depositPct! < 100
+                    ? '$depositLabel DEPOSIT REQUIRED'
+                    : 'FULL PAYMENT REQUIRED',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w900,
@@ -441,7 +450,11 @@ class _OnlinePaymentPendingCardState extends State<_OnlinePaymentPendingCard> {
               ),
             if (total > 0) ...[
               const SizedBox(height: 4),
-              Text(context.tr('amount_label', {'n': total.toStringAsFixed(0)})),
+              Text(
+                amountPaid > 0 && amountPaid + 0.009 < total
+                    ? 'Deposit paid: ₱${amountPaid.toStringAsFixed(0)} · Stay total: ₱${total.toStringAsFixed(0)}'
+                    : context.tr('amount_label', {'n': total.toStringAsFixed(0)}),
+              ),
             ],
             const SizedBox(height: 8),
             Text(context.tr('pay_qr_hint')),

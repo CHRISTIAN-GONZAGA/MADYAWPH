@@ -28,13 +28,18 @@ String formatPeso(num amount, {bool signed = false}) {
 String formatBillLineAmount(Map<dynamic, dynamic> line) {
   final amount = parseJsonDouble(line['amount']);
   final type = (line['type'] ?? '').toString();
+  final isCashChange = type == 'cash_change';
   final isCredit = line['is_credit'] == true ||
       type == 'refund' ||
       type == 'partial_payment' ||
       type == 'member_points' ||
       type == 'member_discount' ||
-      amount < 0;
+      (!isCashChange && amount < 0);
   final display = amount.abs();
+  if (isCashChange) {
+    // Audit-only: money returned to guest (not a bill charge).
+    return '₱${display.toStringAsFixed(2)} given';
+  }
   if (isCredit) {
     return '−₱${display.toStringAsFixed(2)}';
   }

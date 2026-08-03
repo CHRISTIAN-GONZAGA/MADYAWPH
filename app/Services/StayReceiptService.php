@@ -24,6 +24,7 @@ class StayReceiptService
             ->get();
 
         $subtotal = (float) $charges
+            ->filter(fn ($c) => \App\Support\BillingChargeTypes::affectsBalance($c->type ?? ''))
             ->reject(fn ($c) => \App\Support\BillingChargeTypes::isCredit($c->type ?? ''))
             ->sum(fn ($c) => (float) ($c->amount ?? 0));
 
@@ -61,6 +62,7 @@ class StayReceiptService
             'amount' => (float) ($c->amount ?? 0),
             'type' => (string) ($c->type ?? ''),
             'is_credit' => \App\Support\BillingChargeTypes::isCredit($c->type ?? ''),
+            'affects_balance' => \App\Support\BillingChargeTypes::affectsBalance($c->type ?? ''),
         ])->values()->all();
 
         if ($lines === []) {
@@ -69,16 +71,25 @@ class StayReceiptService
                 'amount' => (float) ($booking->total_amount ?? 0),
                 'type' => 'room',
                 'is_credit' => false,
+                'affects_balance' => true,
             ]];
         }
 
-        $subtotal = (float) $charges
+        $balanceCharges = $charges->filter(
+            fn ($c) => \App\Support\BillingChargeTypes::affectsBalance($c->type ?? '')
+        );
+
+        $subtotal = (float) $balanceCharges
             ->reject(fn ($c) => \App\Support\BillingChargeTypes::isCredit($c->type ?? ''))
             ->sum(fn ($c) => (float) ($c->amount ?? 0));
 
-        $refundSum = (float) $charges
+        $refundSum = (float) $balanceCharges
             ->filter(fn ($c) => \App\Support\BillingChargeTypes::isCredit($c->type ?? ''))
             ->sum(fn ($c) => (float) ($c->amount ?? 0));
+
+        $changeGiven = (float) $charges
+            ->filter(fn ($c) => strtolower((string) ($c->type ?? '')) === \App\Support\BillingChargeTypes::CASH_CHANGE)
+            ->sum(fn ($c) => abs((float) ($c->amount ?? 0)));
 
         return [
             'booking_id' => (string) $booking->id,
@@ -93,6 +104,7 @@ class StayReceiptService
             'lines' => $lines,
             'subtotal' => round($subtotal, 2),
             'refunds' => round(abs($refundSum), 2),
+            'change_given' => round($changeGiven, 2),
             'total_due' => round(max(0, $subtotal + $refundSum), 2),
             'receipt_url' => url("/api/v1/admin/bookings/{$booking->id}/receipt"),
         ];

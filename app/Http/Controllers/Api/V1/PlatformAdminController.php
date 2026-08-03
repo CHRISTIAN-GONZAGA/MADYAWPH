@@ -282,6 +282,23 @@ class PlatformAdminController extends Controller
         ]);
     }
 
+    public function updateOnlineBookingDepositPercent(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'online_booking_deposit_percent' => ['required', 'numeric', 'min:0', 'max:100'],
+        ]);
+
+        $row = $this->settings->row();
+        $row->update([
+            'online_booking_deposit_percent' => (float) $validated['online_booking_deposit_percent'],
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'online_booking_deposit_percent' => $this->settings->onlineBookingDepositPercent(),
+        ]);
+    }
+
     public function updateLateCheckoutFee(Request $request): JsonResponse
     {
         $validated = $request->validate([

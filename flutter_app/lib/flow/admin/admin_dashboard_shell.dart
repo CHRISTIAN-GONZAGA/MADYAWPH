@@ -601,6 +601,8 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           ReportsAnalyticsSection(
             key: refreshKey,
             rooms: _rooms,
+            isFrontDesk: widget.isFrontDesk,
+            onRefreshRooms: widget.onRefresh,
           ),
           sections.length,
         ),

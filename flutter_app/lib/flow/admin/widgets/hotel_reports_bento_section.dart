@@ -21,10 +21,14 @@ class HotelReportsBentoSection extends StatefulWidget {
     super.key,
     required this.rooms,
     this.showHeader = true,
+    this.isFrontDesk = false,
+    this.onRefreshRooms,
   });
 
   final List<Map<String, dynamic>> rooms;
   final bool showHeader;
+  final bool isFrontDesk;
+  final Future<void> Function()? onRefreshRooms;
 
   @override
   State<HotelReportsBentoSection> createState() =>
@@ -119,9 +123,7 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
         _expenses = resolvedExpenses;
         _cashSales = cashCollected > 0.009 ? cashCollected : _cashSales;
         _dailyRevenue = salesTotal;
-        _demoGuests = widget.rooms
-            .where((r) => AdminDashboardModels.statusOf(r) == 'checked_in')
-            .length;
+        // Guest count comes from demographics; keep previous until secondary load.
         _loading = false;
         _loadingSecondary = true;
       });
@@ -171,7 +173,7 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
       }
 
       final totals = (demo['totals'] as Map?)?.cast<String, dynamic>();
-      final guests = (totals?['total_guests'] as num?)?.toInt() ?? _demoGuests;
+      final guests = parseJsonDouble(totals?['total_guests']).round();
 
       setState(() {
         _dailyRevenue = periodGross('daily');
@@ -180,10 +182,20 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
         _annualRevenue = periodGross('annual');
         _demoGuests = guests;
         _loadingSecondary = false;
+        _error = null;
       });
-    } catch (_) {
+    } on DioException catch (e) {
       if (!mounted) return;
-      setState(() => _loadingSecondary = false);
+      setState(() {
+        _loadingSecondary = false;
+        _error = 'Period totals: ${dioErrorMessage(e)}';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingSecondary = false;
+        _error = 'Period totals failed to load.';
+      });
     }
   }
 
@@ -194,10 +206,14 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
       (_cashSales - _expenses).clamp(0, double.infinity);
 
   Future<void> _openSheet(String section) async {
+    if (section == 'collectibles') {
+      await widget.onRefreshRooms?.call();
+      if (!mounted) return;
+    }
     await openHotelTotalsReports(
       context,
       rooms: widget.rooms,
-      isFrontDesk: false,
+      isFrontDesk: widget.isFrontDesk,
       initialExpanded: section,
     );
     if (!mounted) return;
@@ -287,10 +303,15 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
               subtitle: formatPeso(_collectibles),
               icon: Icons.receipt_long_outlined,
               accent: Colors.orange.shade800,
-              onTap: () => showCollectiblesSummaryDialog(
-                context,
-                rooms: widget.rooms,
-              ),
+              onTap: () async {
+                HapticFeedback.selectionClick();
+                await widget.onRefreshRooms?.call();
+                if (!mounted) return;
+                await showCollectiblesSummaryDialog(
+                  context,
+                  rooms: widget.rooms,
+                );
+              },
             ),
             _BentoTile(
               title: 'Expenses',
@@ -308,9 +329,11 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
             ),
             _BentoTile(
               title: 'Demographics',
-              subtitle: _demoGuests > 0
-                  ? '$_demoGuests guest(s) this month'
-                  : 'Gender · nationality · age',
+              subtitle: _loadingSecondary && _demoGuests <= 0
+                  ? 'Gender · nationality · age'
+                  : (_demoGuests > 0
+                      ? '$_demoGuests guest(s) this month'
+                      : 'Gender · nationality · age'),
               icon: Icons.groups_outlined,
               accent: Colors.deepPurple.shade400,
               onTap: () => _openSheet('demographics'),
@@ -358,21 +381,22 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
                 );
               },
             ),
-            _BentoTile(
-              title: 'Reseller commissions',
-              subtitle: 'Payouts & calendar',
-              icon: Icons.handshake_outlined,
-              accent: Colors.deepOrange,
-              span: _BentoSpan.wide,
-              onTap: () {
-                HapticFeedback.selectionClick();
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const ResellerCommissionsReportScreen(),
-                  ),
-                );
-              },
-            ),
+            if (!widget.isFrontDesk)
+              _BentoTile(
+                title: 'Reseller commissions',
+                subtitle: 'Payouts & calendar',
+                icon: Icons.handshake_outlined,
+                accent: Colors.deepOrange,
+                span: _BentoSpan.wide,
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const ResellerCommissionsReportScreen(),
+                    ),
+                  );
+                },
+              ),
             _BentoTile(
               title: 'Daily revenue',
               subtitle: formatPeso(_dailyRevenue),

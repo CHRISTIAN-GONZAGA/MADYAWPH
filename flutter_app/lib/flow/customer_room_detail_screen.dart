@@ -64,6 +64,7 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
   XFile? _guestIdFile;
   String _paymentQrUrl = '';
   var _qrLoading = false;
+  var _onlineDepositPercent = 50.0;
   var _guestFieldsReady = false;
   var _adults = 2;
   var _children = 0;
@@ -202,6 +203,10 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
         queryParameters: {'hotel_id': widget.hotelId},
       );
       _paymentQrUrl = (res.data?['qr_url'] ?? '').toString();
+      final pct = (res.data?['online_booking_deposit_percent'] as num?)
+              ?.toDouble() ??
+          50.0;
+      _onlineDepositPercent = pct.clamp(0, 100);
     } catch (_) {
       _paymentQrUrl = '';
     } finally {
@@ -302,7 +307,7 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
     if (paymentRef.length < 4) {
       showAppMessage(
         context,
-        'Enter your GCash / Maya / QR Ph payment reference after paying in full.',
+        'Enter your GCash / Maya / QR Ph payment reference after paying the required deposit.',
       );
       return;
     }
@@ -472,6 +477,13 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
           };
     final estAfterDiscount =
         HourlyBilling.round50(estTotal * (1 - (discountPct / 100)));
+    final depositDue = HourlyBilling.round50(
+      estAfterDiscount * (_onlineDepositPercent / 100),
+    );
+    final depositPctLabel = _onlineDepositPercent % 1 == 0
+        ? _onlineDepositPercent.toStringAsFixed(0)
+        : _onlineDepositPercent.toStringAsFixed(1);
+    final isFullDeposit = _onlineDepositPercent >= 100;
     String fmtTime(DateTime d) {
       final h = d.hour % 12 == 0 ? 12 : d.hour % 12;
       final m = d.minute.toString().padLeft(2, '0');
@@ -889,7 +901,9 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
                 ),
               ),
               child: Text(
-                'FULL PAYMENT REQUIRED — ONLINE ONLY',
+                isFullDeposit
+                    ? 'FULL PAYMENT REQUIRED — ONLINE ONLY'
+                    : '$depositPctLabel% DEPOSIT REQUIRED — ONLINE ONLY',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w900,
@@ -900,8 +914,13 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Cash at hotel is not available for online bookings. '
-              'Scan the hotel QR, pay the full stay amount, then enter your payment reference below.',
+              isFullDeposit
+                  ? 'Cash at hotel is not available for online bookings. '
+                      'Scan the hotel QR, pay the full stay amount, then enter your payment reference below.'
+                  : 'Cash at hotel is not available for online bookings. '
+                      'Scan the hotel QR and pay at least $depositPctLabel% of the stay '
+                      '(₱${depositDue.toStringAsFixed(2)}). Enter your payment reference below. '
+                      'Any remaining balance is collected at the hotel.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: scheme.onSurfaceVariant,
@@ -946,8 +965,13 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
             Text(
               [
                 if (staySummary.isNotEmpty) 'Duration: $staySummary',
-                'Total to pay: ₱${estAfterDiscount.toStringAsFixed(2)}'
+                'Stay total: ₱${estAfterDiscount.toStringAsFixed(2)}'
                     '${discountPct > 0 ? ' (after discount)' : ''}',
+                isFullDeposit
+                    ? 'Amount to pay now: ₱${estAfterDiscount.toStringAsFixed(2)}'
+                    : 'Deposit required now ($depositPctLabel%): ₱${depositDue.toStringAsFixed(2)}',
+                if (!isFullDeposit)
+                  'Balance at hotel: ₱${(estAfterDiscount - depositDue).clamp(0, double.infinity).toStringAsFixed(2)}',
                 'Hotel approval required. You will see success once front desk confirms your payment.',
               ].join('\n'),
               style: Theme.of(context).textTheme.bodySmall,

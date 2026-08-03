@@ -39,13 +39,18 @@ class BookingPaymentService
             'type' => (string) ($c->type ?? ''),
             'amount' => (float) ($c->amount ?? 0),
             'is_credit' => BillingChargeTypes::isCredit($c->type ?? ''),
+            'affects_balance' => BillingChargeTypes::affectsBalance($c->type ?? ''),
         ])->values()->all();
 
-        $subtotal = (float) $charges
+        $balanceCharges = $charges->filter(
+            fn ($c) => BillingChargeTypes::affectsBalance($c->type ?? '')
+        );
+
+        $subtotal = (float) $balanceCharges
             ->reject(fn ($c) => BillingChargeTypes::isCredit($c->type ?? ''))
             ->sum(fn ($c) => (float) ($c->amount ?? 0));
 
-        $credits = (float) $charges
+        $credits = (float) $balanceCharges
             ->filter(fn ($c) => BillingChargeTypes::isCredit($c->type ?? ''))
             ->sum(fn ($c) => (float) ($c->amount ?? 0));
 
@@ -55,11 +60,16 @@ class BookingPaymentService
 
         $balanceDue = round(max(0, $subtotal + $credits), 2);
 
+        $changeGiven = (float) $charges
+            ->filter(fn ($c) => strtolower((string) ($c->type ?? '')) === BillingChargeTypes::CASH_CHANGE)
+            ->sum(fn ($c) => abs((float) ($c->amount ?? 0)));
+
         return [
             'lines' => $lines,
             'subtotal' => round($subtotal, 2),
             'refunds' => round($credits, 2),
             'amount_paid' => round($amountPaid, 2),
+            'change_given' => round($changeGiven, 2),
             'balance_due' => $balanceDue,
             'total_due' => $balanceDue,
             'payment_status' => $this->derivePaymentStatus($amountPaid, $balanceDue, $currentPaymentStatus),
@@ -91,18 +101,35 @@ class BookingPaymentService
             ]);
         }
 
-        if ($amount > $balanceDue + 0.009) {
-            throw ValidationException::withMessages([
-                'amount' => ['Partial payment cannot exceed the remaining balance of ₱'.number_format($balanceDue, 2).'.'],
-            ]);
-        }
-
         $methodRaw = trim((string) ($validated['payment_method'] ?? $booking->payment_method?->value ?? $booking->payment_method ?? 'Cash'));
         $method = $this->normalizePaymentMethod($methodRaw) ?? 'Cash';
         $reference = array_key_exists('payment_reference', $validated)
             ? $validated['payment_reference']
             : ($booking->payment_reference ?? null);
         $note = trim((string) ($validated['note'] ?? ''));
+
+        // Overpayment at the desk: settle remaining balance and return change.
+        if ($amount > $balanceDue + 0.009) {
+            $settled = $this->applyPayment($booking, $actor, [
+                'payment_status' => 'paid',
+                'payment_method' => $method,
+                'payment_reference' => $reference,
+                'amount_tendered' => $amount,
+            ]);
+
+            return [
+                'ok' => true,
+                'booking' => $settled['booking'] ?? $booking->fresh(),
+                'charge' => null,
+                'bill' => $settled['bill'] ?? $this->billSummary($booking->fresh()),
+                'amount' => (float) ($settled['settled_amount'] ?? $balanceDue),
+                'amount_paid' => (float) (($settled['bill']['amount_paid'] ?? 0)),
+                'balance_due' => 0.0,
+                'payment_status' => 'paid',
+                'amount_tendered' => $amount,
+                'change_due' => (float) ($settled['change_due'] ?? max(0, round($amount - $balanceDue, 2))),
+            ];
+        }
 
         $roomId = (string) ($booking->room_id ?? '');
         $charge = BillingCharge::withoutGlobalScopes()->create([
@@ -221,13 +248,18 @@ class BookingPaymentService
             }
 
             // Settle remaining balance so "paid" always means balance is zero.
+            $settledAmount = round($totalDue, 2);
+            $changeDue = $amountTendered !== null
+                ? round(max(0, $amountTendered - $totalDue), 2)
+                : null;
+
             BillingCharge::withoutGlobalScopes()->create([
                 'hotel_id' => $hotelId,
                 'booking_id' => (string) $booking->id,
                 'room_id' => (string) ($booking->room_id ?? ''),
                 'type' => BillingChargeTypes::PARTIAL_PAYMENT,
                 'label' => 'Payment ('.$normalizedMethod.')',
-                'amount' => -1 * round($totalDue, 2),
+                'amount' => -1 * $settledAmount,
                 'quantity' => 1,
                 'is_manual' => true,
                 'created_by' => (string) $actor->id,
@@ -237,12 +269,10 @@ class BookingPaymentService
                     'settlement' => 'checkout_full_payment',
                     'recorded_by' => (string) $actor->id,
                     'booking_reference' => (string) $booking->booking_reference,
+                    'amount_tendered' => $amountTendered,
+                    'change_due' => $changeDue,
                 ],
             ]);
-            $settledAmount = round($totalDue, 2);
-            $changeDue = $amountTendered !== null
-                ? round(max(0, $amountTendered - $totalDue), 2)
-                : null;
             $totalDue = 0.0;
         } elseif ($newStatus === 'paid' && $amountTendered !== null) {
             $changeDue = round(max(0, $amountTendered - $totalDue), 2);
@@ -309,6 +339,19 @@ class BookingPaymentService
             ],
         );
 
+        if ($changeDue !== null && $changeDue > 0.009) {
+            $this->documentCashChange(
+                $booking,
+                $actor,
+                $changeDue,
+                $amountTendered ?? 0.0,
+                $settledAmount,
+                $normalizedMethod,
+                (string) ($nextReference ?? ''),
+            );
+            $freshBill = $this->billSummary($booking->fresh());
+        }
+
         return [
             'ok' => true,
             'booking' => $booking->fresh(),
@@ -317,6 +360,80 @@ class BookingPaymentService
             'change_due' => $changeDue,
             'settled_amount' => $settledAmount,
         ];
+    }
+
+    /**
+     * Persist an audit charge + payment transaction log when cash change is returned.
+     * Does not affect guest balance (see BillingChargeTypes::nonBalanceTypes).
+     */
+    private function documentCashChange(
+        Booking $booking,
+        User $actor,
+        float $changeDue,
+        float $amountTendered,
+        float $settledAmount,
+        string $paymentMethod,
+        string $paymentReference,
+    ): void {
+        $changeDue = round($changeDue, 2);
+        if ($changeDue <= 0.009) {
+            return;
+        }
+
+        $hotelId = (string) $booking->hotel_id;
+        $charge = BillingCharge::withoutGlobalScopes()->create([
+            'hotel_id' => $hotelId,
+            'booking_id' => (string) $booking->id,
+            'room_id' => (string) ($booking->room_id ?? ''),
+            'type' => BillingChargeTypes::CASH_CHANGE,
+            'label' => 'Change given (₱'.number_format($changeDue, 2).')',
+            'amount' => $changeDue,
+            'quantity' => 1,
+            'is_manual' => true,
+            'created_by' => (string) $actor->id,
+            'metadata' => [
+                'payment_method' => $paymentMethod,
+                'payment_reference' => $paymentReference,
+                'amount_tendered' => round($amountTendered, 2),
+                'settled_amount' => round($settledAmount, 2),
+                'change_due' => $changeDue,
+                'recorded_by' => (string) $actor->id,
+                'booking_reference' => (string) $booking->booking_reference,
+                'audit_only' => true,
+            ],
+        ]);
+
+        $this->activityLogService->log(
+            $hotelId,
+            $actor,
+            "Change given ₱".number_format($changeDue, 2)." for booking {$booking->booking_reference}",
+            [
+                'booking_id' => (string) $booking->id,
+                'change_due' => $changeDue,
+                'amount_tendered' => round($amountTendered, 2),
+                'settled_amount' => round($settledAmount, 2),
+                'payment_method' => $paymentMethod,
+                'charge_id' => (string) $charge->id,
+                'event' => 'cash_change',
+            ]
+        );
+
+        app(PaymentTransactionLogService::class)->recordForBooking(
+            $booking,
+            $actor,
+            "Payment transaction: change given ₱".number_format($changeDue, 2)." for {$booking->booking_reference}",
+            [
+                'amount' => $changeDue,
+                'amount_tendered' => round($amountTendered, 2),
+                'settled_amount' => round($settledAmount, 2),
+                'change_due' => $changeDue,
+                'payment_method' => $paymentMethod,
+                'payment_reference' => $paymentReference,
+                'charge_id' => (string) $charge->id,
+                'source' => 'front_desk_cash_change',
+                'event' => 'cash_change',
+            ],
+        );
     }
 
     /**

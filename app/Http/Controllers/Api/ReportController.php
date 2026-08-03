@@ -943,7 +943,20 @@ class ReportController extends Controller
 
         $granularity = (string) ($validated['granularity'] ?? 'day');
         [$from, $to] = $this->resolveFrontDeskSalesRange($validated, $granularity);
-        $hotelId = (string) $request->user()->hotel_id;
+        $hotelId = (string) ($request->user()?->hotel_id ?? '');
+        if ($hotelId === '') {
+            return response()->json([
+                'granularity' => $granularity,
+                'from' => $from->toIso8601String(),
+                'to' => $to->toIso8601String(),
+                'accounts' => [],
+                'totals' => [
+                    'gross_revenue' => 0.0,
+                    'payments_collected' => 0.0,
+                    'cash_collected' => 0.0,
+                ],
+            ]);
+        }
 
         $onlyUserIds = null;
         if (filter_var($validated['active_only'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
@@ -970,10 +983,18 @@ class ReportController extends Controller
         $anchor = isset($validated['anchor_date'])
             ? Carbon::parse($validated['anchor_date'])
             : now();
+        $hotelId = (string) ($request->user()?->hotel_id ?? '');
+        if ($hotelId === '') {
+            return response()->json([
+                'anchor_date' => $anchor->toDateString(),
+                'accounts' => [],
+                'totals' => [],
+            ]);
+        }
 
         return response()->json(
             $frontDeskSales->timedInReportSummary(
-                (string) $request->user()->hotel_id,
+                $hotelId,
                 $anchor,
             )
         );
@@ -985,7 +1006,10 @@ class ReportController extends Controller
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date', 'after_or_equal:from'],
         ]);
-        $hotelId = (string) $request->user()->hotel_id;
+        $hotelId = (string) ($request->user()?->hotel_id ?? '');
+        if ($hotelId === '') {
+            return response()->json(['data' => [], 'total' => 0.0]);
+        }
         $query = \App\Models\HotelExpense::query()->where('hotel_id', $hotelId);
         if (! empty($validated['from'])) {
             $query->where('expense_date', '>=', Carbon::parse($validated['from'])->startOfDay());
@@ -1139,10 +1163,20 @@ class ReportController extends Controller
         $period = (string) ($validated['period'] ?? 'month');
         $from = isset($validated['from']) ? Carbon::parse($validated['from']) : null;
         $to = isset($validated['to']) ? Carbon::parse($validated['to']) : null;
+        $hotelId = (string) ($request->user()?->hotel_id ?? '');
+        if ($hotelId === '') {
+            return response()->json([
+                'period' => $period,
+                'totals' => ['total_guests' => 0],
+                'by_gender' => [],
+                'by_nationality' => [],
+                'by_age_group' => [],
+            ]);
+        }
 
         return response()->json(
             $demographics->summarize(
-                (string) $request->user()->hotel_id,
+                $hotelId,
                 $period,
                 $from,
                 $to,

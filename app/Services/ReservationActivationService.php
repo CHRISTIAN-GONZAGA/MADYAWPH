@@ -102,6 +102,7 @@ class ReservationActivationService
         $paymentRef = (string) ($meta['payment_reference'] ?? '');
         $isOnlinePaid = strcasecmp((string) ($meta['payment_method'] ?? ''), 'Online') === 0
             && $paymentRef !== '';
+        $amountPaidOnline = round((float) ($meta['amount_paid'] ?? 0), 2);
 
         $bookingAttrs = [
             'hotel_id' => $hotelId,
@@ -112,8 +113,8 @@ class ReservationActivationService
             'guest_phone' => $res->guest_phone,
             'payment_method' => $paymentMethod,
             'payment_reference' => $paymentRef !== '' ? $paymentRef : null,
-            'payment_status' => $isOnlinePaid ? 'paid' : 'unpaid',
-            'paid_at' => $isOnlinePaid ? now() : null,
+            'payment_status' => 'unpaid',
+            'paid_at' => null,
             'total_amount' => $total,
             'source' => BookingSource::WEB->value,
             'booking_type' => BookingType::ONLINE->value,
@@ -151,6 +152,18 @@ class ReservationActivationService
             }
         }
 
+        if ($isOnlinePaid && $amountPaidOnline <= 0) {
+            // Legacy reservations treated online ref as full prepayment.
+            $amountPaidOnline = round((float) ($meta['estimated_total'] ?? $total), 2);
+        }
+        $amountPaidOnline = min(max(0, $amountPaidOnline), $total);
+        $isFullyPrepaid = $isOnlinePaid && $amountPaidOnline + 0.009 >= $total;
+        $bookingAttrs['payment_status'] = $isFullyPrepaid
+            ? 'paid'
+            : ($isOnlinePaid && $amountPaidOnline > 0.009 ? 'partial' : 'unpaid');
+        $bookingAttrs['paid_at'] = $isFullyPrepaid ? now() : null;
+        $bookingAttrs['total_amount'] = $total;
+
         $booking = Booking::withoutGlobalScopes()->create(array_merge(
             $bookingAttrs,
             CustomerStayPricing::bookingFieldsFromCharge($charge, $window),
@@ -182,38 +195,51 @@ class ReservationActivationService
             ]),
         ]);
 
-        if ($isOnlinePaid) {
+        if ($isOnlinePaid && $amountPaidOnline > 0.009) {
             BillingCharge::withoutGlobalScopes()->create([
                 'hotel_id' => $hotelId,
                 'booking_id' => (string) $booking->id,
                 'room_id' => (string) $room->id,
                 'type' => \App\Support\BillingChargeTypes::PARTIAL_PAYMENT,
-                'label' => 'Online payment ('.$paymentRef.')',
-                'amount' => -1 * abs($total),
+                'label' => $isFullyPrepaid
+                    ? 'Online payment ('.$paymentRef.')'
+                    : 'Online deposit ('.$paymentRef.')',
+                'amount' => -1 * abs($amountPaidOnline),
                 'quantity' => 1,
                 'is_manual' => false,
                 'metadata' => [
                     'payment_method' => 'Online',
                     'payment_reference' => $paymentRef,
                     'from_reservation' => (string) $res->external_reference,
-                    'source' => 'online_full_payment',
+                    'source' => $isFullyPrepaid ? 'online_full_payment' : 'online_deposit',
+                    'deposit_percent' => (float) ($meta['deposit_percent'] ?? 0),
                 ],
             ]);
 
             app(PaymentTransactionLogService::class)->recordForBooking(
                 $booking,
                 null,
-                "Online payment applied on activation for booking {$booking->booking_reference}",
+                $isFullyPrepaid
+                    ? "Online payment applied on activation for booking {$booking->booking_reference}"
+                    : "Online deposit applied on activation for booking {$booking->booking_reference}",
                 [
                     'payment_method' => 'Online',
                     'payment_reference' => $paymentRef,
-                    'amount' => $total,
-                    'amount_paid' => $total,
-                    'payment_status' => 'paid',
+                    'amount' => $amountPaidOnline,
+                    'amount_paid' => $amountPaidOnline,
+                    'payment_status' => $isFullyPrepaid ? 'paid' : 'partial',
                     'source' => 'reservation_activation',
                     'reservation_id' => (string) $res->id,
                 ],
             );
+
+            // Keep booking.total_amount as remaining balance for FO collectibles.
+            if (! $isFullyPrepaid) {
+                $remaining = max(0, round($total - $amountPaidOnline, 2));
+                $booking->update(['total_amount' => $remaining]);
+            } else {
+                $booking->update(['total_amount' => 0]);
+            }
         }
 
         $generatedPassword = $this->guestRoomAccessCodeService->generateUnique();

@@ -837,6 +837,7 @@ class HotelFinancialReportService
                     // Exclude payments/credits (partial_payment is stored negative) so
                     // room + payment does not net to ₱0 on paid stays.
                     $gross = (float) $set
+                        ->filter(fn ($c) => BillingChargeTypes::affectsBalance($c->type ?? ''))
                         ->reject(fn ($c) => BillingChargeTypes::isCredit($c->type ?? ''))
                         ->sum(fn ($c) => max(0, (float) ($c->amount ?? 0)));
                 }

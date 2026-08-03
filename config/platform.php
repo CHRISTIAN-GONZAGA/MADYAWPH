@@ -44,8 +44,15 @@ return [
     /**
      * Minimum % of the room bill that must be paid at check-in (0–100).
      * Example: 50 means guests must pay at least half before check-in completes.
+     * Used as the platform default for hotel walk-in / front-desk check-in.
      */
     'min_check_in_payment_percent' => (float) env('PLATFORM_MIN_CHECK_IN_PAYMENT_PERCENT', 50),
+
+    /**
+     * Deposit % required when members / public guests book online via the app (0–100).
+     * Central admin only. Example: 50 means online bookings need half the stay total up front.
+     */
+    'online_booking_deposit_percent' => (float) env('PLATFORM_ONLINE_BOOKING_DEPOSIT_PERCENT', 50),
 
     /**
      * Minutes past scheduled check-out before an automatic late check-out fee applies.

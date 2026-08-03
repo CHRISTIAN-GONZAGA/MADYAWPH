@@ -2443,10 +2443,10 @@ Route::get('/reports/sales/timeseries', [ReportController::class, 'salesTimeseri
 Route::get('/reports/paid-transactions', [ReportController::class, 'paidTransactions'])->middleware('role:admin,frontdesk');
 Route::get('/reports/amenity-sales/timeseries', [ReportController::class, 'amenitySalesTimeseries'])->middleware('role:admin,frontdesk');
 Route::get('/reports/amenity-sales/overview', [ReportController::class, 'amenityProfitOverview'])->middleware('role:admin,frontdesk');
-Route::get('/reports/profit-overview', [ReportController::class, 'profitOverview'])->middleware('role:admin,frontdesk');
-Route::get('/reports/reseller-payments/timeseries', [ReportController::class, 'resellerPaymentsTimeseries'])->middleware('role:admin,frontdesk');
-Route::get('/reports/sales-csv', [ReportController::class, 'salesCsv'])->middleware('role:admin,frontdesk');
-Route::get('/reports/sales-pdf', [ReportController::class, 'salesPdf'])->middleware('role:admin,frontdesk');
+Route::get('/reports/profit-overview', [ReportController::class, 'profitOverview'])->middleware('role:admin,super_admin');
+Route::get('/reports/reseller-payments/timeseries', [ReportController::class, 'resellerPaymentsTimeseries'])->middleware('role:admin,super_admin');
+Route::get('/reports/sales-csv', [ReportController::class, 'salesCsv'])->middleware('role:admin,super_admin');
+Route::get('/reports/sales-pdf', [ReportController::class, 'salesPdf'])->middleware('role:admin,super_admin');
 Route::get('/reports/staff-performance', [ReportController::class, 'staffPerformance'])->middleware('role:admin,frontdesk');
 Route::get('/reports/room-occupancy', [ReportController::class, 'roomOccupancy'])->middleware('role:admin,staff,frontdesk');
 Route::get('/reports/activity/timeline', [ReportController::class, 'activityTimeline'])->middleware('role:admin,staff,frontdesk');
@@ -3622,6 +3622,7 @@ Route::middleware('role:central_admin')->prefix('platform')->group(function () {
     Route::patch('/settings/registration-credits', [$platform, 'updateRegistrationCredits']);
     Route::patch('/settings/booking-fee-percent', [$platform, 'updateBookingFeePercent']);
     Route::patch('/settings/min-check-in-payment-percent', [$platform, 'updateMinCheckInPaymentPercent']);
+    Route::patch('/settings/online-booking-deposit-percent', [$platform, 'updateOnlineBookingDepositPercent']);
     Route::patch('/settings/late-checkout-fee', [$platform, 'updateLateCheckoutFee']);
     Route::patch('/settings/early-check-in-fee', [$platform, 'updateEarlyCheckInFee']);
     Route::patch('/settings/member-booking-discount-percent', [$platform, 'updateMemberBookingDiscountPercent']);

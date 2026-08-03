@@ -234,6 +234,21 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
     }
   }
 
+  Future<void> _updateOnlineBookingDepositPercent(double percent) async {
+    try {
+      await portalDio().patch<Map<String, dynamic>>(
+        '/platform/settings/online-booking-deposit-percent',
+        data: {'online_booking_deposit_percent': percent},
+      );
+      if (!mounted) return;
+      showAppMessage(context, 'Online booking deposit percent updated.');
+      await _loadAll();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
   Future<void> _updateLateCheckoutFee({
     required int graceMinutes,
     required double feeAmount,
@@ -725,6 +740,8 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
                       onUpdateBookingFeePercent: _updateBookingFeePercent,
                       onUpdateMinCheckInPaymentPercent:
                           _updateMinCheckInPaymentPercent,
+                      onUpdateOnlineBookingDepositPercent:
+                          _updateOnlineBookingDepositPercent,
                       onUpdateLateCheckoutFee: _updateLateCheckoutFee,
                       onUpdateEarlyCheckInFee: _updateEarlyCheckInFee,
                       onUpdateMemberBookingDiscountPercent:
@@ -1960,6 +1977,7 @@ class _QrSettingsSection extends StatefulWidget {
     required this.onUpdateRegistrationCredits,
     required this.onUpdateBookingFeePercent,
     required this.onUpdateMinCheckInPaymentPercent,
+    required this.onUpdateOnlineBookingDepositPercent,
     required this.onUpdateLateCheckoutFee,
     required this.onUpdateEarlyCheckInFee,
     required this.onUpdateMemberBookingDiscountPercent,
@@ -1976,6 +1994,7 @@ class _QrSettingsSection extends StatefulWidget {
       onUpdateRegistrationCredits;
   final Future<void> Function(double percent) onUpdateBookingFeePercent;
   final Future<void> Function(double percent) onUpdateMinCheckInPaymentPercent;
+  final Future<void> Function(double percent) onUpdateOnlineBookingDepositPercent;
   final Future<void> Function({
     required int graceMinutes,
     required double feeAmount,
@@ -2000,6 +2019,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
   late final TextEditingController _memberMonthlyFeeCtrl;
   late List<_RegCreditRuleDraft> _regRules;
   late final TextEditingController _minCheckInPercentCtrl;
+  late final TextEditingController _onlineDepositPercentCtrl;
   late final TextEditingController _lateGraceCtrl;
   late final TextEditingController _lateFeeCtrl;
   late final TextEditingController _earlyGraceCtrl;
@@ -2012,6 +2032,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
   var _savingMemberMonthlyFee = false;
   var _savingRegCredits = false;
   var _savingMinCheckIn = false;
+  var _savingOnlineDeposit = false;
   var _savingLateCheckout = false;
   var _savingEarlyCheckIn = false;
   var _savingMemberDiscount = false;
@@ -2033,6 +2054,9 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     _regRules = _RegCreditRuleDraft.fromSettings(widget.settings);
     _minCheckInPercentCtrl = TextEditingController(
       text: _minCheckInPercentText(widget.settings),
+    );
+    _onlineDepositPercentCtrl = TextEditingController(
+      text: _onlineDepositPercentText(widget.settings),
     );
     _lateGraceCtrl = TextEditingController(
       text: _lateGraceText(widget.settings),
@@ -2067,6 +2091,10 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     final minCheckIn = _minCheckInPercentText(widget.settings);
     if (minCheckIn != _minCheckInPercentCtrl.text) {
       _minCheckInPercentCtrl.text = minCheckIn;
+    }
+    final onlineDeposit = _onlineDepositPercentText(widget.settings);
+    if (onlineDeposit != _onlineDepositPercentCtrl.text) {
+      _onlineDepositPercentCtrl.text = onlineDeposit;
     }
     final lateGrace = _lateGraceText(widget.settings);
     if (lateGrace != _lateGraceCtrl.text) {
@@ -2150,6 +2178,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
       rule.dispose();
     }
     _minCheckInPercentCtrl.dispose();
+    _onlineDepositPercentCtrl.dispose();
     _lateGraceCtrl.dispose();
     _lateFeeCtrl.dispose();
     _earlyGraceCtrl.dispose();
@@ -2176,6 +2205,13 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
 
   static String _minCheckInPercentText(Map<String, dynamic> settings) {
     final raw = settings['min_check_in_payment_percent'];
+    if (raw == null) return '50';
+    return (raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 50)
+        .toStringAsFixed(raw is num && raw % 1 == 0 ? 0 : 1);
+  }
+
+  static String _onlineDepositPercentText(Map<String, dynamic> settings) {
+    final raw = settings['online_booking_deposit_percent'];
     if (raw == null) return '50';
     return (raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 50)
         .toStringAsFixed(raw is num && raw % 1 == 0 ? 0 : 1);
@@ -2293,6 +2329,20 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
       await widget.onUpdateMinCheckInPaymentPercent(parsed);
     } finally {
       if (mounted) setState(() => _savingMinCheckIn = false);
+    }
+  }
+
+  Future<void> _saveOnlineDepositPercent() async {
+    final parsed = double.tryParse(_onlineDepositPercentCtrl.text.trim());
+    if (parsed == null || parsed < 0 || parsed > 100) {
+      showAppMessage(context, 'Enter a percent between 0 and 100.');
+      return;
+    }
+    setState(() => _savingOnlineDeposit = true);
+    try {
+      await widget.onUpdateOnlineBookingDepositPercent(parsed);
+    } finally {
+      if (mounted) setState(() => _savingOnlineDeposit = false);
     }
   }
 
@@ -2762,7 +2812,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'When front desk checks a guest in, they must collect at least this percent of the remaining room balance (for example 50). The payment is deducted from the room bill.',
+                        'Platform default for hotel walk-in / front-desk check-in. Hotels can override this in their own settings. Separate from the online booking deposit below.',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       const SizedBox(height: 12),
@@ -2799,6 +2849,64 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                           _savingMinCheckIn
                               ? 'Saving…'
                               : 'Save check-in payment %',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Online booking deposit',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'For member and public guest bookings made in the app. '
+                        'Example: 50 means guests only need to pay half the stay total online; the rest is collected at the hotel.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _onlineDepositPercentCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Online deposit percent',
+                          suffixText: '%',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      FilledButton.icon(
+                        onPressed: _savingOnlineDeposit
+                            ? null
+                            : _saveOnlineDepositPercent,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _kPlatformNavy,
+                          foregroundColor: Colors.white,
+                        ),
+                        icon: _savingOnlineDeposit
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.save_outlined),
+                        label: Text(
+                          _savingOnlineDeposit
+                              ? 'Saving…'
+                              : 'Save online deposit %',
                         ),
                       ),
                     ],

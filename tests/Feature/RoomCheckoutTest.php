@@ -319,13 +319,23 @@ class RoomCheckoutTest extends TestCase
         $this->postJson('/api/v1/rooms/'.$room->id.'/checkout')
             ->assertStatus(422);
 
-        // Settle remaining, then checkout succeeds.
-        $this->postJson("/api/v1/admin/bookings/{$booking->id}/payment-status", [
+        // Settle remaining with overpay so change is documented, then checkout succeeds.
+        $pay = $this->postJson("/api/v1/admin/bookings/{$booking->id}/payment-status", [
             'payment_status' => 'paid',
             'payment_method' => 'Cash',
-            'amount_tendered' => 2000,
+            'amount_tendered' => 2500,
         ])->assertOk()
             ->assertJsonPath('bill.balance_due', 0);
+
+        $this->assertEqualsWithDelta(500.0, (float) $pay->json('change_due'), 0.01);
+        $this->assertEqualsWithDelta(500.0, (float) $pay->json('bill.change_given'), 0.01);
+        $this->assertSame(
+            1,
+            BillingCharge::withoutGlobalScopes()
+                ->where('booking_id', (string) $booking->id)
+                ->where('type', 'cash_change')
+                ->count()
+        );
 
         $this->postJson('/api/v1/rooms/'.$room->id.'/checkout')
             ->assertOk();
