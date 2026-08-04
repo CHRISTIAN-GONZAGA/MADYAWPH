@@ -27,6 +27,10 @@ final class StayManagementPolicy
             return false;
         }
 
+        if (SafeModelAttributes::carbonFromModel($booking, 'checked_out_at') !== null) {
+            return false;
+        }
+
         $status = strtolower((string) ($booking->status?->value ?? $booking->status ?? ''));
 
         return in_array($status, self::ACTIVE_BOOKING_STATUSES, true);

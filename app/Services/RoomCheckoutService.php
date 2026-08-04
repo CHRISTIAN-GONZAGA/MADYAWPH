@@ -776,6 +776,10 @@ class RoomCheckoutService
                 BookingStatus::COMPLETED->value,
                 BookingStatus::CANCELLED->value,
             ])
+            ->where(function ($q) {
+                $q->whereNull('checked_out_at')
+                    ->orWhere('checked_out_at', '');
+            })
             ->latest('created_at')
             ->first();
     }
@@ -797,6 +801,10 @@ class RoomCheckoutService
                 BookingStatus::COMPLETED->value,
                 BookingStatus::CANCELLED->value,
             ])
+            ->where(function ($q) {
+                $q->whereNull('checked_out_at')
+                    ->orWhere('checked_out_at', '');
+            })
             ->latest('created_at')
             ->limit(80)
             ->get();

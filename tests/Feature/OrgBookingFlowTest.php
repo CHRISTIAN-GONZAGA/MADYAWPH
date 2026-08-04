@@ -175,6 +175,88 @@ class OrgBookingFlowTest extends TestCase
         $this->assertSame(2, Booking::withoutGlobalScopes()->where('is_org_booking', true)->count());
     }
 
+    public function test_org_bulk_checkout_all_rooms_keeps_outstanding_balance(): void
+    {
+        [$hotel, $frontDesk, $room] = $this->seedHotelRoom();
+        $room2 = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '202',
+            'room_type' => 'Standard',
+            'price_per_night' => 1500,
+            'status' => RoomStatus::AVAILABLE->value,
+        ]);
+
+        Sanctum::actingAs($frontDesk);
+
+        foreach ([$room, $room2] as $index => $target) {
+            $amount = $index === 0 ? 1800 : 1500;
+            $booking = Booking::withoutGlobalScopes()->create([
+                'hotel_id' => (string) $hotel->id,
+                'room_id' => (string) $target->id,
+                'booking_reference' => 'BK-ORG-BULK-'.$index,
+                'guest_name' => 'City Hall Guest '.$index,
+                'check_in_date' => now()->toDateString(),
+                'check_out_date' => now()->addDay()->toDateString(),
+                'nights' => 1,
+                'total_amount' => $amount,
+                'payment_status' => 'unpaid',
+                'payment_method' => 'Cash',
+                'status' => BookingStatus::CONFIRMED,
+                'booking_type' => 'local',
+                'booking_source' => 'admin-org',
+                'is_org_booking' => true,
+                'org_name' => 'City Hall',
+                'org_type' => 'government',
+                'org_contact_person' => 'Juan Cruz',
+                'org_contact_phone' => '09170001111',
+            ]);
+            BillingCharge::withoutGlobalScopes()->create([
+                'hotel_id' => (string) $hotel->id,
+                'booking_id' => (string) $booking->id,
+                'room_id' => (string) $target->id,
+                'type' => 'room',
+                'label' => 'Room charge',
+                'amount' => $amount,
+            ]);
+            $target->update([
+                'status' => RoomStatus::CHECKED_IN->value,
+                'current_guest_name' => 'City Hall Guest '.$index,
+                'current_check_in' => now()->toDateString(),
+                'current_check_out' => now()->addDay()->toDateString(),
+                'current_access_code' => 'ZZ'.(10 + $index),
+            ]);
+        }
+
+        $inHouse = $this->getJson('/api/v1/admin/org-bookings/in-house');
+        $inHouse->assertOk();
+        $accounts = $inHouse->json('accounts');
+        $this->assertNotEmpty($accounts);
+        $this->assertSame(2, (int) $accounts[0]['in_house_count']);
+
+        $checkout = $this->postJson('/api/v1/admin/org-bookings/checkout', [
+            'org_key' => $accounts[0]['org_key'],
+        ]);
+        $checkout->assertOk();
+        $checkout->assertJsonPath('checked_out_count', 2);
+        $this->assertEqualsWithDelta(3300.0, (float) $checkout->json('outstanding_balance'), 0.01);
+
+        $room->refresh();
+        $room2->refresh();
+        $this->assertSame(RoomStatus::CLEANING->value, (string) ($room->status?->value ?? $room->status));
+        $this->assertSame(RoomStatus::CLEANING->value, (string) ($room2->status?->value ?? $room2->status));
+        $this->assertTrue(
+            blank($room->current_guest_name) && blank($room2->current_guest_name)
+        );
+
+        $outstanding = $this->getJson('/api/v1/admin/org-bookings/outstanding');
+        $outstanding->assertOk();
+        $this->assertEqualsWithDelta(
+            3300.0,
+            (float) $outstanding->json('accounts.0.outstanding_balance'),
+            0.01
+        );
+    }
+
     /**
      * @return array{0: Hotel, 1: User, 2: Room}
      */

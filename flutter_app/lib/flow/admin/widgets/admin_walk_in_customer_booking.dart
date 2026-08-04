@@ -19,6 +19,7 @@ import 'manual_booking_dialog.dart';
 import 'online_payment_qr_block.dart';
 import 'device_guest_welcome_sms.dart';
 import 'walk_in_check_in_deposit_dialog.dart';
+import '../../../utils/money_format.dart';
 
 /// Same booking popup + submit path as [CustomerRoomsScreen] admin walk-in.
 Future<bool> showAdminWalkInCustomerStyleBooking({
@@ -575,10 +576,23 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
       } catch (_) {}
     }
     if (context.mounted) {
+      final paymentPayload = result['check_in_payment'];
+      final paymentMap = paymentPayload is Map
+          ? Map<String, dynamic>.from(paymentPayload)
+          : const <String, dynamic>{};
+      final changeDue = parseJsonDouble(
+        paymentMap['change_due'] ??
+            (paymentMap['bill'] is Map
+                ? (paymentMap['bill'] as Map)['change_given']
+                : null),
+      );
+      final changeNote = checkInNow && changeDue > 0.009
+          ? ' Change given: ${formatPeso(changeDue)}.'
+          : '';
       showAppMessage(
         context,
         checkInNow
-            ? 'Room ${room['room_number']} checked in. Guest is in-house.$smsNote'
+            ? 'Room ${room['room_number']} checked in. Guest is in-house.$changeNote$smsNote'
             : 'Room ${room['room_number']} booked. Open the Book tab to check the guest in when they arrive.',
       );
     }

@@ -654,11 +654,23 @@ Future<bool> showAdminMultiRoomWalkInBooking({
           }
         } catch (_) {}
       }
+      final paymentPayload = result['check_in_payment'];
+      final paymentMap = paymentPayload is Map
+          ? Map<String, dynamic>.from(paymentPayload)
+          : const <String, dynamic>{};
+      // Bulk endpoint may not always echo change; compute from tendered if present.
+      final changeRaw = paymentMap['change_due'];
+      final changeDue = changeRaw is num
+          ? changeRaw.toDouble()
+          : double.tryParse('${changeRaw ?? ''}') ?? 0.0;
+      final changeNote = checkInNow && changeDue > 0.009
+          ? ' Change given: ${formatPeso(changeDue)}.'
+          : '';
       showAppMessage(
         context,
         checkInNow
             ? 'Checked in ${rooms.length} rooms for ${payload['guest_name']}. '
-                'Total due: ${formatPeso(gross)}. Guests are in-house.$smsNote'
+                'Total due: ${formatPeso(gross)}. Guests are in-house.$changeNote$smsNote'
             : 'Booked ${rooms.length} rooms for ${payload['guest_name']}. '
                 'Total due: ${formatPeso(gross)}. '
                 'Open the Book tab to check guests in when they arrive.',

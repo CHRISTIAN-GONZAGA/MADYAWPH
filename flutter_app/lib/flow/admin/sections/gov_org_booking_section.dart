@@ -11,7 +11,7 @@ import '../admin_dashboard_models.dart';
 import '../widgets/hourly_billing.dart';
 import '../widgets/online_payment_qr_block.dart';
 
-/// Government / organization charge-account bookings + outstanding AR.
+/// Government / organization (B2B) charge-account bookings + AR + bulk checkout.
 class GovOrgBookingSection extends StatefulWidget {
   const GovOrgBookingSection({
     super.key,
@@ -32,16 +32,18 @@ class _GovOrgBookingSectionState extends State<GovOrgBookingSection>
   final _selected = <String>{};
   var _busy = false;
   var _loadingBalances = false;
+  var _loadingInHouse = false;
   List<Map<String, dynamic>> _accounts = const [];
+  List<Map<String, dynamic>> _inHouse = const [];
 
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 2, vsync: this);
+    _tabs = TabController(length: 3, vsync: this);
     _tabs.addListener(() {
-      if (_tabs.index == 1 && !_tabs.indexIsChanging) {
-        _loadOutstanding();
-      }
+      if (_tabs.indexIsChanging) return;
+      if (_tabs.index == 1) _loadOutstanding();
+      if (_tabs.index == 2) _loadInHouse();
     });
   }
 
@@ -78,6 +80,29 @@ class _GovOrgBookingSectionState extends State<GovOrgBookingSection>
     }
   }
 
+  Future<void> _loadInHouse() async {
+    setState(() => _loadingInHouse = true);
+    try {
+      final res = await portalDio().get<Map<String, dynamic>>(
+        '/admin/org-bookings/in-house',
+      );
+      final raw = res.data?['accounts'];
+      final list = <Map<String, dynamic>>[];
+      if (raw is List) {
+        for (final item in raw) {
+          if (item is Map) list.add(Map<String, dynamic>.from(item));
+        }
+      }
+      if (mounted) setState(() => _inHouse = list);
+    } on DioException catch (e) {
+      if (mounted) {
+        showAppMessage(context, dioErrorMessage(e), isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _loadingInHouse = false);
+    }
+  }
+
   Future<void> _bookSelected() async {
     if (_busy) return;
     final selectedRooms = AdminDashboardModels.sortRoomsByNumber(
@@ -103,8 +128,8 @@ class _GovOrgBookingSectionState extends State<GovOrgBookingSection>
         showAppMessage(
           context,
           selectedRooms.length == 1
-              ? 'Organization booking created.'
-              : '${selectedRooms.length} organization rooms booked.',
+              ? 'B2B booking created.'
+              : '${selectedRooms.length} B2B rooms booked.',
         );
       }
     } finally {
@@ -118,6 +143,102 @@ class _GovOrgBookingSectionState extends State<GovOrgBookingSection>
     if (paid) {
       await _loadOutstanding();
       await widget.onChanged();
+    }
+  }
+
+  Future<void> _checkoutAccount(Map<String, dynamic> account) async {
+    final orgName = (account['org_name'] ?? 'B2B').toString();
+    final count = (account['in_house_count'] as num?)?.toInt() ?? 0;
+    final balance = parseJsonDouble(account['outstanding_balance']);
+    final rooms = ((account['rooms'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Check out all — $orgName'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Check out $count in-house room${count == 1 ? '' : 's'} '
+                'for this B2B account?',
+                style: Theme.of(ctx).textTheme.bodyMedium,
+              ),
+              if (balance > 0.009) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Outstanding ${formatPeso(balance)} stays on the account '
+                  'and can be collected later under Outstanding.',
+                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ],
+              if (rooms.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                ...rooms.map(
+                  (r) => Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      'Room ${r['room_number'] ?? '—'} · '
+                      '${r['guest_name'] ?? 'Guest'} · '
+                      '${formatPeso(r['balance_due'] ?? 0)} due',
+                      style: Theme.of(ctx).textTheme.bodySmall,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Check out all'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      final res = await portalDio().post<Map<String, dynamic>>(
+        '/admin/org-bookings/checkout',
+        data: {
+          'org_key': (account['org_key'] ?? '').toString(),
+        },
+      );
+      if (!mounted) return;
+      final checked = (res.data?['checked_out_count'] as num?)?.toInt() ?? 0;
+      final failed = (res.data?['failed_count'] as num?)?.toInt() ?? 0;
+      final due = parseJsonDouble(res.data?['outstanding_balance']);
+      showAppMessage(
+        context,
+        failed > 0
+            ? 'Checked out $checked room(s); $failed failed. '
+                'Remaining due: ${formatPeso(due)}.'
+            : 'Checked out $checked room(s) for $orgName. '
+                'Remaining due: ${formatPeso(due)}.',
+      );
+      await _loadInHouse();
+      await _loadOutstanding();
+      await widget.onChanged();
+    } on DioException catch (e) {
+      if (mounted) {
+        showAppMessage(context, dioErrorMessage(e), isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -140,8 +261,8 @@ class _GovOrgBookingSectionState extends State<GovOrgBookingSection>
           ),
           const SizedBox(height: 6),
           Text(
-            'Charge rooms to a government or organization account. '
-            'Check-in and checkout are allowed without payment; collect balances here.',
+            'Book rooms to a B2B (government or organization) charge account. '
+            'Check in and check out without payment; collect balances under Outstanding.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(height: 1.35),
           ),
           const SizedBox(height: 14),
@@ -156,6 +277,7 @@ class _GovOrgBookingSectionState extends State<GovOrgBookingSection>
               tabs: const [
                 Tab(text: 'New booking'),
                 Tab(text: 'Outstanding'),
+                Tab(text: 'In-house'),
               ],
             ),
           ),
@@ -166,6 +288,7 @@ class _GovOrgBookingSectionState extends State<GovOrgBookingSection>
               children: [
                 _buildBookingTab(bookable, floors, bottomPad),
                 _buildOutstandingTab(bottomPad),
+                _buildInHouseTab(bottomPad),
               ],
             ),
           ),
@@ -185,7 +308,7 @@ class _GovOrgBookingSectionState extends State<GovOrgBookingSection>
           child: bookable.isEmpty
               ? const Center(child: Text('No available rooms to book right now.'))
               : ListView.builder(
-                  padding: EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.only(bottom: 12),
                   itemCount: floors.length,
                   itemBuilder: (context, floorIndex) {
                     final floor = floors[floorIndex];
@@ -262,7 +385,7 @@ class _GovOrgBookingSectionState extends State<GovOrgBookingSection>
           child: AppPrimaryButton(
             label: _selected.isEmpty
                 ? 'Select rooms'
-                : 'Book ${_selected.length} room${_selected.length == 1 ? '' : 's'} for org',
+                : 'Book ${_selected.length} room${_selected.length == 1 ? '' : 's'} for B2B',
             onPressed: _busy || _selected.isEmpty ? null : _bookSelected,
           ),
         ),
@@ -281,7 +404,7 @@ class _GovOrgBookingSectionState extends State<GovOrgBookingSection>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('No outstanding organization balances.'),
+              const Text('No outstanding B2B balances.'),
               const SizedBox(height: 12),
               OutlinedButton(
                 onPressed: _loadOutstanding,
@@ -300,7 +423,7 @@ class _GovOrgBookingSectionState extends State<GovOrgBookingSection>
         separatorBuilder: (_, __) => const SizedBox(height: 12),
         itemBuilder: (context, index) {
           final account = _accounts[index];
-          final orgName = (account['org_name'] ?? 'Organization').toString();
+          final orgName = (account['org_name'] ?? 'B2B').toString();
           final orgType = (account['org_type'] ?? 'organization').toString();
           final balance = parseJsonDouble(account['outstanding_balance']);
           final count = (account['booking_count'] as num?)?.toInt() ?? 0;
@@ -319,7 +442,7 @@ class _GovOrgBookingSectionState extends State<GovOrgBookingSection>
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    '${orgType == 'government' ? 'Government' : 'Organization'}'
+                    'B2B · ${orgType == 'government' ? 'Government' : 'Organization'}'
                     ' · $count room booking${count == 1 ? '' : 's'}'
                     '${contact.isEmpty ? '' : ' · $contact'}',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -338,6 +461,105 @@ class _GovOrgBookingSectionState extends State<GovOrgBookingSection>
                   FilledButton(
                     onPressed: () => _payAccount(account),
                     child: const Text('Record payment'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildInHouseTab(double bottomPad) {
+    if (_loadingInHouse) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_inHouse.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: EdgeInsets.only(bottom: bottomPad),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('No B2B guests currently in-house.'),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                onPressed: _loadInHouse,
+                child: const Text('Refresh'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _loadInHouse,
+      child: ListView.separated(
+        padding: EdgeInsets.only(bottom: bottomPad),
+        itemCount: _inHouse.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        itemBuilder: (context, index) {
+          final account = _inHouse[index];
+          final orgName = (account['org_name'] ?? 'B2B').toString();
+          final orgType = (account['org_type'] ?? 'organization').toString();
+          final count = (account['in_house_count'] as num?)?.toInt() ?? 0;
+          final balance = parseJsonDouble(account['outstanding_balance']);
+          final contact = (account['org_contact_person'] ?? '').toString();
+          final rooms = ((account['rooms'] as List?) ?? const [])
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    orgName,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'B2B · ${orgType == 'government' ? 'Government' : 'Organization'}'
+                    ' · $count room${count == 1 ? '' : 's'} in-house'
+                    '${contact.isEmpty ? '' : ' · $contact'}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          height: 1.35,
+                        ),
+                  ),
+                  if (balance > 0.009) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Balance after checkout will remain: ${formatPeso(balance)}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ],
+                  if (rooms.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    ...rooms.map(
+                      (r) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          'Room ${r['room_number'] ?? '—'} · '
+                          '${(r['guest_name'] ?? 'Guest').toString()}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: _busy ? null : () => _checkoutAccount(account),
+                    icon: const Icon(Icons.logout_rounded),
+                    label: Text(
+                      'Check out all ($count)',
+                    ),
                   ),
                 ],
               ),
@@ -374,8 +596,8 @@ Future<bool> showGovOrgBookingDialog({
       builder: (ctx, setLocal) => AlertDialog(
         title: Text(
           rooms.length == 1
-              ? 'Org booking — Room ${rooms.first['room_number']}'
-              : 'Org booking — ${rooms.length} rooms',
+              ? 'B2B booking — Room ${rooms.first['room_number']}'
+              : 'B2B booking — ${rooms.length} rooms',
         ),
         content: SizedBox(
           width: 420,
@@ -406,7 +628,8 @@ Future<bool> showGovOrgBookingDialog({
                 const SizedBox(height: 10),
                 AppInput(
                   controller: orgNameCtrl,
-                  label: 'Company / agency name',
+                  label: 'B2B',
+                  hint: 'Company / agency / organization name',
                 ),
                 const SizedBox(height: 10),
                 AppInput(
@@ -452,7 +675,7 @@ Future<bool> showGovOrgBookingDialog({
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Check in now'),
                   subtitle: const Text(
-                    'Allowed without initial payment for org accounts',
+                    'Allowed without initial payment for B2B accounts',
                   ),
                   value: checkInNow,
                   onChanged: (v) => setLocal(() => checkInNow = v),
@@ -530,7 +753,7 @@ Future<bool> showGovOrgBookingDialog({
           FilledButton(
             onPressed: () {
               if (orgNameCtrl.text.trim().isEmpty) {
-                showAppMessage(ctx, 'Enter the organization / agency name.');
+                showAppMessage(ctx, 'Enter the B2B name.');
                 return;
               }
               if (contactCtrl.text.trim().isEmpty) {
@@ -630,7 +853,7 @@ Future<bool> showGovOrgPayDialog({
     barrierDismissible: false,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setLocal) => AlertDialog(
-        title: Text('Pay ${(account['org_name'] ?? 'organization').toString()}'),
+        title: Text('Pay ${(account['org_name'] ?? 'B2B').toString()}'),
         content: SizedBox(
           width: 400,
           child: SingleChildScrollView(
@@ -743,7 +966,7 @@ Future<bool> showGovOrgPayDialog({
     if (context.mounted) {
       showAppMessage(
         context,
-        'Recorded ${formatPeso(applied)} for ${(account['org_name'] ?? 'organization').toString()}.',
+        'Recorded ${formatPeso(applied)} for ${(account['org_name'] ?? 'B2B').toString()}.',
       );
     }
     return true;

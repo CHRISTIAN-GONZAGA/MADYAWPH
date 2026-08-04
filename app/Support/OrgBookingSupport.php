@@ -56,7 +56,7 @@ final class OrgBookingSupport
 
         if ($orgName === '') {
             throw \Illuminate\Validation\ValidationException::withMessages([
-                'org_name' => ['Enter the government or organization name.'],
+                'org_name' => ['Enter the B2B name.'],
             ]);
         }
         if ($contact === '') {

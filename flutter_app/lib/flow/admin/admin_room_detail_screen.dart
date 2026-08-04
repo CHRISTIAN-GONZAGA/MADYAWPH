@@ -114,16 +114,27 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
   }
 
   void _applyActiveBookingFallback() {
+    // Never invent an active stay from a past latest_booking snapshot.
     if (_asMap(_data?['active_booking']) != null) return;
+    final room = _asMap(_data?['room']);
+    final status = room == null ? '' : AdminDashboardModels.statusOf(room);
+    if (!{'checked_in', 'booked', 'reserved'}.contains(status)) {
+      return;
+    }
     final snap = widget.initialRoomSnapshot;
     final fromSnap = _asMap(snap?['latest_booking']);
-    if (fromSnap != null) {
+    if (fromSnap != null && AdminDashboardModels.hasActiveGuestStay({
+      ...?room,
+      'latest_booking': fromSnap,
+    })) {
       _data = {...?_data, 'active_booking': fromSnap};
       return;
     }
-    final room = _asMap(_data?['room']);
     final fromRoom = _asMap(room?['latest_booking']);
-    if (fromRoom != null) {
+    if (fromRoom != null && AdminDashboardModels.hasActiveGuestStay({
+      ...?room,
+      'latest_booking': fromRoom,
+    })) {
       _data = {...?_data, 'active_booking': fromRoom};
     }
   }
@@ -188,9 +199,21 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
         if (payload != null && room != null) {
           final priorRoom = _asMap(_data?['room']);
           final activeBooking = payload['active_booking'];
+          var mergedRoom = _mergeRoomMaps(priorRoom, room);
+          // Vacant / turnover rooms must not keep prior stay guest fields in UI.
+          final mergedStatus = AdminDashboardModels.statusOf(mergedRoom);
+          if ({'available', 'cleaning', 'maintenance'}.contains(mergedStatus) &&
+              activeBooking == null) {
+            mergedRoom = Map<String, dynamic>.from(mergedRoom)
+              ..['current_guest_name'] = null
+              ..['current_check_in'] = null
+              ..['current_check_out'] = null
+              ..['room_access_password'] = ''
+              ..remove('latest_booking');
+          }
           _data = {
             ...?_data,
-            'room': _mergeRoomMaps(priorRoom, room),
+            'room': mergedRoom,
             'active_booking': activeBooking,
             'booking_charges': activeBooking == null
                 ? const []
@@ -201,6 +224,15 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
             'refund_total': activeBooking == null
                 ? 0
                 : (payload['refund_total'] ?? 0),
+            'bill_summary': activeBooking == null
+                ? null
+                : (payload['bill_summary'] ?? _data?['bill_summary']),
+            'amount_paid': activeBooking == null
+                ? 0
+                : (payload['amount_paid'] ?? 0),
+            'balance_due': activeBooking == null
+                ? 0
+                : (payload['balance_due'] ?? 0),
             'can_edit_guest_stay': payload['can_edit_guest_stay'] ??
                 _data?['can_edit_guest_stay'],
             'management_blocked_reason': payload['management_blocked_reason'] ??
@@ -1715,11 +1747,21 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
 
     final roomNo = (room['room_number'] ?? '').toString();
     final status = AdminDashboardModels.statusOf(room);
-    final guest = (room['current_guest_name'] ?? booking?['guest_name'] ?? '').toString();
     final guestOnRoom = (room['current_guest_name'] ?? '').toString().trim();
+    // Only show booking guest when the room still has an active stay.
+    final guest = guestOnRoom.isNotEmpty
+        ? guestOnRoom
+        : (AdminDashboardModels.hasActiveGuestStay(room) && booking != null
+            ? (booking['guest_name'] ?? '').toString().trim()
+            : '');
     final occupied = status == 'checked_in' || guestOnRoom.isNotEmpty;
     final isMaintenance = status == 'maintenance' || status == 'cleaning';
-    final pwd = (room['room_access_password'] ?? '').toString();
+    final pwd = occupied
+        ? (room['room_access_password'] ?? '').toString()
+        : '';
+    final changeGiven = parseJsonDouble(
+      _asMap(_data!['bill_summary'])?['change_given'],
+    );
     const roomCardColor = Color(0xFFF3EDE3);
     final accent = Theme.of(context).colorScheme.primary;
 
@@ -1789,6 +1831,16 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
               if (guest.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text('Guest: $guest'),
+              ],
+              if (occupied && changeGiven > 0.009) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Change given this stay: ${formatPeso(changeGiven)}',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: accent,
+                      ),
+                ),
               ],
               if (pwd.isNotEmpty) ...[
                 const SizedBox(height: 4),

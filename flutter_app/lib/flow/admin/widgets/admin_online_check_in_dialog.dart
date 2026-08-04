@@ -161,11 +161,48 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
                 inputFormatters: [
                   FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
                 ],
-                decoration: const InputDecoration(
-                  labelText: 'Amount paid now (₱)',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: 'Amount given by guest (₱)',
+                  border: const OutlineInputBorder(),
                   prefixText: '₱ ',
+                  helperText: balanceDue > 0
+                      ? 'You may tender more than due; change is shown below.'
+                      : null,
                 ),
+                onChanged: (_) => setLocal(() {}),
+              ),
+              Builder(
+                builder: (_) {
+                  final tendered =
+                      double.tryParse(paymentCtrl.text.trim()) ?? 0;
+                  final change = tendered > 0 && balanceDue > 0
+                      ? (tendered - balanceDue).clamp(0, double.infinity)
+                      : 0.0;
+                  final remaining = tendered > 0 && balanceDue > 0
+                      ? (balanceDue - tendered).clamp(0, double.infinity)
+                      : balanceDue;
+                  if (tendered <= 0 || balanceDue <= 0) {
+                    return const SizedBox.shrink();
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Text(
+                      tendered + 0.009 < minDue
+                          ? 'Need at least ₱${minDue.toStringAsFixed(2)} to check in.'
+                          : (change > 0
+                              ? 'Change given: ${formatPeso(change)}'
+                              : (remaining <= 0.009
+                                  ? 'Paid in full — no change.'
+                                  : 'Remaining after this payment: ${formatPeso(remaining)}')),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: tendered + 0.009 < minDue
+                            ? Theme.of(ctx).colorScheme.error
+                            : Theme.of(ctx).colorScheme.primary,
+                      ),
+                    ),
+                  );
+                },
               ),
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
@@ -210,7 +247,20 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
               }
               Navigator.pop(ctx, true);
             },
-            child: const Text('Check in guest'),
+            child: Builder(
+              builder: (_) {
+                final tendered =
+                    double.tryParse(paymentCtrl.text.trim()) ?? 0;
+                final change = tendered > 0 && balanceDue > 0
+                    ? (tendered - balanceDue).clamp(0, double.infinity)
+                    : 0.0;
+                return Text(
+                  change > 0
+                      ? 'Give change & check in'
+                      : 'Check in guest',
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -310,8 +360,20 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
   }
 
   if (!context.mounted) return true;
+  final paymentPayload = checkInResponse?['check_in_payment'];
+  final paymentMap = paymentPayload is Map
+      ? Map<String, dynamic>.from(paymentPayload)
+      : const <String, dynamic>{};
+  final changeDue = parseJsonDouble(
+    paymentMap['change_due'] ??
+        (paymentMap['bill'] is Map
+            ? (paymentMap['bill'] as Map)['change_given']
+            : null),
+  );
   final payNote = payAmount > 0
-      ? ' ₱${payAmount.toStringAsFixed(2)} applied to the room bill.'
+      ? (changeDue > 0.009
+          ? ' ₱${payAmount.toStringAsFixed(2)} tendered; change given ${formatPeso(changeDue)}.'
+          : ' ₱${payAmount.toStringAsFixed(2)} applied to the room bill.')
       : '';
   showAppMessage(
     context,

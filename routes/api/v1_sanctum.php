@@ -536,11 +536,17 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
                 ]);
             }
 
+            $changeDue = is_array($paymentInfo)
+                ? (float) ($paymentInfo['change_due'] ?? $paymentInfo['bill']['change_given'] ?? 0)
+                : 0.0;
+            $paymentMessage = 'Guest checked in. Payment recorded and deducted from the room bill.';
+            if ($changeDue > 0.009) {
+                $paymentMessage .= ' Change given: ₱'.number_format($changeDue, 2).'.';
+            }
+
             $result = [
                 'room' => $room,
-                'message' => $paymentInfo
-                    ? 'Guest checked in. Payment recorded and deducted from the room bill.'
-                    : 'Guest checked in.',
+                'message' => $paymentInfo ? $paymentMessage : 'Guest checked in.',
                 'check_in_payment' => $paymentInfo,
             ];
         } else {
@@ -830,6 +836,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             throw $e;
         }
 
+        $checkInPaymentInfo = null;
         if ($request->boolean('check_in_now')) {
             $payAmount = round((float) ($validated['check_in_payment_amount'] ?? 0), 2);
             $paymentGate = \App\Support\MinCheckInPaymentSupport::enforceAndCollect(
@@ -852,6 +859,15 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             $roomCheckoutService->checkInRoom($room->fresh() ?? $room, $request->user(), $checkIn, $checkOut);
             $booking->refresh();
             $room->refresh();
+            if ($payAmount > 0) {
+                $billAfter = app(\App\Services\BookingPaymentService::class)->billSummary($booking);
+                $checkInPaymentInfo = [
+                    'amount' => $payAmount,
+                    'amount_tendered' => $payAmount,
+                    'change_due' => (float) ($billAfter['change_given'] ?? 0),
+                    'bill' => $billAfter,
+                ];
+            }
         }
 
         $roomFresh = $room->fresh() ?? $room;
@@ -874,6 +890,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             'booking' => AdminBookingPresenter::present($booking, $roomFresh),
             'wallet' => $walletFee,
             'guest_welcome_sms' => $guestWelcomeSms,
+            'check_in_payment' => $checkInPaymentInfo,
             'room' => [
                 'id' => (string) $roomFresh->id,
                 'room_number' => (string) ($roomFresh->room_number ?? ''),
@@ -1184,6 +1201,40 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             'accounts' => $orgBookingService->outstandingAccounts($hotelId),
         ]);
     })->middleware('role:admin,frontdesk,super_admin')->name('api.v1.admin.org-bookings.outstanding');
+
+    Route::get('/admin/org-bookings/in-house', function (
+        Request $request,
+        \App\Services\OrgBookingService $orgBookingService,
+    ) {
+        $hotelId = (string) $request->user()->hotel_id;
+
+        return response()->json([
+            'ok' => true,
+            'accounts' => $orgBookingService->inHouseAccounts($hotelId),
+        ]);
+    })->middleware('role:admin,frontdesk,super_admin')->name('api.v1.admin.org-bookings.in-house');
+
+    Route::post('/admin/org-bookings/checkout', function (
+        Request $request,
+        \App\Services\OrgBookingService $orgBookingService,
+        RoomCheckoutService $roomCheckoutService,
+    ) {
+        $validated = $request->validate([
+            'org_key' => ['required', 'string', 'max:255'],
+            'booking_ids' => ['nullable', 'array'],
+            'booking_ids.*' => ['string', 'max:64'],
+        ]);
+
+        return response()->json(
+            $orgBookingService->checkoutOrganization(
+                hotelId: (string) $request->user()->hotel_id,
+                orgKey: (string) $validated['org_key'],
+                actor: $request->user(),
+                roomCheckout: $roomCheckoutService,
+                bookingIds: $validated['booking_ids'] ?? null,
+            )
+        );
+    })->middleware('role:admin,frontdesk,super_admin')->name('api.v1.admin.org-bookings.checkout');
 
     Route::post('/admin/org-bookings/pay', function (
         Request $request,
@@ -3210,6 +3261,24 @@ Route::get('/admin/rooms/{id}', function (Request $request, string $id, RoomChec
     }
 
     $booking = $roomCheckoutService->resolveActiveBookingForRoom($hotelId, $room);
+    if ($booking !== null && ! \App\Support\StayManagementPolicy::hasActiveBooking($booking)) {
+        $booking = null;
+    }
+    $roomStatus = StayManagementPolicy::roomStatusValue($room);
+    // Vacant/turnover rooms: ignore past/stale booking rows so prior guests do not appear.
+    if ($booking !== null && in_array($roomStatus, [
+        RoomStatus::AVAILABLE->value,
+        RoomStatus::CLEANING->value,
+        RoomStatus::MAINTENANCE->value,
+    ], true)) {
+        $checkOut = \App\Support\SafeModelAttributes::carbonFromModel($booking, 'check_out_date');
+        $isPastStay = $checkOut !== null
+            && $checkOut->copy()->startOfDay()->lt(now()->startOfDay());
+        $hasGuestOnRoom = trim((string) ($room->getAttributes()['current_guest_name'] ?? '')) !== '';
+        if ($isPastStay || ! $hasGuestOnRoom) {
+            $booking = null;
+        }
+    }
 
     $charges = $booking
         ? BillingCharge::withoutGlobalScopes()->where('hotel_id', $hotelId)->where('booking_id', (string) $booking->id)->latest()->limit(50)->get()
@@ -3245,14 +3314,30 @@ Route::get('/admin/rooms/{id}', function (Request $request, string $id, RoomChec
 
     $hourly = RoomBillingSupport::hourlyConfig($room);
 
+    $roomPayload = array_merge($room->toArray(), [
+        'id' => (string) $room->id,
+        'status' => StayManagementPolicy::roomStatusValue($room),
+        'room_access_password' => (string) ($room->current_access_code ?? ''),
+        'block_hours' => $hourly['block_hours'],
+        'price_per_block' => $hourly['price_per_block'],
+    ]);
+
+    // Vacant / turnover rooms must not expose prior stay guest credentials.
+    $statusValue = (string) ($roomPayload['status'] ?? '');
+    if ($bookingPayload === null && in_array($statusValue, [
+        RoomStatus::AVAILABLE->value,
+        RoomStatus::CLEANING->value,
+        RoomStatus::MAINTENANCE->value,
+    ], true)) {
+        $roomPayload['current_guest_name'] = null;
+        $roomPayload['current_check_in'] = null;
+        $roomPayload['current_check_out'] = null;
+        $roomPayload['room_access_password'] = '';
+        $roomPayload['current_access_code'] = null;
+    }
+
     return response()->json([
-        'room' => array_merge($room->toArray(), [
-            'id' => (string) $room->id,
-            'status' => StayManagementPolicy::roomStatusValue($room),
-            'room_access_password' => (string) ($room->current_access_code ?? ''),
-            'block_hours' => $hourly['block_hours'],
-            'price_per_block' => $hourly['price_per_block'],
-        ]),
+        'room' => $roomPayload,
         'active_booking' => $bookingPayload,
         'booking_charges' => $charges,
         'booking_charges_total' => $chargesTotal,

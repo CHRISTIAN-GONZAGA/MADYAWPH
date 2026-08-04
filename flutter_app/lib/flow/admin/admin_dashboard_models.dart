@@ -761,6 +761,7 @@ class AdminDashboardModels {
   }
 
   static String guestEmail(Map<String, dynamic> room) {
+    if (!hasActiveGuestStay(room)) return '';
     final booking = room['latest_booking'] as Map<String, dynamic>?;
     return (booking?['guest_email'] ?? room['guest_email'] ?? '')
         .toString()
@@ -768,6 +769,7 @@ class AdminDashboardModels {
   }
 
   static String guestPhone(Map<String, dynamic> room) {
+    if (!hasActiveGuestStay(room)) return '';
     final booking = room['latest_booking'] as Map<String, dynamic>?;
     return (booking?['guest_phone'] ??
             room['guest_phone'] ??

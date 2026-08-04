@@ -168,9 +168,33 @@ class AdminDashboardApiController extends Controller
             ],
             'rooms' => $rooms->map(function ($room) use ($latestBookingsByRoom, $hotelId, $categoriesById) {
                 try {
-                    $booking = app(RoomCheckoutService::class)
-                        ->resolveActiveBookingForRoom($hotelId, $room)
-                        ?? $latestBookingsByRoom->get((string) $room->id);
+                    $roomStatus = $room->status instanceof RoomStatus
+                        ? $room->status->value
+                        : (filled($room->status) ? (string) $room->status : RoomStatus::AVAILABLE->value);
+                    $activeBooking = app(RoomCheckoutService::class)
+                        ->resolveActiveBookingForRoom($hotelId, $room);
+                    // Only attach a non-active "latest" booking when the room is still
+                    // booked/reserved/checked-in — never on vacant/cleaning rooms.
+                    $booking = $activeBooking;
+                    if ($booking === null && in_array($roomStatus, [
+                        RoomStatus::BOOKED->value,
+                        RoomStatus::RESERVED->value,
+                        RoomStatus::CHECKED_IN->value,
+                    ], true)) {
+                        $booking = $latestBookingsByRoom->get((string) $room->id);
+                    }
+                    // Vacant rooms must not keep leftover guest fields from prior stays.
+                    $currentGuestName = SafeModelAttributes::rawString($room, 'current_guest_name');
+                    $currentCheckIn = SafeModelAttributes::carbonFromModel($room, 'current_check_in')?->toDateString();
+                    $currentCheckOut = SafeModelAttributes::carbonFromModel($room, 'current_check_out')?->toDateString();
+                    if (in_array($roomStatus, [
+                        RoomStatus::AVAILABLE->value,
+                        RoomStatus::CLEANING->value,
+                    ], true) && $activeBooking === null) {
+                        $currentGuestName = '';
+                        $currentCheckIn = null;
+                        $currentCheckOut = null;
+                    }
                     // Active booking ledger only — never room charge history from prior stays.
                     $charges = collect();
                     $balanceDue = 0.0;
@@ -207,16 +231,14 @@ class AdminDashboardApiController extends Controller
                         'block_hours' => $hourly['block_hours'],
                         'price_per_block' => $hourly['price_per_block'],
                         'price_per_extra_hour' => \App\Support\RoomBillingSupport::extraHourRate($room, $roomCategory),
-                        'status' => $room->status instanceof RoomStatus
-                            ? $room->status->value
-                            : (filled($room->status) ? (string) $room->status : RoomStatus::AVAILABLE->value),
+                        'status' => $roomStatus,
                         'floor' => max(
                             1,
                             (int) ($room->floor ?? (preg_replace('/\D/', '', substr((string) $room->room_number, 0, 1)) ?: 1))
                         ),
-                        'current_guest_name' => SafeModelAttributes::rawString($room, 'current_guest_name'),
-                        'current_check_in' => SafeModelAttributes::carbonFromModel($room, 'current_check_in')?->toDateString(),
-                        'current_check_out' => SafeModelAttributes::carbonFromModel($room, 'current_check_out')?->toDateString(),
+                        'current_guest_name' => $currentGuestName,
+                        'current_check_in' => $currentCheckIn,
+                        'current_check_out' => $currentCheckOut,
                         'latest_booking' => $booking ? [
                             'id' => (string) $booking->id,
                             'booking_reference' => $booking->booking_reference,

@@ -2,9 +2,12 @@
 
 namespace App\Services;
 
+use App\Enums\RoomStatus;
 use App\Models\Booking;
+use App\Models\Room;
 use App\Models\User;
 use App\Support\OrgBookingSupport;
+use App\Support\SafeModelAttributes;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 
@@ -190,6 +193,228 @@ class OrgBookingService
             'amount_applied' => round($amount - $remaining, 2),
             'unapplied' => max(0, $remaining),
             'applied' => $applied,
+            'accounts' => $this->outstandingAccounts($hotelId),
+        ];
+    }
+
+    /**
+     * In-house (checked-in) org rooms grouped by organization — for bulk checkout.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function inHouseAccounts(string $hotelId): array
+    {
+        $bookings = $this->openOrgBookings($hotelId)
+            ->filter(function (Booking $booking) {
+                $status = strtolower((string) ($booking->status?->value ?? $booking->status ?? ''));
+                if (in_array($status, ['completed', 'cancelled'], true)) {
+                    return false;
+                }
+                if (SafeModelAttributes::carbonFromModel($booking, 'checked_out_at') !== null) {
+                    return false;
+                }
+
+                $room = Room::withoutGlobalScopes()->find((string) ($booking->room_id ?? ''));
+                if ($room === null) {
+                    return false;
+                }
+                $roomStatus = strtolower(trim((string) (
+                    $room->status instanceof \BackedEnum
+                        ? $room->status->value
+                        : ($room->getAttributes()['status'] ?? '')
+                )));
+
+                return $roomStatus === RoomStatus::CHECKED_IN->value;
+            })
+            ->values();
+
+        $groups = [];
+        foreach ($bookings as $booking) {
+            $orgName = trim((string) ($booking->org_name ?? 'B2B'));
+            $orgType = OrgBookingSupport::normalizeOrgType((string) ($booking->org_type ?? ''));
+            $key = OrgBookingSupport::orgKey($orgName, $orgType);
+            $room = Room::withoutGlobalScopes()->find((string) ($booking->room_id ?? ''));
+            $bill = $this->payments->billSummary($booking);
+            $balance = round((float) ($bill['balance_due'] ?? 0), 2);
+
+            if (! isset($groups[$key])) {
+                $groups[$key] = [
+                    'org_key' => $key,
+                    'org_name' => $orgName,
+                    'org_type' => $orgType,
+                    'org_contact_person' => (string) ($booking->org_contact_person ?? ''),
+                    'org_contact_phone' => (string) ($booking->org_contact_phone ?? ''),
+                    'in_house_count' => 0,
+                    'outstanding_balance' => 0.0,
+                    'rooms' => [],
+                ];
+            }
+
+            $groups[$key]['in_house_count']++;
+            $groups[$key]['outstanding_balance'] = round(
+                (float) $groups[$key]['outstanding_balance'] + $balance,
+                2
+            );
+            $groups[$key]['rooms'][] = [
+                'booking_id' => (string) $booking->id,
+                'booking_reference' => (string) ($booking->booking_reference ?? ''),
+                'room_id' => (string) ($booking->room_id ?? ''),
+                'room_number' => (string) ($room?->room_number ?? ''),
+                'guest_name' => (string) ($booking->guest_name
+                    ?? $room?->getAttributes()['current_guest_name']
+                    ?? ''),
+                'balance_due' => $balance,
+                'payment_status' => (string) ($booking->payment_status ?? 'unpaid'),
+            ];
+        }
+
+        $list = array_values($groups);
+        usort($list, fn (array $a, array $b) => ($b['in_house_count'] <=> $a['in_house_count']));
+
+        return $list;
+    }
+
+    /**
+     * Check out every in-house room for an organization (balance may remain for later collection).
+     *
+     * @param  list<string>|null  $bookingIds  Optional subset; null = all in-house for org.
+     * @return array<string, mixed>
+     */
+    public function checkoutOrganization(
+        string $hotelId,
+        string $orgKey,
+        User $actor,
+        RoomCheckoutService $roomCheckout,
+        ?array $bookingIds = null,
+    ): array {
+        $targets = $this->openOrgBookings($hotelId)
+            ->filter(function (Booking $booking) use ($orgKey, $bookingIds, $roomCheckout) {
+                $name = trim((string) ($booking->org_name ?? ''));
+                $type = OrgBookingSupport::normalizeOrgType((string) ($booking->org_type ?? ''));
+                if (OrgBookingSupport::orgKey($name, $type) !== $orgKey) {
+                    return false;
+                }
+                if ($bookingIds !== null && $bookingIds !== []
+                    && ! in_array((string) $booking->id, $bookingIds, true)) {
+                    return false;
+                }
+                if (SafeModelAttributes::carbonFromModel($booking, 'checked_out_at') !== null) {
+                    return false;
+                }
+                $status = strtolower((string) ($booking->status?->value ?? $booking->status ?? ''));
+                if (in_array($status, ['completed', 'cancelled'], true)) {
+                    return false;
+                }
+
+                $room = Room::withoutGlobalScopes()
+                    ->where('hotel_id', (string) $booking->hotel_id)
+                    ->find((string) ($booking->room_id ?? ''));
+                if ($room === null) {
+                    return false;
+                }
+
+                return $roomCheckout->roomHasActiveStay($room);
+            })
+            ->values();
+
+        if ($targets->isEmpty()) {
+            throw ValidationException::withMessages([
+                'org_key' => ['No in-house rooms found for this B2B account to check out.'],
+            ]);
+        }
+
+        $checkedOut = [];
+        $failed = [];
+        $roomIdsSeen = [];
+
+        foreach ($targets as $booking) {
+            $roomId = (string) ($booking->room_id ?? '');
+            if ($roomId === '' || isset($roomIdsSeen[$roomId])) {
+                continue;
+            }
+            $roomIdsSeen[$roomId] = true;
+
+            $room = Room::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
+                ->find($roomId);
+            if ($room === null || ! $roomCheckout->roomHasActiveStay($room)) {
+                continue;
+            }
+
+            // Re-verify org ownership to avoid cross-org conflicts on shared room ids.
+            $active = $roomCheckout->resolveActiveBookingForRoom($hotelId, $room) ?? $booking;
+            if (! OrgBookingSupport::isOrgBooking($active)) {
+                $failed[] = [
+                    'room_id' => $roomId,
+                    'room_number' => (string) ($room->room_number ?? ''),
+                    'message' => 'Room is not an organization stay.',
+                ];
+                continue;
+            }
+            $activeName = trim((string) ($active->org_name ?? ''));
+            $activeType = OrgBookingSupport::normalizeOrgType((string) ($active->org_type ?? ''));
+            if (OrgBookingSupport::orgKey($activeName, $activeType) !== $orgKey) {
+                $failed[] = [
+                    'room_id' => $roomId,
+                    'room_number' => (string) ($room->room_number ?? ''),
+                    'message' => 'Room belongs to a different B2B account.',
+                ];
+                continue;
+            }
+
+            try {
+                // Org charge accounts may leave a balance — collect later via Outstanding.
+                $roomCheckout->checkoutGuest($room, $actor, requirePaid: false);
+                $bill = $this->payments->billSummary($active->fresh() ?? $active);
+                $checkedOut[] = [
+                    'booking_id' => (string) $active->id,
+                    'booking_reference' => (string) ($active->booking_reference ?? ''),
+                    'room_id' => $roomId,
+                    'room_number' => (string) ($room->room_number ?? ''),
+                    'balance_due' => round((float) ($bill['balance_due'] ?? 0), 2),
+                ];
+            } catch (\Throwable $e) {
+                $failed[] = [
+                    'room_id' => $roomId,
+                    'room_number' => (string) ($room->room_number ?? ''),
+                    'message' => $e->getMessage(),
+                ];
+            }
+        }
+
+        if ($checkedOut === []) {
+            throw ValidationException::withMessages([
+                'org_key' => [
+                    $failed[0]['message'] ?? 'Could not check out any rooms for this B2B account.',
+                ],
+            ]);
+        }
+
+        $this->activityLog->log(
+            $hotelId,
+            $actor,
+            'B2B organization bulk checkout',
+            [
+                'org_key' => $orgKey,
+                'checked_out_count' => count($checkedOut),
+                'failed_count' => count($failed),
+                'checked_out' => $checkedOut,
+                'failed' => $failed,
+            ]
+        );
+
+        return [
+            'ok' => true,
+            'org_key' => $orgKey,
+            'checked_out_count' => count($checkedOut),
+            'failed_count' => count($failed),
+            'checked_out' => $checkedOut,
+            'failed' => $failed,
+            'outstanding_balance' => round(
+                collect($checkedOut)->sum(fn ($r) => (float) ($r['balance_due'] ?? 0)),
+                2
+            ),
+            'in_house' => $this->inHouseAccounts($hotelId),
             'accounts' => $this->outstandingAccounts($hotelId),
         ];
     }
