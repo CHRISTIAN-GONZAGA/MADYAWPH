@@ -19,6 +19,7 @@ import 'manual_booking_dialog.dart';
 import 'online_payment_qr_block.dart';
 import 'device_guest_welcome_sms.dart';
 import 'walk_in_check_in_deposit_dialog.dart';
+import 'booking_confirmation_summary_dialog.dart';
 import '../../../utils/money_format.dart';
 
 /// Same booking popup + submit path as [CustomerRoomsScreen] admin walk-in.
@@ -501,8 +502,18 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
 
   final checkInNow = payload['check_in_now'] == true;
   double? checkInPaymentAmount;
+  final estimated = (payload['estimated_total'] as num?)?.toDouble() ?? 0.0;
+  final checkInAt = DateTime.tryParse((payload['check_in'] ?? '').toString()) ??
+      DateTime.now();
+  final checkOutAt = DateTime.tryParse((payload['check_out'] ?? '').toString()) ??
+      checkInAt.add(const Duration(days: 1));
+  final summaryDiscountPct = switch (
+      (payload['discount_type'] ?? 'none').toString()) {
+    'pwd' || 'senior' => 20.0,
+    _ => 0.0,
+  };
+
   if (checkInNow) {
-    final estimated = (payload['estimated_total'] as num?)?.toDouble() ?? 0.0;
     final deposit = await showWalkInCheckInDepositDialog(
       context,
       balanceDue: estimated,
@@ -510,7 +521,53 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
     );
     if (deposit == null || !context.mounted) return false;
     checkInPaymentAmount = deposit;
+
+    final summaryOk = await showBookingConfirmationSummary(
+      context: context,
+      title: 'Confirm check-in',
+      guestName: (payload['guest_name'] ?? '').toString(),
+      roomLabel: 'Room ${room['room_number']}',
+      checkIn: checkInAt,
+      checkOut: checkOutAt,
+      totalAmount: estimated,
+      lines: bookingSummaryLinesForRooms(
+        rooms: [room],
+        checkIn: checkInAt,
+        checkOut: checkOutAt,
+        discountPercent: summaryDiscountPct,
+      ),
+      paymentMethod: (payload['payment_method'] ?? 'Cash').toString(),
+      amountTendered: deposit,
+      changeDue: deposit > estimated
+          ? (deposit - estimated).clamp(0, double.infinity)
+          : 0,
+      checkInNow: true,
+      confirmLabel: deposit > estimated
+          ? 'Give change & check in'
+          : 'Confirm & check in',
+    );
+    if (!summaryOk || !context.mounted) return false;
     await DeviceGuestWelcomeSms.ensurePermission();
+  } else {
+    final summaryOk = await showBookingConfirmationSummary(
+      context: context,
+      title: 'Confirm booking',
+      guestName: (payload['guest_name'] ?? '').toString(),
+      roomLabel: 'Room ${room['room_number']}',
+      checkIn: checkInAt,
+      checkOut: checkOutAt,
+      totalAmount: estimated,
+      lines: bookingSummaryLinesForRooms(
+        rooms: [room],
+        checkIn: checkInAt,
+        checkOut: checkOutAt,
+        discountPercent: summaryDiscountPct,
+      ),
+      paymentMethod: (payload['payment_method'] ?? 'Cash').toString(),
+      checkInNow: false,
+      confirmLabel: 'Confirm booking',
+    );
+    if (!summaryOk || !context.mounted) return false;
   }
   try {
     final result = await submitAdminWalkInBooking(

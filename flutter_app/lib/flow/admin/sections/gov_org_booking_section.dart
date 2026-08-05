@@ -8,6 +8,7 @@ import '../../../utils/money_format.dart';
 import '../../../widgets/app_button.dart';
 import '../../../widgets/app_input.dart';
 import '../admin_dashboard_models.dart';
+import '../widgets/booking_confirmation_summary_dialog.dart';
 import '../widgets/hourly_billing.dart';
 import '../widgets/online_payment_qr_block.dart';
 
@@ -808,6 +809,35 @@ Future<bool> showGovOrgBookingDialog({
   guestCtrl.dispose();
 
   if (ok != true || !context.mounted) return false;
+
+  final total = bookingSummaryNetTotal(
+    rooms: rooms,
+    checkIn: checkIn,
+    checkOut: checkOut,
+  );
+  final summaryOk = await showBookingConfirmationSummary(
+    context: context,
+    title: checkInNow ? 'Confirm B2B check-in' : 'Confirm B2B booking',
+    guestName: (payload['guest_name'] ?? '').toString(),
+    roomLabel: rooms.length == 1
+        ? 'Room ${rooms.first['room_number']}'
+        : '${rooms.length} rooms',
+    accountLabel:
+        'B2B · ${(payload['org_name'] ?? '').toString()}'
+        '${(payload['org_type'] ?? '') == 'government' ? ' (Government)' : ' (Organization)'}',
+    checkIn: checkIn,
+    checkOut: checkOut,
+    totalAmount: total,
+    lines: bookingSummaryLinesForRooms(
+      rooms: rooms,
+      checkIn: checkIn,
+      checkOut: checkOut,
+    ),
+    paymentMethod: 'B2B charge account',
+    checkInNow: checkInNow,
+    confirmLabel: checkInNow ? 'Confirm & check in' : 'Confirm booking',
+  );
+  if (!summaryOk || !context.mounted) return false;
 
   try {
     if (rooms.length == 1) {

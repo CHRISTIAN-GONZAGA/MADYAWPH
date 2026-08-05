@@ -8,6 +8,7 @@ import '../../../utils/money_format.dart';
 import '../admin_dashboard_models.dart';
 import 'device_guest_welcome_sms.dart';
 import 'hourly_billing.dart';
+import 'booking_confirmation_summary_dialog.dart';
 
 String formatAdminCheckInDate(DateTime d) =>
     '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -277,6 +278,31 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
     DateTime.now(),
     checkOutDate: scheduledOut,
   );
+
+  final summaryOk = await showBookingConfirmationSummary(
+    context: context,
+    title: 'Confirm check-in',
+    guestName: AdminDashboardModels.guestName(room),
+    roomLabel: 'Room ${room['room_number']}',
+    checkIn: liveWindow.checkIn,
+    checkOut: liveWindow.checkOut,
+    totalAmount: balanceDue,
+    lines: bookingSummaryLinesForRooms(
+      rooms: [room],
+      checkIn: liveWindow.checkIn,
+      checkOut: liveWindow.checkOut,
+    ),
+    paymentMethod: isOrgBooking ? 'B2B charge account' : paymentMethod,
+    amountTendered: isOrgBooking ? null : payAmount,
+    changeDue: !isOrgBooking && payAmount > balanceDue
+        ? (payAmount - balanceDue).clamp(0, double.infinity)
+        : 0,
+    checkInNow: true,
+    confirmLabel: !isOrgBooking && payAmount > balanceDue
+        ? 'Give change & check in'
+        : 'Confirm & check in',
+  );
+  if (!summaryOk || !context.mounted) return false;
 
   Map<String, dynamic>? checkInResponse;
   try {
