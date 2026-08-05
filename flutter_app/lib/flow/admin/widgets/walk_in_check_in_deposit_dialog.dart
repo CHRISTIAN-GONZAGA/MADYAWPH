@@ -1,154 +1,148 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 import '../../../dio_client.dart';
 import '../../../utils/money_format.dart';
 
-/// Deposit confirmation before walk-in "Check in now" / book-and-check-in.
-/// Returns the amount the front desk entered, or null if cancelled.
-/// When the guest tenders more than [balanceDue], live change is shown in-dialog
-/// and recorded on the bill after check-in (`cash_change`).
-Future<double?> showWalkInCheckInDepositDialog(
-  BuildContext context, {
-  required double balanceDue,
-  String roomLabel = '',
-}) async {
-  double minPercent = 50;
+/// Company policy percentage that must be collected before a walk-in check-in.
+Future<double> fetchMinCheckInPaymentPercent() async {
   try {
     final res = await portalDio()
         .get<Map<String, dynamic>>('/admin/settings/min-check-in-payment');
-    minPercent = parseJsonDouble(
-      res.data?['min_check_in_payment_percent'] ?? 50,
-    );
-  } catch (_) {}
-
-  final minDue =
-      (balanceDue * (minPercent / 100)).clamp(0, double.infinity).toDouble();
-  final paymentCtrl = TextEditingController(
-    text: minDue > 0 ? minDue.toStringAsFixed(2) : '',
-  );
-  final pctLabel = minPercent % 1 == 0
-      ? minPercent.toStringAsFixed(0)
-      : minPercent.toStringAsFixed(1);
-
-  if (!context.mounted) {
-    paymentCtrl.dispose();
-    return null;
+    return parseJsonDouble(res.data?['min_check_in_payment_percent'] ?? 50);
+  } catch (_) {
+    return 50;
   }
+}
 
-  final ok = await showDialog<bool>(
-    context: context,
-    barrierDismissible: false,
-    builder: (ctx) => StatefulBuilder(
-      builder: (ctx, setLocal) {
-        final tendered = double.tryParse(paymentCtrl.text.trim()) ?? 0;
-        final change = tendered > 0 && balanceDue > 0
-            ? (tendered - balanceDue).clamp(0, double.infinity)
-            : 0.0;
-        final applied = tendered > 0
-            ? (tendered > balanceDue ? balanceDue : tendered)
-            : 0.0;
+double minCheckInDeposit(double balanceDue, double minPercent) {
+  if (balanceDue <= 0 || minPercent <= 0) return 0;
+  return (balanceDue * (minPercent / 100)).clamp(0, double.infinity).toDouble();
+}
 
-        return AlertDialog(
-          title: Text(
-            roomLabel.isEmpty
-                ? 'Check-in deposit'
-                : 'Check-in deposit — $roomLabel',
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Estimated stay total: ₱${balanceDue.toStringAsFixed(2)}\n'
-                  'Company policy: at least $pctLabel%'
-                  '${minDue > 0 ? ' (₱${minDue.toStringAsFixed(2)})' : ''} '
-                  'must be paid before check-in.',
-                  style: Theme.of(ctx).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'You may enter more than the stay total; change is shown here '
-                  'and recorded on the room bill.',
-                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                        fontWeight: FontWeight.w600,
+String minCheckInPercentLabel(double minPercent) =>
+    minPercent % 1 == 0
+        ? minPercent.toStringAsFixed(0)
+        : minPercent.toStringAsFixed(1);
+
+/// Deposit input shown inside the walk-in booking form, below the guest details.
+/// Only required when the front desk checks the guest in right away.
+class CheckInDepositField extends StatelessWidget {
+  const CheckInDepositField({
+    super.key,
+    required this.controller,
+    required this.balanceDue,
+    required this.minPercent,
+    required this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final double balanceDue;
+  final double minPercent;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final minDue = minCheckInDeposit(balanceDue, minPercent);
+    final pctLabel = minCheckInPercentLabel(minPercent);
+    final tendered = double.tryParse(controller.text.trim()) ?? 0;
+    final change = tendered > 0 && balanceDue > 0
+        ? (tendered - balanceDue).clamp(0, double.infinity)
+        : 0.0;
+    final applied =
+        tendered > 0 ? (tendered > balanceDue ? balanceDue : tendered) : 0.0;
+    final belowMin = tendered + 0.009 < minDue;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.payments_outlined, size: 18, color: scheme.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Check-in deposit',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
                       ),
                 ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: paymentCtrl,
-                  autofocus: true,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-                  ],
-                  decoration: InputDecoration(
-                    labelText: 'Amount received (₱)',
-                    border: const OutlineInputBorder(),
-                    prefixText: '₱ ',
-                    helperText: balanceDue > 0
-                        ? 'Applied to bill: ₱${applied.toStringAsFixed(2)}'
-                        : null,
-                  ),
-                  onChanged: (_) => setLocal(() {}),
-                ),
-                if (tendered > 0 && balanceDue > 0) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    tendered + 0.009 < minDue
-                        ? 'Need at least ₱${minDue.toStringAsFixed(2)} to check in.'
-                        : (change > 0
-                            ? 'Change given: ${formatPeso(change)}'
-                            : (tendered + 0.009 >= balanceDue
-                                ? 'Paid in full — no change.'
-                                : 'Remaining after this payment: ${formatPeso(balanceDue - tendered)}')),
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: tendered + 0.009 < minDue
-                          ? Theme.of(ctx).colorScheme.error
-                          : Theme.of(ctx).colorScheme.primary,
-                    ),
-                  ),
-                ],
-              ],
-            ),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
+          const SizedBox(height: 6),
+          Text(
+            minDue > 0
+                ? 'At least $pctLabel% (${formatPeso(minDue)}) must be paid '
+                    'before check-in. Needed only when checking the guest in now.'
+                : 'Needed only when checking the guest in now.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                  height: 1.35,
+                ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: controller,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+            ],
+            decoration: InputDecoration(
+              labelText: 'Amount received (₱)',
+              border: const OutlineInputBorder(),
+              filled: true,
+              fillColor: scheme.surface,
+              prefixText: '₱ ',
+              helperText: balanceDue > 0
+                  ? 'Applied to bill: ${formatPeso(applied)}'
+                  : null,
             ),
-            FilledButton(
-              onPressed: () {
-                final paid = double.tryParse(paymentCtrl.text.trim()) ?? 0;
-                if (minPercent > 0 &&
-                    balanceDue > 0 &&
-                    paid + 0.009 < minDue) {
-                  showAppMessage(
-                    ctx,
-                    'Enter at least ₱${minDue.toStringAsFixed(2)} '
-                    '($pctLabel% of the stay total).',
-                    isError: true,
-                  );
-                  return;
-                }
-                Navigator.pop(ctx, true);
-              },
-              child: Text(
-                change > 0 ? 'Make payment' : 'Continue',
+            onChanged: (_) => onChanged(),
+          ),
+          if (minDue > 0) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () {
+                  controller.text = minDue.toStringAsFixed(2);
+                  onChanged();
+                },
+                icon: const Icon(Icons.bolt_outlined, size: 18),
+                label: Text('Use minimum ${formatPeso(minDue)}'),
               ),
             ),
           ],
-        );
-      },
-    ),
-  );
-
-  final amount = double.tryParse(paymentCtrl.text.trim()) ?? 0;
-  paymentCtrl.dispose();
-  if (ok != true) return null;
-  return amount;
+          if (tendered > 0 && balanceDue > 0) ...[
+            const SizedBox(height: 4),
+            Text(
+              belowMin
+                  ? 'Need at least ${formatPeso(minDue)} to check in.'
+                  : (change > 0
+                      ? 'Change given: ${formatPeso(change)}'
+                      : (tendered + 0.009 >= balanceDue
+                          ? 'Paid in full — no change.'
+                          : 'Remaining after this payment: '
+                              '${formatPeso(balanceDue - tendered)}')),
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: belowMin ? scheme.error : scheme.primary,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }

@@ -3,11 +3,13 @@ import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
+import '../../../utils/money_format.dart';
 import '../../../widgets/insufficient_hotel_credits.dart';
 import '../../../widgets/admin_month_calendar.dart';
 import '../admin_dashboard_models.dart';
 import '../widgets/admin_booking_manage_dialog.dart';
 import '../widgets/admin_online_check_in_dialog.dart';
+import '../widgets/booking_confirmation_summary_dialog.dart';
 import '../widgets/admin_room_navigation.dart';
 import '../../admin_chat.dart';
 
@@ -922,55 +924,112 @@ class _BookingsSectionState extends State<BookingsSection>
     );
   }
 
+  Future<void> _showBookingSummary(Map<String, dynamic> room) async {
+    final booking = room['latest_booking'] as Map<String, dynamic>?;
+    final checkIn = AdminDashboardModels.stayStartDate(room) ?? DateTime.now();
+    final checkOut = AdminDashboardModels.stayEndDate(room) ??
+        checkIn.add(const Duration(days: 1));
+    final lines = bookingSummaryLinesForRooms(
+      rooms: [room],
+      checkIn: checkIn,
+      checkOut: checkOut,
+    );
+    final bookingTotal = parseJsonDouble(booking?['total_amount']);
+    final total = bookingTotal > 0
+        ? bookingTotal
+        : bookingSummaryNetTotal(
+            rooms: [room],
+            checkIn: checkIn,
+            checkOut: checkOut,
+          );
+    final paid = parseJsonDouble(
+      booking?['amount_paid'] ?? room['amount_paid'],
+    );
+    final method = (booking?['payment_method'] ?? '').toString().trim();
+
+    await showBookingConfirmationSummary(
+      context: context,
+      title: 'Booking summary',
+      guestName: AdminDashboardModels.guestName(room),
+      roomLabel: 'Room ${room['room_number']}',
+      checkIn: checkIn,
+      checkOut: checkOut,
+      totalAmount: total,
+      lines: lines,
+      paymentMethod: method.isEmpty ? null : method,
+      amountTendered: paid > 0 ? paid : null,
+      changeDue: 0,
+      readOnly: true,
+      footnote: paid > 0
+          ? null
+          : 'No payment recorded yet — collect the deposit on check-in.',
+    );
+  }
+
   Widget _bookingCard(Map<String, dynamic> room) {
     final canCheckIn = _canCheckInToday(room);
+    final tile = ListTile(
+      leading: const Icon(Icons.login),
+      title: Text(
+        'Room ${room['room_number']} · ${AdminDashboardModels.guestName(room)}',
+      ),
+      subtitle: Text(AdminDashboardModels.formatStayRange(room)),
+      trailing: IconButton(
+        tooltip: 'Edit booking',
+        onPressed: _busy
+            ? null
+            : () async {
+                final booking =
+                    room['latest_booking'] as Map<String, dynamic>?;
+                if (booking == null) return;
+                final ok = await showAdminManageBookingDialog(
+                  context: context,
+                  booking: booking,
+                  isFrontDesk: widget.isFrontDesk,
+                );
+                if (ok && mounted) await widget.onChanged();
+              },
+        icon: const Icon(Icons.edit_calendar_outlined),
+      ),
+      onTap: () {
+        AdminRoomNavigation.openDetailById(
+          AdminDashboardModels.roomIdOf(room),
+          snackContext: context,
+        );
+      },
+    );
+
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
-        leading: const Icon(Icons.login),
-        title: Text(
-          'Room ${room['room_number']} · ${AdminDashboardModels.guestName(room)}',
-        ),
-        subtitle: Text(AdminDashboardModels.formatStayRange(room)),
-        isThreeLine: true,
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              tooltip: 'Edit booking',
-              onPressed: _busy
-                  ? null
-                  : () async {
-                      final booking =
-                          room['latest_booking'] as Map<String, dynamic>?;
-                      if (booking == null) return;
-                      final ok = await showAdminManageBookingDialog(
-                        context: context,
-                        booking: booking,
-                        isFrontDesk: widget.isFrontDesk,
-                      );
-                      if (ok && mounted) await widget.onChanged();
-                    },
-              icon: const Icon(Icons.edit_calendar_outlined),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          tile,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 12, 10),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => _showBookingSummary(room),
+                  icon: const Icon(Icons.receipt_long_outlined, size: 18),
+                  label: const Text('Summary'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: _busy || !canCheckIn || !widget.isFrontDesk
+                      ? null
+                      : () => _checkInRoom(room),
+                  child: Text(
+                    !widget.isFrontDesk
+                        ? 'View only'
+                        : (canCheckIn ? 'Check in' : 'Awaiting'),
+                  ),
+                ),
+              ],
             ),
-            FilledButton(
-              onPressed: _busy || !canCheckIn || !widget.isFrontDesk
-                  ? null
-                  : () => _checkInRoom(room),
-              child: Text(
-                !widget.isFrontDesk
-                    ? 'View only'
-                    : (canCheckIn ? 'Check in' : 'Awaiting'),
-              ),
-            ),
-          ],
-        ),
-        onTap: () {
-          AdminRoomNavigation.openDetailById(
-            AdminDashboardModels.roomIdOf(room),
-            snackContext: context,
-          );
-        },
+          ),
+        ],
       ),
     );
   }

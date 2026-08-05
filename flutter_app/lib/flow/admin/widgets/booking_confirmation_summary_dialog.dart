@@ -51,6 +51,9 @@ Future<bool> showBookingConfirmationSummary({
   double? changeDue,
   bool checkInNow = true,
   String confirmLabel = 'Make payment',
+  /// View-only mode for looking up an existing booking; hides the confirm action.
+  bool readOnly = false,
+  String? footnote,
 }) async {
   final nights = checkOut.difference(checkIn).inDays;
   final safeNights = nights > 0 ? nights : 1;
@@ -70,10 +73,16 @@ Future<bool> showBookingConfirmationSummary({
 
   final confirmed = await showDialog<bool>(
     context: context,
-    barrierDismissible: false,
+    barrierDismissible: readOnly,
     builder: (ctx) {
       final scheme = Theme.of(ctx).colorScheme;
       var expanded = true;
+      final note = footnote ??
+          (readOnly
+              ? null
+              : (checkInNow
+                  ? 'Review the stay details, then confirm check-in.'
+                  : 'Review the stay details, then confirm this booking.'));
       return StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
           insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
@@ -370,32 +379,41 @@ Future<bool> showBookingConfirmationSummary({
                       ),
                     ],
                   ],
-                  const SizedBox(height: 14),
-                  Text(
-                    checkInNow
-                        ? 'Review the stay details, then confirm check-in.'
-                        : 'Review the stay details, then confirm this booking.',
-                    style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                          height: 1.35,
-                        ),
-                  ),
+                  if (note != null) ...[
+                    const SizedBox(height: 14),
+                    Text(
+                      note,
+                      style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                            height: 1.35,
+                          ),
+                    ),
+                  ],
                 ],
               ),
             ),
           ),
-          actionsAlignment: MainAxisAlignment.spaceBetween,
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Back'),
-            ),
-            FilledButton.icon(
-              onPressed: () => Navigator.pop(ctx, true),
-              icon: const Icon(Icons.arrow_forward_rounded, size: 18),
-              label: Text(confirmLabel),
-            ),
-          ],
+          actionsAlignment: readOnly
+              ? MainAxisAlignment.end
+              : MainAxisAlignment.spaceBetween,
+          actions: readOnly
+              ? [
+                  FilledButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Close'),
+                  ),
+                ]
+              : [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Back'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                    label: Text(confirmLabel),
+                  ),
+                ],
         ),
       );
     },

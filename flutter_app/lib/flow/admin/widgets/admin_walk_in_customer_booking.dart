@@ -42,12 +42,16 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
   );
   if (selectedDates == null || !context.mounted) return false;
 
+  final minDepositPercent = await fetchMinCheckInPaymentPercent();
+  if (!context.mounted) return false;
+
   final nameCtrl = TextEditingController(text: savedGuest?.name ?? '');
   final emailCtrl = TextEditingController(text: savedGuest?.email ?? '');
   final phoneCtrl = TextEditingController(text: savedGuest?.phone ?? '');
   final checkInCtrl = TextEditingController();
   final checkOutCtrl = TextEditingController();
   final bookingModeOtherCtrl = TextEditingController();
+  final depositCtrl = TextEditingController();
 
   final today = DateTime(
     DateTime.now().year,
@@ -58,6 +62,13 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
   DateTime? checkOutDate = selectedDates.checkOut;
   checkInCtrl.text = checkInDate.toIso8601String().split('T').first;
   checkOutCtrl.text = checkOutDate.toIso8601String().split('T').first;
+  final initialMinDeposit = minCheckInDeposit(
+    HourlyBilling.customerDateStayCharge(room, checkInDate, checkOutDate),
+    minDepositPercent,
+  );
+  if (initialMinDeposit > 0) {
+    depositCtrl.text = initialMinDeposit.toStringAsFixed(2);
+  }
 
   var discountType = 'none';
   var memberShidId = '';
@@ -416,6 +427,13 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                     '${discountPct > 0 ? ' → ₱${estAfterDiscount.toStringAsFixed(2)} after discount' : ''}',
                   ),
                 ),
+                const SizedBox(height: 14),
+                CheckInDepositField(
+                  controller: depositCtrl,
+                  balanceDue: estAfterDiscount > 0 ? estAfterDiscount : estTotal,
+                  minPercent: minDepositPercent,
+                  onChanged: () => setLocal(() {}),
+                ),
               ],
             ),
           ),
@@ -478,6 +496,8 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                   guestNationality: guestNationality,
                   checkInNow: true,
                   estimatedTotal: estAfterDiscount > 0 ? estAfterDiscount : estTotal,
+                  depositCtrl: depositCtrl,
+                  minDepositPercent: minDepositPercent,
                 );
                 if (built != null) {
                   Navigator.of(dialogContext).pop(built);
@@ -497,6 +517,7 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
   checkOutCtrl.dispose();
   bookingModeOtherCtrl.dispose();
   paymentRefCtrl.dispose();
+  depositCtrl.dispose();
 
   if (payload == null || !context.mounted) return false;
 
@@ -514,12 +535,7 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
   };
 
   if (checkInNow) {
-    final deposit = await showWalkInCheckInDepositDialog(
-      context,
-      balanceDue: estimated,
-      roomLabel: 'Room ${room['room_number']}',
-    );
-    if (deposit == null || !context.mounted) return false;
+    final deposit = (payload['deposit_amount'] as num?)?.toDouble() ?? 0;
     checkInPaymentAmount = deposit;
 
     final summaryOk = await showBookingConfirmationSummary(
@@ -686,6 +702,8 @@ Map<String, dynamic>? _buildWalkInPayload({
   required String guestNationality,
   required bool checkInNow,
   double estimatedTotal = 0,
+  TextEditingController? depositCtrl,
+  double minDepositPercent = 0,
 }) {
   final name = nameCtrl.text.trim();
   final email = emailCtrl.text.trim();
@@ -729,6 +747,20 @@ Map<String, dynamic>? _buildWalkInPayload({
     return null;
   }
 
+  final deposit = double.tryParse(depositCtrl?.text.trim() ?? '') ?? 0;
+  if (checkInNow) {
+    final minDue = minCheckInDeposit(estimatedTotal, minDepositPercent);
+    if (minDue > 0 && deposit + 0.009 < minDue) {
+      showAppMessage(
+        dialogContext,
+        'Enter a deposit of at least ₱${minDue.toStringAsFixed(2)} '
+        '(${minCheckInPercentLabel(minDepositPercent)}% of the stay total).',
+        isError: true,
+      );
+      return null;
+    }
+  }
+
   return {
     'guest_name': name,
     'guest_email': email,
@@ -750,6 +782,7 @@ Map<String, dynamic>? _buildWalkInPayload({
     'guest_nationality': guestNationality,
     'check_in_now': checkInNow,
     'estimated_total': estimatedTotal,
+    'deposit_amount': deposit,
   };
 }
 
