@@ -163,7 +163,7 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
                   FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
                 ],
                 decoration: InputDecoration(
-                  labelText: 'Amount given by guest (₱)',
+                  labelText: 'Amount received (₱)',
                   border: const OutlineInputBorder(),
                   prefixText: '₱ ',
                   helperText: balanceDue > 0
@@ -256,9 +256,7 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
                     ? (tendered - balanceDue).clamp(0, double.infinity)
                     : 0.0;
                 return Text(
-                  change > 0
-                      ? 'Give change & check in'
-                      : 'Check in guest',
+                  change > 0 ? 'Make payment' : 'Check in guest',
                 );
               },
             ),
@@ -298,9 +296,7 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
         ? (payAmount - balanceDue).clamp(0, double.infinity)
         : 0,
     checkInNow: true,
-    confirmLabel: !isOrgBooking && payAmount > balanceDue
-        ? 'Give change & check in'
-        : 'Confirm & check in',
+    confirmLabel: 'Make payment',
   );
   if (!summaryOk || !context.mounted) return false;
 

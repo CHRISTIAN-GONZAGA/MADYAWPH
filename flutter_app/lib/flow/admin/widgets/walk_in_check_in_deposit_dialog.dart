@@ -86,7 +86,7 @@ Future<double?> showWalkInCheckInDepositDialog(
                     FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
                   ],
                   decoration: InputDecoration(
-                    labelText: 'Amount given by guest (₱)',
+                    labelText: 'Amount received (₱)',
                     border: const OutlineInputBorder(),
                     prefixText: '₱ ',
                     helperText: balanceDue > 0
@@ -138,9 +138,7 @@ Future<double?> showWalkInCheckInDepositDialog(
                 Navigator.pop(ctx, true);
               },
               child: Text(
-                change > 0
-                    ? 'Confirm, give change & check in'
-                    : 'Confirm & check in',
+                change > 0 ? 'Make payment' : 'Continue',
               ),
             ),
           ],

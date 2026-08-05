@@ -50,7 +50,7 @@ Future<bool> showBookingConfirmationSummary({
   double? amountTendered,
   double? changeDue,
   bool checkInNow = true,
-  String confirmLabel = 'Confirm & check in',
+  String confirmLabel = 'Make payment',
 }) async {
   final nights = checkOut.difference(checkIn).inDays;
   final safeNights = nights > 0 ? nights : 1;
@@ -76,10 +76,16 @@ Future<bool> showBookingConfirmationSummary({
       var expanded = true;
       return StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
-          titlePadding: const EdgeInsets.fromLTRB(20, 16, 12, 0),
-          contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          title: Text(title),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          titlePadding: const EdgeInsets.fromLTRB(20, 18, 12, 0),
+          contentPadding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+          title: Text(
+            title,
+            style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+          ),
           content: SizedBox(
             width: 420,
             child: SingleChildScrollView(
@@ -87,59 +93,76 @@ Future<bool> showBookingConfirmationSummary({
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (roomLabel != null && roomLabel.trim().isNotEmpty)
-                    Text(
-                      roomLabel,
-                      style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
+                  _SummaryPanel(
+                    color: scheme.surfaceContainerHighest.withValues(alpha: 0.7),
+                    borderColor: scheme.outlineVariant.withValues(alpha: 0.45),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (roomLabel != null && roomLabel.trim().isNotEmpty)
+                          Text(
+                            roomLabel,
+                            style: Theme.of(ctx).textTheme.labelLarge?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w700,
+                                ),
                           ),
-                    ),
-                  if (guestName.trim().isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      guestName,
-                      style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
+                        if (guestName.trim().isNotEmpty) ...[
+                          if (roomLabel != null && roomLabel.trim().isNotEmpty)
+                            const SizedBox(height: 4),
+                          Text(
+                            guestName,
+                            style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
                           ),
-                    ),
-                  ],
-                  if (accountLabel != null && accountLabel.trim().isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      accountLabel,
-                      style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
+                        ],
+                        if (accountLabel != null &&
+                            accountLabel.trim().isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            accountLabel,
+                            style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
                           ),
+                        ],
+                      ],
                     ),
-                  ],
-                  const SizedBox(height: 14),
-                  Container(
-                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-                    decoration: BoxDecoration(
-                      color: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: scheme.outlineVariant.withValues(alpha: 0.5),
-                      ),
-                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _SummaryPanel(
+                    color: scheme.primaryContainer.withValues(alpha: 0.55),
+                    borderColor: scheme.primary.withValues(alpha: 0.28),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
                           'Total bill amount',
-                          style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                                color: scheme.onSurfaceVariant,
+                          style: Theme.of(ctx).textTheme.labelMedium?.copyWith(
+                                color: scheme.onPrimaryContainer
+                                    .withValues(alpha: 0.75),
+                                fontWeight: FontWeight.w600,
                               ),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 8),
                         Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            Icon(
-                              Icons.receipt_long_outlined,
-                              size: 22,
-                              color: scheme.primary,
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: scheme.primary.withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(
+                                Icons.receipt_long_outlined,
+                                size: 22,
+                                color: scheme.primary,
+                              ),
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: 12),
                             Expanded(
                               child: Text(
                                 formatPeso(totalAmount),
@@ -147,294 +170,230 @@ Future<bool> showBookingConfirmationSummary({
                                     .textTheme
                                     .headlineSmall
                                     ?.copyWith(
-                                      fontWeight: FontWeight.w800,
+                                      fontWeight: FontWeight.w900,
                                       color: scheme.primary,
+                                      letterSpacing: -0.4,
                                     ),
                               ),
                             ),
-                            InkWell(
-                              onTap: () =>
-                                  setLocal(() => expanded = !expanded),
-                              borderRadius: BorderRadius.circular(8),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 4,
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      'Summary',
-                                      style: Theme.of(ctx)
-                                          .textTheme
-                                          .labelLarge
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                    ),
-                                    Icon(
-                                      expanded
-                                          ? Icons.keyboard_arrow_up
-                                          : Icons.keyboard_arrow_down,
-                                    ),
-                                  ],
+                            Material(
+                              color: scheme.surface.withValues(alpha: 0.7),
+                              borderRadius: BorderRadius.circular(10),
+                              child: InkWell(
+                                onTap: () =>
+                                    setLocal(() => expanded = !expanded),
+                                borderRadius: BorderRadius.circular(10),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 8,
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        'Summary',
+                                        style: Theme.of(ctx)
+                                            .textTheme
+                                            .labelLarge
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                      ),
+                                      const SizedBox(width: 2),
+                                      Icon(
+                                        expanded
+                                            ? Icons.keyboard_arrow_up_rounded
+                                            : Icons.keyboard_arrow_down_rounded,
+                                        size: 20,
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
                           ],
                         ),
-                        if (expanded) ...[
-                          const SizedBox(height: 14),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Check-in',
-                                      style: Theme.of(ctx)
-                                          .textTheme
-                                          .labelSmall
-                                          ?.copyWith(
-                                            color: scheme.onSurfaceVariant,
-                                          ),
-                                    ),
-                                    Text(
-                                      formatBookingSummaryDate(checkIn),
-                                      style: Theme.of(ctx)
-                                          .textTheme
-                                          .titleMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: scheme.primary.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(999),
-                                  border: Border.all(
-                                    color: scheme.primary.withValues(alpha: 0.35),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.schedule,
-                                      size: 16,
-                                      color: scheme.primary,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      durationBadge,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        color: scheme.primary,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Text(
-                                      'Check-out',
-                                      style: Theme.of(ctx)
-                                          .textTheme
-                                          .labelSmall
-                                          ?.copyWith(
-                                            color: scheme.onSurfaceVariant,
-                                          ),
-                                    ),
-                                    Text(
-                                      formatBookingSummaryDate(checkOut),
-                                      style: Theme.of(ctx)
-                                          .textTheme
-                                          .titleMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            child: CustomPaint(
-                              size: const Size(double.infinity, 1),
-                              painter: _DashedLinePainter(
-                                color: scheme.primary.withValues(alpha: 0.35),
-                              ),
+                      ],
+                    ),
+                  ),
+                  if (expanded) ...[
+                    const SizedBox(height: 12),
+                    _SummaryPanel(
+                      color: scheme.surface,
+                      borderColor: scheme.outlineVariant.withValues(alpha: 0.55),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: _DateBlock(
+                              label: 'Check-in',
+                              value: formatBookingSummaryDate(checkIn),
+                              alignEnd: false,
                             ),
                           ),
-                          ...lines.map(
-                            (line) => Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          line.label,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        if (line.subtitle != null &&
-                                            line.subtitle!.isNotEmpty)
-                                          Text(
-                                            line.subtitle!,
-                                            style: Theme.of(ctx)
-                                                .textTheme
-                                                .bodySmall
-                                                ?.copyWith(
-                                                  color:
-                                                      scheme.onSurfaceVariant,
-                                                ),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                  Text(
-                                    formatPeso(line.amount),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ],
+                          Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: scheme.secondaryContainer
+                                  .withValues(alpha: 0.85),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: scheme.secondary.withValues(alpha: 0.35),
                               ),
                             ),
-                          ),
-                          if (paymentMethod != null &&
-                              paymentMethod.trim().isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: Row(
-                                children: [
-                                  const Expanded(
-                                    child: Text(
-                                      'Payment method',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ),
-                                  Text(paymentMethod),
-                                ],
-                              ),
-                            ),
-                          if (tendered > 0.009) ...[
-                            Row(
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Expanded(
-                                  child: Text(
-                                    'Amount given',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
+                                Icon(
+                                  Icons.schedule_rounded,
+                                  size: 16,
+                                  color: scheme.onSecondaryContainer,
                                 ),
+                                const SizedBox(width: 6),
                                 Text(
-                                  formatPeso(tendered),
-                                  style: const TextStyle(
+                                  durationBadge,
+                                  style: TextStyle(
                                     fontWeight: FontWeight.w800,
+                                    color: scheme.onSecondaryContainer,
+                                    fontSize: 12,
                                   ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 8),
-                            if (change > 0.009)
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      'Change given',
+                          ),
+                          Expanded(
+                            child: _DateBlock(
+                              label: 'Check-out',
+                              value: formatBookingSummaryDate(checkOut),
+                              alignEnd: true,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _SummaryPanel(
+                      color: scheme.surfaceContainerLow,
+                      borderColor: scheme.outlineVariant.withValues(alpha: 0.5),
+                      child: Column(
+                        children: [
+                          for (var i = 0; i < lines.length; i++) ...[
+                            if (i > 0)
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 10),
+                                child: Divider(
+                                  height: 1,
+                                  color: scheme.outlineVariant
+                                      .withValues(alpha: 0.45),
+                                ),
+                              ),
+                            _LineRow(line: lines[i]),
+                          ],
+                        ],
+                      ),
+                    ),
+                    if ((paymentMethod != null &&
+                            paymentMethod.trim().isNotEmpty) ||
+                        tendered > 0.009) ...[
+                      const SizedBox(height: 12),
+                      _SummaryPanel(
+                        color: change > 0.009
+                            ? scheme.primaryContainer.withValues(alpha: 0.45)
+                            : (remaining > 0.009 && tendered > 0.009
+                                ? scheme.tertiaryContainer
+                                    .withValues(alpha: 0.4)
+                                : scheme.surfaceContainerHighest
+                                    .withValues(alpha: 0.55)),
+                        borderColor: change > 0.009
+                            ? scheme.primary.withValues(alpha: 0.3)
+                            : (remaining > 0.009 && tendered > 0.009
+                                ? scheme.tertiary.withValues(alpha: 0.3)
+                                : scheme.outlineVariant.withValues(alpha: 0.5)),
+                        child: Column(
+                          children: [
+                            if (paymentMethod != null &&
+                                paymentMethod.trim().isNotEmpty)
+                              _MetaRow(
+                                label: 'Payment method',
+                                value: paymentMethod,
+                              ),
+                            if (tendered > 0.009) ...[
+                              if (paymentMethod != null &&
+                                  paymentMethod.trim().isNotEmpty)
+                                const SizedBox(height: 12),
+                              _MetaRow(
+                                label: 'Amount received',
+                                value: formatPeso(tendered),
+                                emphasize: true,
+                              ),
+                              const SizedBox(height: 12),
+                              if (change > 0.009)
+                                _MetaRow(
+                                  label: 'Change given',
+                                  value: formatPeso(change),
+                                  emphasize: true,
+                                  color: scheme.primary,
+                                )
+                              else if (remaining > 0.009)
+                                _MetaRow(
+                                  label: 'Remaining after deposit',
+                                  value: formatPeso(remaining),
+                                  emphasize: true,
+                                  color: scheme.tertiary,
+                                )
+                              else
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.check_circle_rounded,
+                                      size: 18,
+                                      color: scheme.primary,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Paid in full',
                                       style: TextStyle(
-                                        fontWeight: FontWeight.w700,
+                                        fontWeight: FontWeight.w800,
                                         color: scheme.primary,
                                       ),
                                     ),
-                                  ),
-                                  Text(
-                                    formatPeso(change),
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      color: scheme.primary,
-                                    ),
-                                  ),
-                                ],
-                              )
-                            else if (remaining > 0.009)
-                              Row(
-                                children: [
-                                  const Expanded(
-                                    child: Text(
-                                      'Remaining after deposit',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ),
-                                  Text(
-                                    formatPeso(remaining),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ],
-                              )
-                            else
-                              Text(
-                                'Paid in full',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  color: scheme.primary,
+                                  ],
                                 ),
-                              ),
+                            ],
                           ],
-                        ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
+                        ),
+                      ),
+                    ],
+                  ],
+                  const SizedBox(height: 14),
                   Text(
                     checkInNow
                         ? 'Review the stay details, then confirm check-in.'
                         : 'Review the stay details, then confirm this booking.',
                     style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
                           color: scheme.onSurfaceVariant,
+                          height: 1.35,
                         ),
                   ),
                 ],
               ),
             ),
           ),
+          actionsAlignment: MainAxisAlignment.spaceBetween,
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Back'),
             ),
-            FilledButton(
+            FilledButton.icon(
               onPressed: () => Navigator.pop(ctx, true),
-              child: Text(confirmLabel),
+              icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+              label: Text(confirmLabel),
             ),
           ],
         ),
@@ -443,6 +402,157 @@ Future<bool> showBookingConfirmationSummary({
   );
 
   return confirmed == true;
+}
+
+class _SummaryPanel extends StatelessWidget {
+  const _SummaryPanel({
+    required this.child,
+    required this.color,
+    required this.borderColor,
+  });
+
+  final Widget child;
+  final Color color;
+  final Color borderColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _DateBlock extends StatelessWidget {
+  const _DateBlock({
+    required this.label,
+    required this.value,
+    required this.alignEnd,
+  });
+
+  final String label;
+  final String value;
+  final bool alignEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment:
+          alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LineRow extends StatelessWidget {
+  const _LineRow({required this.line});
+
+  final BookingSummaryLine line;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDiscount = line.amount < 0;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                line.label,
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: isDiscount ? scheme.primary : null,
+                ),
+              ),
+              if (line.subtitle != null && line.subtitle!.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  line.subtitle!,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          formatPeso(line.amount),
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            color: isDiscount ? scheme.primary : null,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MetaRow extends StatelessWidget {
+  const _MetaRow({
+    required this.label,
+    required this.value,
+    this.emphasize = false,
+    this.color,
+  });
+
+  final String label;
+  final String value;
+  final bool emphasize;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          value,
+          style: TextStyle(
+            fontWeight: emphasize ? FontWeight.w800 : FontWeight.w600,
+            color: color,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 /// Build summary lines for one or more rooms.
@@ -513,29 +623,4 @@ double bookingSummaryNetTotal({
   final discount = discountPercent.clamp(0, 100);
   if (discount <= 0) return gross;
   return HourlyBilling.round50(gross * (1 - discount / 100));
-}
-
-class _DashedLinePainter extends CustomPainter {
-  _DashedLinePainter({required this.color});
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1.2
-      ..style = PaintingStyle.stroke;
-    const dash = 5.0;
-    const gap = 4.0;
-    var x = 0.0;
-    while (x < size.width) {
-      canvas.drawLine(Offset(x, 0), Offset((x + dash).clamp(0, size.width), 0), paint);
-      x += dash + gap;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DashedLinePainter oldDelegate) =>
-      oldDelegate.color != color;
 }

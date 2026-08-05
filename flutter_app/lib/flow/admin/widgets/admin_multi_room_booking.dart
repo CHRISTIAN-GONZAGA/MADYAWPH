@@ -619,9 +619,7 @@ Future<bool> showAdminMultiRoomWalkInBooking({
           ? (deposit - estimated).clamp(0, double.infinity)
           : 0,
       checkInNow: true,
-      confirmLabel: deposit > estimated
-          ? 'Give change & check in'
-          : 'Confirm & check in',
+      confirmLabel: 'Make payment',
     );
     if (!summaryOk || !context.mounted) return false;
     await DeviceGuestWelcomeSms.ensurePermission();

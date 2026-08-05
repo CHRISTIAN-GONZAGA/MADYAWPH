@@ -722,8 +722,8 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     decoration: InputDecoration(
                       labelText: remainingDue > 0
-                          ? 'Amount given by guest (min ${formatPeso(remainingDue)})'
-                          : 'Amount given by guest',
+                          ? 'Amount received (min ${formatPeso(remainingDue)})'
+                          : 'Amount received',
                       border: const OutlineInputBorder(),
                       prefixText: '₱ ',
                       helperText: remainingDue > 0

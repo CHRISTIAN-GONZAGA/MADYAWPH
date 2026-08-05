@@ -835,7 +835,7 @@ Future<bool> showGovOrgBookingDialog({
     ),
     paymentMethod: 'B2B charge account',
     checkInNow: checkInNow,
-    confirmLabel: checkInNow ? 'Confirm & check in' : 'Confirm booking',
+    confirmLabel: 'Make payment',
   );
   if (!summaryOk || !context.mounted) return false;
 
