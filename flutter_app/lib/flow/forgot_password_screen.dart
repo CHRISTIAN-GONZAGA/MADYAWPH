@@ -164,7 +164,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       final message =
           (res.data?['message'] ?? 'Password updated. You may now sign in.')
               .toString();
-      showAppMessage(context, message);
+      await showAppMessage(
+        context,
+        message,
+        title: 'Success',
+        confirmLabel: 'Back to login',
+      );
+      if (!mounted) return;
       Navigator.of(context).pop(true);
     } on DioException catch (e) {
       if (!mounted) return;
