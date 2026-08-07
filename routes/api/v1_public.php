@@ -166,6 +166,8 @@ Route::post('/auth/central-admin-login', [PortalAuthController::class, 'centralA
 Route::get('/platform/info', [\App\Http\Controllers\Api\V1\MemberSubscriptionController::class, 'platformInfo']);
 Route::post('/member/register', [\App\Http\Controllers\Api\V1\MemberSubscriptionController::class, 'register'])->middleware('throttle:12,1');
 Route::post('/member/login', [\App\Http\Controllers\Api\V1\MemberSubscriptionController::class, 'login'])->middleware('throttle:12,1');
+Route::post('/member/forgot/send', [\App\Http\Controllers\Api\V1\MemberSubscriptionController::class, 'forgotSend'])->middleware('throttle:5,1');
+Route::post('/member/forgot/reset', [\App\Http\Controllers\Api\V1\MemberSubscriptionController::class, 'forgotReset'])->middleware('throttle:8,1');
 Route::post('/member/validate', [\App\Http\Controllers\Api\V1\MemberSubscriptionController::class, 'validateMember'])->middleware('throttle:30,1');
 Route::get('/member/requests/{id}/status', [\App\Http\Controllers\Api\V1\MemberSubscriptionController::class, 'status']);
 

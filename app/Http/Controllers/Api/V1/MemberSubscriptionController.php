@@ -4,12 +4,16 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\MemberSubscriptionRequest;
+use App\Services\AppEmailService;
 use App\Services\MemberActiveBookingsService;
 use App\Services\MemberSubscriptionService;
 use App\Services\PlatformSettingsService;
+use App\Support\EmailOtp;
 use App\Support\MemberPortalStore;
+use App\Support\MessagingFlags;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
 
@@ -19,6 +23,7 @@ class MemberSubscriptionController extends Controller
         private readonly PlatformSettingsService $settings,
         private readonly MemberSubscriptionService $members,
         private readonly MemberActiveBookingsService $activeBookings,
+        private readonly AppEmailService $appEmailService,
     ) {
     }
 
@@ -159,6 +164,122 @@ class MemberSubscriptionController extends Controller
             'token_type' => 'Bearer',
             'member' => $this->members->serializeForClient($member),
         ]);
+    }
+
+    public function forgotSend(Request $request): JsonResponse
+    {
+        if ($disabled = $this->emailMessagingDisabledResponse()) {
+            return $disabled;
+        }
+
+        $validated = $request->validate([
+            'username' => ['required', 'string', 'max:40'],
+        ]);
+
+        $username = strtolower(trim((string) $validated['username']));
+        $member = MemberSubscriptionRequest::query()
+            ->where('username', $username)
+            ->where('status', 'approved')
+            ->orderByDesc('reviewed_at')
+            ->first();
+
+        if ($member === null) {
+            return response()->json(['message' => 'No matching membership found.'], 422);
+        }
+
+        $email = strtolower(trim((string) ($member->email ?? '')));
+        if ($email === '' || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return response()->json([
+                'message' => 'No email address is on file for this membership.',
+            ], 422);
+        }
+
+        $ttlMinutes = (int) config('services.email_otp.password_reset_ttl_minutes', 30);
+        $code = EmailOtp::generate();
+
+        Cache::put('member_password_reset:'.(string) $member->id, [
+            'member_id' => (string) $member->id,
+            'username' => (string) $member->username,
+            'code_hash' => EmailOtp::hash($code),
+        ], now()->addMinutes($ttlMinutes));
+
+        $mail = $this->appEmailService->sendOtp(
+            $email,
+            $code,
+            'reset your MADYAW member password',
+            $ttlMinutes,
+        );
+
+        $payload = [
+            'ok' => $mail->sent,
+            'email' => $mail->toArray(),
+            'email_masked' => $this->appEmailService->maskEmail($email),
+            'message' => $mail->sent
+                ? 'Reset code sent to '.$this->appEmailService->maskEmail($email).'.'
+                : ($mail->error ?? 'Reset code could not be sent by email.'),
+        ];
+
+        if (! $mail->sent && config('app.debug')) {
+            $payload['debug_code'] = $code;
+        }
+
+        return response()->json($payload, $mail->sent ? 200 : 503);
+    }
+
+    public function forgotReset(Request $request): JsonResponse
+    {
+        if ($disabled = $this->emailMessagingDisabledResponse()) {
+            return $disabled;
+        }
+
+        $validated = $request->validate([
+            'username' => ['required', 'string', 'max:40'],
+            'code' => ['required', 'string', 'size:6'],
+            'new_password' => ['required', 'string', 'confirmed', Password::min(6)->max(72)],
+        ]);
+
+        $username = strtolower(trim((string) $validated['username']));
+        $member = MemberSubscriptionRequest::query()
+            ->where('username', $username)
+            ->where('status', 'approved')
+            ->orderByDesc('reviewed_at')
+            ->first();
+
+        if ($member === null) {
+            return response()->json(['message' => 'Membership not found.'], 422);
+        }
+
+        $context = Cache::get('member_password_reset:'.(string) $member->id);
+        if (! is_array($context)) {
+            return response()->json(['message' => 'Invalid or expired reset code.'], 422);
+        }
+
+        $codeHash = (string) ($context['code_hash'] ?? '');
+        if ($codeHash === '' || ! EmailOtp::matches((string) $validated['code'], $codeHash)) {
+            return response()->json(['message' => 'Invalid or expired reset code.'], 422);
+        }
+
+        if ((string) ($context['member_id'] ?? '') !== (string) $member->id) {
+            return response()->json(['message' => 'Invalid reset code.'], 422);
+        }
+
+        $member->password = (string) $validated['new_password'];
+        $member->save();
+        Cache::forget('member_password_reset:'.(string) $member->id);
+
+        return response()->json(['ok' => true, 'message' => 'Password updated. You may now sign in.']);
+    }
+
+    private function emailMessagingDisabledResponse(): ?JsonResponse
+    {
+        if (MessagingFlags::emailEnabled()) {
+            return null;
+        }
+
+        return response()->json([
+            'ok' => false,
+            'message' => 'Email messaging is not enabled yet. Set MESSAGING_EMAIL_ENABLED=true when ready.',
+        ], 503);
     }
 
     public function logout(Request $request): JsonResponse

@@ -6,6 +6,7 @@ import '../auth_storage.dart';
 import '../dio_client.dart';
 import '../widgets/app_input.dart';
 import '../widgets/app_scaffold.dart';
+import 'forgot_password_screen.dart';
 import 'member_dashboard_flow.dart';
 import 'member_subscription_flow.dart';
 
@@ -142,7 +143,25 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
             labelText: 'Password',
             textInputAction: TextInputAction.done,
           ),
-          const SizedBox(height: 24),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: _busy
+                  ? null
+                  : () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => ForgotPasswordScreen(
+                            mode: ForgotPasswordMode.member,
+                            initialUsername: _usernameCtrl.text.trim(),
+                          ),
+                        ),
+                      );
+                    },
+              child: const Text('Forgot password?'),
+            ),
+          ),
+          const SizedBox(height: 12),
           FilledButton(
             onPressed: _busy ? null : _submit,
             child: _busy

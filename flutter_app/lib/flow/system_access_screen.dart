@@ -11,6 +11,7 @@ import '../widgets/app_scaffold.dart';
 import '../widgets/language_picker_button.dart';
 import 'dashboards.dart';
 import 'flow_state.dart';
+import 'forgot_password_screen.dart';
 import 'hotel_property_login_screen.dart';
 import 'hotel_screens.dart';
 import 'owner_dashboard_screen.dart';
@@ -416,7 +417,39 @@ class _SystemAccessScreenState extends State<SystemAccessScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 18),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: _busy || _isPublicCustomer
+                              ? null
+                              : () async {
+                                  final hotelId =
+                                      (await AuthStorage.hotelId() ??
+                                              widget.session.hotelId)
+                                          .trim();
+                                  if (!context.mounted) return;
+                                  if (hotelId.isEmpty) {
+                                    setState(() {
+                                      _error =
+                                          'Sign in to your property first.';
+                                    });
+                                    return;
+                                  }
+                                  await Navigator.of(context).push<bool>(
+                                    MaterialPageRoute<bool>(
+                                      builder: (_) => ForgotPasswordScreen(
+                                        mode: ForgotPasswordMode.hotel,
+                                        initialUsername: _username.text.trim(),
+                                        hotelId: hotelId,
+                                        role: _role,
+                                      ),
+                                    ),
+                                  );
+                                },
+                          child: const Text('Forgot password?'),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
                     ] else ...[
                       DecoratedBox(
                         decoration: BoxDecoration(

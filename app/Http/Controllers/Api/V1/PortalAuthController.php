@@ -503,7 +503,7 @@ class PortalAuthController extends Controller
         }
 
         $validated = $request->validate([
-            'role' => ['nullable', 'in:admin,staff,frontdesk'],
+            'role' => ['nullable', 'in:admin,staff,frontdesk,super_admin,owner'],
             'username' => ['required', 'string', 'max:255'],
             'hotel_id' => ['required', 'string'],
         ]);
@@ -524,10 +524,10 @@ class PortalAuthController extends Controller
             return response()->json(['message' => 'No matching account found.'], 422);
         }
 
-        $email = strtolower(trim((string) ($user->email ?? '')));
-        if ($email === '' || str_ends_with($email, '@super.local')) {
+        $email = $this->resolveHotelPasswordResetDeliveryEmail($hotelId);
+        if ($email === null) {
             return response()->json([
-                'message' => 'No email address is on file for this account. Contact your hotel administrator.',
+                'message' => 'No super admin email is on file for this hotel. Update the hotel notification email, then try again.',
             ], 422);
         }
 
@@ -651,6 +651,47 @@ class PortalAuthController extends Controller
             'ok' => false,
             'message' => 'Email messaging is not enabled yet. Set MESSAGING_EMAIL_ENABLED=true when ready.',
         ], 503);
+    }
+
+    /**
+     * Password-reset OTP for hotel portal accounts is always delivered to the
+     * hotel's super-admin contact email (with admin / owner_email fallbacks).
+     */
+    private function resolveHotelPasswordResetDeliveryEmail(string $hotelId): ?string
+    {
+        $candidates = [];
+
+        $super = User::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where('role', UserRole::SUPER_ADMIN->value)
+            ->orderBy('created_at')
+            ->first();
+        if ($super !== null) {
+            $candidates[] = (string) ($super->email ?? '');
+        }
+
+        $admin = User::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where('role', UserRole::ADMIN->value)
+            ->orderBy('created_at')
+            ->first();
+        if ($admin !== null) {
+            $candidates[] = (string) ($admin->email ?? '');
+        }
+
+        $hotel = Hotel::withoutGlobalScopes()->find($hotelId);
+        if ($hotel !== null) {
+            $candidates[] = (string) ($hotel->owner_email ?? '');
+        }
+
+        foreach ($candidates as $raw) {
+            $email = strtolower(trim($raw));
+            if ($email !== '' && ! str_ends_with($email, '@super.local') && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                return $email;
+            }
+        }
+
+        return null;
     }
 
     /**
