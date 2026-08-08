@@ -442,53 +442,113 @@ class _SuperAdminControlSectionState extends State<SuperAdminControlSection> {
             child: CircularProgressIndicator(),
           ))
         else if (admins.isEmpty)
-          const Text('No administrator accounts found.')
+          const Text('No portal accounts found.')
         else
-          ...admins.map((u) {
-            final role = (u['role'] ?? '').toString();
-            final id = (u['id'] ?? '').toString();
-            final name = (u['name'] ?? '').toString();
-            final email = (u['email'] ?? '').toString();
-            final isSuper = role == 'super_admin';
+          ..._groupedPortalUsers(admins).entries.map((entry) {
+            final role = entry.key;
+            final list = entry.value;
+            final label = switch (role) {
+              'frontdesk' => 'Front desk',
+              'super_admin' => 'Super admin',
+              'admin' => 'Administrator',
+              'staff' => 'Staff',
+              _ => role.replaceAll('_', ' '),
+            };
             return Card(
-              margin: const EdgeInsets.only(bottom: 8),
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: isSuper
-                      ? scheme.tertiaryContainer
-                      : scheme.secondaryContainer,
-                  child: Icon(
-                    isSuper ? Icons.shield_outlined : Icons.badge_outlined,
-                    color: isSuper
-                        ? scheme.onTertiaryContainer
-                        : scheme.onSecondaryContainer,
-                  ),
+              margin: const EdgeInsets.only(bottom: 10),
+              clipBehavior: Clip.antiAlias,
+              child: ExpansionTile(
+                initiallyExpanded: role == 'admin' || role == 'frontdesk',
+                leading: Icon(
+                  role == 'super_admin'
+                      ? Icons.shield_outlined
+                      : role == 'frontdesk'
+                          ? Icons.badge_outlined
+                          : Icons.admin_panel_settings_outlined,
                 ),
-                title: Text(name),
+                title: Text(
+                  label,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
                 subtitle: Text(
-                  [
-                    role.replaceAll('_', ' ').toUpperCase(),
-                    if (email.isNotEmpty) email,
-                  ].join('\n'),
+                  '${list.length} account${list.length == 1 ? '' : 's'}',
                 ),
-                isThreeLine: true,
-                trailing: isSuper
-                    ? Chip(
-                        label: const Text('You'),
-                        backgroundColor: scheme.tertiaryContainer,
-                      )
-                    : (role == 'admin' || role == 'frontdesk')
-                        ? IconButton(
-                            tooltip: 'Remove account',
-                            onPressed:
-                                _busy ? null : () => _deleteAdmin(id, name),
-                            icon: const Icon(Icons.delete_outline),
-                          )
-                        : null,
+                children: [
+                  const Divider(height: 1),
+                  ...list.map((u) {
+                    final id = (u['id'] ?? '').toString();
+                    final name = (u['name'] ?? '').toString();
+                    final email = (u['email'] ?? '').toString();
+                    final isSuper = role == 'super_admin';
+                    final canEdit =
+                        !isSuper && (role == 'admin' || role == 'frontdesk');
+                    return ListTile(
+                      title: Text(name),
+                      subtitle: Text(email.isEmpty ? 'No email' : email),
+                      trailing: isSuper
+                          ? Chip(
+                              label: const Text('Protected'),
+                              visualDensity: VisualDensity.compact,
+                              backgroundColor: scheme.tertiaryContainer,
+                            )
+                          : canEdit
+                              ? Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      tooltip: 'Edit account',
+                                      onPressed: _busy
+                                          ? null
+                                          : () {
+                                              Navigator.of(context)
+                                                  .push<void>(
+                                                MaterialPageRoute<void>(
+                                                  builder: (_) =>
+                                                      const AdminPortalUsersScreen(
+                                                    canManageAdmins: true,
+                                                  ),
+                                                ),
+                                              ).then((_) => _load());
+                                            },
+                                      icon: const Icon(Icons.edit_outlined),
+                                    ),
+                                    IconButton(
+                                      tooltip: 'Remove account',
+                                      onPressed: _busy
+                                          ? null
+                                          : () => _deleteAdmin(id, name),
+                                      icon: const Icon(Icons.delete_outline),
+                                    ),
+                                  ],
+                                )
+                              : null,
+                    );
+                  }),
+                ],
               ),
             );
           }),
       ],
     );
+  }
+
+  Map<String, List<Map<String, dynamic>>> _groupedPortalUsers(
+    List<Map<String, dynamic>> users,
+  ) {
+    const order = ['admin', 'frontdesk', 'staff', 'super_admin'];
+    final grouped = <String, List<Map<String, dynamic>>>{};
+    for (final u in users) {
+      final role = (u['role'] ?? 'other').toString();
+      grouped.putIfAbsent(role, () => []).add(u);
+    }
+    final ordered = <String, List<Map<String, dynamic>>>{};
+    for (final role in order) {
+      final list = grouped.remove(role);
+      if (list != null && list.isNotEmpty) ordered[role] = list;
+    }
+    for (final entry in grouped.entries) {
+      if (entry.value.isNotEmpty) ordered[entry.key] = entry.value;
+    }
+    return ordered;
   }
 }

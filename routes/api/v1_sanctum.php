@@ -3075,6 +3075,124 @@ Route::post('/admin/portal-users', function (Request $request) {
     ], 201);
 })->middleware('role:admin,super_admin')->name('api.v1.admin.portal-users.store');
 
+Route::put('/admin/portal-users/{target}', function (Request $request, string $target) {
+    $actor = $request->user();
+    $actorRole = $actor->roleValue();
+    $hotelId = (string) $actor->hotel_id;
+
+    $victim = User::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->where('id', $target)
+        ->first();
+    if (! $victim) {
+        return response()->json(['message' => 'User not found.'], 404);
+    }
+
+    $victimRole = $victim->roleValue();
+    if ($victimRole === UserRole::SUPER_ADMIN->value) {
+        return response()->json(['message' => 'Cannot edit super admin accounts here.'], 422);
+    }
+    if ($victimRole === UserRole::OWNER->value) {
+        return response()->json(['message' => 'Cannot edit owner accounts via portal user management.'], 422);
+    }
+
+    if ($actorRole === UserRole::ADMIN->value) {
+        if (! in_array($victimRole, [UserRole::FRONTDESK->value, 'staff'], true)) {
+            return response()->json(['message' => 'Hotel admins can only edit front desk or staff accounts.'], 403);
+        }
+    } elseif ($actorRole !== UserRole::SUPER_ADMIN->value) {
+        return response()->json(['message' => 'Only hotel admin or super admin can edit portal accounts.'], 403);
+    } elseif (! in_array($victimRole, [UserRole::ADMIN->value, UserRole::FRONTDESK->value, 'staff'], true)) {
+        return response()->json(['message' => 'Only administrator, front desk, or staff accounts can be edited here.'], 422);
+    }
+
+    $validated = $request->validate([
+        'name' => ['sometimes', 'required', 'string', 'max:255'],
+        'email' => ['nullable', 'email', 'max:255'],
+        'password' => ['nullable', 'string', 'min:6', 'confirmed'],
+    ]);
+
+    try {
+        if (array_key_exists('name', $validated)) {
+            $name = trim((string) $validated['name']);
+            PortalAccountSupport::assertUsernameAvailableInHotel(
+                $hotelId,
+                $name,
+                (string) $victim->id,
+            );
+            $victim->name = $name;
+        }
+
+        if (array_key_exists('email', $validated)) {
+            $rawEmail = strtolower(trim((string) ($validated['email'] ?? '')));
+            if ($rawEmail === '') {
+                $email = PortalAccountSupport::defaultEmail(
+                    $hotelId,
+                    (string) $victim->name,
+                );
+            } else {
+                $email = $rawEmail;
+            }
+            PortalAccountSupport::assertEmailAvailable($email, (string) $victim->id);
+            $victim->email = $email;
+        }
+
+        $passwordChanged = false;
+        if (! empty($validated['password'])) {
+            PortalPassword::assign($victim, (string) $validated['password']);
+            $passwordChanged = true;
+            $morph = (new User)->getMorphClass();
+            PersonalAccessToken::query()
+                ->where('tokenable_type', $morph)
+                ->where('tokenable_id', (string) $victim->id)
+                ->delete();
+        } else {
+            $victim->save();
+        }
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        return response()->json([
+            'message' => collect($e->errors())->flatten()->first()
+                ?? 'Could not update portal account.',
+            'errors' => $e->errors(),
+        ], 422);
+    } catch (\Throwable $e) {
+        \Illuminate\Support\Facades\Log::error('Portal user update failed', [
+            'hotel_id' => $hotelId,
+            'user_id' => (string) $victim->id,
+            'error' => $e->getMessage(),
+        ]);
+
+        return response()->json([
+            'message' => config('app.debug')
+                ? $e->getMessage()
+                : 'Could not update portal account.',
+        ], 500);
+    }
+
+    $victim->refresh();
+    app(ActivityLogService::class)->log(
+        $hotelId,
+        $actor,
+        "Updated portal user {$victim->name}"
+            .($passwordChanged ? ' (password reset)' : ''),
+        [
+            'user_id' => (string) $victim->id,
+            'role' => $victim->roleValue(),
+            'password_changed' => $passwordChanged,
+        ]
+    );
+
+    return response()->json([
+        'ok' => true,
+        'user' => [
+            'id' => (string) $victim->id,
+            'name' => (string) $victim->name,
+            'email' => (string) $victim->email,
+            'role' => $victim->roleValue(),
+        ],
+    ]);
+})->middleware('role:admin,super_admin')->name('api.v1.admin.portal-users.update');
+
 Route::get('/admin/portal-users', function (Request $request) {
     $actor = $request->user();
     $actorRole = $actor->roleValue();

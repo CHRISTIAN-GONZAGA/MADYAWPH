@@ -153,6 +153,62 @@ class SuperAdminPortalUsersTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_admin_can_update_frontdesk_username_email_and_password(): void
+    {
+        $hotel = Hotel::create(['name' => 'Edit Hotel', 'location' => 'City']);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'hotel_admin',
+            'email' => 'hotel_admin@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $desk = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'old_desk',
+            'email' => 'old_desk@test.local',
+            'password' => bcrypt('oldpass12'),
+            'role' => UserRole::FRONTDESK,
+        ]);
+
+        $this->actingAs($admin)->putJson('/api/v1/admin/portal-users/'.(string) $desk->id, [
+            'name' => 'new_desk',
+            'email' => 'new_desk@test.local',
+            'password' => 'newpass99',
+            'password_confirmation' => 'newpass99',
+        ])
+            ->assertOk()
+            ->assertJsonPath('user.name', 'new_desk')
+            ->assertJsonPath('user.email', 'new_desk@test.local');
+
+        $desk->refresh();
+        $this->assertSame('new_desk', (string) $desk->name);
+        $this->assertTrue(\App\Support\PortalPassword::verify('newpass99', $desk));
+    }
+
+    public function test_admin_cannot_edit_another_admin(): void
+    {
+        $hotel = Hotel::create(['name' => 'Block Edit Hotel', 'location' => 'City']);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'actor_admin',
+            'email' => 'actor_admin@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $other = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'other_admin',
+            'email' => 'other_admin@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+
+        $this->actingAs($admin)->putJson('/api/v1/admin/portal-users/'.(string) $other->id, [
+            'name' => 'hacked',
+        ])->assertForbidden();
+    }
+
     public function test_approve_reservation_activates_when_check_in_is_today(): void
     {
         $hotel = Hotel::create(['name' => 'Reserve Hotel', 'location' => 'City']);

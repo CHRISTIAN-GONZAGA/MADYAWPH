@@ -49,12 +49,19 @@ final class PortalAccountSupport
     /**
      * @throws ValidationException
      */
-    public static function assertUsernameAvailableInHotel(string $hotelId, string $username): void
-    {
-        if (User::withoutGlobalScopes()
+    public static function assertUsernameAvailableInHotel(
+        string $hotelId,
+        string $username,
+        ?string $exceptUserId = null,
+    ): void {
+        $query = User::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
-            ->where('name', $username)
-            ->exists()) {
+            ->where('name', $username);
+        if ($exceptUserId !== null && $exceptUserId !== '') {
+            $query->where('id', '!=', $exceptUserId);
+        }
+
+        if ($query->exists()) {
             throw ValidationException::withMessages([
                 'name' => ['An account with this username already exists for this hotel.'],
             ]);
