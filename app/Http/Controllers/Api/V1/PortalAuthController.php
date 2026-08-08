@@ -141,6 +141,139 @@ class PortalAuthController extends Controller
     }
 
     /**
+     * Property-gate forgot password — OTP emailed to the hotel super-admin contact.
+     */
+    public function hotelAccessForgotSend(Request $request): JsonResponse
+    {
+        if ($disabled = $this->emailMessagingDisabledResponse()) {
+            return $disabled;
+        }
+
+        $validated = $request->validate([
+            'username' => ['required', 'string', 'max:255'],
+        ]);
+
+        $hotel = $this->findHotelByAccessUsername((string) $validated['username']);
+        if ($hotel === null) {
+            return response()->json(['message' => 'No matching property account found.'], 422);
+        }
+
+        $hotelId = (string) $hotel->id;
+        $email = $this->resolveHotelPasswordResetDeliveryEmail($hotelId);
+        if ($email === null) {
+            return response()->json([
+                'message' => 'No super admin email is on file for this hotel. Update the hotel notification email, then try again.',
+            ], 422);
+        }
+
+        $ttlMinutes = (int) config('services.email_otp.password_reset_ttl_minutes', 30);
+        $code = EmailOtp::generate();
+
+        Cache::put('hotel_access_password_reset:'.$hotelId, [
+            'hotel_id' => $hotelId,
+            'access_username' => trim((string) $hotel->access_username),
+            'code_hash' => EmailOtp::hash($code),
+        ], now()->addMinutes($ttlMinutes));
+
+        $mail = $this->appEmailService->sendOtp(
+            $email,
+            $code,
+            'reset your MADYAW property password',
+            $ttlMinutes,
+        );
+
+        $payload = [
+            'ok' => $mail->sent,
+            'email' => $mail->toArray(),
+            'email_masked' => $this->appEmailService->maskEmail($email),
+            'message' => $mail->sent
+                ? 'Reset code sent to '.$this->appEmailService->maskEmail($email).'.'
+                : ($mail->error ?? 'Reset code could not be sent by email.'),
+        ];
+
+        if (! $mail->sent && config('app.debug')) {
+            $payload['debug_code'] = $code;
+        }
+
+        return response()->json($payload, $mail->sent ? 200 : 503);
+    }
+
+    /**
+     * Apply a new property-gate password after OTP verification.
+     * Also syncs the hotel's super_admin portal password when usernames match.
+     */
+    public function hotelAccessForgotReset(Request $request): JsonResponse
+    {
+        if ($disabled = $this->emailMessagingDisabledResponse()) {
+            return $disabled;
+        }
+
+        $validated = $request->validate([
+            'username' => ['required', 'string', 'max:255'],
+            'code' => ['required', 'string', 'size:6'],
+            'new_password' => ['required', 'string', 'min:6', 'max:64', 'confirmed'],
+        ]);
+
+        $hotel = $this->findHotelByAccessUsername((string) $validated['username']);
+        if ($hotel === null) {
+            return response()->json(['message' => 'Property account not found.'], 422);
+        }
+
+        $hotelId = (string) $hotel->id;
+        $context = Cache::get('hotel_access_password_reset:'.$hotelId);
+        if (! is_array($context)) {
+            return response()->json(['message' => 'Invalid or expired reset code.'], 422);
+        }
+
+        $codeHash = (string) ($context['code_hash'] ?? '');
+        if ($codeHash === '' || ! EmailOtp::matches((string) $validated['code'], $codeHash)) {
+            return response()->json(['message' => 'Invalid or expired reset code.'], 422);
+        }
+
+        if ((string) ($context['hotel_id'] ?? '') !== $hotelId) {
+            return response()->json(['message' => 'Invalid reset code.'], 422);
+        }
+
+        $newPassword = (string) $validated['new_password'];
+        $hotel->access_password = Hash::make($newPassword);
+        $hotel->save();
+
+        $super = User::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where('role', UserRole::SUPER_ADMIN->value)
+            ->where('name', trim((string) $hotel->access_username))
+            ->first();
+        if ($super !== null) {
+            PortalPassword::assign($super, $newPassword);
+        }
+
+        Cache::forget('hotel_access_password_reset:'.$hotelId);
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Property password updated. You may now sign in.',
+        ]);
+    }
+
+    private function findHotelByAccessUsername(string $username): ?Hotel
+    {
+        $username = trim($username);
+        if ($username === '') {
+            return null;
+        }
+
+        return Hotel::withoutGlobalScopes()
+            ->whereNotNull('access_username')
+            ->get()
+            ->first(function (Hotel $candidate) use ($username) {
+                $gateUser = trim((string) $candidate->access_username);
+
+                return $gateUser !== ''
+                    && strcasecmp($gateUser, $username) === 0;
+            });
+    }
+
+    /**
      * Direct hotel registration (used while email OTP is disabled).
      */
     public function hotelRegister(Request $request): JsonResponse

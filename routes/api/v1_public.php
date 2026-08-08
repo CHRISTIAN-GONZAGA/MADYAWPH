@@ -156,6 +156,8 @@ Route::get('/locations/philippines', [PortalAuthController::class, 'philippineLo
 Route::get('/hotels', [PortalAuthController::class, 'hotels']);
 Route::get('/hotels/search', [PortalAuthController::class, 'searchHotels'])->middleware('throttle:60,1');
 Route::post('/hotel/access', [PortalAuthController::class, 'hotelAccess'])->middleware('throttle:8,1');
+Route::post('/hotel/forgot/send', [PortalAuthController::class, 'hotelAccessForgotSend'])->middleware('throttle:5,1');
+Route::post('/hotel/forgot/reset', [PortalAuthController::class, 'hotelAccessForgotReset'])->middleware('throttle:8,1');
 Route::post('/hotel/register', [PortalAuthController::class, 'hotelRegister'])->middleware('throttle:3,1');
 Route::post('/hotel/register/send-code', [PortalAuthController::class, 'hotelRegisterSendCode'])->middleware('throttle:5,1');
 Route::post('/hotel/register/verify', [PortalAuthController::class, 'hotelRegisterVerify'])->middleware('throttle:10,1');

@@ -147,4 +147,53 @@ class PortalForgotPasswordTest extends TestCase
             'role' => 'super_admin',
         ])->assertStatus(422);
     }
+
+    public function test_property_gate_forgot_send_and_reset(): void
+    {
+        $hotel = Hotel::create([
+            'name' => 'Gate Reset Inn',
+            'location' => 'Iloilo',
+            'owner_email' => 'owner@gatereset.test',
+            'access_username' => 'gatehotel',
+            'access_password' => bcrypt('OldGate99'),
+        ]);
+
+        User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'gatehotel',
+            'email' => 'superadmin@gatereset.test',
+            'password' => bcrypt('OldGate99'),
+            'role' => UserRole::SUPER_ADMIN,
+        ]);
+
+        $this->postJson('/api/v1/hotel/forgot/send', [
+            'username' => 'gatehotel',
+        ])->assertOk()->assertJsonPath('ok', true);
+
+        Mail::assertSent(OtpVerificationMail::class, function (OtpVerificationMail $mail) {
+            return $mail->hasTo('superadmin@gatereset.test');
+        });
+
+        $code = null;
+        Mail::assertSent(OtpVerificationMail::class, function (OtpVerificationMail $mail) use (&$code) {
+            $code = $mail->code;
+
+            return true;
+        });
+
+        $this->postJson('/api/v1/hotel/forgot/reset', [
+            'username' => 'gatehotel',
+            'code' => $code,
+            'new_password' => 'NewGate99',
+            'new_password_confirmation' => 'NewGate99',
+        ])->assertOk();
+
+        $hotel->refresh();
+        $this->assertTrue(Hash::check('NewGate99', (string) $hotel->access_password));
+
+        $this->postJson('/api/v1/hotel/access', [
+            'username' => 'gatehotel',
+            'password' => 'NewGate99',
+        ])->assertOk()->assertJsonPath('hotel_id', (string) $hotel->id);
+    }
 }

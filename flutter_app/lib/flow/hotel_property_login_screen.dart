@@ -11,6 +11,7 @@ import '../widgets/app_scaffold.dart';
 import '../widgets/language_picker_button.dart';
 import 'central_admin/central_admin_dashboard_screen.dart';
 import 'flow_state.dart';
+import 'forgot_password_screen.dart';
 import 'system_access_screen.dart';
 
 /// Property gate: hotel username + password only (no directory picker).
@@ -233,8 +234,26 @@ class _HotelPropertyLoginScreenState extends State<HotelPropertyLoginScreen> {
                         ),
                       ),
                     ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: _busy
+                            ? null
+                            : () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => ForgotPasswordScreen(
+                                      mode: ForgotPasswordMode.property,
+                                      initialUsername: _username.text.trim(),
+                                    ),
+                                  ),
+                                );
+                              },
+                        child: const Text('Forgot password?'),
+                      ),
+                    ),
                     if (_error != null) ...[
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 6),
                       Text(
                         _error!,
                         style: TextStyle(
@@ -242,7 +261,7 @@ class _HotelPropertyLoginScreenState extends State<HotelPropertyLoginScreen> {
                         ),
                       ),
                     ],
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 16),
                     FilledButton(
                       onPressed: _busy ? null : _submit,
                       style: FilledButton.styleFrom(

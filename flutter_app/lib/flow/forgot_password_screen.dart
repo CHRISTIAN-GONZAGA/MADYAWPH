@@ -7,9 +7,9 @@ import '../dio_client.dart';
 import '../widgets/app_input.dart';
 import '../widgets/app_scaffold.dart';
 
-enum ForgotPasswordMode { hotel, member }
+enum ForgotPasswordMode { hotel, member, property }
 
-/// OTP password reset for hotel portal accounts or MADYAW members.
+/// OTP password reset for hotel portal accounts, property gate, or MADYAW members.
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({
     super.key,
@@ -53,13 +53,21 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     super.dispose();
   }
 
-  bool get _isHotel => widget.mode == ForgotPasswordMode.hotel;
+  bool get _isPortalHotel => widget.mode == ForgotPasswordMode.hotel;
+  bool get _isProperty => widget.mode == ForgotPasswordMode.property;
+  bool get _isMember => widget.mode == ForgotPasswordMode.member;
 
-  String get _sendPath =>
-      _isHotel ? '/auth/forgot/send' : '/member/forgot/send';
+  String get _sendPath => switch (widget.mode) {
+        ForgotPasswordMode.hotel => '/auth/forgot/send',
+        ForgotPasswordMode.property => '/hotel/forgot/send',
+        ForgotPasswordMode.member => '/member/forgot/send',
+      };
 
-  String get _resetPath =>
-      _isHotel ? '/auth/forgot/reset' : '/member/forgot/reset';
+  String get _resetPath => switch (widget.mode) {
+        ForgotPasswordMode.hotel => '/auth/forgot/reset',
+        ForgotPasswordMode.property => '/hotel/forgot/reset',
+        ForgotPasswordMode.member => '/member/forgot/reset',
+      };
 
   Future<void> _sendCode() async {
     final username = _usernameCtrl.text.trim();
@@ -67,7 +75,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       showAppMessage(context, 'Enter your username.', isError: true);
       return;
     }
-    if (_isHotel && (widget.hotelId ?? '').trim().isEmpty) {
+    if (_isPortalHotel && (widget.hotelId ?? '').trim().isEmpty) {
       showAppMessage(
         context,
         'Sign in to your property first, then try again.',
@@ -79,7 +87,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     setState(() => _busy = true);
     try {
       final data = <String, dynamic>{'username': username};
-      if (_isHotel) {
+      if (_isPortalHotel) {
         data['hotel_id'] = widget.hotelId;
         final role = (widget.role ?? '').trim();
         if (role.isNotEmpty && role != 'public_customer') {
@@ -123,7 +131,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       showAppMessage(context, 'Enter the 6-digit code from your email.', isError: true);
       return;
     }
-    final minLen = _isHotel ? 8 : 6;
+    final minLen = _isPortalHotel ? 8 : 6;
     if (password.length < minLen) {
       showAppMessage(
         context,
@@ -136,7 +144,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       showAppMessage(context, 'Passwords do not match.', isError: true);
       return;
     }
-    if (_isHotel && (widget.hotelId ?? '').trim().isEmpty) {
+    if (_isPortalHotel && (widget.hotelId ?? '').trim().isEmpty) {
       showAppMessage(
         context,
         'Sign in to your property first, then try again.',
@@ -153,7 +161,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         'new_password': password,
         'new_password_confirmation': confirm,
       };
-      if (_isHotel) {
+      if (_isPortalHotel) {
         data['hotel_id'] = widget.hotelId;
       }
       final res = await publicDio().post<Map<String, dynamic>>(
@@ -186,11 +194,17 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final title = _isHotel ? 'Reset hotel password' : 'Reset member password';
-    final blurb = _isHotel
-        ? 'We will email a reset code to this hotel’s super admin contact. '
-            'Enter the username for the account you want to unlock.'
-        : 'We will email a reset code to the address on your membership.';
+    final title = _isMember
+        ? 'Reset member password'
+        : (_isProperty
+            ? 'Reset property password'
+            : 'Reset hotel password');
+    final blurb = _isMember
+        ? 'We will email a reset code to the address on your membership.'
+        : (_isProperty
+            ? 'Enter your property username. We will email a reset code to this hotel’s super admin contact.'
+            : 'We will email a reset code to this hotel’s super admin contact. '
+                'Enter the username for the account you want to unlock.');
 
     return AppScaffold(
       appBar: AppBar(title: Text(title)),
@@ -214,7 +228,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           const SizedBox(height: 20),
           AppInput(
             controller: _usernameCtrl,
-            label: 'Username',
+            label: _isProperty ? 'Property username' : 'Username',
             textInputAction: TextInputAction.next,
             autocorrect: false,
           ),
