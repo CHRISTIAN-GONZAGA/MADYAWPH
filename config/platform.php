@@ -26,17 +26,32 @@ return [
     'registration_credit_within_band' => (float) env('PLATFORM_REG_CREDIT_WITHIN_BAND', 5000),
     'registration_credit_over_band' => (float) env('PLATFORM_REG_CREDIT_OVER_BAND', 10000),
 
-    /** Member booking discount applies only on every Nth successful linked booking. */
+    /** Deprecated — members earn points instead of every-Nth room discounts. */
     'member_discount_every_nth_booking' => (int) env('PLATFORM_MEMBER_DISCOUNT_EVERY_NTH', 5),
 
-    /** Monthly hotel SaaS subscription fee after free trial (PHP). */
+    /**
+     * @deprecated Flat monthly fee — replaced by per-room daily rate billing.
+     */
     'hotel_subscription_fee' => (float) env('PLATFORM_HOTEL_SUBSCRIPTION_FEE', 1500),
 
-    /** Room booking discount (%) for active MADYAWPH members. */
-    'member_booking_discount_percent' => (float) env('PLATFORM_MEMBER_BOOKING_DISCOUNT_PERCENT', 10),
+    /**
+     * Hotel SaaS subscription: pesos charged per registered room per day.
+     * Monthly due = rooms × this rate × days in the billing month.
+     * Example: 20 rooms × ₱5 × 31 days = ₱3,100.
+     */
+    'hotel_subscription_per_room_daily' => (float) env('PLATFORM_HOTEL_SUBSCRIPTION_PER_ROOM_DAILY', 5),
 
-    /** Points awarded to a member on each hotel check-in. */
-    'member_points_per_check_in' => (float) env('PLATFORM_MEMBER_POINTS_PER_CHECK_IN', 1000),
+    /** Deprecated room booking discount (%) — kept at 0; members use points. */
+    'member_booking_discount_percent' => (float) env('PLATFORM_MEMBER_BOOKING_DISCOUNT_PERCENT', 0),
+
+    /** Legacy flat points per booking (unused when earn percent > 0). */
+    'member_points_per_check_in' => (float) env('PLATFORM_MEMBER_POINTS_PER_CHECK_IN', 0),
+
+    /**
+     * Percent of the stay/room price credited as points on a successful member booking.
+     * Example: 2% of ₱2000 → ₱40 worth of points (via member_points_per_peso).
+     */
+    'member_points_earn_percent' => (float) env('PLATFORM_MEMBER_POINTS_EARN_PERCENT', 2),
 
     /** How many member points equal ₱1 (default 10 → 1000 pts = ₱100). */
     'member_points_per_peso' => (float) env('PLATFORM_MEMBER_POINTS_PER_PESO', 10),
@@ -49,8 +64,8 @@ return [
     'min_check_in_payment_percent' => (float) env('PLATFORM_MIN_CHECK_IN_PAYMENT_PERCENT', 50),
 
     /**
-     * Deposit % required when members / public guests book online via the app (0–100).
-     * Central admin only. Example: 50 means online bookings need half the stay total up front.
+     * Fallback deposit % for online app bookings when a hotel has not set its own
+     * (0–100). Each hotel configures this in hotel settings.
      */
     'online_booking_deposit_percent' => (float) env('PLATFORM_ONLINE_BOOKING_DEPOSIT_PERCENT', 50),
 

@@ -10,6 +10,7 @@ import '../widgets/app_button.dart';
 import '../widgets/app_input.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/chat_attachment.dart';
+import '../widgets/hotel_wallet_pay_now.dart';
 import 'admin/widgets/hourly_billing.dart';
 import 'customer_booking_status_screen.dart';
 import 'customer_search_context.dart';
@@ -65,6 +66,8 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
   String _paymentQrUrl = '';
   var _qrLoading = false;
   var _onlineDepositPercent = 50.0;
+  String _paymentGcashMobile = '';
+  String _paymentMayaMobile = '';
   var _guestFieldsReady = false;
   var _adults = 2;
   var _children = 0;
@@ -207,8 +210,14 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
               ?.toDouble() ??
           50.0;
       _onlineDepositPercent = pct.clamp(0, 100);
+      _paymentGcashMobile =
+          (res.data?['payment_gcash_mobile'] ?? '').toString().trim();
+      _paymentMayaMobile =
+          (res.data?['payment_maya_mobile'] ?? '').toString().trim();
     } catch (_) {
       _paymentQrUrl = '';
+      _paymentGcashMobile = '';
+      _paymentMayaMobile = '';
     } finally {
       if (mounted) setState(() => _qrLoading = false);
     }
@@ -311,10 +320,12 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
       );
       return;
     }
-    if (_paymentQrUrl.isEmpty) {
+    if (_paymentQrUrl.isEmpty &&
+        _paymentGcashMobile.isEmpty &&
+        _paymentMayaMobile.isEmpty) {
       showAppMessage(
         context,
-        'This hotel has not uploaded a payment QR yet. Try again later.',
+        'This hotel has not set up online payment yet. Try again later.',
         isError: true,
       );
       return;
@@ -735,7 +746,7 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
                     Text(
                       _hasMemberDiscount
                           ? '${_memberDiscountPercent.toStringAsFixed(0)}% member discount applies automatically — no membership ID needed.'
-                          : 'Your membership is linked. Member rates apply when active on the platform.',
+                          : 'Your membership is linked. This stay earns points toward your wallet.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: scheme.onSurfaceVariant,
                             height: 1.35,
@@ -763,7 +774,7 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
               ),
               const SizedBox(height: 6),
               Text(
-                'Sign in as a member to apply your discount automatically. Guests cannot enter a membership ID here.',
+                'Sign in as a member to link your account and earn points on this stay. Guests cannot enter a membership ID here.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: scheme.onSurfaceVariant,
                       height: 1.35,
@@ -916,9 +927,9 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
             Text(
               isFullDeposit
                   ? 'Cash at hotel is not available for online bookings. '
-                      'Scan the hotel QR, pay the full stay amount, then enter your payment reference below.'
+                      'Tap Pay Now (or scan the QR), pay the full stay amount, then enter your payment reference below.'
                   : 'Cash at hotel is not available for online bookings. '
-                      'Scan the hotel QR and pay at least $depositPctLabel% of the stay '
+                      'Tap Pay Now (or scan the QR) and pay at least $depositPctLabel% of the stay '
                       '(₱${depositDue.toStringAsFixed(2)}). Enter your payment reference below. '
                       'Any remaining balance is collected at the hotel.',
               textAlign: TextAlign.center,
@@ -930,36 +941,69 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
             const SizedBox(height: 12),
             if (_qrLoading)
               const Center(child: CircularProgressIndicator())
-            else if (_paymentQrUrl.isEmpty)
+            else if (_paymentQrUrl.isEmpty &&
+                _paymentGcashMobile.isEmpty &&
+                _paymentMayaMobile.isEmpty)
               Text(
-                'Hotel has not uploaded a payment QR yet. Online booking is unavailable until they do.',
+                'Hotel has not set up online payment yet (QR or GCash/Maya number). Online booking is unavailable until they do.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: scheme.error,
                     ),
               )
-            else
-              Center(
-                child: Column(
-                  children: [
-                    const Text(
-                      'Scan to pay via GCash / Maya / QR Ph',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 8),
-                    NetworkMediaImage(
-                      url: _paymentQrUrl,
-                      width: 200,
-                      height: 200,
-                      fit: BoxFit.contain,
-                    ),
-                  ],
+            else ...[
+              if (_paymentGcashMobile.isNotEmpty ||
+                  _paymentMayaMobile.isNotEmpty) ...[
+                FilledButton.icon(
+                  onPressed: () => HotelWalletPayNow.showChooser(
+                    context: context,
+                    amountPesos: depositDue,
+                    gcashMobile: _paymentGcashMobile,
+                    mayaMobile: _paymentMayaMobile,
+                  ),
+                  icon: const Icon(Icons.payments_outlined),
+                  label: Text(
+                    'Pay now · ₱${depositDue.toStringAsFixed(2)}',
+                  ),
                 ),
-              ),
+                const SizedBox(height: 8),
+                Text(
+                  [
+                    if (_paymentGcashMobile.isNotEmpty)
+                      'GCash: $_paymentGcashMobile',
+                    if (_paymentMayaMobile.isNotEmpty)
+                      'Maya: $_paymentMayaMobile',
+                  ].join(' · '),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (_paymentQrUrl.isNotEmpty)
+                Center(
+                  child: Column(
+                    children: [
+                      const Text(
+                        'Or scan to pay via GCash / Maya / QR Ph',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 8),
+                      NetworkMediaImage(
+                        url: _paymentQrUrl,
+                        width: 200,
+                        height: 200,
+                        fit: BoxFit.contain,
+                      ),
+                    ],
+                  ),
+                ),
+            ],
             const SizedBox(height: 12),
             AppInput(
               controller: _paymentRefCtrl,
               label: 'Payment reference *',
-              hint: 'GCash / Maya / QR Ph transaction ID',
+              hint: 'Paste GCash / Maya / QR Ph transaction ID after paying',
             ),
             const SizedBox(height: 12),
             Text(

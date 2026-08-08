@@ -20,11 +20,12 @@ use Tests\TestCase;
 
 class MemberScanDiscountPointsTest extends TestCase
 {
-    public function test_scan_applies_central_admin_discount_and_full_points_payment(): void
+    public function test_scan_links_member_earns_percent_points_and_pays_full_with_points(): void
     {
         PlatformSetting::query()->create([
             'key' => 'global',
-            'member_points_per_check_in' => 1000,
+            'member_points_earn_percent' => 2,
+            'member_points_per_check_in' => 0,
             'member_points_per_peso' => 10,
             'member_booking_discount_percent' => 20,
         ]);
@@ -56,24 +57,6 @@ class MemberScanDiscountPointsTest extends TestCase
         $approved = app(MemberSubscriptionApprovalService::class)
             ->approve($member, User::factory()->create());
         $approved->forceFill(['points_balance' => 50000])->save();
-
-        // Discount applies on every 5th linked booking — seed four prior stays.
-        $priorHotel = Hotel::create(['name' => 'Prior Hotel', 'location' => 'Butuan']);
-        for ($i = 1; $i <= 4; $i++) {
-            Booking::withoutGlobalScopes()->create([
-                'hotel_id' => (string) $priorHotel->id,
-                'booking_reference' => 'BK-PRIOR-'.$i,
-                'room_id' => 'room-prior-'.$i,
-                'guest_name' => 'Scan Member',
-                'check_in_date' => Carbon::today()->subDays(10 - $i)->toDateString(),
-                'check_out_date' => Carbon::today()->subDays(9 - $i)->toDateString(),
-                'nights' => 1,
-                'total_amount' => 1000,
-                'status' => BookingStatus::COMPLETED->value,
-                'member_shid_id' => (string) $approved->member_shid_id,
-                'checked_out_at' => Carbon::today()->subDays(9 - $i),
-            ]);
-        }
 
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
@@ -113,12 +96,12 @@ class MemberScanDiscountPointsTest extends TestCase
             'member_shid_id' => (string) $approved->member_shid_id,
         ]);
         $apply->assertOk();
-        $apply->assertJsonPath('discount_percent', 20);
-        $apply->assertJsonPath('discount_applied', true);
-        // 20% of 2000 = 400 off → balance 1600 → points needed 16000
-        $apply->assertJsonPath('bill.balance_due', 1600);
-        $apply->assertJsonPath('points_quote.points_needed', 16000);
-        $apply->assertJsonPath('points_quote.points_available', 51000);
+        $apply->assertJsonPath('discount_percent', 0);
+        $apply->assertJsonPath('discount_applied', false);
+        // Full stay remains ₱2000; 2% of 2000 = ₱40 → 400 pts earned on link.
+        $apply->assertJsonPath('bill.balance_due', 2000);
+        $apply->assertJsonPath('points_quote.points_needed', 20000);
+        $apply->assertJsonPath('points_quote.points_available', 50400);
         $apply->assertJsonPath('points_quote.can_pay_in_full', true);
 
         $pay = $this->postJson('/api/v1/admin/member/redeem-points', [
@@ -128,23 +111,23 @@ class MemberScanDiscountPointsTest extends TestCase
         ]);
         $pay->assertOk();
         $pay->assertJsonPath('paid_in_full', true);
-        $pay->assertJsonPath('points_redeemed', 16000);
-        $pay->assertJsonPath('pesos_credited', 1600);
-        $pay->assertJsonPath('hotel_credits_added', 1600);
+        $pay->assertJsonPath('points_redeemed', 20000);
+        $pay->assertJsonPath('pesos_credited', 2000);
+        $pay->assertJsonPath('hotel_credits_added', 2000);
 
         $booking->refresh();
         $this->assertSame('paid', (string) $booking->payment_status);
         $this->assertEqualsWithDelta(0, (float) $booking->total_amount, 0.01);
 
         $approved->refresh();
-        // Started 50000 + 1000 booking earn − 16000 redeemed
-        $this->assertSame(35000, (int) round((float) $approved->points_balance));
+        // Started 50000 + 400 earn − 20000 redeemed
+        $this->assertSame(30400, (int) round((float) $approved->points_balance));
 
         $creditsAfter = (float) HotelCredit::withoutGlobalScopes()
             ->where('hotel_id', (string) $hotel->id)
             ->value('current_credits');
         $this->assertEqualsWithDelta(
-            $creditsBefore + 1600,
+            $creditsBefore + 2000,
             $creditsAfter,
             0.01,
             'Hotel credit wallet must increase by the exact peso balance paid with points.',
@@ -155,14 +138,15 @@ class MemberScanDiscountPointsTest extends TestCase
             ->where('type', 'member_points')
             ->get();
         $this->assertCount(1, $pointsCharges);
-        $this->assertEqualsWithDelta(-1600.0, (float) $pointsCharges->first()->amount, 0.01);
+        $this->assertEqualsWithDelta(-2000.0, (float) $pointsCharges->first()->amount, 0.01);
     }
 
     public function test_full_points_payment_credits_exact_fractional_peso_balance(): void
     {
         PlatformSetting::query()->create([
             'key' => 'global',
-            'member_points_per_check_in' => 1000,
+            'member_points_earn_percent' => 0,
+            'member_points_per_check_in' => 0,
             'member_points_per_peso' => 10,
             'member_booking_discount_percent' => 0,
         ]);
@@ -250,7 +234,8 @@ class MemberScanDiscountPointsTest extends TestCase
     {
         PlatformSetting::query()->create([
             'key' => 'global',
-            'member_points_per_check_in' => 1000,
+            'member_points_earn_percent' => 0,
+            'member_points_per_check_in' => 0,
             'member_points_per_peso' => 10,
             'member_booking_discount_percent' => 10,
         ]);

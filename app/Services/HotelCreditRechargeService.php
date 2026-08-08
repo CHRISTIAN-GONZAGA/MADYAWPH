@@ -45,7 +45,8 @@ class HotelCreditRechargeService
         });
 
         if ($alreadyApplied) {
-            return false;
+            // Idempotent success — credits were already added for this transaction.
+            return true;
         }
 
         $newBalance = (float) $credit->current_credits + $amountPhp;

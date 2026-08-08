@@ -131,7 +131,7 @@ class ReservationActivationService
         }
         if (! empty($meta['member_shid_id'])) {
             $bookingAttrs['member_shid_id'] = (string) $meta['member_shid_id'];
-            // Re-evaluate every-Nth discount at activation so pending reservations cannot lock a stale %.
+            // Re-evaluate member link at activation (room % discounts are retired).
             $memberDiscount = app(MemberSubscriptionService::class)
                 ->resolveBookingMemberDiscount((string) $meta['member_shid_id']);
             if ($memberDiscount['discount_eligible'] && (float) $memberDiscount['percent'] > 0) {

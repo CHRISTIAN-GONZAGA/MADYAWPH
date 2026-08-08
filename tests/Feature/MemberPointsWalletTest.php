@@ -23,7 +23,8 @@ class MemberPointsWalletTest extends TestCase
     {
         PlatformSetting::query()->create([
             'key' => 'global',
-            'member_points_per_check_in' => 1000,
+            'member_points_earn_percent' => 100,
+            'member_points_per_check_in' => 0,
             'member_points_per_peso' => 10,
             'member_booking_discount_percent' => 10,
         ]);
@@ -97,6 +98,7 @@ class MemberPointsWalletTest extends TestCase
         $this->postJson('/api/v1/rooms/'.$room->id.'/checkout')->assertOk();
 
         $approved->refresh();
+        // 100% of ₱100 stay = ₱100 → 1000 pts at 10 pts/₱1
         $this->assertSame(1000, (int) round((float) $approved->points_balance));
 
         $room2 = Room::withoutGlobalScopes()->create([

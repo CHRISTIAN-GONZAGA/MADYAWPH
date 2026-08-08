@@ -103,6 +103,13 @@ class BookingPaymentService
 
         $methodRaw = trim((string) ($validated['payment_method'] ?? $booking->payment_method?->value ?? $booking->payment_method ?? 'Cash'));
         $method = $this->normalizePaymentMethod($methodRaw) ?? 'Cash';
+        if ($method === 'Member Points') {
+            throw ValidationException::withMessages([
+                'payment_method' => [
+                    'Member points must be redeemed via the member QR / redeem-points flow so the hotel credit wallet is topped up.',
+                ],
+            ]);
+        }
         $reference = array_key_exists('payment_reference', $validated)
             ? $validated['payment_reference']
             : ($booking->payment_reference ?? null);
@@ -237,6 +244,13 @@ class BookingPaymentService
             : ($booking->payment_reference ?? null);
         $nextMethod = (string) ($validated['payment_method'] ?? $booking->payment_method?->value ?? $booking->payment_method ?? 'Cash');
         $normalizedMethod = $this->normalizePaymentMethod($nextMethod) ?? 'Cash';
+        if ($normalizedMethod === 'Member Points') {
+            throw ValidationException::withMessages([
+                'payment_method' => [
+                    'Member points must be redeemed via the member QR / redeem-points flow so the hotel credit wallet is topped up.',
+                ],
+            ]);
+        }
 
         if ($newStatus === 'paid' && $totalDue > 0.009) {
             if ($amountTendered !== null && $amountTendered + 0.009 < $totalDue) {

@@ -34,14 +34,16 @@ class MemberSubscriptionBookingDiscountTest extends TestCase
         $this->assertStringContainsString((string) $approved->member_shid_id, $payload);
     }
 
-    public function test_validate_member_returns_discount_percent(): void
+    public function test_validate_member_returns_zero_discount_and_earn_percent(): void
     {
         PlatformSetting::query()->create([
             'key' => 'global',
             'member_booking_discount_percent' => 12.5,
+            'member_points_earn_percent' => 2,
+            'member_points_per_peso' => 10,
         ]);
 
-        $row = MemberSubscriptionRequest::create([
+        MemberSubscriptionRequest::create([
             'full_name' => 'Juan Member',
             'email' => 'juan@example.com',
             'phone' => '09179876543',
@@ -58,9 +60,10 @@ class MemberSubscriptionBookingDiscountTest extends TestCase
 
         $response->assertOk();
         $response->assertJsonPath('valid', true);
-        $response->assertJsonPath('discount_percent', 12.5);
+        $response->assertJsonPath('discount_percent', 0);
         $response->assertJsonPath('next_booking_discount_eligible', false);
         $response->assertJsonPath('next_booking_discount_percent', 0);
+        $response->assertJsonPath('points_earn_percent', 2);
         $response->assertJsonPath('member_shid_id', 'SHID-TEST1234');
     }
 }

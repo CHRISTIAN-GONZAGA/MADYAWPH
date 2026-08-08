@@ -234,7 +234,6 @@ class _AccountPanel extends StatelessWidget {
     final qr = (m['member_qr_payload'] ?? '').toString();
     final email = (m['email'] ?? '').toString();
     final phone = (m['phone'] ?? '').toString();
-    final discount = (m['member_discount_percent'] as num?)?.toDouble() ?? 0;
     final validUntil =
         _formatValidUntil((m['member_valid_until'] ?? '').toString());
 
@@ -333,41 +332,37 @@ class _AccountPanel extends StatelessWidget {
                   ),
                 ),
               ],
-              if (discount > 0) ...[
-                const SizedBox(height: 14),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: scheme.outlineVariant.withValues(alpha: 0.7),
-                    ),
-                  ),
-                  child: Text(
-                    () {
-                      final every = ((m['member_discount_every_nth_booking']
-                                  as num?)
-                              ?.toDouble() ??
-                          5)
-                          .round();
-                      final nextEligible =
-                          m['next_booking_discount_eligible'] == true;
-                      final bookings =
-                          ((m['member_bookings_count'] as num?)?.toDouble() ?? 0)
-                              .round();
-                      return '${discount.toStringAsFixed(0)}% off every ${every}th booking '
-                          '(not every stay). You have $bookings linked booking${bookings == 1 ? '' : 's'}; '
-                          '${nextEligible ? 'your next booking gets the discount.' : 'your next booking is full price.'}';
-                    }(),
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          height: 1.35,
-                        ),
+              const SizedBox(height: 14),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: scheme.outlineVariant.withValues(alpha: 0.7),
                   ),
                 ),
-              ],
+                child: Text(
+                  () {
+                    final earnPct =
+                        ((m['points_earn_percent'] as num?)?.toDouble() ?? 0);
+                    final bookings =
+                        ((m['member_bookings_count'] as num?)?.toDouble() ?? 0)
+                            .round();
+                    if (earnPct > 0) {
+                      return 'Earn ${earnPct.toStringAsFixed(earnPct % 1 == 0 ? 0 : 1)}% of each stay’s price as points. '
+                          'You have $bookings linked booking${bookings == 1 ? '' : 's'}.';
+                    }
+                    return 'Points are credited from your stays. '
+                        'You have $bookings linked booking${bookings == 1 ? '' : 's'}.';
+                  }(),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        height: 1.35,
+                      ),
+                ),
+              ),
               const SizedBox(height: 22),
               Text(
                 'Membership ID',
@@ -858,7 +853,8 @@ class _PointsWalletCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final points = (member['points_balance'] as num?)?.toInt() ?? 0;
     final pesos = (member['points_balance_pesos'] as num?)?.toDouble() ?? 0;
-    final perCheckIn = (member['points_per_check_in'] as num?)?.toInt() ?? 1000;
+    final earnPercent =
+        (member['points_earn_percent'] as num?)?.toDouble() ?? 0;
     final perPeso = (member['points_per_peso'] as num?)?.toDouble() ?? 10;
 
     return Container(
@@ -892,9 +888,13 @@ class _PointsWalletCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            'Earn $perCheckIn points with every successful booking '
-            '(${perPeso.toStringAsFixed(perPeso % 1 == 0 ? 0 : 1)} pts = ₱1). '
-            'Hotels can redeem points from your QR at payment.',
+            earnPercent > 0
+                ? 'Earn ${earnPercent.toStringAsFixed(earnPercent % 1 == 0 ? 0 : 1)}% of each stay’s price as points '
+                    '(${perPeso.toStringAsFixed(perPeso % 1 == 0 ? 0 : 1)} pts = ₱1). '
+                    'Hotels can redeem points from your QR at payment.'
+                : 'Points are credited from your stays '
+                    '(${perPeso.toStringAsFixed(perPeso % 1 == 0 ? 0 : 1)} pts = ₱1). '
+                    'Hotels can redeem points from your QR at payment.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: scheme.onSurfaceVariant,
                   height: 1.4,

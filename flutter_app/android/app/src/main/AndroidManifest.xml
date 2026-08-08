@@ -93,5 +93,21 @@
             <action android:name="android.intent.action.SENDTO" />
             <data android:scheme="smsto" />
         </intent>
+        <!-- Pay Now: open installed e-wallet apps (GCash / Maya). -->
+        <package android:name="com.globe.gcash.android" />
+        <package android:name="com.paymaya" />
+        <package android:name="com.maya.maya" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="gcash" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="maya" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="paymaya" />
+        </intent>
     </queries>
 </manifest>

@@ -6,7 +6,7 @@ import '../../widgets/app_button.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/chat_attachment.dart';
 
-/// Upload QR Ph for online guest payments and verify payment references.
+/// Upload QR Ph for online guest payments, set wallet numbers, verify refs.
 class AdminOnlinePaymentScreen extends StatefulWidget {
   const AdminOnlinePaymentScreen({super.key});
 
@@ -21,7 +21,10 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
   String? _qrUrl;
   bool _loadingQr = true;
   bool _uploading = false;
+  bool _savingNumbers = false;
   final _refCtrl = TextEditingController();
+  final _gcashCtrl = TextEditingController();
+  final _mayaCtrl = TextEditingController();
   List<Map<String, dynamic>> _refResults = const [];
   bool _searching = false;
   String? _error;
@@ -37,6 +40,8 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
   void dispose() {
     _tabs.dispose();
     _refCtrl.dispose();
+    _gcashCtrl.dispose();
+    _mayaCtrl.dispose();
     super.dispose();
   }
 
@@ -52,6 +57,9 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
       if (!mounted) return;
       setState(() {
         _qrUrl = (res.data?['qr_url'] ?? '').toString();
+        _gcashCtrl.text =
+            (res.data?['payment_gcash_mobile'] ?? '').toString();
+        _mayaCtrl.text = (res.data?['payment_maya_mobile'] ?? '').toString();
         _loadingQr = false;
       });
     } on DioException catch (e) {
@@ -87,6 +95,30 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
       showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  Future<void> _saveWalletNumbers() async {
+    setState(() => _savingNumbers = true);
+    try {
+      await portalDio().patch(
+        '/admin/hotel/payment-wallet-numbers',
+        data: {
+          'payment_gcash_mobile': _gcashCtrl.text.trim(),
+          'payment_maya_mobile': _mayaCtrl.text.trim(),
+        },
+      );
+      if (!mounted) return;
+      showAppMessage(
+        context,
+        'Wallet numbers saved. Guests can use Pay Now in the booking app.',
+      );
+      await _loadQr();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    } finally {
+      if (mounted) setState(() => _savingNumbers = false);
     }
   }
 
@@ -139,7 +171,8 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
             padding: const EdgeInsets.all(20),
             children: [
               Text(
-                'Guests who choose Online payment during booking will see this QR code to pay via GCash, Maya, or other QR Ph apps.',
+                'Guests who book online see this QR and can tap Pay Now. '
+                'For Pay Now, set the GCash and/or Maya mobile number that should receive payments.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),
@@ -181,6 +214,49 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
               AppPrimaryButton(
                 label: _uploading ? 'Uploading…' : 'Upload / replace QR image',
                 onPressed: _uploading ? null : _uploadQr,
+              ),
+              const SizedBox(height: 28),
+              Text(
+                'Wallet numbers for Pay Now',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Required for the Pay Now button. Guests are sent to GCash/Maya with this number and the amount to pay. '
+                'GCash/Maya do not allow auto-filling Send Money from other apps — guests confirm the number and amount in the wallet, then paste the reference back in MADYAW.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      height: 1.35,
+                    ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _gcashCtrl,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(
+                  labelText: 'GCash mobile number',
+                  hintText: '09171234567',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _mayaCtrl,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(
+                  labelText: 'Maya mobile number',
+                  hintText: '09181234567',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: _savingNumbers || _loadingQr ? null : _saveWalletNumbers,
+                child: Text(
+                  _savingNumbers ? 'Saving…' : 'Save wallet numbers',
+                ),
               ),
             ],
           ),
@@ -230,7 +306,10 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
                           ? Icons.receipt_long
                           : Icons.pending_actions_outlined,
                     ),
-                    title: Text(ref, style: const TextStyle(fontWeight: FontWeight.w800)),
+                    title: Text(
+                      ref,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
                     subtitle: Text(
                       '$guest · $method · $status'
                       '${total > 0 ? ' · ₱${total.toStringAsFixed(0)}' : ''}',
@@ -239,7 +318,9 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
                   ),
                 );
               }),
-              if (_refResults.isEmpty && _refCtrl.text.length >= 3 && !_searching)
+              if (_refResults.isEmpty &&
+                  _refCtrl.text.length >= 3 &&
+                  !_searching)
                 const Padding(
                   padding: EdgeInsets.only(top: 24),
                   child: Center(child: Text('No matching references found.')),

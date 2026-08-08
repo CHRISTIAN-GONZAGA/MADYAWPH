@@ -341,9 +341,9 @@ class MemberSubscriptionController extends Controller
         }
 
         $discount = $this->members->resolveBookingMemberDiscount((string) $member->member_shid_id);
-        $policyPercent = $this->members->memberBookingDiscountPercent();
         $points = (float) ($member->points_balance ?? 0);
         $pointsPerPeso = max(0.01, (float) $this->settings->memberPointsPerPeso());
+        $earnPercent = $this->settings->memberPointsEarnPercent();
 
         return response()->json([
             'valid' => true,
@@ -351,17 +351,17 @@ class MemberSubscriptionController extends Controller
             'member_qr_payload' => $this->members->qrPayloadFor($member),
             'full_name' => (string) $member->full_name,
             'member_valid_until' => optional($member->member_valid_until)->toISOString(),
-            /** Platform policy % (configured by central admin). */
-            'discount_percent' => $policyPercent,
-            /** Actual % that applies if a booking is linked right now (0 when not an Nth booking). */
-            'next_booking_discount_percent' => (float) ($discount['percent'] ?? 0),
-            'next_booking_discount_eligible' => (bool) ($discount['discount_eligible'] ?? false),
+            /** Room % discounts retired — always 0; members earn points instead. */
+            'discount_percent' => 0.0,
+            'next_booking_discount_percent' => 0.0,
+            'next_booking_discount_eligible' => false,
             'next_booking_ordinal' => (int) ($discount['booking_ordinal'] ?? 0),
             'discount_every_nth_booking' => (int) ($discount['discount_every_nth'] ?? 5),
-            'discount_type' => $discount['type'],
+            'discount_type' => 'none',
             'points_balance' => (int) round($points),
             'points_balance_pesos' => round($points / $pointsPerPeso, 2),
             'points_per_peso' => $pointsPerPeso,
+            'points_earn_percent' => $earnPercent,
         ]);
     }
 }

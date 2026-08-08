@@ -18,7 +18,7 @@ final class MemberSubscriptionService
 
     public function memberBookingDiscountPercent(): float
     {
-        return max(0.0, min(100.0, $this->settings->memberBookingDiscountPercent()));
+        return 0.0;
     }
 
     public function memberDiscountEveryNthBooking(): int
@@ -136,15 +136,12 @@ final class MemberSubscriptionService
 
     public function isNthBookingDiscountEligible(int $ordinal): bool
     {
-        $every = $this->memberDiscountEveryNthBooking();
-        if ($every < 1 || $ordinal < 1) {
-            return false;
-        }
-
-        return ($ordinal % $every) === 0;
+        return false;
     }
 
     /**
+     * Link an active member to a booking. Room % discounts are retired — members earn points.
+     *
      * @return array{
      *     type: string,
      *     percent: float,
@@ -175,28 +172,14 @@ final class MemberSubscriptionService
 
         $shid = (string) $member->member_shid_id;
         $ordinal = $this->nextBookingOrdinal($shid, $excludeBookingId);
-        $eligible = $this->isNthBookingDiscountEligible($ordinal);
-        $percent = $this->memberBookingDiscountPercent();
-
-        if (! $eligible || $percent <= 0) {
-            return [
-                'type' => 'none',
-                'percent' => 0.0,
-                'member_shid_id' => $shid,
-                'member_name' => (string) $member->full_name,
-                'booking_ordinal' => $ordinal,
-                'discount_eligible' => false,
-                'discount_every_nth' => $every,
-            ];
-        }
 
         return [
-            'type' => 'member',
-            'percent' => $percent,
+            'type' => 'none',
+            'percent' => 0.0,
             'member_shid_id' => $shid,
             'member_name' => (string) $member->full_name,
             'booking_ordinal' => $ordinal,
-            'discount_eligible' => true,
+            'discount_eligible' => false,
             'discount_every_nth' => $every,
         ];
     }
@@ -221,8 +204,7 @@ final class MemberSubscriptionService
         $points = (float) ($row->points_balance ?? 0);
         $pointsPerPeso = max(0.01, (float) $this->settings->memberPointsPerPeso());
         $linked = $shid !== '' ? $this->countLinkedBookings($shid) : 0;
-        $every = $this->memberDiscountEveryNthBooking();
-        $nextOrdinal = $linked + 1;
+        $earnPercent = $this->settings->memberPointsEarnPercent();
 
         return [
             'id' => (string) $row->id,
@@ -234,15 +216,16 @@ final class MemberSubscriptionService
             'member_shid_id' => $shid,
             'member_qr_payload' => $qr,
             'member_valid_until' => optional($row->member_valid_until)->toISOString(),
-            'member_discount_percent' => $this->memberBookingDiscountPercent(),
-            'member_discount_every_nth_booking' => $every,
+            'member_discount_percent' => 0.0,
+            'member_discount_every_nth_booking' => $this->memberDiscountEveryNthBooking(),
             'member_bookings_count' => $linked,
-            'next_booking_ordinal' => $nextOrdinal,
-            'next_booking_discount_eligible' => $this->isNthBookingDiscountEligible($nextOrdinal),
+            'next_booking_ordinal' => $linked + 1,
+            'next_booking_discount_eligible' => false,
             'amount' => (float) ($row->amount ?? 0),
             'points_balance' => (int) round($points),
             'points_balance_pesos' => round($points / $pointsPerPeso, 2),
             'points_per_check_in' => (int) round($this->settings->memberPointsPerCheckIn()),
+            'points_earn_percent' => $earnPercent,
             'points_per_peso' => $pointsPerPeso,
         ];
     }

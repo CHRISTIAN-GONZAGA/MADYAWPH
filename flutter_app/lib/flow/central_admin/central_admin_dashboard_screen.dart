@@ -344,15 +344,16 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
   }
 
   Future<void> _updateMemberPointsSettings({
-    required double pointsPerCheckIn,
+    required double pointsEarnPercent,
     required double pointsPerPeso,
   }) async {
     try {
       await portalDio().patch<Map<String, dynamic>>(
         '/platform/settings/member-points',
         data: {
-          'member_points_per_check_in': pointsPerCheckIn,
+          'member_points_earn_percent': pointsEarnPercent,
           'member_points_per_peso': pointsPerPeso,
+          'member_points_per_check_in': 0,
         },
       );
       if (!mounted) return;
@@ -395,10 +396,10 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
     try {
       await portalDio().patch(
         '/platform/settings/hotel-subscription-fee',
-        data: {'hotel_subscription_fee': amount},
+        data: {'hotel_subscription_per_room_daily': amount},
       );
       if (!mounted) return;
-      showAppMessage(context, 'Hotel subscription fee updated.');
+      showAppMessage(context, 'Hotel subscription per-room daily rate updated.');
       await _loadAll();
     } on DioException catch (e) {
       if (!mounted) return;
@@ -2005,7 +2006,7 @@ class _QrSettingsSection extends StatefulWidget {
   }) onUpdateEarlyCheckInFee;
   final Future<void> Function(double percent) onUpdateMemberBookingDiscountPercent;
   final Future<void> Function({
-    required double pointsPerCheckIn,
+    required double pointsEarnPercent,
     required double pointsPerPeso,
   }) onUpdateMemberPointsSettings;
 
@@ -2025,7 +2026,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
   late final TextEditingController _earlyGraceCtrl;
   late final TextEditingController _earlyFeeCtrl;
   late final TextEditingController _memberDiscountCtrl;
-  late final TextEditingController _pointsPerCheckInCtrl;
+  late final TextEditingController _pointsEarnPercentCtrl;
   late final TextEditingController _pointsPerPesoCtrl;
   var _savingFee = false;
   var _savingHotelSubFee = false;
@@ -2045,8 +2046,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
       text: _feePercentText(widget.settings),
     );
     _hotelSubFeeCtrl = TextEditingController(
-      text: ((widget.settings['hotel_subscription_fee'] as num?)?.toDouble() ?? 1500)
-          .toStringAsFixed(0),
+      text: _hotelSubDailyText(widget.settings),
     );
     _memberMonthlyFeeCtrl = TextEditingController(
       text: _memberMonthlyFeeText(widget.settings),
@@ -2073,8 +2073,8 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     _memberDiscountCtrl = TextEditingController(
       text: _memberDiscountText(widget.settings),
     );
-    _pointsPerCheckInCtrl = TextEditingController(
-      text: _pointsPerCheckInText(widget.settings),
+    _pointsEarnPercentCtrl = TextEditingController(
+      text: _pointsEarnPercentText(widget.settings),
     );
     _pointsPerPesoCtrl = TextEditingController(
       text: _pointsPerPesoText(widget.settings),
@@ -2116,9 +2116,9 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     if (memberNext != _memberDiscountCtrl.text) {
       _memberDiscountCtrl.text = memberNext;
     }
-    final ptsCheckIn = _pointsPerCheckInText(widget.settings);
-    if (ptsCheckIn != _pointsPerCheckInCtrl.text) {
-      _pointsPerCheckInCtrl.text = ptsCheckIn;
+    final ptsEarn = _pointsEarnPercentText(widget.settings);
+    if (ptsEarn != _pointsEarnPercentCtrl.text) {
+      _pointsEarnPercentCtrl.text = ptsEarn;
     }
     final ptsPeso = _pointsPerPesoText(widget.settings);
     if (ptsPeso != _pointsPerPesoCtrl.text) {
@@ -2127,6 +2127,10 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     final memberFee = _memberMonthlyFeeText(widget.settings);
     if (memberFee != _memberMonthlyFeeCtrl.text) {
       _memberMonthlyFeeCtrl.text = memberFee;
+    }
+    final hotelSubDaily = _hotelSubDailyText(widget.settings);
+    if (hotelSubDaily != _hotelSubFeeCtrl.text) {
+      _hotelSubFeeCtrl.text = hotelSubDaily;
     }
     if (oldWidget.settings['registration_credit_rules'] !=
             widget.settings['registration_credit_rules'] ||
@@ -2184,7 +2188,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     _earlyGraceCtrl.dispose();
     _earlyFeeCtrl.dispose();
     _memberDiscountCtrl.dispose();
-    _pointsPerCheckInCtrl.dispose();
+    _pointsEarnPercentCtrl.dispose();
     _pointsPerPesoCtrl.dispose();
     super.dispose();
   }
@@ -2208,6 +2212,13 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     if (raw == null) return '50';
     return (raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 50)
         .toStringAsFixed(raw is num && raw % 1 == 0 ? 0 : 1);
+  }
+
+  static String _hotelSubDailyText(Map<String, dynamic> settings) {
+    final raw = settings['hotel_subscription_per_room_daily'] ??
+        settings['hotel_subscription_fee'];
+    final v = (raw as num?)?.toDouble() ?? 5;
+    return v == v.roundToDouble() ? '${v.toInt()}' : v.toStringAsFixed(2);
   }
 
   static String _onlineDepositPercentText(Map<String, dynamic> settings) {
@@ -2254,11 +2265,11 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
         .toStringAsFixed(raw is num && raw % 1 == 0 ? 0 : 1);
   }
 
-  static String _pointsPerCheckInText(Map<String, dynamic> settings) {
-    final raw = settings['member_points_per_check_in'];
-    if (raw == null) return '1000';
-    return (raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 1000)
-        .toStringAsFixed(0);
+  static String _pointsEarnPercentText(Map<String, dynamic> settings) {
+    final raw = settings['member_points_earn_percent'];
+    if (raw == null) return '2';
+    return (raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 2)
+        .toStringAsFixed(raw is num && raw % 1 == 0 ? 0 : 2);
   }
 
   static String _pointsPerPesoText(Map<String, dynamic> settings) {
@@ -2283,10 +2294,10 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
   }
 
   Future<void> _saveMemberPoints() async {
-    final checkIn = double.tryParse(_pointsPerCheckInCtrl.text.trim());
+    final earnPercent = double.tryParse(_pointsEarnPercentCtrl.text.trim());
     final perPeso = double.tryParse(_pointsPerPesoCtrl.text.trim());
-    if (checkIn == null || checkIn < 0) {
-      showAppMessage(context, 'Enter a valid booking points amount.');
+    if (earnPercent == null || earnPercent < 0 || earnPercent > 100) {
+      showAppMessage(context, 'Enter an earn percent between 0 and 100.');
       return;
     }
     if (perPeso == null || perPeso <= 0) {
@@ -2296,7 +2307,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
     setState(() => _savingMemberPoints = true);
     try {
       await widget.onUpdateMemberPointsSettings(
-        pointsPerCheckIn: checkIn,
+        pointsEarnPercent: earnPercent,
         pointsPerPeso: perPeso,
       );
     } finally {
@@ -2451,8 +2462,15 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
               const SizedBox(height: 16),
               _QrUploadCard(
                 title: 'Hotel subscription (QR Ph)',
-                subtitle:
-                    'Shown when a hotel trial ends. Monthly fee ₱${widget.settings['hotel_subscription_fee'] ?? 1500}.',
+                subtitle: () {
+                  final daily = (widget.settings[
+                              'hotel_subscription_per_room_daily'] as num?)
+                          ?.toDouble() ??
+                      (widget.settings['hotel_subscription_fee'] as num?)
+                          ?.toDouble() ??
+                      5;
+                  return 'Shown when a hotel trial ends. Monthly due = rooms × ₱${daily.toStringAsFixed(daily % 1 == 0 ? 0 : 2)}/room/day × days in month.';
+                }(),
                 imageUrl: hotelSubQr,
                 onUpload: widget.onUploadSubscription,
               ),
@@ -2696,12 +2714,13 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       const Text(
-                        'Hotel subscription fee',
+                        'Hotel subscription (per room / day)',
                         style: TextStyle(fontWeight: FontWeight.w800),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Amount due after the 1-month free trial.',
+                        'Monthly amount for each hotel = registered rooms × this daily rate × days in that month. '
+                        'Example: 20 rooms × ₱5 × 31 days = ₱3,100.',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       const SizedBox(height: 12),
@@ -2711,7 +2730,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                           decimal: true,
                         ),
                         decoration: const InputDecoration(
-                          labelText: 'Monthly fee',
+                          labelText: 'Pesos per room per day',
                           prefixText: '₱ ',
                           border: OutlineInputBorder(),
                         ),
@@ -2724,10 +2743,11 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                                 final v = double.tryParse(
                                   _hotelSubFeeCtrl.text.trim(),
                                 );
-                                if (v == null || v < 1) {
+                                if (v == null || v < 0) {
                                   showAppMessage(
                                     context,
-                                    'Enter a valid subscription fee.',
+                                    'Enter a daily rate of 0 or more.',
+                                    isError: true,
                                   );
                                   return;
                                 }
@@ -2741,7 +2761,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                                 }
                               },
                         child: Text(
-                          _savingHotelSubFee ? 'Saving…' : 'Save fee',
+                          _savingHotelSubFee ? 'Saving…' : 'Save daily rate',
                         ),
                       ),
                     ],
@@ -2863,13 +2883,13 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       const Text(
-                        'Online booking deposit',
+                        'Online booking deposit (fallback default)',
                         style: TextStyle(fontWeight: FontWeight.w800),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'For member and public guest bookings made in the app. '
-                        'Example: 50 means guests only need to pay half the stay total online; the rest is collected at the hotel.',
+                        'Each hotel sets its own online deposit % in Settings. '
+                        'This value is only used when a hotel has not configured one yet.',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       const SizedBox(height: 12),
@@ -2879,7 +2899,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                           decimal: true,
                         ),
                         decoration: const InputDecoration(
-                          labelText: 'Online deposit percent',
+                          labelText: 'Fallback deposit percent',
                           suffixText: '%',
                           border: OutlineInputBorder(),
                         ),
@@ -2906,7 +2926,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                         label: Text(
                           _savingOnlineDeposit
                               ? 'Saving…'
-                              : 'Save online deposit %',
+                              : 'Save fallback deposit %',
                         ),
                       ),
                     ],
@@ -3058,42 +3078,9 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Percent off applied only on every 5th successful booking linked to the member (1–4 full price, 5th discounted, then repeat).',
+                        'Room percentage discounts (including the old every-5th booking rule) are retired. '
+                        'Members now earn points based on the stay price — configure that below.',
                         style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: _memberDiscountCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'Discount percent',
-                          suffixText: '%',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      FilledButton.icon(
-                        onPressed:
-                            _savingMemberDiscount ? null : _saveMemberDiscountPercent,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: _kPlatformNavy,
-                          foregroundColor: Colors.white,
-                        ),
-                        icon: _savingMemberDiscount
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.save_outlined),
-                        label: Text(
-                          _savingMemberDiscount ? 'Saving…' : 'Save member discount',
-                        ),
                       ),
                     ],
                   ),
@@ -3112,15 +3099,21 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Members earn points on every successful booking. Hotels can redeem points when scanning a member QR; the peso value is added to that hotel’s credit wallet.',
+                        'Members earn a percent of the room/stay price as points on each successful booking. '
+                        'Example: 2% of ₱2,000 = ₱40 credited as points (converted with “points per ₱1”). '
+                        'Hotels redeem points from a member QR into their credit wallet.',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       const SizedBox(height: 12),
                       TextField(
-                        controller: _pointsPerCheckInCtrl,
-                        keyboardType: TextInputType.number,
+                        controller: _pointsEarnPercentCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
                         decoration: const InputDecoration(
-                          labelText: 'Points per successful booking',
+                          labelText: 'Earn percent of room price',
+                          suffixText: '%',
+                          helperText: 'e.g. 2 → 2% of the stay total becomes points',
                           border: OutlineInputBorder(),
                         ),
                       ),
@@ -3132,7 +3125,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                         ),
                         decoration: const InputDecoration(
                           labelText: 'Points per ₱1',
-                          helperText: 'Default 10 → 1000 points = ₱100',
+                          helperText: 'Default 10 → ₱40 earn credit = 400 points',
                           border: OutlineInputBorder(),
                         ),
                       ),

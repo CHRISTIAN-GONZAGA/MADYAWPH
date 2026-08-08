@@ -4,7 +4,7 @@ namespace App\Services;
 
 use App\Models\Hotel;
 use App\Models\HotelSubscriptionPaymentRequest;
-use App\Models\PlatformSetting;
+use App\Models\Room;
 use App\Models\User;
 use App\Support\ChatAttachmentUrl;
 use App\Support\EnumHelper;
@@ -39,6 +39,67 @@ class HotelSubscriptionService
         $hotel->save();
 
         return $hotel->fresh() ?? $hotel;
+    }
+
+    /**
+     * Registered room count used for monthly SaaS billing.
+     */
+    public function billableRoomCount(Hotel $hotel): int
+    {
+        $declared = (int) ($hotel->total_rooms ?? 0);
+        if ($declared > 0) {
+            return $declared;
+        }
+
+        $live = Room::withoutGlobalScopes()
+            ->where('hotel_id', (string) $hotel->id)
+            ->count();
+
+        return max(1, $live);
+    }
+
+    /**
+     * Days in the billing month used for the current due amount.
+     */
+    public function billingDaysInMonth(?Carbon $asOf = null): int
+    {
+        $asOf ??= now();
+
+        return max(1, (int) $asOf->daysInMonth);
+    }
+
+    /**
+     * Monthly subscription due = rooms × daily per-room rate × days in month.
+     *
+     * @return array{
+     *     amount: float,
+     *     room_count: int,
+     *     per_room_daily: float,
+     *     days_in_month: int,
+     *     breakdown: string
+     * }
+     */
+    public function subscriptionFeeBreakdown(Hotel $hotel, ?Carbon $asOf = null): array
+    {
+        $asOf ??= now();
+        $rooms = $this->billableRoomCount($hotel);
+        $daily = $this->platformSettings->hotelSubscriptionPerRoomDaily();
+        $days = $this->billingDaysInMonth($asOf);
+        $amount = round($rooms * $daily * $days, 2);
+        $dailyLabel = rtrim(rtrim(number_format($daily, 2, '.', ''), '0'), '.');
+
+        return [
+            'amount' => $amount,
+            'room_count' => $rooms,
+            'per_room_daily' => $daily,
+            'days_in_month' => $days,
+            'breakdown' => sprintf(
+                '%d rooms × ₱%s/day × %d days',
+                $rooms,
+                $dailyLabel,
+                $days
+            ),
+        ];
     }
 
     /**
@@ -81,7 +142,7 @@ class HotelSubscriptionService
         $role = $viewer?->roleValue() ?? '';
         $canPay = in_array($role, ['admin', 'super_admin', 'owner'], true);
         $row = $this->platformSettings->row();
-        $fee = $this->subscriptionFeeAmount();
+        $fee = $this->subscriptionFeeBreakdown($hotel);
 
         return [
             'status' => $status,
@@ -94,7 +155,11 @@ class HotelSubscriptionService
             ], true),
             'trial_ends_at' => $trialEnds->toIso8601String(),
             'paid_until' => $paidUntil?->toIso8601String(),
-            'subscription_fee' => $fee,
+            'subscription_fee' => $fee['amount'],
+            'subscription_room_count' => $fee['room_count'],
+            'subscription_per_room_daily' => $fee['per_room_daily'],
+            'subscription_days_in_month' => $fee['days_in_month'],
+            'subscription_fee_breakdown' => $fee['breakdown'],
             'subscription_qr_url' => ChatAttachmentUrl::fromStoredUrl(
                 filled($row->hotel_subscription_qr_url ?? null)
                     ? (string) $row->hotel_subscription_qr_url
@@ -110,9 +175,14 @@ class HotelSubscriptionService
         ];
     }
 
-    public function subscriptionFeeAmount(): float
+    /** @deprecated Use subscriptionFeeBreakdown() for hotel-specific amounts. */
+    public function subscriptionFeeAmount(?Hotel $hotel = null): float
     {
-        return $this->platformSettings->hotelSubscriptionFee();
+        if ($hotel !== null) {
+            return $this->subscriptionFeeBreakdown($hotel)['amount'];
+        }
+
+        return $this->platformSettings->hotelSubscriptionPerRoomDaily();
     }
 
     /**
@@ -148,7 +218,8 @@ class HotelSubscriptionService
             ]);
         }
 
-        $fee = $amount !== null && $amount > 0 ? round($amount, 2) : $this->subscriptionFeeAmount();
+        $breakdown = $this->subscriptionFeeBreakdown($hotel);
+        $fee = $amount !== null && $amount > 0 ? round($amount, 2) : $breakdown['amount'];
 
         HotelSubscriptionPaymentRequest::query()
             ->where('hotel_id', (string) $hotel->id)

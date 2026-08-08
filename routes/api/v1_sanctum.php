@@ -2910,10 +2910,14 @@ Route::get('/admin/hotel/payment-qr', function (Request $request) {
         ->where('hotel_id', (string) $request->user()->hotel_id)
         ->first();
     $stored = (string) ($settings?->payment_qr_url ?? '');
+    $wallets = \App\Support\HotelPaymentWalletSupport::numbersFromSettings($settings);
 
     return response()->json([
         'qr_url' => ChatAttachmentUrl::fromStoredUrl($stored) ?? '',
         'payment_qr_url' => $stored,
+        'payment_gcash_mobile' => $wallets['payment_gcash_mobile'],
+        'payment_maya_mobile' => $wallets['payment_maya_mobile'],
+        'has_wallet_number' => $wallets['has_wallet_number'],
     ]);
 })->middleware('role:admin,frontdesk,super_admin')->name('api.v1.admin.hotel.payment-qr.show');
 
@@ -2939,6 +2943,64 @@ Route::post('/admin/hotel/payment-qr', function (Request $request) {
         'qr_url' => ChatAttachmentUrl::fromStoredUrl($url),
     ]);
 })->middleware('role:admin,super_admin')->name('api.v1.admin.hotel.payment-qr.store');
+
+Route::patch('/admin/hotel/payment-wallet-numbers', function (Request $request) {
+    $validated = $request->validate([
+        'payment_gcash_mobile' => ['nullable', 'string', 'max:20'],
+        'payment_maya_mobile' => ['nullable', 'string', 'max:20'],
+    ]);
+    $hotelId = (string) $request->user()->hotel_id;
+
+    $gcashRaw = trim((string) ($validated['payment_gcash_mobile'] ?? ''));
+    $mayaRaw = trim((string) ($validated['payment_maya_mobile'] ?? ''));
+    $gcash = $gcashRaw === ''
+        ? null
+        : \App\Support\HotelPaymentWalletSupport::normalizePhMobile($gcashRaw);
+    $maya = $mayaRaw === ''
+        ? null
+        : \App\Support\HotelPaymentWalletSupport::normalizePhMobile($mayaRaw);
+
+    if ($gcashRaw !== '' && $gcash === null) {
+        return response()->json([
+            'message' => 'Enter a valid GCash mobile number (09XXXXXXXXX).',
+            'errors' => ['payment_gcash_mobile' => ['Use a Philippine mobile like 09171234567.']],
+        ], 422);
+    }
+    if ($mayaRaw !== '' && $maya === null) {
+        return response()->json([
+            'message' => 'Enter a valid Maya mobile number (09XXXXXXXXX).',
+            'errors' => ['payment_maya_mobile' => ['Use a Philippine mobile like 09171234567.']],
+        ], 422);
+    }
+
+    SystemSetting::withoutGlobalScopes()->updateOrCreate(
+        ['hotel_id' => $hotelId],
+        [
+            'payment_gcash_mobile' => $gcash,
+            'payment_maya_mobile' => $maya,
+        ]
+    );
+    app(ActivityLogService::class)->log(
+        $hotelId,
+        $request->user(),
+        'Updated online payment wallet numbers',
+        [
+            'payment_gcash_mobile' => $gcash,
+            'payment_maya_mobile' => $maya,
+        ]
+    );
+
+    $wallets = [
+        'payment_gcash_mobile' => $gcash,
+        'payment_maya_mobile' => $maya,
+        'has_wallet_number' => $gcash !== null || $maya !== null,
+    ];
+
+    return response()->json([
+        'ok' => true,
+        ...$wallets,
+    ]);
+})->middleware('role:admin,super_admin')->name('api.v1.admin.hotel.payment-wallet-numbers');
 
 Route::get('/admin/payment-references/search', function (Request $request) {
     $validated = $request->validate([
@@ -3702,6 +3764,50 @@ Route::patch('/admin/settings/min-check-in-payment', function (Request $request)
     return response()->json([
         'ok' => true,
         'min_check_in_payment_percent' => \App\Support\MinCheckInPaymentSupport::percentForHotel($hotelId),
+    ]);
+})->middleware('role:admin,super_admin');
+
+Route::get('/admin/settings/online-booking-deposit', function (Request $request) {
+    $hotelId = (string) $request->user()->hotel_id;
+    $settings = SystemSetting::withoutGlobalScopes()->firstOrCreate(
+        ['hotel_id' => $hotelId],
+        [
+            'theme_color' => '#2563eb',
+            'theme_mode' => 'light',
+            'sound_notifications_enabled' => false,
+        ]
+    );
+    $hotelValue = $settings->online_booking_deposit_percent;
+    $platformDefault = app(\App\Services\PlatformSettingsService::class)->onlineBookingDepositPercent();
+
+    return response()->json([
+        'online_booking_deposit_percent' => \App\Support\OnlineBookingDepositSupport::percentForHotel($hotelId),
+        'hotel_online_booking_deposit_percent' => $hotelValue !== null ? (float) $hotelValue : null,
+        'platform_default_percent' => $platformDefault,
+        'uses_hotel_override' => $hotelValue !== null,
+    ]);
+})->middleware('role:admin,super_admin,frontdesk');
+
+Route::patch('/admin/settings/online-booking-deposit', function (Request $request) {
+    $validated = $request->validate([
+        'online_booking_deposit_percent' => ['required', 'numeric', 'min:0', 'max:100'],
+    ]);
+    $hotelId = (string) $request->user()->hotel_id;
+    $settings = SystemSetting::withoutGlobalScopes()->firstOrCreate(
+        ['hotel_id' => $hotelId],
+        [
+            'theme_color' => '#2563eb',
+            'theme_mode' => 'light',
+            'sound_notifications_enabled' => false,
+        ]
+    );
+    $settings->update([
+        'online_booking_deposit_percent' => (float) $validated['online_booking_deposit_percent'],
+    ]);
+
+    return response()->json([
+        'ok' => true,
+        'online_booking_deposit_percent' => \App\Support\OnlineBookingDepositSupport::percentForHotel($hotelId),
     ]);
 })->middleware('role:admin,super_admin');
 

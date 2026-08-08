@@ -14,6 +14,7 @@ import '../admin_portal_users_screen.dart';
 import '../admin_room_fee_presets_screen.dart';
 import '../admin_cancellation_retention_screen.dart';
 import '../admin_min_check_in_payment_screen.dart';
+import '../admin_online_booking_deposit_screen.dart';
 import '../admin_early_check_in_fee_screen.dart';
 import '../admin_late_checkout_fee_screen.dart';
 import '../admin_notification_emails_screen.dart';
@@ -177,6 +178,22 @@ class SettingsSection extends StatelessWidget {
                     await Navigator.of(context).push<void>(
                       MaterialPageRoute<void>(
                         builder: (_) => const AdminMinCheckInPaymentScreen(),
+                      ),
+                    );
+                    await onRefreshAfterNav();
+                  },
+                ),
+              if (!isFrontDesk)
+                _SettingsTile(
+                  icon: Icons.account_balance_wallet_outlined,
+                  title: 'Online booking deposit %',
+                  subtitle:
+                      'Percent of the stay guests must pay when booking online',
+                  enabled: !creditsLocked,
+                  onTap: () async {
+                    await Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AdminOnlineBookingDepositScreen(),
                       ),
                     );
                     await onRefreshAfterNav();

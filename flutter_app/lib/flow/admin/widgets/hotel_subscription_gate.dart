@@ -200,6 +200,18 @@ class _HotelSubscriptionGateScreenState extends State<HotelSubscriptionGateScree
                       fontWeight: FontWeight.w800,
                     ),
               ),
+              if ((_data['subscription_fee_breakdown'] ?? '')
+                  .toString()
+                  .trim()
+                  .isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  (_data['subscription_fee_breakdown'] ?? '').toString(),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
               const SizedBox(height: 12),
               if (qr.isNotEmpty)
                 ClipRRect(

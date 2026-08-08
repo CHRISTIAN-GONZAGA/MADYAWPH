@@ -74,14 +74,17 @@ class MemberFeeDiscountCreditsTest extends TestCase
             ->assertJsonPath('member_monthly_fee', 0);
     }
 
-    public function test_member_discount_only_on_every_fifth_booking(): void
+    public function test_member_discount_never_applies_on_linked_bookings(): void
     {
         PlatformSetting::query()->updateOrCreate(
             ['key' => 'global'],
-            ['member_booking_discount_percent' => 10],
+            [
+                'member_booking_discount_percent' => 10,
+                'member_points_earn_percent' => 2,
+            ],
         );
 
-        $member = MemberSubscriptionRequest::create([
+        MemberSubscriptionRequest::create([
             'full_name' => 'Nth Member',
             'email' => 'nth@test.local',
             'phone' => '09170000003',
@@ -95,7 +98,7 @@ class MemberFeeDiscountCreditsTest extends TestCase
         $hotel = Hotel::create(['name' => 'Nth Hotel', 'location' => 'Loc']);
         $service = app(MemberSubscriptionService::class);
 
-        for ($i = 1; $i <= 4; $i++) {
+        for ($i = 1; $i <= 5; $i++) {
             $resolved = $service->resolveBookingMemberDiscount('SHID-NTHTEST1');
             $this->assertFalse($resolved['discount_eligible'], "booking $i should not discount");
             $this->assertSame(0.0, $resolved['percent']);
@@ -115,66 +118,28 @@ class MemberFeeDiscountCreditsTest extends TestCase
             ]);
         }
 
-        $fifth = $service->resolveBookingMemberDiscount('SHID-NTHTEST1');
-        $this->assertTrue($fifth['discount_eligible']);
-        $this->assertSame(10.0, $fifth['percent']);
-        $this->assertSame(5, $fifth['booking_ordinal']);
-
-        Booking::withoutGlobalScopes()->create([
-            'hotel_id' => (string) $hotel->id,
-            'booking_reference' => 'BK-NTH-5',
-            'room_id' => 'room-5',
-            'guest_name' => 'Guest 5',
-            'check_in_date' => now()->toDateString(),
-            'check_out_date' => now()->addDay()->toDateString(),
-            'nights' => 1,
-            'total_amount' => 900,
-            'status' => BookingStatus::CONFIRMED->value,
-            'member_shid_id' => 'SHID-NTHTEST1',
-            'discount_type' => 'member',
-            'discount_percent' => 10,
-        ]);
-
         $sixth = $service->resolveBookingMemberDiscount('SHID-NTHTEST1');
         $this->assertFalse($sixth['discount_eligible']);
+        $this->assertSame(0.0, $sixth['percent']);
         $this->assertSame(6, $sixth['booking_ordinal']);
+    }
 
-        for ($i = 6; $i <= 9; $i++) {
-            Booking::withoutGlobalScopes()->create([
-                'hotel_id' => (string) $hotel->id,
-                'booking_reference' => 'BK-NTH-'.$i,
-                'room_id' => 'room-'.$i,
-                'guest_name' => 'Guest '.$i,
-                'check_in_date' => now()->toDateString(),
-                'check_out_date' => now()->addDay()->toDateString(),
-                'nights' => 1,
-                'total_amount' => 1000,
-                'status' => BookingStatus::CONFIRMED->value,
-                'member_shid_id' => 'SHID-NTHTEST1',
-            ]);
-        }
+    public function test_central_admin_can_set_points_earn_percent(): void
+    {
+        $admin = app(CentralAdminAccountService::class)->ensureUser();
 
-        $tenth = $service->resolveBookingMemberDiscount('SHID-NTHTEST1');
-        $this->assertTrue($tenth['discount_eligible']);
-        $this->assertSame(10, $tenth['booking_ordinal']);
+        $this->actingAs($admin, 'sanctum')
+            ->patchJson('/api/v1/platform/settings/member-points', [
+                'member_points_earn_percent' => 2.5,
+                'member_points_per_peso' => 10,
+            ])
+            ->assertOk()
+            ->assertJsonPath('member_points_earn_percent', 2.5)
+            ->assertJsonPath('member_points_per_peso', 10);
 
-        // Cancelled bookings do not count toward the cadence.
-        Booking::withoutGlobalScopes()->create([
-            'hotel_id' => (string) $hotel->id,
-            'booking_reference' => 'BK-NTH-CANCEL',
-            'room_id' => 'room-x',
-            'guest_name' => 'Cancelled',
-            'check_in_date' => now()->toDateString(),
-            'check_out_date' => now()->addDay()->toDateString(),
-            'nights' => 1,
-            'total_amount' => 1000,
-            'status' => BookingStatus::CANCELLED->value,
-            'member_shid_id' => 'SHID-NTHTEST1',
-        ]);
-
-        $stillTenth = $service->resolveBookingMemberDiscount('SHID-NTHTEST1');
-        $this->assertSame(10, $stillTenth['booking_ordinal']);
-        $this->assertNotNull($member->id);
+        $this->getJson('/api/v1/platform/info')
+            ->assertOk()
+            ->assertJsonPath('member_points_earn_percent', 2.5);
     }
 
     public function test_registration_credits_multi_tier(): void

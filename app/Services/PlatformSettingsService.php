@@ -19,6 +19,7 @@ class PlatformSettingsService
                 'member_subscription_qr_url' => null,
                 'hotel_subscription_qr_url' => null,
                 'hotel_subscription_fee' => (float) config('platform.hotel_subscription_fee', 1500),
+                'hotel_subscription_per_room_daily' => (float) config('platform.hotel_subscription_per_room_daily', 5),
                 'member_monthly_fee' => (float) config('platform.member_monthly_fee', 300),
                 'booking_confirm_fee_percent' => (float) config('services.hotel_credits.booking_confirm_fee_percent', 8),
                 'min_check_in_payment_percent' => (float) config('platform.min_check_in_payment_percent', 50),
@@ -27,8 +28,9 @@ class PlatformSettingsService
                 'late_checkout_fee_amount' => (float) config('platform.late_checkout_fee_amount', 500),
                 'early_check_in_grace_minutes' => (int) config('platform.early_check_in_grace_minutes', 15),
                 'early_check_in_fee_amount' => (float) config('platform.early_check_in_fee_amount', 500),
-                'member_booking_discount_percent' => (float) config('platform.member_booking_discount_percent', 10),
-                'member_points_per_check_in' => (float) config('platform.member_points_per_check_in', 1000),
+                'member_booking_discount_percent' => (float) config('platform.member_booking_discount_percent', 0),
+                'member_points_per_check_in' => (float) config('platform.member_points_per_check_in', 0),
+                'member_points_earn_percent' => (float) config('platform.member_points_earn_percent', 2),
                 'member_points_per_peso' => (float) config('platform.member_points_per_peso', 10),
                 'registration_credit_band_max_rooms' => (int) config('platform.registration_credit_band_max_rooms', 20),
                 'registration_credit_within_band' => (float) config('platform.registration_credit_within_band', 5000),
@@ -50,13 +52,8 @@ class PlatformSettingsService
 
     public function memberBookingDiscountPercent(): float
     {
-        $row = $this->row();
-        $fromDb = $row->member_booking_discount_percent ?? null;
-        if ($fromDb !== null && (float) $fromDb >= 0) {
-            return (float) $fromDb;
-        }
-
-        return (float) config('platform.member_booking_discount_percent', 10);
+        // Room % discounts are retired — members earn points instead.
+        return 0.0;
     }
 
     public function memberDiscountEveryNthBooking(): int
@@ -72,7 +69,21 @@ class PlatformSettingsService
             return (float) $fromDb;
         }
 
-        return (float) config('platform.member_points_per_check_in', 1000);
+        return (float) config('platform.member_points_per_check_in', 0);
+    }
+
+    /**
+     * Percent of stay total credited as points on successful member bookings.
+     */
+    public function memberPointsEarnPercent(): float
+    {
+        $row = $this->row();
+        $fromDb = $row->member_points_earn_percent ?? null;
+        if ($fromDb !== null && (float) $fromDb >= 0) {
+            return min(100.0, (float) $fromDb);
+        }
+
+        return min(100.0, max(0.0, (float) config('platform.member_points_earn_percent', 2)));
     }
 
     public function memberPointsPerPeso(): float
@@ -182,7 +193,7 @@ class PlatformSettingsService
     }
 
     /**
-     * Deposit percent required for member / public online app bookings (central admin).
+     * Platform fallback deposit percent for online bookings (used when hotel has not set its own).
      */
     public function onlineBookingDepositPercent(): float
     {
@@ -196,20 +207,21 @@ class PlatformSettingsService
     }
 
     /**
-     * Required online deposit amount for a stay total (rounded to nearest ₱50).
+     * Required online deposit amount using the platform fallback percent.
+     * Prefer OnlineBookingDepositSupport::amountForHotel for hotel bookings.
      */
-    public function onlineBookingDepositAmount(float $stayTotal): float
+    public function onlineBookingDepositAmount(float $stayTotal, ?float $percent = null): float
     {
         $total = max(0.0, $stayTotal);
-        $percent = $this->onlineBookingDepositPercent();
-        if ($percent <= 0 || $total <= 0) {
+        $pct = $percent ?? $this->onlineBookingDepositPercent();
+        if ($pct <= 0 || $total <= 0) {
             return 0.0;
         }
-        if ($percent >= 100) {
+        if ($pct >= 100) {
             return \App\Support\PriceRounding::nearest50($total);
         }
 
-        return \App\Support\PriceRounding::nearest50($total * ($percent / 100));
+        return \App\Support\PriceRounding::nearest50($total * ($pct / 100));
     }
 
     public function lateCheckoutGraceMinutes(): int
@@ -273,6 +285,7 @@ class PlatformSettingsService
             'member_booking_discount_percent' => $this->memberBookingDiscountPercent(),
             'member_discount_every_nth_booking' => $this->memberDiscountEveryNthBooking(),
             'member_points_per_check_in' => $this->memberPointsPerCheckIn(),
+            'member_points_earn_percent' => $this->memberPointsEarnPercent(),
             'member_points_per_peso' => $this->memberPointsPerPeso(),
             'registration_credit_band_max_rooms' => $this->registrationCreditBandMaxRooms(),
             'registration_credit_within_band' => $this->registrationCreditWithinBand(),
@@ -286,6 +299,7 @@ class PlatformSettingsService
             'credit_wallet_qr_url' => $this->safeAttachmentUrl($this->row()->credit_wallet_qr_url ?? null),
             'hotel_subscription_qr_url' => $this->safeAttachmentUrl($this->row()->hotel_subscription_qr_url ?? null),
             'hotel_subscription_fee' => $this->hotelSubscriptionFee(),
+            'hotel_subscription_per_room_daily' => $this->hotelSubscriptionPerRoomDaily(),
         ];
     }
 
@@ -302,15 +316,32 @@ class PlatformSettingsService
         }
     }
 
+    /**
+     * @deprecated Flat monthly fee — prefer hotelSubscriptionPerRoomDaily().
+     */
     public function hotelSubscriptionFee(): float
     {
+        return $this->hotelSubscriptionPerRoomDaily();
+    }
+
+    /**
+     * Pesos charged per registered hotel room per day for SaaS subscription.
+     */
+    public function hotelSubscriptionPerRoomDaily(): float
+    {
         $row = $this->row();
-        $fromDb = $row->hotel_subscription_fee ?? null;
-        if ($fromDb !== null && (float) $fromDb > 0) {
+        $fromDb = $row->hotel_subscription_per_room_daily ?? null;
+        if ($fromDb !== null && (float) $fromDb >= 0) {
             return round((float) $fromDb, 2);
         }
 
-        return round((float) config('platform.hotel_subscription_fee', 1500), 2);
+        // Legacy flat fee field: only treat as daily rate when it looks like a small daily amount.
+        $legacy = $row->hotel_subscription_fee ?? null;
+        if ($legacy !== null && (float) $legacy > 0 && (float) $legacy <= 100) {
+            return round((float) $legacy, 2);
+        }
+
+        return round((float) config('platform.hotel_subscription_per_room_daily', 5), 2);
     }
 
     /**

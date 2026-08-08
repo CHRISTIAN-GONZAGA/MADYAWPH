@@ -252,7 +252,7 @@ Future<bool> showAdminMultiRoomWalkInBooking({
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Member discount (optional)',
+                  'Member (optional)',
                   style: Theme.of(dialogContext).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
@@ -262,9 +262,7 @@ Future<bool> showAdminMultiRoomWalkInBooking({
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Text(
-                      memberDiscountPercent > 0
-                          ? '${memberDiscountPercent.toStringAsFixed(0)}% off this stay — $memberShidId'
-                          : 'Member linked (no discount this stay) — $memberShidId',
+                      'Member linked — $memberShidId',
                       style: TextStyle(
                         color: Theme.of(dialogContext).colorScheme.primary,
                         fontWeight: FontWeight.w600,
@@ -315,32 +313,22 @@ Future<bool> showAdminMultiRoomWalkInBooking({
                     ],
                   ],
                 ),
-                if (memberShidId.isNotEmpty && memberDiscountPercent > 0)
+                if (memberShidId.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 4, bottom: 4),
                     child: Text(
-                      'Member discount applies on this stay (every 5th booking rule).',
+                      memberDiscountPercent > 0
+                          ? 'Member linked — this stay earns points toward their wallet.'
+                          : 'Membership linked — points are credited on successful booking.',
                       style: Theme.of(dialogContext)
                           .textTheme
                           .bodySmall
                           ?.copyWith(
-                            color:
-                                Theme.of(dialogContext).colorScheme.primary,
-                          ),
-                    ),
-                  )
-                else if (memberShidId.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4, bottom: 4),
-                    child: Text(
-                      'Membership linked — full price this stay; discount on every 5th booking.',
-                      style: Theme.of(dialogContext)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(
-                            color: Theme.of(dialogContext)
-                                .colorScheme
-                                .onSurfaceVariant,
+                            color: memberDiscountPercent > 0
+                                ? Theme.of(dialogContext).colorScheme.primary
+                                : Theme.of(dialogContext)
+                                    .colorScheme
+                                    .onSurfaceVariant,
                           ),
                     ),
                   ),

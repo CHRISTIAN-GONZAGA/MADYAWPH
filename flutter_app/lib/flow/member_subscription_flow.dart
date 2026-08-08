@@ -29,9 +29,7 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
   final _refCtrl = TextEditingController();
   String _memberQrRaw = '';
   double _fee = 300;
-  double _discountPercent = 10;
-  int _discountEveryNth = 5;
-  int _pointsPerBooking = 1000;
+  double _pointsEarnPercent = 2;
   double _pointsPerPeso = 10;
   bool _loading = true;
   bool _submitting = false;
@@ -68,19 +66,8 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
       final raw = res.data?['member_subscription_qr_url'];
       setState(() {
         _fee = (res.data?['member_monthly_fee'] as num?)?.toDouble() ?? 300;
-        _discountPercent =
-            (res.data?['member_booking_discount_percent'] as num?)
-                    ?.toDouble() ??
-                10;
-        _discountEveryNth =
-            ((res.data?['member_discount_every_nth_booking'] as num?)
-                        ?.toDouble() ??
-                    5)
-                .round();
-        _pointsPerBooking =
-            ((res.data?['member_points_per_check_in'] as num?)?.toDouble() ??
-                    1000)
-                .round();
+        _pointsEarnPercent =
+            (res.data?['member_points_earn_percent'] as num?)?.toDouble() ?? 2;
         _pointsPerPeso =
             (res.data?['member_points_per_peso'] as num?)?.toDouble() ?? 10;
         _memberQrRaw = raw == null ? '' : '$raw'.trim();
@@ -229,9 +216,7 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
                   const SizedBox(height: 20),
                   _MemberBenefitsCard(
                     fee: _fee,
-                    discountPercent: _discountPercent,
-                    discountEveryNth: _discountEveryNth,
-                    pointsPerBooking: _pointsPerBooking,
+                    pointsEarnPercent: _pointsEarnPercent,
                     pointsPerPeso: _pointsPerPeso,
                   ),
                   if (!_isFree) ...[
@@ -335,42 +320,31 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
 class _MemberBenefitsCard extends StatelessWidget {
   const _MemberBenefitsCard({
     required this.fee,
-    required this.discountPercent,
-    required this.discountEveryNth,
-    required this.pointsPerBooking,
+    required this.pointsEarnPercent,
     required this.pointsPerPeso,
   });
 
   final double fee;
-  final double discountPercent;
-  final int discountEveryNth;
-  final int pointsPerBooking;
+  final double pointsEarnPercent;
   final double pointsPerPeso;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isFree = fee <= 0;
-    final every = discountEveryNth < 1 ? 5 : discountEveryNth;
-    final discountLabel = discountPercent > 0
-        ? '${discountPercent.toStringAsFixed(discountPercent % 1 == 0 ? 0 : 1)}% off every ${every}th booking'
-        : 'Member booking rates when the platform discount is active';
+    final earnLabel = pointsEarnPercent > 0
+        ? 'Earn ${pointsEarnPercent.toStringAsFixed(pointsEarnPercent % 1 == 0 ? 0 : 1)}% of each stay as points'
+        : 'Earn points from your stays';
     final pointsRate = pointsPerPeso % 1 == 0
         ? pointsPerPeso.toStringAsFixed(0)
         : pointsPerPeso.toStringAsFixed(1);
 
     final benefits = <({IconData icon, String title, String detail})>[
       (
-        icon: Icons.percent_outlined,
-        title: discountLabel,
-        detail:
-            'Sign in as a member when you book — discount applies on every ${every}th successful booking only (not every stay).',
-      ),
-      (
         icon: Icons.stars_outlined,
-        title: 'Earn $pointsPerBooking points per successful booking',
+        title: earnLabel,
         detail:
-            'Points go to your wallet after each successful member booking ($pointsRate pts = ₱1).',
+            'Book as a member — a platform-set percent of the room price is credited to your points wallet ($pointsRate pts = ₱1).',
       ),
       (
         icon: Icons.payments_outlined,
@@ -382,7 +356,7 @@ class _MemberBenefitsCard extends StatelessWidget {
         icon: Icons.qr_code_2_outlined,
         title: 'Personal membership QR & SHID',
         detail:
-            'Show your unique QR or membership ID at the front desk for member rates and points payment.',
+            'Show your unique QR or membership ID at the front desk for points payment.',
       ),
       (
         icon: Icons.travel_explore_outlined,
@@ -612,7 +586,6 @@ class _MemberProcessingScreenState extends State<MemberProcessingScreen> {
   Timer? _timer;
   String _status = 'pending';
   String? _validUntil;
-  double _memberDiscountPercent = 0;
   bool _openingDashboard = false;
 
   @override
@@ -637,8 +610,6 @@ class _MemberProcessingScreenState extends State<MemberProcessingScreen> {
       setState(() {
         _status = (res.data?['status'] ?? 'pending').toString();
         _validUntil = (res.data?['member_valid_until'] ?? '').toString();
-        _memberDiscountPercent =
-            (res.data?['member_discount_percent'] as num?)?.toDouble() ?? 0;
       });
       if (_status == 'approved' || _status == 'rejected') {
         _timer?.cancel();
@@ -715,19 +686,10 @@ class _MemberProcessingScreenState extends State<MemberProcessingScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Your membership is approved. Log in to your member dashboard to browse hotels and show your unique membership QR / ID for discounts.',
+                  'Your membership is approved. Log in to your member dashboard to browse hotels and show your unique membership QR / ID for points.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: scheme.onSurfaceVariant),
                 ),
-                if (_memberDiscountPercent > 0)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: Text(
-                      '${_memberDiscountPercent.toStringAsFixed(0)}% off room bookings while active',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w700),
-                    ),
-                  ),
                 if ((_validUntil ?? '').isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),

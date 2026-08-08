@@ -25,6 +25,11 @@ class MemberPointsService
         return max(0, (int) round($this->settings->memberPointsPerCheckIn()));
     }
 
+    public function pointsEarnPercent(): float
+    {
+        return max(0.0, min(100.0, $this->settings->memberPointsEarnPercent()));
+    }
+
     public function pointsPerPeso(): float
     {
         $rate = (float) $this->settings->memberPointsPerPeso();
@@ -43,6 +48,47 @@ class MemberPointsService
     }
 
     /**
+     * Stay amount used when converting a booking into earn points.
+     */
+    public function bookingEarnBaseAmount(Booking $booking): float
+    {
+        $total = (float) ($booking->total_amount ?? 0);
+        if ($total > 0.009) {
+            return $total;
+        }
+
+        try {
+            $bill = $this->bookingPayments->billSummary($booking);
+            $subtotal = (float) ($bill['subtotal'] ?? 0);
+            if ($subtotal > 0.009) {
+                return $subtotal;
+            }
+        } catch (\Throwable) {
+            // fall through
+        }
+
+        return 0.0;
+    }
+
+    /**
+     * Points awarded for a successful member booking:
+     * earn_percent of the stay price, converted via points_per_peso.
+     * Falls back to legacy flat points_per_check_in when earn percent is 0.
+     */
+    public function pointsForBooking(Booking $booking): int
+    {
+        $earnPercent = $this->pointsEarnPercent();
+        if ($earnPercent > 0.0001) {
+            $base = $this->bookingEarnBaseAmount($booking);
+            $pesoCredit = round($base * ($earnPercent / 100), 2);
+
+            return $this->pesosToPoints($pesoCredit);
+        }
+
+        return $this->pointsPerCheckIn();
+    }
+
+    /**
      * Award stay points once per booking when the stay is linked to a member.
      * Called on successful booking (walk-in / activation / apply-member) and kept
      * idempotent if check-in also invokes the legacy alias.
@@ -58,7 +104,7 @@ class MemberPointsService
             return;
         }
 
-        $points = $this->pointsPerCheckIn();
+        $points = $this->pointsForBooking($booking);
         if ($points <= 0) {
             return;
         }
@@ -75,6 +121,12 @@ class MemberPointsService
             return;
         }
 
+        $earnPercent = $this->pointsEarnPercent();
+        $base = $this->bookingEarnBaseAmount($booking);
+        $pesoCredit = $earnPercent > 0.0001
+            ? round($base * ($earnPercent / 100), 2)
+            : $this->pointsToPesos($points);
+
         $balance = (float) ($member->points_balance ?? 0) + $points;
         $ledger = $this->appendLedger($member, [
             'id' => (string) Str::uuid(),
@@ -84,7 +136,17 @@ class MemberPointsService
             'transaction_key' => $txKey,
             'booking_id' => $bookingId,
             'hotel_id' => (string) ($booking->hotel_id ?? ''),
-            'description' => 'Successful booking reward',
+            'description' => $earnPercent > 0.0001
+                ? sprintf(
+                    'Booking reward (%s%% of ₱%s ≈ ₱%s)',
+                    rtrim(rtrim(number_format($earnPercent, 2), '0'), '.'),
+                    number_format($base, 2),
+                    number_format($pesoCredit, 2),
+                )
+                : 'Successful booking reward',
+            'earn_percent' => $earnPercent,
+            'earn_base_amount' => $base,
+            'earn_peso_credit' => $pesoCredit,
             'timestamp' => now()->toISOString(),
             'actor_user_id' => $actor ? (string) $actor->id : null,
         ]);
@@ -97,6 +159,8 @@ class MemberPointsService
         Log::info('Member booking points awarded', [
             'member_shid_id' => $shid,
             'points' => $points,
+            'earn_percent' => $earnPercent,
+            'base_amount' => $base,
             'booking_id' => $bookingId,
         ]);
     }
@@ -255,31 +319,14 @@ class MemberPointsService
 
         $redemptionId = (string) Str::uuid();
         $txKey = 'redeem-'.$redemptionId;
-        $newBalance = $balance - $points;
+        $walletTxId = 'member-pts-'.$redemptionId;
 
-        $ledger = $this->appendLedger($member, [
-            'id' => $redemptionId,
-            'type' => 'redeem',
-            'points' => -$points,
-            'pesos' => $pesos,
-            'balance_after' => $newBalance,
-            'transaction_key' => $txKey,
-            'booking_id' => $booking ? (string) $booking->id : null,
-            'hotel_id' => $hotelId,
-            'description' => 'Redeemed for hotel stay payment',
-            'timestamp' => now()->toISOString(),
-            'actor_user_id' => $actor ? (string) $actor->id : null,
-        ]);
-
-        $member->forceFill([
-            'points_balance' => $newBalance,
-            'points_ledger' => $ledger,
-        ])->save();
-
+        // Credit the hotel wallet first so a failed top-up never leaves points deducted
+        // without the hotel receiving the equivalent pesos.
         $walletApplied = $this->hotelCredits->apply(
             $hotelId,
             $pesos,
-            'member-pts-'.$redemptionId,
+            $walletTxId,
             'MEMBER_POINTS',
             "Member points redemption ({$points} pts → ₱".number_format($pesos, 2).')',
             [
@@ -296,6 +343,27 @@ class MemberPointsService
                 'credits' => ['Could not credit the hotel wallet for this points redemption. Try again.'],
             ]);
         }
+
+        $newBalance = $balance - $points;
+        $ledger = $this->appendLedger($member, [
+            'id' => $redemptionId,
+            'type' => 'redeem',
+            'points' => -$points,
+            'pesos' => $pesos,
+            'balance_after' => $newBalance,
+            'transaction_key' => $txKey,
+            'booking_id' => $booking ? (string) $booking->id : null,
+            'hotel_id' => $hotelId,
+            'description' => 'Redeemed for hotel stay payment',
+            'timestamp' => now()->toISOString(),
+            'actor_user_id' => $actor ? (string) $actor->id : null,
+            'hotel_credits_added' => $pesos,
+        ]);
+
+        $member->forceFill([
+            'points_balance' => $newBalance,
+            'points_ledger' => $ledger,
+        ])->save();
 
         $bookingResult = null;
         if ($booking !== null) {
@@ -317,7 +385,7 @@ class MemberPointsService
         $this->activityLog->log(
             $hotelId,
             $actor,
-            "Redeemed {$points} member points (₱".number_format($pesos, 2).')',
+            "Redeemed {$points} member points (₱".number_format($pesos, 2).') — hotel wallet +₱'.number_format($pesos, 2),
             [
                 'member_shid_id' => (string) $member->member_shid_id,
                 'points' => $points,

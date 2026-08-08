@@ -124,11 +124,12 @@ class MemberWalkInCheckoutTest extends TestCase
         $this->assertCount(0, $active);
     }
 
-    public function test_walk_in_member_discount_only_on_fifth_booking(): void
+    public function test_walk_in_member_never_gets_room_percent_discount(): void
     {
         PlatformSetting::query()->create([
             'key' => 'global',
             'member_booking_discount_percent' => 10,
+            'member_points_earn_percent' => 2,
         ]);
 
         $hotel = Hotel::create(['name' => 'Nth Walk-in Hotel', 'location' => 'Loc']);
@@ -201,15 +202,17 @@ class MemberWalkInCheckoutTest extends TestCase
         $create->assertCreated();
 
         $booking = Booking::withoutGlobalScopes()->findOrFail((string) $create->json('booking.id'));
-        $this->assertSame('member', strtolower((string) ($booking->discount_type ?? '')));
-        $this->assertEqualsWithDelta(10.0, (float) $booking->discount_percent, 0.01);
+        $this->assertSame($shid, strtoupper((string) ($booking->member_shid_id ?? '')));
+        $this->assertNotSame('member', strtolower((string) ($booking->discount_type ?? '')));
+        $this->assertTrue((float) ($booking->discount_percent ?? 0) <= 0);
     }
 
-    public function test_member_validate_returns_zero_discount_when_not_nth_booking(): void
+    public function test_member_validate_always_returns_zero_room_discount(): void
     {
         PlatformSetting::query()->create([
             'key' => 'global',
             'member_booking_discount_percent' => 10,
+            'member_points_earn_percent' => 2,
         ]);
 
         $hotel = Hotel::create(['name' => 'Validate Hotel', 'location' => 'Loc']);
@@ -247,9 +250,10 @@ class MemberWalkInCheckoutTest extends TestCase
         ])
             ->assertOk()
             ->assertJsonPath('valid', true)
-            ->assertJsonPath('discount_percent', 10)
+            ->assertJsonPath('discount_percent', 0)
             ->assertJsonPath('next_booking_discount_percent', 0)
             ->assertJsonPath('next_booking_discount_eligible', false)
+            ->assertJsonPath('points_earn_percent', 2)
             ->assertJsonPath('next_booking_ordinal', 2);
     }
 }

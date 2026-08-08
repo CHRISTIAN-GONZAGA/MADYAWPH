@@ -41,6 +41,7 @@ class HotelSubscriptionTest extends TestCase
         $hotel = Hotel::create([
             'name' => 'Past Due Hotel',
             'location' => 'City',
+            'total_rooms' => 20,
             'subscription_trial_ends_at' => now()->subDay(),
             'subscription_status' => HotelSubscriptionService::STATUS_PAYMENT_REQUIRED,
         ]);
@@ -65,6 +66,14 @@ class HotelSubscriptionTest extends TestCase
         $status->assertJsonPath('status', 'payment_required');
         $status->assertJsonPath('can_submit_payment', true);
         $status->assertJsonPath('show_payment_ui', true);
+        $status->assertJsonPath('subscription_room_count', 20);
+        $status->assertJsonPath('subscription_per_room_daily', 5);
+        $expected = round(20 * 5 * (int) now()->daysInMonth, 2);
+        $this->assertEqualsWithDelta(
+            $expected,
+            (float) $status->json('subscription_fee'),
+            0.01
+        );
 
         $submit = $this->postJson('/api/v1/hotel/subscription/payment', [
             'payment_reference' => 'REF-SUB-001',
@@ -77,6 +86,7 @@ class HotelSubscriptionTest extends TestCase
             ->where('status', 'pending')
             ->first();
         $this->assertNotNull($pending);
+        $this->assertEqualsWithDelta($expected, (float) $pending->amount, 0.01);
 
         Sanctum::actingAs($central);
         $approve = $this->postJson('/api/v1/platform/subscription-requests/'.(string) $pending->id.'/approve');
@@ -87,6 +97,40 @@ class HotelSubscriptionTest extends TestCase
         $after->assertOk();
         $after->assertJsonPath('status', 'active');
         $after->assertJsonPath('access_ok', true);
+    }
+
+    public function test_central_admin_can_set_per_room_daily_rate(): void
+    {
+        $central = User::create([
+            'hotel_id' => '',
+            'name' => 'central-rate',
+            'email' => 'central-rate@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::CENTRAL_ADMIN,
+        ]);
+
+        Sanctum::actingAs($central);
+        $this->patchJson('/api/v1/platform/settings/hotel-subscription-fee', [
+            'hotel_subscription_per_room_daily' => 7.5,
+        ])
+            ->assertOk()
+            ->assertJsonPath('hotel_subscription_per_room_daily', 7.5);
+
+        $hotel = Hotel::create([
+            'name' => 'Rate Hotel',
+            'location' => 'City',
+            'total_rooms' => 10,
+            'subscription_trial_ends_at' => now()->subDay(),
+            'subscription_status' => HotelSubscriptionService::STATUS_PAYMENT_REQUIRED,
+        ]);
+        $breakdown = app(HotelSubscriptionService::class)->subscriptionFeeBreakdown($hotel);
+        $this->assertSame(10, $breakdown['room_count']);
+        $this->assertEqualsWithDelta(7.5, $breakdown['per_room_daily'], 0.01);
+        $this->assertEqualsWithDelta(
+            round(10 * 7.5 * (int) now()->daysInMonth, 2),
+            $breakdown['amount'],
+            0.01
+        );
     }
 
     public function test_frontdesk_sees_payment_required_without_submit_ui(): void

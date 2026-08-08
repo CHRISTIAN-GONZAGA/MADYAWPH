@@ -23,7 +23,7 @@ class MemberScanResult {
 
   final String shid;
   final String name;
-  /// Actual discount % for this booking (0 when not an Nth-booking milestone).
+  /// Legacy field — room % discounts are retired; always 0 from the API.
   final double discountPercent;
   final int pointsBalance;
   final double pointsBalancePesos;
@@ -44,7 +44,7 @@ class MemberScanResult {
   }
 }
 
-/// Scans a MADYAWPH member QR and validates via API (discount + points).
+/// Scans a MADYAWPH member QR and validates via API (points wallet).
 Future<MemberScanResult?> scanAndValidateMemberShid(BuildContext context) async {
   final raw = await Navigator.of(context).push<String>(
     MaterialPageRoute<String>(
@@ -152,11 +152,7 @@ Future<MemberScanResult?> showMemberScanActions(
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      working.discountEligible && working.discountPercent > 0
-                          ? (discountAlreadyApplied
-                              ? '${working.discountPercent.toStringAsFixed(0)}% member discount is applied.'
-                              : '${working.discountPercent.toStringAsFixed(0)}% member discount will be applied automatically.')
-                          : 'Member linked — no discount this stay (every ${working.discountEveryNth}th booking qualifies).',
+                      'Membership linked — this stay earns points toward their wallet.',
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ),
@@ -203,11 +199,7 @@ Future<MemberScanResult?> showMemberScanActions(
             actions: [
               TextButton(
                 onPressed: busy ? null : () => Navigator.pop(ctx, working),
-                child: Text(
-                  working.discountEligible && working.discountPercent > 0
-                      ? 'Continue with discount'
-                      : 'Continue',
-                ),
+                child: const Text('Continue'),
               ),
               if (canPayFull &&
                   bookingId != null &&

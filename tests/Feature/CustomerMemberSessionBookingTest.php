@@ -82,13 +82,14 @@ class CustomerMemberSessionBookingTest extends TestCase
         $this->assertTrue(blank($stored['member_shid_id'] ?? null));
     }
 
-    public function test_logged_in_member_gets_discount_and_earns_points_on_checkout(): void
+    public function test_logged_in_member_links_and_earns_points_on_checkout(): void
     {
-        \Illuminate\Support\Facades\Config::set('platform.member_discount_every_nth_booking', 1);
         PlatformSetting::query()->create([
             'key' => 'global',
             'member_booking_discount_percent' => 15,
-            'member_points_per_check_in' => 1000,
+            'member_points_earn_percent' => 5,
+            'member_points_per_check_in' => 0,
+            'member_points_per_peso' => 10,
         ]);
 
         $hotel = Hotel::create(['name' => 'Member Hotel', 'location' => 'Loc']);
@@ -137,12 +138,8 @@ class CustomerMemberSessionBookingTest extends TestCase
 
         $response->assertOk();
         $response->assertJsonPath('reservation.status', 'pending_approval');
-        $response->assertJsonPath('reservation.metadata.discount_type', 'member');
-        $this->assertEqualsWithDelta(
-            15.0,
-            (float) $response->json('reservation.metadata.discount_percent'),
-            0.01
-        );
+        $this->assertTrue(blank($response->json('reservation.metadata.discount_type')));
+        $this->assertTrue((float) ($response->json('reservation.metadata.discount_percent') ?? 0) <= 0);
         $this->assertSame(
             strtoupper((string) $approved->member_shid_id),
             strtoupper((string) $response->json('reservation.metadata.member_shid_id'))
@@ -173,9 +170,17 @@ class CustomerMemberSessionBookingTest extends TestCase
         $room = Room::withoutGlobalScopes()->findOrFail((string) $booking->room_id);
         app(\App\Services\RoomCheckoutService::class)->checkInRoom($room, $frontDesk);
         \Laravel\Sanctum\Sanctum::actingAs($frontDesk);
+
+        $booking->refresh();
+        $this->postJson("/api/v1/admin/bookings/{$booking->id}/partial-payment", [
+            'amount' => 2000,
+            'payment_method' => 'Cash',
+        ])->assertOk();
+
         $this->postJson('/api/v1/rooms/'.$booking->room_id.'/checkout')->assertOk();
 
         $approved->refresh();
+        // 5% of ₱2000 stay = ₱100 → 1000 pts at 10 pts/₱1
         $this->assertSame(1000, (int) round((float) $approved->points_balance));
     }
 

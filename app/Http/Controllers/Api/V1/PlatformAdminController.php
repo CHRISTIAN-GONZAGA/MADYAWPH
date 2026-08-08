@@ -127,17 +127,21 @@ class PlatformAdminController extends Controller
     public function updateHotelSubscriptionFee(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'hotel_subscription_fee' => ['required', 'numeric', 'min:1'],
+            'hotel_subscription_per_room_daily' => ['required', 'numeric', 'min:0', 'max:10000'],
         ]);
 
+        $daily = round((float) $validated['hotel_subscription_per_room_daily'], 2);
         $row = $this->settings->row();
         $row->update([
-            'hotel_subscription_fee' => round((float) $validated['hotel_subscription_fee'], 2),
+            'hotel_subscription_per_room_daily' => $daily,
+            // Keep legacy field aligned for older clients reading the flat fee key.
+            'hotel_subscription_fee' => $daily,
         ]);
 
         return response()->json([
             'ok' => true,
-            'hotel_subscription_fee' => app(\App\Services\HotelSubscriptionService::class)->subscriptionFeeAmount(),
+            'hotel_subscription_per_room_daily' => $this->settings->hotelSubscriptionPerRoomDaily(),
+            'hotel_subscription_fee' => $this->settings->hotelSubscriptionPerRoomDaily(),
         ]);
     }
 
@@ -359,20 +363,30 @@ class PlatformAdminController extends Controller
     public function updateMemberPointsSettings(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'member_points_per_check_in' => ['required', 'numeric', 'min:0', 'max:1000000'],
+            'member_points_earn_percent' => ['required', 'numeric', 'min:0', 'max:100'],
             'member_points_per_peso' => ['required', 'numeric', 'min:0.01', 'max:10000'],
+            'member_points_per_check_in' => ['nullable', 'numeric', 'min:0', 'max:1000000'],
         ]);
 
         $row = $this->settings->row();
-        $row->update([
-            'member_points_per_check_in' => (float) $validated['member_points_per_check_in'],
+        $payload = [
+            'member_points_earn_percent' => (float) $validated['member_points_earn_percent'],
             'member_points_per_peso' => (float) $validated['member_points_per_peso'],
-        ]);
+        ];
+        if (array_key_exists('member_points_per_check_in', $validated)
+            && $validated['member_points_per_check_in'] !== null) {
+            $payload['member_points_per_check_in'] = (float) $validated['member_points_per_check_in'];
+        } else {
+            // Flat award retired when earn percent is the primary path.
+            $payload['member_points_per_check_in'] = 0;
+        }
+        $row->update($payload);
 
         return response()->json([
             'ok' => true,
-            'member_points_per_check_in' => $this->settings->memberPointsPerCheckIn(),
+            'member_points_earn_percent' => $this->settings->memberPointsEarnPercent(),
             'member_points_per_peso' => $this->settings->memberPointsPerPeso(),
+            'member_points_per_check_in' => $this->settings->memberPointsPerCheckIn(),
         ]);
     }
 

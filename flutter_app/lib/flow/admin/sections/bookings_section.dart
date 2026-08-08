@@ -594,7 +594,7 @@ class _BookingsSectionState extends State<BookingsSection>
               const SizedBox(height: 10),
               Text(
                 depositPct != null && depositPct < 100
-                    ? 'Online bookings require the central-admin deposit percent up front. Approving confirms the deposit and activates the stay; collect any remaining balance later.'
+                    ? 'Online bookings require this hotel’s deposit percent up front. Approving confirms the deposit and activates the stay; collect any remaining balance later.'
                     : 'Online booking is prepaid. Approving confirms the payment and activates the stay.',
                 style: Theme.of(ctx).textTheme.bodySmall,
               ),

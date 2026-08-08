@@ -23,13 +23,13 @@ use App\Services\HotelAvailabilityService;
 use App\Services\HotelCreditBookingFeeService;
 use App\Services\MemberSubscriptionService;
 use App\Services\PaymentTransactionLogService;
-use App\Services\PlatformSettingsService;
 use App\Services\RoomPricingService;
 use App\Services\SmsService;
 use App\Support\ChatAttachmentUrl;
 use App\Support\CustomerStayPricing;
 use App\Support\EnumHelper;
 use App\Support\MemberPortalStore;
+use App\Support\OnlineBookingDepositSupport;
 use App\Support\PriceRounding;
 use App\Support\PublicUploadStorage;
 use App\Support\RoomBillingSupport;
@@ -305,12 +305,15 @@ class CustomerPortalApiController extends Controller
             ->where('hotel_id', $hotelId)
             ->first();
         $stored = (string) ($settings?->payment_qr_url ?? '');
+        $wallets = \App\Support\HotelPaymentWalletSupport::numbersFromSettings($settings);
 
         return response()->json([
             'qr_url' => ChatAttachmentUrl::fromStoredUrl($stored) ?? '',
             'has_qr' => $stored !== '',
-            'online_booking_deposit_percent' => app(PlatformSettingsService::class)
-                ->onlineBookingDepositPercent(),
+            'online_booking_deposit_percent' => OnlineBookingDepositSupport::percentForHotel($hotelId),
+            'payment_gcash_mobile' => $wallets['payment_gcash_mobile'],
+            'payment_maya_mobile' => $wallets['payment_maya_mobile'],
+            'has_wallet_number' => $wallets['has_wallet_number'],
         ]);
     }
 
@@ -450,9 +453,8 @@ class CustomerPortalApiController extends Controller
 
             $gross = (float) $charge['amount'];
             $total = $this->applyDiscountToTotal($gross, (float) ($validated['discount_percent'] ?? 0));
-            $platformSettings = app(PlatformSettingsService::class);
-            $depositPercent = $platformSettings->onlineBookingDepositPercent();
-            $depositAmount = $platformSettings->onlineBookingDepositAmount($total);
+            $depositPercent = OnlineBookingDepositSupport::percentForHotel($hotelId);
+            $depositAmount = OnlineBookingDepositSupport::amountForHotel($hotelId, $total);
             $paymentStatus = ($depositAmount + 0.009 >= $total)
                 ? 'paid_pending_approval'
                 : 'deposit_pending_approval';
