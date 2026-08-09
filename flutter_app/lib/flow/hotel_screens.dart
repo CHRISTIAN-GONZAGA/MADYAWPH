@@ -135,10 +135,10 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
 
   Future<void> _load({bool silent = false}) async {
     if (!silent) {
-      setState(() {
+    setState(() {
         _loading = true;
-        _error = null;
-      });
+      _error = null;
+    });
     } else {
       setState(() => _refreshing = true);
     }
@@ -149,7 +149,7 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
       if (data != null) {
         await AuthStorage.setHotelsDirectoryCache(jsonEncode(data));
       }
-      setState(() {
+        setState(() {
         _regions = regions;
         _loading = false;
         _refreshing = false;
@@ -1155,9 +1155,9 @@ class _HotelFilterPanel extends StatelessWidget {
                 const SizedBox(height: 8),
                 SizedBox(
                   height: 40,
-                  child: ListView(
+            child: ListView(
                     scrollDirection: Axis.horizontal,
-                    children: [
+              children: [
                       Padding(
                         padding: const EdgeInsets.only(right: 8),
                         child: FilterChip(
@@ -1197,7 +1197,7 @@ class _HotelFilterPanel extends StatelessWidget {
               ),
               if (catalogHasPricing) ...[
                 const SizedBox(height: 4),
-                Text(
+                  Text(
                   context.tr('price_range'),
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
                         color: scheme.onSurfaceVariant,
@@ -1222,7 +1222,7 @@ class _HotelFilterPanel extends StatelessWidget {
                   '${context.tr('selected')}: '
                   '${_ChooseHotelScreenState._formatPeso(clampedRange.start)} – '
                   '${_ChooseHotelScreenState._formatPeso(clampedRange.end)}',
-                  textAlign: TextAlign.center,
+                    textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: scheme.primary,
                         fontWeight: FontWeight.w600,
@@ -1312,11 +1312,11 @@ class _RegisterHotelCard extends StatelessWidget {
                     Text(
                       context.tr('register_hotel_cta'),
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
+                      fontWeight: FontWeight.w800,
                     ),
+                  ),
                     const SizedBox(height: 4),
-                    Text(
+                  Text(
                       context.tr('register_hotel_hint'),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: scheme.onSurfaceVariant,
@@ -1370,7 +1370,7 @@ class _ChooseHotelHero extends StatelessWidget {
         boxShadow: visual.cardShadow,
         border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.25)),
       ),
-      child: Padding(
+                    child: Padding(
         padding: const EdgeInsets.all(18),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1396,9 +1396,9 @@ class _ChooseHotelHero extends StatelessWidget {
             ),
             const SizedBox(width: 14),
             Expanded(
-              child: Column(
+                      child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+                        children: [
                   Text(
                     context.tr('select_property'),
                     style: theme.textTheme.titleLarge?.copyWith(
@@ -1472,7 +1472,7 @@ class _StatChip extends StatelessWidget {
         children: [
           Icon(icon, size: 14, color: scheme.primary),
           const SizedBox(width: 4),
-          Text(
+                            Text(
             label,
             style: TextStyle(
               fontSize: 12,
@@ -1709,12 +1709,12 @@ class _HotelSelectTile extends StatelessWidget {
                                               ?.copyWith(
                                             height: 1.35,
                                             fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
                                 const SizedBox(height: 8),
                                 Wrap(
                                   spacing: 8,
@@ -1806,8 +1806,8 @@ class _HotelSelectTile extends StatelessWidget {
               ],
             ),
           ),
+          ),
         ),
-      ),
     );
   }
 }
@@ -2096,12 +2096,12 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
     }
 
     final payload = <String, dynamic>{
-      'username': _username.text.trim(),
-      'password': _password.text,
-      'password_confirmation': _password2.text,
-      'hotel_name': _hotelName.text.trim(),
+          'username': _username.text.trim(),
+          'password': _password.text,
+          'password_confirmation': _password2.text,
+          'hotel_name': _hotelName.text.trim(),
       ..._address.toRegisterPayload(),
-      'contact_number': _contact.text.trim(),
+          'contact_number': _contact.text.trim(),
       'admin_email': _adminEmail.text.trim().toLowerCase(),
       'owner_email': _ownerEmail.text.trim().toLowerCase(),
       'total_rooms': int.tryParse(_totalRooms.text.trim()) ?? 1,
@@ -2117,18 +2117,18 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
     final hid = data?['hotel_id']?.toString();
     final token = data?['token']?.toString();
     if (hid == null || hid.isEmpty || token == null || token.isEmpty) {
-      setState(() {
+        setState(() {
         _error = 'Unexpected response from server.';
-        _busy = false;
-      });
-      return;
-    }
-    final name = _hotelName.text.trim();
-    await AuthStorage.setHotelContext(id: hid, name: name);
-    await AuthStorage.setPortalAuth(token: token, role: 'admin');
-    await AuthStorage.clearGuestAuth();
+          _busy = false;
+        });
+        return;
+      }
+      final name = _hotelName.text.trim();
+      await AuthStorage.setHotelContext(id: hid, name: name);
+      await AuthStorage.setPortalAuth(token: token, role: 'admin');
+      await AuthStorage.clearGuestAuth();
     await AuthStorage.clearHotelsDirectoryCache();
-    if (!mounted) return;
+      if (!mounted) return;
     await showHotelRegistrationCredentialsDialog(
       context,
       hotelName: name,
@@ -2232,7 +2232,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
                   verifyBusy = false;
                 });
               }
-            } catch (e) {
+    } catch (e) {
               if (ctx.mounted) {
                 setLocal(() {
                   dialogError = '$e';
@@ -2310,7 +2310,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
       _showFormError(validationError);
       return;
     }
-    setState(() {
+      setState(() {
       _busy = true;
       _error = null;
     });
@@ -2373,13 +2373,13 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
         ),
         const SizedBox(height: 16),
       ],
-      TextField(
-        controller: _hotelName,
-        decoration: const InputDecoration(labelText: 'Hotel name', border: OutlineInputBorder()),
-        textInputAction: TextInputAction.next,
-      ),
-      const SizedBox(height: 12),
-      TextField(
+          TextField(
+            controller: _hotelName,
+            decoration: const InputDecoration(labelText: 'Hotel name', border: OutlineInputBorder()),
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: 12),
+          TextField(
         controller: _totalRooms,
         decoration: InputDecoration(
           labelText: 'Total number of rooms *',
@@ -2387,7 +2387,7 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
           helperText: _welcomeCreditsHelper(),
         ),
         keyboardType: TextInputType.number,
-        textInputAction: TextInputAction.next,
+            textInputAction: TextInputAction.next,
         onChanged: (_) => setState(() {}),
       ),
       const SizedBox(height: 12),
@@ -2462,17 +2462,17 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
             ],
           ),
         ),
-      ),
-      const SizedBox(height: 12),
-      TextField(
-        controller: _contact,
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _contact,
         decoration: const InputDecoration(labelText: 'Contact number', border: OutlineInputBorder()),
-        keyboardType: TextInputType.phone,
-        textInputAction: TextInputAction.next,
-      ),
-      const SizedBox(height: 12),
-      TextField(
-        controller: _adminEmail,
+            keyboardType: TextInputType.phone,
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _adminEmail,
         decoration: const InputDecoration(
           labelText: 'Admin email',
           helperText: 'Used for admin account login and email verification',
@@ -2489,35 +2489,35 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
           helperText: 'Guest check-in alerts and room status notifications',
           border: OutlineInputBorder(),
         ),
-        keyboardType: TextInputType.emailAddress,
-        textInputAction: TextInputAction.next,
-      ),
-      const SizedBox(height: 16),
-      const Divider(),
-      const SizedBox(height: 8),
-      TextField(
-        controller: _username,
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: 16),
+          const Divider(),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _username,
         decoration: const InputDecoration(
           labelText: 'Owner username (internal)',
           border: OutlineInputBorder(),
           helperText: 'For super admin sign-in; not used on the hotel picker',
         ),
-        autocorrect: false,
-        textInputAction: TextInputAction.next,
-      ),
-      const SizedBox(height: 12),
+            autocorrect: false,
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: 12),
       AppPasswordField(
-        controller: _password,
+            controller: _password,
         labelText: 'Password',
-        textInputAction: TextInputAction.next,
-      ),
-      const SizedBox(height: 12),
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: 12),
       AppPasswordField(
-        controller: _password2,
+            controller: _password2,
         labelText: 'Confirm password',
-      ),
-      if (_error != null) ...[
-        const SizedBox(height: 12),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
         KeyedSubtree(
           key: _errorKey,
           child: Container(
@@ -2539,18 +2539,18 @@ class _HotelRegisterScreenState extends State<HotelRegisterScreen> {
             ),
           ),
         ),
-      ],
-      const SizedBox(height: 20),
-      FilledButton(
-        onPressed: _busy ? null : _submit,
-        child: _busy
-            ? const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
+          ],
+          const SizedBox(height: 20),
+          FilledButton(
+            onPressed: _busy ? null : _submit,
+            child: _busy
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
             : const Text('Create hotel'),
-      ),
+          ),
         ],
       ),
     );
@@ -2830,14 +2830,14 @@ class _GuestRoomLoginScreenState extends State<GuestRoomLoginScreen> {
           ),
           const SizedBox(height: 16),
           if (!_roomBound) ...[
-            TextField(
-              controller: _room,
+          TextField(
+            controller: _room,
               decoration: const InputDecoration(
                 labelText: 'Room number',
                 border: OutlineInputBorder(),
               ),
-            ),
-            const SizedBox(height: 12),
+          ),
+          const SizedBox(height: 12),
           ],
           AppPasswordField(
             controller: _password,

@@ -460,16 +460,16 @@ class CustomerPortalApiController extends Controller
                 : 'deposit_pending_approval';
 
             return ExternalReservation::query()->create([
-                'hotel_id' => $hotelId,
-                'source' => 'app-customer',
-                'external_reference' => 'RES'.now()->format('YmdHis').strtoupper(Str::random(4)),
-                'guest_name' => $validated['guest_name'],
+            'hotel_id' => $hotelId,
+            'source' => 'app-customer',
+            'external_reference' => 'RES'.now()->format('YmdHis').strtoupper(Str::random(4)),
+            'guest_name' => $validated['guest_name'],
                 'guest_email' => (string) ($validated['guest_email'] ?? ''),
-                'guest_phone' => $validated['guest_phone'],
+            'guest_phone' => $validated['guest_phone'],
                 'check_in_date' => $window['check_in_date'],
                 'check_out_date' => $window['check_out_date'],
                 'assigned_room_id' => (string) $lockedRoom->id,
-                'status' => 'pending_approval',
+            'status' => 'pending_approval',
                 'metadata' => array_filter([
                     'discount_type' => ($validated['discount_type'] ?? 'none') !== 'none' ? $validated['discount_type'] : null,
                     'discount_percent' => (float) ($validated['discount_percent'] ?? 0) > 0 ? (float) $validated['discount_percent'] : null,

@@ -450,7 +450,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             } else {
                 $role = strtolower((string) ($request->user()?->roleValue() ?? ''));
                 if (! in_array($role, ['frontdesk', 'admin', 'super_admin'], true)) {
-                    return response()->json([
+                return response()->json([
                         'message' => 'Only hotel staff can check in organization bookings.',
                     ], 403);
                 }
@@ -500,8 +500,8 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
                         'min_check_in_payment_percent' => $minPercent,
                         'min_payment_amount' => $minDue,
                         'balance_due' => $balanceDue,
-                    ], 422);
-                }
+                ], 422);
+            }
 
                 // Collect required payment before marking the room checked in.
                 if ($payAmount > 0) {
@@ -619,7 +619,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
     Route::get('/admin/rooms/{id}/stay-calendar', function (Request $request, string $id) {
         $hotelId = (string) $request->user()->hotel_id;
         $room = Room::withoutGlobalScopes()
-            ->where('hotel_id', $hotelId)
+                ->where('hotel_id', $hotelId)
             ->findOrFail($id);
         if ((string) $room->hotel_id !== $hotelId) {
             return response()->json(['message' => 'Room outside hotel scope.'], 403);
@@ -631,10 +631,10 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
         $bookings = Booking::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
             ->where('room_id', $roomId)
-            ->whereNotIn('status', [
-                BookingStatus::COMPLETED->value,
-                BookingStatus::CANCELLED->value,
-            ])
+                ->whereNotIn('status', [
+                    BookingStatus::COMPLETED->value,
+                    BookingStatus::CANCELLED->value,
+                ])
             ->orderByDesc('check_in_date')
             ->get()
             ->filter(function (Booking $booking) use ($todayStart) {
@@ -858,7 +858,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             $checkOut = Carbon::parse($validated['check_out_at']);
             $roomCheckoutService->checkInRoom($room->fresh() ?? $room, $request->user(), $checkIn, $checkOut);
             $booking->refresh();
-            $room->refresh();
+        $room->refresh();
             if ($payAmount > 0) {
                 $billAfter = app(\App\Services\BookingPaymentService::class)->billSummary($booking);
                 $checkInPaymentInfo = [
@@ -1429,7 +1429,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
                     $checkOut = Carbon::parse((string) $validated['check_out_at']);
                     $roomCheckoutService->checkInRoom(
                         $room->fresh() ?? $room,
-                        $request->user(),
+            $request->user(),
                         $checkIn,
                         $checkOut,
                     );
@@ -1639,7 +1639,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
         if ($methodRaw !== '') {
             $normalizedMethod = $paymentService->normalizePaymentMethod($methodRaw);
             if ($normalizedMethod === null) {
-                return response()->json(['message' => 'Unsupported payment method.'], 422);
+            return response()->json(['message' => 'Unsupported payment method.'], 422);
             }
             $validated['payment_method'] = $normalizedMethod;
         }
@@ -1670,7 +1670,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
         $bookingId = trim((string) ($validated['booking_id'] ?? ''));
         if ($bookingId !== '') {
             $booking = Booking::withoutGlobalScopes()
-                ->where('hotel_id', $hotelId)
+            ->where('hotel_id', $hotelId)
                 ->find($bookingId);
             if ($booking === null) {
                 return response()->json(['message' => 'Booking not found for this hotel.'], 404);
@@ -1915,15 +1915,15 @@ Route::middleware('role:staff')->group(function (): void {
 
 // Rooms (hotel staff only — blocks platform central_admin tokens)
 Route::middleware(['hotel.staff', 'role:admin,staff,frontdesk'])->group(function (): void {
-    Route::get('/rooms', [RoomController::class, 'index']);
-    Route::get('/rooms/available', [RoomController::class, 'available']);
-    Route::get('/rooms/{room}', [RoomController::class, 'show']);
-    Route::post('/rooms', [RoomController::class, 'store'])->middleware('role:admin');
+Route::get('/rooms', [RoomController::class, 'index']);
+Route::get('/rooms/available', [RoomController::class, 'available']);
+Route::get('/rooms/{room}', [RoomController::class, 'show']);
+Route::post('/rooms', [RoomController::class, 'store'])->middleware('role:admin');
     Route::put('/rooms/{room}', [RoomController::class, 'update'])->middleware('role:admin');
     Route::put('/rooms/{room}/status', [RoomController::class, 'updateStatus']);
     Route::post('/rooms/{room}/checkout', [RoomController::class, 'checkout']);
     Route::post('/rooms/{room}/assign-cleaning', [RoomController::class, 'assignCleaning']);
-    Route::delete('/rooms/{room}', [RoomController::class, 'destroy'])->middleware('role:admin');
+Route::delete('/rooms/{room}', [RoomController::class, 'destroy'])->middleware('role:admin');
 });
 
 // Room categories
@@ -3203,11 +3203,11 @@ Route::put('/admin/portal-users/{target}', function (Request $request, string $t
         if (! empty($validated['password'])) {
             PortalPassword::assign($victim, (string) $validated['password']);
             $passwordChanged = true;
-            $morph = (new User)->getMorphClass();
-            PersonalAccessToken::query()
-                ->where('tokenable_type', $morph)
+    $morph = (new User)->getMorphClass();
+        PersonalAccessToken::query()
+            ->where('tokenable_type', $morph)
                 ->where('tokenable_id', (string) $victim->id)
-                ->delete();
+            ->delete();
         } else {
             $victim->save();
         }
@@ -3391,7 +3391,7 @@ Route::get('/admin/rooms', function (Request $request) {
     $categoryId = trim((string) ($validated['category_id'] ?? ''));
     if ($categoryId !== '') {
         $category = RoomCategory::withoutGlobalScopes()
-            ->where('hotel_id', $hotelId)
+        ->where('hotel_id', $hotelId)
             ->where(function ($q) use ($categoryId) {
                 $q->where('id', $categoryId)->orWhere('_id', $categoryId);
             })
@@ -3416,7 +3416,7 @@ Route::get('/admin/rooms', function (Request $request) {
             $hourly = RoomBillingSupport::hourlyConfig($room, $roomCategory);
             $payload = array_merge($room->toArray(), [
                 'id' => (string) $room->id,
-                'room_access_password' => (string) ($room->current_access_code ?? ''),
+            'room_access_password' => (string) ($room->current_access_code ?? ''),
                 'block_hours' => $hourly['block_hours'],
                 'price_per_block' => $hourly['price_per_block'],
             ]);
@@ -3472,11 +3472,11 @@ Route::get('/admin/rooms/{id}', function (Request $request, string $id, RoomChec
     if ($booking) {
         try {
             $bookingPayload = array_merge($booking->toArray(), StayDisplayPresenter::roomDetailExtras($booking), [
-                'payment_method' => (string) ($booking->payment_method?->value ?? $booking->payment_method ?? ''),
-                'payment_status' => (string) ($booking->payment_status ?? 'unpaid'),
-                'paid_at_iso' => optional($booking->paid_at)->toIso8601String(),
-                'payment_reference' => (string) ($booking->payment_reference ?? ''),
-            ]);
+            'payment_method' => (string) ($booking->payment_method?->value ?? $booking->payment_method ?? ''),
+            'payment_status' => (string) ($booking->payment_status ?? 'unpaid'),
+            'paid_at_iso' => optional($booking->paid_at)->toIso8601String(),
+            'payment_reference' => (string) ($booking->payment_reference ?? ''),
+        ]);
         } catch (Throwable) {
             $bookingPayload = array_merge($booking->toArray(), [
                 'payment_method' => (string) ($booking->payment_method?->value ?? $booking->payment_method ?? ''),
@@ -3497,7 +3497,7 @@ Route::get('/admin/rooms/{id}', function (Request $request, string $id, RoomChec
     $roomPayload = array_merge($room->toArray(), [
         'id' => (string) $room->id,
         'status' => StayManagementPolicy::roomStatusValue($room),
-        'room_access_password' => (string) ($room->current_access_code ?? ''),
+            'room_access_password' => (string) ($room->current_access_code ?? ''),
         'block_hours' => $hourly['block_hours'],
         'price_per_block' => $hourly['price_per_block'],
     ]);
@@ -3673,7 +3673,7 @@ Route::patch('/admin/settings/room-fee-presets', function (Request $request) {
         ]
     );
     $presets = collect($validated['presets'])->map(function ($row) {
-        return [
+            return [
             'label' => trim((string) $row['label']),
             'amount' => (float) ($row['amount'] ?? 0),
         ];
