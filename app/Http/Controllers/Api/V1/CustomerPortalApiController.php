@@ -322,6 +322,11 @@ class CustomerPortalApiController extends Controller
                 'payment_methods_hint' => [
                     'QR Ph',
                 ],
+                'preferred_method' => $paymongoConnected
+                    ? 'paymongo_qrph'
+                    : ($wallets['has_wallet_number']
+                        ? 'manual_wallet'
+                        : ($stored !== '' ? 'manual_qr' : null)),
             ],
         ]);
     }

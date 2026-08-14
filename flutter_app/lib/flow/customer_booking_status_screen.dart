@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import '../dio_client.dart';
 import '../locale_controller.dart';
 import '../widgets/app_scaffold.dart';
-import '../widgets/chat_attachment.dart';
+import '../widgets/guest_online_payment.dart';
 
 /// Maps instant `/customer/bookings` response + room row for the status ticket UI.
 Map<String, dynamic> instantBookingStatusPayload({
@@ -158,6 +158,17 @@ class _CustomerBookingStatusScreenState
     return method.toLowerCase() == 'online';
   }
 
+  bool get _needsOnlinePayment {
+    if (!_isOnlinePayment || _reservation == null) return false;
+    final status = (_reservation!['payment_status'] ?? '').toString().toLowerCase();
+    if (status == 'paid' || status == 'deposit_paid') return false;
+    final paid = (_reservation!['amount_paid'] as num?)?.toDouble() ?? 0;
+    final due = (_reservation!['deposit_required'] as num?)?.toDouble();
+    final total = (_reservation!['estimated_total'] as num?)?.toDouble() ?? 0;
+    if (due != null && due > 0) return paid + 0.009 < due;
+    return status == 'pending_payment' || paid + 0.009 < total;
+  }
+
   bool get _isProcessing => !_isApproved && !_isRejected;
 
   Future<bool> _confirmLeave() async {
@@ -220,6 +231,17 @@ class _CustomerBookingStatusScreenState
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(20),
               children: [
+                if (_needsOnlinePayment && _reservation != null) ...[
+                  GuestOnlinePaymentPendingCard(
+                    hotelId: widget.hotelId,
+                    reference: widget.reference,
+                    reservation: _reservation!,
+                    guestEmail: widget.guestEmail,
+                    guestPhone: widget.guestPhone,
+                    onPaymentStarted: () => _load(silent: true),
+                  ),
+                  const SizedBox(height: 20),
+                ],
                 if (!_isApproved && !_isRejected) ...[
                   const SizedBox(height: 24),
                   Center(
@@ -311,14 +333,7 @@ class _CustomerBookingStatusScreenState
                   ),
                   const SizedBox(height: 12),
                 ],
-                if (!_isApproved && !_isRejected) ...[
-                  if (_isOnlinePayment) ...[
-                    const SizedBox(height: 16),
-                    _OnlinePaymentPendingCard(
-                      hotelId: widget.hotelId,
-                      reservation: _reservation!,
-                    ),
-                  ],
+                if (!_isApproved && !_isRejected && !_needsOnlinePayment) ...[
                   const SizedBox(height: 32),
                   Card(
                     child: ListTile(
@@ -348,136 +363,6 @@ class _CustomerBookingStatusScreenState
       'rejected' => context.tr('status_rejected'),
       _ => status,
     };
-  }
-}
-
-class _OnlinePaymentPendingCard extends StatefulWidget {
-  const _OnlinePaymentPendingCard({
-    required this.hotelId,
-    required this.reservation,
-  });
-
-  final String hotelId;
-  final Map<String, dynamic> reservation;
-
-  @override
-  State<_OnlinePaymentPendingCard> createState() =>
-      _OnlinePaymentPendingCardState();
-}
-
-class _OnlinePaymentPendingCardState extends State<_OnlinePaymentPendingCard> {
-  String _qrUrl = '';
-  bool _loadingQr = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadQr();
-  }
-
-  Future<void> _loadQr() async {
-    if (widget.hotelId.isEmpty) {
-      setState(() => _loadingQr = false);
-      return;
-    }
-    try {
-      final res = await publicDio().get<Map<String, dynamic>>(
-        '/customer/payment-qr',
-        queryParameters: {'hotel_id': widget.hotelId},
-      );
-      if (!mounted) return;
-      setState(() {
-        _qrUrl = (res.data?['qr_url'] ?? '').toString();
-        _loadingQr = false;
-      });
-    } catch (_) {
-      if (mounted) setState(() => _loadingQr = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final paymentRef = (widget.reservation['payment_reference'] ?? '').toString();
-    final total = (widget.reservation['estimated_total'] as num?)?.toDouble() ?? 0;
-    final amountPaid = (widget.reservation['amount_paid'] as num?)?.toDouble() ?? total;
-    final depositPct = (widget.reservation['deposit_percent'] as num?)?.toDouble();
-    final depositLabel = depositPct == null
-        ? null
-        : (depositPct % 1 == 0
-            ? '${depositPct.toStringAsFixed(0)}%'
-            : '${depositPct.toStringAsFixed(1)}%');
-
-    return Card(
-      color: scheme.primaryContainer.withValues(alpha: 0.35),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              context.tr('complete_online_payment'),
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: scheme.errorContainer.withValues(alpha: 0.45),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: scheme.error.withValues(alpha: 0.35)),
-              ),
-              child: Text(
-                depositLabel != null && depositPct! < 100
-                    ? '$depositLabel DEPOSIT REQUIRED'
-                    : 'FULL PAYMENT REQUIRED',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w900,
-                      color: scheme.error,
-                      letterSpacing: 0.6,
-                    ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            if (paymentRef.isNotEmpty)
-              SelectableText(
-                'Reference: $paymentRef',
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-            if (total > 0) ...[
-              const SizedBox(height: 4),
-              Text(
-                amountPaid > 0 && amountPaid + 0.009 < total
-                    ? 'Deposit paid: ₱${amountPaid.toStringAsFixed(0)} · Stay total: ₱${total.toStringAsFixed(0)}'
-                    : context.tr('amount_label', {'n': total.toStringAsFixed(0)}),
-              ),
-            ],
-            const SizedBox(height: 8),
-            Text(context.tr('pay_qr_hint')),
-            if (_loadingQr)
-              const Padding(
-                padding: EdgeInsets.only(top: 12),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (_qrUrl.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Center(
-                child: NetworkMediaImage(
-                  url: _qrUrl,
-                  width: 200,
-                  height: 200,
-                  fit: BoxFit.contain,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
   }
 }
 

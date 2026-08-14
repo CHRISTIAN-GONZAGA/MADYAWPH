@@ -6,12 +6,10 @@ import 'package:image_picker/image_picker.dart';
 import '../auth_storage.dart';
 import '../dio_client.dart';
 import '../locale_controller.dart';
-import '../widgets/app_button.dart';
 import '../widgets/app_input.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/chat_attachment.dart';
-import '../widgets/hotel_wallet_pay_now.dart';
-import '../widgets/payment_redirect.dart';
+import '../widgets/guest_online_payment.dart';
 import 'admin/widgets/hourly_billing.dart';
 import 'customer_booking_status_screen.dart';
 import 'customer_search_context.dart';
@@ -64,12 +62,8 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
   final _paymentRefCtrl = TextEditingController();
   XFile? _discountIdFile;
   XFile? _guestIdFile;
-  String _paymentQrUrl = '';
+  GuestPaymentConfig _paymentConfig = const GuestPaymentConfig();
   var _qrLoading = false;
-  var _onlineDepositPercent = 50.0;
-  String _paymentGcashMobile = '';
-  String _paymentMayaMobile = '';
-  var _paymongoConnected = false;
   var _creatingCheckout = false;
   var _guestFieldsReady = false;
   var _adults = 2;
@@ -204,26 +198,9 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
   Future<void> _loadPaymentQr() async {
     setState(() => _qrLoading = true);
     try {
-      final res = await publicDio().get<Map<String, dynamic>>(
-        '/customer/payment-qr',
-        queryParameters: {'hotel_id': widget.hotelId},
-      );
-      _paymentQrUrl = (res.data?['qr_url'] ?? '').toString();
-      final pct = (res.data?['online_booking_deposit_percent'] as num?)
-              ?.toDouble() ??
-          50.0;
-      _onlineDepositPercent = pct.clamp(0, 100);
-      _paymentGcashMobile =
-          (res.data?['payment_gcash_mobile'] ?? '').toString().trim();
-      _paymentMayaMobile =
-          (res.data?['payment_maya_mobile'] ?? '').toString().trim();
-      final pm = res.data?['paymongo'];
-      _paymongoConnected = pm is Map && pm['connected'] == true;
+      _paymentConfig = await loadGuestPaymentConfig(widget.hotelId);
     } catch (_) {
-      _paymentQrUrl = '';
-      _paymentGcashMobile = '';
-      _paymentMayaMobile = '';
-      _paymongoConnected = false;
+      _paymentConfig = const GuestPaymentConfig();
     } finally {
       if (mounted) setState(() => _qrLoading = false);
     }
@@ -319,17 +296,14 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
       return;
     }
     final paymentRef = _paymentRefCtrl.text.trim();
-    if (!_paymongoConnected && paymentRef.length < 4) {
+    if (!_paymentConfig.usesPaymongoQrPh && paymentRef.length < 4) {
       showAppMessage(
         context,
-        'Enter your GCash / Maya / QR Ph payment reference after paying the required deposit.',
+        'Pay first (QR Ph scan or Send Money), then paste your payment reference.',
       );
       return;
     }
-    if (!_paymongoConnected &&
-        _paymentQrUrl.isEmpty &&
-        _paymentGcashMobile.isEmpty &&
-        _paymentMayaMobile.isEmpty) {
+    if (!_paymentConfig.canBookOnline) {
       showAppMessage(
         context,
         'This hotel has not set up online payment yet. Try again later.',
@@ -363,7 +337,7 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
       'guests_female': _guestsFemale,
     };
     if (email.isNotEmpty) payload['guest_email'] = email;
-    if (!_paymongoConnected || paymentRef.length >= 4) {
+    if (!_paymentConfig.usesPaymongoQrPh || paymentRef.length >= 4) {
       payload['payment_reference'] = paymentRef;
     }
     if (widget.searchContext != null) {
@@ -425,19 +399,27 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
         final ref = (reservation['external_reference'] ?? '').toString();
         if (ref.isEmpty) return;
 
-        if (_paymongoConnected && paymentRef.length < 4) {
-          final opened = await _startPaymongoCheckout(
-            reference: ref,
-            guestEmail: email,
-            guestPhone: phone,
-          );
-          if (!mounted) return;
-          if (!opened) {
-            showAppMessage(
-              context,
-              'Reservation saved, but checkout could not be opened. Open your booking and tap Pay Now again.',
-              isError: true,
+        if (_paymentConfig.usesPaymongoQrPh && paymentRef.length < 4) {
+          setState(() => _creatingCheckout = true);
+          try {
+            final opened = await startGuestPaymongoCheckout(
+              context: context,
+              hotelId: widget.hotelId,
+              reference: ref,
+              guestEmail: email,
+              guestPhone: phone,
             );
+            if (!mounted) return;
+            if (!opened) {
+              showAppMessage(
+                context,
+                'Reservation saved, but QR Ph checkout could not be opened. '
+                'Open your booking status and tap Pay with QR Ph.',
+                isError: true,
+              );
+            }
+          } finally {
+            if (mounted) setState(() => _creatingCheckout = false);
           }
         }
 
@@ -465,42 +447,6 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
       showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _submitting = false);
-    }
-  }
-
-  Future<bool> _startPaymongoCheckout({
-    required String reference,
-    required String guestEmail,
-    required String guestPhone,
-  }) async {
-    if (!mounted) return false;
-    setState(() => _creatingCheckout = true);
-    showAppMessage(context, 'Creating secure payment…');
-    try {
-      final body = <String, dynamic>{
-        'hotel_id': widget.hotelId,
-      };
-      if (guestEmail.isNotEmpty) body['guest_email'] = guestEmail;
-      if (guestPhone.isNotEmpty) body['guest_phone'] = guestPhone;
-
-      final res = await publicDio().post<Map<String, dynamic>>(
-        '/customer/reservations/$reference/payment',
-        data: body,
-      );
-      if (!mounted) return false;
-      showAppMessage(context, 'Redirecting to secure payment…');
-      return PaymentRedirect.maybeOpenFromResponse(context, res.data);
-    } on DioException catch (e) {
-      if (mounted) {
-        showAppMessage(
-          context,
-          dioErrorMessage(e),
-          isError: true,
-        );
-      }
-      return false;
-    } finally {
-      if (mounted) setState(() => _creatingCheckout = false);
     }
   }
 
@@ -552,12 +498,12 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
     final estAfterDiscount =
         HourlyBilling.round50(estTotal * (1 - (discountPct / 100)));
     final depositDue = HourlyBilling.round50(
-      estAfterDiscount * (_onlineDepositPercent / 100),
+      estAfterDiscount * (_paymentConfig.depositPercent / 100),
     );
-    final depositPctLabel = _onlineDepositPercent % 1 == 0
-        ? _onlineDepositPercent.toStringAsFixed(0)
-        : _onlineDepositPercent.toStringAsFixed(1);
-    final isFullDeposit = _onlineDepositPercent >= 100;
+    final depositPctLabel = _paymentConfig.depositPercent % 1 == 0
+        ? _paymentConfig.depositPercent.toStringAsFixed(0)
+        : _paymentConfig.depositPercent.toStringAsFixed(1);
+    final isFullDeposit = _paymentConfig.depositPercent >= 100;
     String fmtTime(DateTime d) {
       final h = d.hour % 12 == 0 ? 12 : d.hour % 12;
       final m = d.minute.toString().padLeft(2, '0');
@@ -771,6 +717,14 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
               onChanged: (v) => setState(() => _guestsFemale = v),
             ),
             const SizedBox(height: 12),
+            Text(
+              'Step 1 · Guest details',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.3,
+                  ),
+            ),
+            const SizedBox(height: 8),
             AppInput(controller: _nameCtrl, label: context.tr('full_name')),
             const SizedBox(height: 8),
             AppInput(
@@ -963,180 +917,63 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
                         ),
                 suffixIcon: const Icon(Icons.calendar_month_outlined),
               ),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: scheme.errorContainer.withValues(alpha: 0.45),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: scheme.error.withValues(alpha: 0.35),
-                ),
-              ),
-              child: Text(
-                isFullDeposit
-                    ? 'FULL PAYMENT REQUIRED — ONLINE ONLY'
-                    : '$depositPctLabel% DEPOSIT REQUIRED — ONLINE ONLY',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w900,
-                      color: scheme.error,
-                      letterSpacing: 0.6,
+            if (staySummary.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Stay: $staySummary · Total ₱${estAfterDiscount.toStringAsFixed(2)}'
+                    '${discountPct > 0 ? ' (after discount)' : ''}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
                     ),
               ),
-            ),
-            const SizedBox(height: 8),
+            ],
+            const SizedBox(height: 12),
             Text(
-              isFullDeposit
-                  ? 'Cash at hotel is not available for online bookings. '
-                      '${_paymongoConnected ? 'Tap Pay now to open secure PayMongo checkout and pay with QR Ph.' : 'Tap Pay Now (or scan the QR), pay the full stay amount, then enter your payment reference below.'}'
-                  : 'Cash at hotel is not available for online bookings. '
-                      '${_paymongoConnected ? 'Tap Pay now to pay at least $depositPctLabel% (₱${depositDue.toStringAsFixed(2)}) via PayMongo QR Ph. Remaining balance is collected at the hotel.' : 'Tap Pay Now (or scan the QR) and pay at least $depositPctLabel% of the stay (₱${depositDue.toStringAsFixed(2)}). Enter your payment reference below. Any remaining balance is collected at the hotel.'}',
-              textAlign: TextAlign.center,
+              'Cash at hotel is not available for online bookings.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: scheme.onSurfaceVariant,
-                    height: 1.4,
                   ),
             ),
             const SizedBox(height: 12),
             if (_qrLoading)
               const Center(child: CircularProgressIndicator())
-            else if (!_paymongoConnected &&
-                _paymentQrUrl.isEmpty &&
-                _paymentGcashMobile.isEmpty &&
-                _paymentMayaMobile.isEmpty)
-              Text(
-                'Hotel has not set up online payment yet (PayMongo, QR, or wallet number). Online booking is unavailable until they do.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.error,
-                    ),
-              )
-            else ...[
-              if (_paymongoConnected) ...[
-                FilledButton.icon(
-                  onPressed: (_submitting || _creatingCheckout)
-                      ? null
-                      : () => _submit(reserve: true),
-                  icon: _creatingCheckout
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.lock_outline),
-                  label: Text(
-                    _creatingCheckout
-                        ? 'Creating secure payment…'
-                        : 'Pay now · ₱${depositDue.toStringAsFixed(2)}',
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'PayMongo will open a secure QR Ph payment page. Other channels (GCash app, Maya, cards) are not enabled on this account yet.',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: 12),
-              ] else if (_paymentGcashMobile.isNotEmpty ||
-                  _paymentMayaMobile.isNotEmpty) ...[
-                FilledButton.icon(
-                  onPressed: () => HotelWalletPayNow.showChooser(
-                    context: context,
-                    amountPesos: depositDue,
-                    gcashMobile: _paymentGcashMobile,
-                    mayaMobile: _paymentMayaMobile,
-                  ),
-                  icon: const Icon(Icons.payments_outlined),
-                  label: Text(
-                    'Pay now · ₱${depositDue.toStringAsFixed(2)}',
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  [
-                    if (_paymentGcashMobile.isNotEmpty)
-                      'GCash: $_paymentGcashMobile',
-                    if (_paymentMayaMobile.isNotEmpty)
-                      'Maya: $_paymentMayaMobile',
-                  ].join(' · '),
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
-                const SizedBox(height: 12),
-              ],
-              if (_paymentQrUrl.isNotEmpty)
-                Center(
-                  child: Column(
-                    children: [
-                      Text(
-                        _paymongoConnected
-                            ? 'Optional hotel QR fallback (manual)'
-                            : 'Or scan to pay via GCash / Maya / QR Ph',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 8),
-                      NetworkMediaImage(
-                        url: _paymentQrUrl,
-                        width: 200,
-                        height: 200,
-                        fit: BoxFit.contain,
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-            const SizedBox(height: 12),
-            if (!_paymongoConnected)
-              AppInput(
-                controller: _paymentRefCtrl,
-                label: 'Payment reference *',
-                hint: 'Paste GCash / Maya / QR Ph transaction ID after paying',
-              )
             else
-              AppInput(
-                controller: _paymentRefCtrl,
-                label: 'Payment reference (optional if paying via PayMongo)',
-                hint: 'Only needed for manual transfer fallback',
-              ),
-            const SizedBox(height: 12),
-            Text(
-              [
-                if (staySummary.isNotEmpty) 'Duration: $staySummary',
-                'Stay total: ₱${estAfterDiscount.toStringAsFixed(2)}'
-                    '${discountPct > 0 ? ' (after discount)' : ''}',
-                isFullDeposit
-                    ? 'Amount to pay now: ₱${estAfterDiscount.toStringAsFixed(2)}'
-                    : 'Deposit required now ($depositPctLabel%): ₱${depositDue.toStringAsFixed(2)}',
-                if (!isFullDeposit)
-                  'Balance at hotel: ₱${(estAfterDiscount - depositDue).clamp(0, double.infinity).toStringAsFixed(2)}',
-                'Hotel approval required. You will see success once front desk confirms your payment.',
-              ].join('\n'),
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 20),
-            if (_fromSearch)
-              AppPrimaryButton(
-                label: _submitting ? 'Submitting…' : 'Submit booking request',
-                onPressed: _submitting ? null : () => _submit(reserve: true),
-              )
-            else
-              AppPrimaryButton(
-                label: _submitting
-                    ? 'Submitting…'
-                    : (widget.preferReserve
-                        ? 'Request reservation'
-                        : 'Request to book'),
-                onPressed: _submitting
+              GuestOnlinePaymentPanel(
+                config: _paymentConfig,
+                amountDue: depositDue,
+                stayTotal: estAfterDiscount,
+                depositPctLabel: depositPctLabel,
+                isFullDeposit: isFullDeposit,
+                paymentRefController: _paymentRefCtrl,
+                onPrimaryAction: (_submitting || _creatingCheckout)
                     ? null
-                    : () => _submit(reserve: widget.preferReserve),
+                    : () => _submit(
+                          reserve: _fromSearch ? true : widget.preferReserve,
+                        ),
+                primaryLoading: _submitting || _creatingCheckout,
+                primaryEnabled: !_submitting && !_creatingCheckout,
+                primaryLabel: _paymentConfig.usesPaymongoQrPh
+                    ? (_submitting || _creatingCheckout
+                        ? 'Opening QR Ph…'
+                        : 'Book & pay with QR Ph · ₱${depositDue.toStringAsFixed(2)}')
+                    : null,
               ),
-            if (!_fromSearch) ...[
+            if (!isFullDeposit) ...[
               const SizedBox(height: 8),
               Text(
-                'Your request goes to the front desk for approval. You will get room access details once they confirm.',
+                'Balance at hotel after deposit: '
+                '₱${(estAfterDiscount - depositDue).clamp(0, double.infinity).toStringAsFixed(2)}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
+            if (!_fromSearch) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Your request goes to the front desk for approval. '
+                'You will get room access details once they confirm.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),

@@ -5,6 +5,8 @@ import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../auth_storage.dart';
+import '../widgets/guest_online_payment.dart';
+import 'customer_booking_status_screen.dart';
 import '../dio_client.dart';
 import '../widgets/app_scaffold.dart';
 import 'public_hotel_search_screen.dart';
@@ -770,10 +772,67 @@ class _CompletedStayCard extends StatelessWidget {
   }
 }
 
-class _ActiveBookingCard extends StatelessWidget {
+class _ActiveBookingCard extends StatefulWidget {
   const _ActiveBookingCard({required this.booking});
 
   final Map<String, dynamic> booking;
+
+  @override
+  State<_ActiveBookingCard> createState() => _ActiveBookingCardState();
+}
+
+class _ActiveBookingCardState extends State<_ActiveBookingCard> {
+  var _paying = false;
+
+  Map<String, dynamic> get booking => widget.booking;
+
+  double get _amountDue {
+    final deposit = (booking['deposit_required'] as num?)?.toDouble();
+    if (deposit != null && deposit > 0) return deposit;
+    final paid = (booking['amount_paid'] as num?)?.toDouble() ?? 0;
+    final total = (booking['total_amount'] as num?)?.toDouble() ?? 0;
+    return (total - paid).clamp(0, double.infinity);
+  }
+
+  Future<void> _openStatusScreen() async {
+    final hotelId = (booking['hotel_id'] ?? '').toString();
+    final ref = (booking['reference'] ?? '').toString();
+    if (hotelId.isEmpty || ref.isEmpty) return;
+    final contact = await AuthStorage.customerGuestContact();
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => CustomerBookingStatusScreen(
+          hotelId: hotelId,
+          hotelName: (booking['hotel_name'] ?? 'Hotel').toString(),
+          reference: ref,
+          guestEmail: contact?.email ?? '',
+          guestPhone: contact?.phone ?? '',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _payWithQrPh() async {
+    if (_paying) return;
+    final hotelId = (booking['hotel_id'] ?? '').toString();
+    final ref = (booking['reference'] ?? '').toString();
+    if (hotelId.isEmpty || ref.isEmpty) return;
+    setState(() => _paying = true);
+    try {
+      final contact = await AuthStorage.customerGuestContact();
+      if (!mounted) return;
+      await startGuestPaymongoCheckout(
+        context: context,
+        hotelId: hotelId,
+        reference: ref,
+        guestEmail: contact?.email ?? '',
+        guestPhone: contact?.phone ?? '',
+      );
+    } finally {
+      if (mounted) setState(() => _paying = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -790,6 +849,7 @@ class _ActiveBookingCard extends StatelessWidget {
     final status = (booking['status'] ?? '').toString();
     final kind = (booking['kind'] ?? 'booking').toString();
     final ref = (booking['reference'] ?? '').toString();
+    final needsPay = booking['needs_online_payment'] == true;
 
     final roomLine = room.isNotEmpty
         ? 'Room $room${roomName.isNotEmpty ? ' · $roomName' : ''}'
@@ -800,7 +860,10 @@ class _ActiveBookingCard extends StatelessWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: scheme.outlineVariant),
+        side: BorderSide(
+          color: needsPay ? scheme.primary : scheme.outlineVariant,
+          width: needsPay ? 1.5 : 1,
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -827,9 +890,50 @@ class _ActiveBookingCard extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 8),
+            if (needsPay) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: scheme.errorContainer.withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'Payment required · Pay with QR Ph to complete this booking',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: scheme.error,
+                      ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              FilledButton.icon(
+                onPressed: _paying ? null : _payWithQrPh,
+                icon: _paying
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.qr_code_scanner),
+                label: Text(
+                  _paying
+                      ? 'Opening QR Ph…'
+                      : 'Pay with QR Ph · ₱${_amountDue.toStringAsFixed(2)}',
+                ),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: _openStatusScreen,
+                child: const Text('View payment steps & status'),
+              ),
+              const SizedBox(height: 8),
+            ],
             Text(
-              'Paid: ₱${amountPaid.toStringAsFixed(2)} via $payLabel'
-              '${total > 0 ? ' · Total ₱${total.toStringAsFixed(2)}' : ''}',
+              needsPay
+                  ? 'Due now: ₱${_amountDue.toStringAsFixed(2)} · Stay total ₱${total.toStringAsFixed(2)}'
+                  : 'Paid: ₱${amountPaid.toStringAsFixed(2)} via $payLabel'
+                      '${total > 0 ? ' · Total ₱${total.toStringAsFixed(2)}' : ''}',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),

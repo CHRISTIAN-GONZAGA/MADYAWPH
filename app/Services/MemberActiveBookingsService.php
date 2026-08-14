@@ -114,6 +114,16 @@ final class MemberActiveBookingsService
             $meta = is_array($res->metadata) ? $res->metadata : [];
             $method = (string) ($meta['payment_method'] ?? 'Cash');
             $estimated = (float) ($meta['estimated_total'] ?? 0);
+            $amountPaid = (float) ($meta['amount_paid'] ?? 0);
+            $depositRequired = isset($meta['deposit_required'])
+                ? (float) $meta['deposit_required']
+                : null;
+            $paymentStatus = strtolower((string) ($meta['payment_status'] ?? 'pending'));
+            $needsPayment = strtolower($method) === 'online'
+                && ! in_array($paymentStatus, ['paid', 'deposit_paid'], true)
+                && ($depositRequired !== null
+                    ? $amountPaid + 0.009 < $depositRequired
+                    : $amountPaid + 0.009 < $estimated);
 
             $items[] = [
                 'kind' => 'reservation',
@@ -129,9 +139,11 @@ final class MemberActiveBookingsService
                 'status' => (string) ($res->status ?? ''),
                 'payment_method' => $method,
                 'payment_method_label' => $this->paymentMethodLabel($method),
-                'amount_paid' => 0.0,
+                'amount_paid' => $amountPaid,
                 'total_amount' => $estimated,
-                'payment_status' => 'pending',
+                'deposit_required' => $depositRequired,
+                'payment_status' => $paymentStatus !== '' ? $paymentStatus : 'pending',
+                'needs_online_payment' => $needsPayment,
             ];
         }
 
