@@ -285,7 +285,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   items: const [
                     DropdownMenuItem(
                       value: 'qrph',
-                      child: Text('QR Ph — PayMongo checkout (instant)'),
+                      child: Text('QR Ph — opens PayMongo in browser'),
                     ),
                     DropdownMenuItem(
                       value: 'qrph_manual',
@@ -338,7 +338,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                 method == 'qrph_manual'
                     ? 'Submit for approval'
                     : method == 'qrph'
-                        ? 'Pay with QR Ph'
+                        ? 'Continue to PayMongo'
                         : 'Recharge',
               ),
             ),

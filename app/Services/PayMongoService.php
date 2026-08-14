@@ -439,10 +439,39 @@ class PayMongoService
         );
 
         if (! ($response['ok'] ?? false)) {
+            $message = strtolower((string) ($response['message'] ?? ''));
+            if (str_contains($message, 'already completed')
+                || str_contains($message, 'already submitted')
+                || str_contains($message, 'verification already')
+                || str_contains($message, 'journey completed')) {
+                return [
+                    'ok' => true,
+                    'identity_already_complete' => true,
+                    'hosted_url' => null,
+                    'message' => 'Identity verification already submitted.',
+                ];
+            }
+
             return $response;
         }
 
         $json = $response['json'] ?? [];
+
+        $sessionStatus = strtolower((string) (
+            data_get($json, 'data.status')
+            ?? data_get($json, 'data.attributes.status')
+            ?? ''
+        ));
+        if (self::identityVerificationLooksComplete($sessionStatus)) {
+            return [
+                'ok' => true,
+                'identity_already_complete' => true,
+                'hosted_url' => null,
+                'verification_id' => (string) data_get($json, 'data.id', ''),
+                'json' => $json,
+                'message' => 'Identity verification already submitted.',
+            ];
+        }
 
         // Official OaaS response uses data.url (not attributes.hosted_url).
         $hostedUrl = data_get($json, 'data.url')
@@ -514,6 +543,31 @@ class PayMongoService
 
         // Allow other https hosts PayMongo may use, except known placeholders above.
         return $url;
+    }
+
+    /** Hosted selfie / government-ID pages — not business-details onboarding. */
+    public static function looksLikeIdentityVerificationUrl(?string $url): bool
+    {
+        $url = strtolower(trim((string) $url));
+        if ($url === '') {
+            return false;
+        }
+
+        foreach ([
+            'liveness',
+            'identity',
+            'verification',
+            'kyc',
+            'selfie',
+            'id-verification',
+            'identity-verification',
+        ] as $needle) {
+            if (str_contains($url, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public static function mockOnboardingUrlMessage(): string
@@ -600,7 +654,8 @@ class PayMongoService
         $identityStatus = data_get($json, 'data.identity_verification.status')
             ?? data_get($json, 'data.attributes.identity_verification.status')
             ?? data_get($json, 'data.identity_verification_status')
-            ?? data_get($json, 'data.attributes.identity_verification_status');
+            ?? data_get($json, 'data.attributes.identity_verification_status')
+            ?? data_get($json, 'data.attributes.identity_verification.status');
 
         return [
             'activation_status' => is_string($activation) && $activation !== '' ? $activation : null,
@@ -628,6 +683,9 @@ class PayMongoService
             'success',
             'succeeded',
             'approved',
+            'journey_completed',
+            'journey complete',
+            'done',
         ], true);
     }
 

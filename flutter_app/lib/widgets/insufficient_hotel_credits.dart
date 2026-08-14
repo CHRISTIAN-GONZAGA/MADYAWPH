@@ -85,7 +85,7 @@ Future<void> showHotelCreditsRechargeDialog(BuildContext context) async {
               items: const [
                 DropdownMenuItem(
                   value: 'qrph',
-                  child: Text('QR Ph — PayMongo checkout (instant)'),
+                  child: Text('QR Ph — opens PayMongo in browser'),
                 ),
                 DropdownMenuItem(value: 'gcash', child: Text('GCash')),
                 DropdownMenuItem(value: 'paymaya', child: Text('PayMaya')),
@@ -108,7 +108,7 @@ Future<void> showHotelCreditsRechargeDialog(BuildContext context) async {
               'amount': double.tryParse(amountCtrl.text.trim()) ?? 0,
               'method': method,
             }),
-            child: Text(method == 'qrph' ? 'Pay with QR Ph' : 'Continue'),
+            child: Text(method == 'qrph' ? 'Continue to PayMongo' : 'Continue'),
           ),
         ],
       ),

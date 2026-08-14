@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Hotel;
+use App\Models\HotelPaymentAccount;
 use App\Models\Payment;
+use App\Services\PayMongoService;
 use App\Services\ReservationPayMongoService;
 use App\Services\HotelPayMongoConnectService;
 use Illuminate\Http\JsonResponse;
@@ -42,6 +44,7 @@ class HotelPayMongoController extends Controller
             'connected' => $account?->isConnected() ?? false,
             'payment_ready' => $account?->isPaymentReady() ?? false,
             'onboarding_status' => $onboarding,
+            'onboarding_phase' => $this->connect->onboardingPhase($account),
             'account' => $account?->toPublicArray() ?? [
                 'provider' => 'paymongo',
                 'status' => 'not_connected',
@@ -135,7 +138,8 @@ class HotelPayMongoController extends Controller
             'payment_ready' => $result['account']?->isPaymentReady() ?? false,
             'redirect_url' => $result['account']?->onboarding_url,
             'onboarding_url' => $result['account']?->onboarding_url,
-            'open_onboarding_url' => filled($result['account']?->onboarding_url),
+            'open_onboarding_url' => $this->shouldOpenOnboardingUrl($result['account'] ?? null),
+            'onboarding_phase' => $this->connect->onboardingPhase($result['account'] ?? null),
             'account' => $result['account']?->toPublicArray(),
         ]);
     }
@@ -152,18 +156,7 @@ class HotelPayMongoController extends Controller
             return response()->json(['message' => $result['message'] ?? 'Could not refresh onboarding.'], 422);
         }
 
-        // If still pending and no URL, mint a fresh hosted verification link.
         $account = $result['account'] ?? null;
-        if ($account
-            && ! $account->isPaymentReady()
-            && ! filled($account->onboarding_url)
-            && $account->childMerchantId() !== null) {
-            $continued = $this->connect->continueChildOnboarding($account);
-            if (($continued['ok'] ?? false) && isset($continued['account'])) {
-                $account = $continued['account'];
-                $result['account'] = $account;
-            }
-        }
 
         return response()->json([
             'message' => $result['message'] ?? 'PayMongo status updated.',
@@ -171,9 +164,35 @@ class HotelPayMongoController extends Controller
             'payment_ready' => $account?->isPaymentReady() ?? false,
             'redirect_url' => $account?->onboarding_url,
             'onboarding_url' => $account?->onboarding_url,
-            'open_onboarding_url' => filled($account?->onboarding_url),
+            'open_onboarding_url' => $this->shouldOpenOnboardingUrl($account),
+            'onboarding_phase' => $this->connect->onboardingPhase($account),
             'account' => $account?->toPublicArray(),
         ]);
+    }
+
+    private function shouldOpenOnboardingUrl(?HotelPaymentAccount $account): bool
+    {
+        if ($account === null || $account->isPaymentReady()) {
+            return false;
+        }
+
+        if (! filled($account->onboarding_url)) {
+            return false;
+        }
+
+        if ($account->onboarding_status === HotelPaymentAccount::ONBOARDING_REQUIREMENTS_PENDING) {
+            $url = PayMongoService::usableOnboardingUrl(
+                $account->onboarding_url ? (string) $account->onboarding_url : null
+            );
+
+            return $url !== null && ! PayMongoService::looksLikeIdentityVerificationUrl($url);
+        }
+
+        return in_array($account->onboarding_status, [
+            HotelPaymentAccount::ONBOARDING_VERIFICATION_PENDING,
+            HotelPaymentAccount::ONBOARDING_ONBOARDING,
+            HotelPaymentAccount::ONBOARDING_REJECTED,
+        ], true);
     }
 
     public function refreshLink(Request $request): JsonResponse

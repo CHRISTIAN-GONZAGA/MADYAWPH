@@ -222,7 +222,7 @@ class _HotelSubscriptionGateScreenState extends State<HotelSubscriptionGateScree
             const SizedBox(height: 8),
             Text(
               _showPayUi
-                  ? 'Your free trial has ended. Pay with PayMongo QR Ph for instant activation, or scan the platform QR and submit a reference for manual approval.'
+                  ? 'Your free trial has ended. Pay via PayMongo QR Ph (opens in your browser), or scan the platform QR and submit a reference for manual approval.'
                   : 'Your hotel subscription payment is required. Ask an admin or super admin to complete payment.',
               style: TextStyle(color: scheme.onSurfaceVariant),
             ),
@@ -255,7 +255,7 @@ class _HotelSubscriptionGateScreenState extends State<HotelSubscriptionGateScree
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Instant — subscription activates automatically after PayMongo payment.',
+                  'Opens PayMongo checkout in your browser. Subscription activates automatically after payment.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),

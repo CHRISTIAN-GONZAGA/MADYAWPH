@@ -303,6 +303,57 @@ class PayMongoChildOnboardingTest extends TestCase
         });
     }
 
+    public function test_continue_skips_identity_url_when_verification_already_completed(): void
+    {
+        Http::fake([
+            'https://api.paymongo.com/v2/accounts/org_id_done' => Http::response([
+                'data' => [
+                    'id' => 'org_id_done',
+                    'type' => 'merchant',
+                    'activation_status' => 'pending',
+                    'identity_verification_status' => 'passed',
+                ],
+            ], 200),
+            'https://api.paymongo.com/v2/accounts/org_id_done/identity_verification' => Http::response([
+                'errors' => [
+                    ['detail' => 'Identity verification already completed'],
+                ],
+            ], 400),
+            'https://api.paymongo.com/v2/accounts/org_id_done/activate' => Http::response([
+                'errors' => [
+                    ['detail' => 'Missing required business fields'],
+                ],
+            ], 422),
+            'https://api.paymongo.com/v1/merchants/children/org_id_done/requirements' => Http::response([
+                'data' => ['status' => 'pending'],
+            ], 200),
+        ]);
+
+        $hotel = Hotel::create(['name' => 'Done ID Hotel', 'location' => 'Loc']);
+        $account = HotelPaymentAccount::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'provider' => HotelPaymentAccount::PROVIDER_PAYMONGO,
+            'connection_type' => HotelPaymentAccount::CONNECTION_CHILD_MERCHANT,
+            'child_merchant_id' => 'org_id_done',
+            'merchant_account_id' => 'org_id_done',
+            'status' => HotelPaymentAccount::STATUS_PENDING,
+            'onboarding_status' => HotelPaymentAccount::ONBOARDING_VERIFICATION_PENDING,
+            'onboarding_url' => 'https://paymongo.com/liveness-check/stale',
+            'mode' => 'test',
+        ]);
+
+        $service = app(HotelPayMongoConnectService::class);
+        $result = $service->continueChildOnboarding($account);
+
+        $this->assertTrue($result['ok']);
+        $fresh = $result['account'];
+        $this->assertNull($fresh->onboarding_url);
+        $this->assertSame(
+            HotelPaymentAccount::ONBOARDING_REQUIREMENTS_PENDING,
+            $fresh->onboarding_status
+        );
+    }
+
     public function test_admin_cannot_see_other_hotel_child_secret(): void
     {
         [$hotelA, $adminA] = $this->makeHotelAdmin('Iso A');

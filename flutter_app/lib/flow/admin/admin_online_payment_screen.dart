@@ -217,8 +217,36 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
   }
 
   Future<void> _continueOrOpenOnboarding() async {
-    // Always mint/refresh via API — never reopen a cached example.com link.
-    await _startChildOnboarding();
+    setState(() => _connectingPaymongo = true);
+    try {
+      final res = await portalDio().post<Map<String, dynamic>>(
+        '/admin/payments/paymongo/refresh-child',
+      );
+      if (!mounted) return;
+      await _loadPaymongo();
+      final data = Map<String, dynamic>.from(res.data ?? const {});
+      if (data['open_onboarding_url'] == true) {
+        await _openPaymongoOnboardingUrl(data);
+        if (!mounted) return;
+        showAppMessage(
+          context,
+          'Opening PayMongo to finish ID verification. When done, tap Refresh status here.',
+        );
+      } else {
+        showAppMessage(
+          context,
+          (data['message'] ??
+                  'Status updated. If ID is already submitted, wait for PayMongo review — no need to resubmit.')
+              .toString(),
+        );
+      }
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+      await _loadPaymongo();
+    } finally {
+      if (mounted) setState(() => _connectingPaymongo = false);
+    }
   }
 
   Future<bool> _openPaymongoOnboardingUrl(Map<String, dynamic>? data) async {
@@ -269,7 +297,7 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
         return 'Status: Not Started';
       case 'ONBOARDING':
       case 'REQUIREMENTS_PENDING':
-        return 'Status: Identity done — PayMongo review / activation';
+        return 'Status: ID submitted — PayMongo review / activation';
       case 'VERIFICATION_PENDING':
         return 'Status: Complete ID verification in PayMongo';
       case 'REJECTED':
@@ -281,6 +309,60 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
       default:
         return 'Status: $status';
     }
+  }
+
+  Widget _onboardingSteps(
+    ColorScheme scheme, {
+    required bool identityDone,
+    required bool reviewDone,
+    bool businessPending = false,
+  }) {
+    Widget step(String label, bool done, {bool active = false}) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              done ? Icons.check_circle : (active ? Icons.radio_button_checked : Icons.radio_button_off),
+              size: 18,
+              color: done
+                  ? scheme.primary
+                  : active
+                      ? scheme.tertiary
+                      : scheme.outline,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                label,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: done || active
+                          ? scheme.onSurface
+                          : scheme.onSurfaceVariant,
+                      height: 1.35,
+                    ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        step('1. Selfie + valid ID (PayMongo hosted page)', identityDone, active: !identityDone),
+        step(
+          businessPending
+              ? '2. Business / merchant details (PayMongo hosted page)'
+              : '2. PayMongo review & account activation',
+          reviewDone,
+          active: identityDone && !reviewDone,
+        ),
+        step('3. Payment ready — guests can pay with QR Ph', reviewDone),
+      ],
+    );
   }
 
   Widget _paymongoCard(ColorScheme scheme) {
@@ -302,7 +384,13 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
     final merchantHint =
         (account['child_merchant_id'] ?? account['merchant_account_id'] ?? '')
             .toString();
-    final onboardingUrl = (account['onboarding_url'] ?? '').toString();
+    final onboardingPhase =
+        (_paymongo?['onboarding_phase'] as Map?)?.cast<String, dynamic>() ??
+            const {};
+    final phase = (onboardingPhase['phase'] ?? '').toString();
+    final phaseLabel = (onboardingPhase['label'] ?? '').toString();
+    final phaseDetail = (onboardingPhase['detail'] ?? '').toString();
+    final canOpenSetup = onboardingPhase['can_open_setup'] == true;
     final signupUrl = (account['invite_signup_url'] ?? '').toString();
     final lastError = (account['last_error'] ?? '').toString();
     final needsSetup = !connected &&
@@ -349,7 +437,9 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              _onboardingStatusLabel(onboarding, ready: connected),
+              connected
+                  ? 'Status: Payment Ready'
+                  : (phaseLabel.isNotEmpty ? phaseLabel : _onboardingStatusLabel(onboarding, ready: connected)),
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w700,
                     color: connected
@@ -360,6 +450,26 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
                             : scheme.onSurfaceVariant,
                   ),
             ),
+            if (!connected && phaseDetail.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                phaseDetail,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      height: 1.35,
+                    ),
+              ),
+            ],
+            if (!connected && phase == 'paymongo_review') ...[
+              const SizedBox(height: 10),
+              _onboardingSteps(scheme, identityDone: true, reviewDone: false),
+            ] else if (!connected && phase == 'verify_identity') ...[
+              const SizedBox(height: 10),
+              _onboardingSteps(scheme, identityDone: false, reviewDone: false),
+            ] else if (!connected && phase == 'complete_business') ...[
+              const SizedBox(height: 10),
+              _onboardingSteps(scheme, identityDone: true, reviewDone: false, businessPending: true),
+            ],
             if (platformSecretMode == 'test' || platformSecretMode == 'missing') ...[
               const SizedBox(height: 8),
               Text(
@@ -419,17 +529,32 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
                   ),
                 ),
               if (childEnabled && inProgress) ...[
-                FilledButton(
-                  onPressed: _connectingPaymongo
-                      ? null
-                      : _continueOrOpenOnboarding,
-                  child: Text(
-                    onboarding == 'REJECTED'
-                        ? 'Continue Setup'
-                        : 'Continue PayMongo Setup',
+                if (canOpenSetup || phase == 'complete_business') ...[
+                  FilledButton(
+                    onPressed: _connectingPaymongo
+                        ? null
+                        : _continueOrOpenOnboarding,
+                    child: Text(
+                      phase == 'complete_business'
+                          ? 'Continue business setup'
+                          : onboarding == 'REJECTED'
+                              ? 'Retry ID verification'
+                              : 'Open ID verification',
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
+                  const SizedBox(height: 8),
+                ],
+                if (phase == 'paymongo_review') ...[
+                  Text(
+                    'This is normal after ID submission. PayMongo reviews on their side — '
+                    'the app cannot open another setup page until they approve or send a business-details link.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          height: 1.35,
+                        ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 OutlinedButton(
                   onPressed:
                       _connectingPaymongo ? null : _refreshChildOnboarding,
