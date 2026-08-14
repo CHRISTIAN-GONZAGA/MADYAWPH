@@ -186,23 +186,66 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
         '/admin/payments/paymongo/start-child-onboarding',
       );
       if (!mounted) return;
-      showAppMessage(
-        context,
-        (res.data?['message'] ?? 'PayMongo setup started.').toString(),
-      );
       await _loadPaymongo();
-      final url = (((res.data?['account'] as Map?)?['onboarding_url']) ?? '')
-          .toString();
-      if (url.isNotEmpty) {
-        await PaymentRedirect.openCheckout(context, url);
+      final opened = await _openPaymongoOnboardingUrl(res.data);
+      if (!mounted) return;
+      if (opened) {
+        showAppMessage(
+          context,
+          'Opening PayMongo setup. Complete verification there, then tap Refresh status.',
+        );
+      } else {
+        showAppMessage(
+          context,
+          (res.data?['message'] ??
+                  'PayMongo setup started, but no setup link was returned. Tap Continue PayMongo Setup.')
+              .toString(),
+          isError: true,
+        );
       }
     } on DioException catch (e) {
       if (!mounted) return;
       showAppMessage(context, dioErrorMessage(e), isError: true);
       await _loadPaymongo();
+      // Even on 422, try opening a URL if the account payload includes one.
+      await _openPaymongoOnboardingUrl(e.response?.data is Map
+          ? Map<String, dynamic>.from(e.response!.data as Map)
+          : null);
     } finally {
       if (mounted) setState(() => _connectingPaymongo = false);
     }
+  }
+
+  Future<void> _continueOrOpenOnboarding() async {
+    final existing = (((_paymongo?['account'] as Map?)?['onboarding_url']) ?? '')
+        .toString()
+        .trim();
+    if (existing.isNotEmpty) {
+      await PaymentRedirect.openCheckout(context, existing);
+      return;
+    }
+    // No cached link — create/refresh a hosted verification session.
+    await _startChildOnboarding();
+  }
+
+  Future<bool> _openPaymongoOnboardingUrl(Map<String, dynamic>? data) async {
+    if (data == null) return false;
+    final fromTop = (data['redirect_url'] ?? data['onboarding_url'] ?? '')
+        .toString()
+        .trim();
+    if (fromTop.isNotEmpty) {
+      return PaymentRedirect.openCheckout(context, fromTop);
+    }
+    final account = data['account'];
+    if (account is Map) {
+      final url = (account['onboarding_url'] ?? account['invite_signup_url'] ?? '')
+          .toString()
+          .trim();
+      if (url.isNotEmpty) {
+        return PaymentRedirect.openCheckout(context, url);
+      }
+    }
+    return false;
   }
 
   Future<void> _refreshChildOnboarding() async {
@@ -217,6 +260,18 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
         (res.data?['message'] ?? 'Status updated.').toString(),
       );
       await _loadPaymongo();
+      // If still pending and a link was minted, offer to open it.
+      final url = (res.data?['redirect_url'] ??
+              res.data?['onboarding_url'] ??
+              ((_paymongo?['account'] as Map?)?['onboarding_url']) ??
+              '')
+          .toString()
+          .trim();
+      if (url.isNotEmpty &&
+          !(_paymongo?['payment_ready'] == true ||
+              _paymongo?['connected'] == true)) {
+        await PaymentRedirect.openCheckout(context, url);
+      }
     } on DioException catch (e) {
       if (!mounted) return;
       showAppMessage(context, dioErrorMessage(e), isError: true);
@@ -370,16 +425,7 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
                 FilledButton(
                   onPressed: _connectingPaymongo
                       ? null
-                      : () async {
-                          if (onboardingUrl.isNotEmpty) {
-                            await PaymentRedirect.openCheckout(
-                              context,
-                              onboardingUrl,
-                            );
-                          } else {
-                            await _startChildOnboarding();
-                          }
-                        },
+                      : _continueOrOpenOnboarding,
                   child: Text(
                     onboarding == 'REJECTED'
                         ? 'Continue Setup'

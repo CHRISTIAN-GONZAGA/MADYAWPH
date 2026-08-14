@@ -126,6 +126,8 @@ class HotelPayMongoController extends Controller
                 : 'PayMongo child merchant onboarding started.',
             'connected' => $result['account']?->isConnected() ?? false,
             'payment_ready' => $result['account']?->isPaymentReady() ?? false,
+            'redirect_url' => $result['account']?->onboarding_url,
+            'onboarding_url' => $result['account']?->onboarding_url,
             'account' => $result['account']?->toPublicArray(),
         ]);
     }
@@ -142,11 +144,26 @@ class HotelPayMongoController extends Controller
             return response()->json(['message' => $result['message'] ?? 'Could not refresh onboarding.'], 422);
         }
 
+        // If still pending and no URL, mint a fresh hosted verification link.
+        $account = $result['account'] ?? null;
+        if ($account
+            && ! $account->isPaymentReady()
+            && ! filled($account->onboarding_url)
+            && $account->childMerchantId() !== null) {
+            $continued = $this->connect->continueChildOnboarding($account);
+            if (($continued['ok'] ?? false) && isset($continued['account'])) {
+                $account = $continued['account'];
+                $result['account'] = $account;
+            }
+        }
+
         return response()->json([
             'message' => $result['message'] ?? 'PayMongo status updated.',
-            'connected' => $result['account']?->isConnected() ?? false,
-            'payment_ready' => $result['account']?->isPaymentReady() ?? false,
-            'account' => $result['account']?->toPublicArray(),
+            'connected' => $account?->isConnected() ?? false,
+            'payment_ready' => $account?->isPaymentReady() ?? false,
+            'redirect_url' => $account?->onboarding_url,
+            'onboarding_url' => $account?->onboarding_url,
+            'account' => $account?->toPublicArray(),
         ]);
     }
 

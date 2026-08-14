@@ -128,10 +128,21 @@ class HotelPayMongoConnectService
         $account->save();
 
         // Hosted identity / Seeds onboarding URL.
-        $this->continueChildOnboarding($account->fresh() ?? $account);
-        $this->syncRequirements($account->fresh() ?? $account);
+        $continued = $this->continueChildOnboarding($account->fresh() ?? $account);
+        $fresh = ($continued['account'] ?? null) ?: ($account->fresh() ?? $account);
+        $this->syncRequirements($fresh);
 
-        return ['ok' => true, 'account' => $account->fresh(), 'reused' => false];
+        if (! filled($fresh->onboarding_url)) {
+            return [
+                'ok' => false,
+                'account' => $fresh,
+                'reused' => false,
+                'message' => $continued['message']
+                    ?? 'PayMongo account was created, but the setup link could not be opened. Tap Continue PayMongo Setup to try again.',
+            ];
+        }
+
+        return ['ok' => true, 'account' => $fresh, 'reused' => false];
     }
 
     /**
@@ -152,15 +163,31 @@ class HotelPayMongoConnectService
             if ($verify['ok'] ?? false) {
                 if (filled($verify['hosted_url'] ?? null)) {
                     $account->onboarding_url = (string) $verify['hosted_url'];
+                    $account->onboarding_status = HotelPaymentAccount::ONBOARDING_VERIFICATION_PENDING;
+                    $account->last_error = null;
+                    $account->save();
+                } else {
+                    Log::warning('PayMongo identity verification ok but missing url', [
+                        'hotel_id' => $account->hotel_id,
+                        'child_id' => $childId,
+                        'keys' => array_keys((array) data_get($verify, 'json.data', [])),
+                    ]);
+                    $account->last_error = 'PayMongo did not return an onboarding link. Please try Continue Setup again.';
+                    $account->save();
+
+                    return [
+                        'ok' => false,
+                        'account' => $account,
+                        'message' => 'PayMongo did not return an onboarding link. Please try again.',
+                    ];
                 }
-                $account->onboarding_status = HotelPaymentAccount::ONBOARDING_VERIFICATION_PENDING;
-                $account->last_error = null;
-                $account->save();
             } else {
                 // Identity session may already exist — still try GET account for onboarding_url.
                 $got = $this->payMongo->getChildAccount($childId);
                 if (($got['ok'] ?? false) && filled($got['onboarding_url'] ?? null)) {
                     $account->onboarding_url = (string) $got['onboarding_url'];
+                    $account->onboarding_status = HotelPaymentAccount::ONBOARDING_REQUIREMENTS_PENDING;
+                    $account->last_error = null;
                     $account->save();
                 } else {
                     return [
@@ -175,7 +202,15 @@ class HotelPayMongoConnectService
             if (($got['ok'] ?? false) && filled($got['onboarding_url'] ?? null)) {
                 $account->onboarding_url = (string) $got['onboarding_url'];
             }
+            if (! filled($account->onboarding_url)) {
+                return [
+                    'ok' => false,
+                    'account' => $account,
+                    'message' => 'PayMongo onboarding link is not available yet. Please try again.',
+                ];
+            }
             $account->onboarding_status = HotelPaymentAccount::ONBOARDING_REQUIREMENTS_PENDING;
+            $account->last_error = null;
             $account->save();
         }
 

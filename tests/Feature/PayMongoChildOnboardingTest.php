@@ -39,9 +39,9 @@ class PayMongoChildOnboardingTest extends TestCase
             'https://api.paymongo.com/v2/accounts/org_child_reg_1/identity_verification' => Http::response([
                 'data' => [
                     'id' => 'verif_1',
-                    'attributes' => [
-                        'hosted_url' => 'https://identity.paymongo.com/v/verif_1',
-                    ],
+                    'account_id' => 'org_child_reg_1',
+                    'url' => 'https://paymongo.com/liveness-check/verif_1',
+                    'status' => 'pending',
                 ],
             ], 200),
             'https://api.paymongo.com/v1/merchants/children/org_child_reg_1/requirements' => Http::response([
@@ -77,6 +77,7 @@ class PayMongoChildOnboardingTest extends TestCase
         $this->assertSame('org_child_reg_1', $account->child_merchant_id);
         $this->assertSame(HotelPaymentAccount::CONNECTION_CHILD_MERCHANT, $account->connection_type);
         $this->assertNotSame(HotelPaymentAccount::ONBOARDING_NOT_STARTED, $account->onboarding_status);
+        $this->assertSame('https://paymongo.com/liveness-check/verif_1', $account->onboarding_url);
     }
 
     public function test_retry_does_not_create_duplicate_child_merchant(): void
@@ -94,7 +95,8 @@ class PayMongoChildOnboardingTest extends TestCase
             'https://api.paymongo.com/v2/accounts/org_once/identity_verification' => Http::response([
                 'data' => [
                     'id' => 'verif_2',
-                    'attributes' => ['hosted_url' => 'https://identity.paymongo.com/v/verif_2'],
+                    'url' => 'https://paymongo.com/liveness-check/verif_2',
+                    'status' => 'pending',
                 ],
             ], 200),
             'https://api.paymongo.com/v2/accounts/org_once' => Http::response([
@@ -208,7 +210,17 @@ class PayMongoChildOnboardingTest extends TestCase
     public function test_hotels_have_separate_child_merchants(): void
     {
         Http::fake(function ($request) {
-            if (str_contains($request->url(), '/v2/accounts') && $request->method() === 'POST') {
+            $url = $request->url();
+            if (str_contains($url, 'identity_verification')) {
+                return Http::response([
+                    'data' => [
+                        'id' => 'verif_x',
+                        'url' => 'https://paymongo.com/liveness-check/x',
+                        'status' => 'pending',
+                    ],
+                ], 200);
+            }
+            if (preg_match('#/v2/accounts/?$#', parse_url($url, PHP_URL_PATH) ?? '') && $request->method() === 'POST') {
                 $email = data_get($request->data(), 'person.email_address');
                 $id = $email === 'a@example.com' ? 'org_hotel_a' : 'org_hotel_b';
 
@@ -216,15 +228,10 @@ class PayMongoChildOnboardingTest extends TestCase
                     'data' => ['id' => $id, 'type' => 'merchant', 'activation_status' => 'pending'],
                 ], 200);
             }
-            if (str_contains($request->url(), 'identity_verification')) {
-                return Http::response([
-                    'data' => ['id' => 'verif_x', 'attributes' => ['hosted_url' => 'https://identity.paymongo.com/x']],
-                ], 200);
-            }
-            if (str_contains($request->url(), 'requirements')) {
+            if (str_contains($url, 'requirements')) {
                 return Http::response(['data' => []], 200);
             }
-            if (str_contains($request->url(), 'webhooks')) {
+            if (str_contains($url, 'webhooks')) {
                 return Http::response(['data' => ['id' => 'hook']], 200);
             }
 

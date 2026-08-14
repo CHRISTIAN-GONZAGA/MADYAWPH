@@ -444,10 +444,16 @@ class PayMongoService
 
         $json = $response['json'] ?? [];
 
+        // Official OaaS response uses data.url (not attributes.hosted_url).
+        $hostedUrl = data_get($json, 'data.url')
+            ?? data_get($json, 'data.attributes.url')
+            ?? data_get($json, 'data.attributes.hosted_url')
+            ?? data_get($json, 'data.hosted_url');
+
         return [
             'ok' => true,
             'verification_id' => (string) data_get($json, 'data.id', ''),
-            'hosted_url' => data_get($json, 'data.attributes.hosted_url'),
+            'hosted_url' => is_string($hostedUrl) && $hostedUrl !== '' ? $hostedUrl : null,
             'json' => $json,
         ];
     }
