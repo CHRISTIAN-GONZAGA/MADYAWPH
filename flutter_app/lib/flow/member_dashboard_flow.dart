@@ -158,11 +158,11 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
         selectedIndex: _tab,
         onDestinationSelected: (i) => setState(() => _tab = i),
         destinations: [
-          const NavigationDestination(
-            icon: Icon(Icons.person_outline),
+          NavigationDestination(
+            icon: const Icon(Icons.person_outline),
             selectedIcon: Transform.scale(
               scale: 1.18,
-              child: Icon(Icons.person, size: 26),
+              child: const Icon(Icons.person, size: 26),
             ),
             label: 'Account',
           ),
@@ -175,18 +175,18 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
             selectedIcon: Badge(
               isLabelVisible: _activeBookings.isNotEmpty,
               label: Text('${_activeBookings.length}'),
-              child: const Transform.scale(
+              child: Transform.scale(
                 scale: 1.18,
-                child: Icon(Icons.hotel, size: 26),
+                child: const Icon(Icons.hotel, size: 26),
               ),
             ),
             label: 'Bookings',
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.travel_explore_outlined),
+          NavigationDestination(
+            icon: const Icon(Icons.travel_explore_outlined),
             selectedIcon: Transform.scale(
               scale: 1.18,
-              child: Icon(Icons.travel_explore, size: 26),
+              child: const Icon(Icons.travel_explore, size: 26),
             ),
             label: 'Browse',
           ),
