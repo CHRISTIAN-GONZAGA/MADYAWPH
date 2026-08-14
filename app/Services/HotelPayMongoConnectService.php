@@ -124,7 +124,9 @@ class HotelPayMongoConnectService
         $account->mode = strtolower((string) config('services.paymongo.mode', 'test'));
         $account->connected_at = Carbon::now();
         $account->last_error = null;
-        $account->onboarding_url = $created['onboarding_url'] ?? null;
+        $account->onboarding_url = PayMongoService::usableOnboardingUrl(
+            isset($created['onboarding_url']) ? (string) $created['onboarding_url'] : null
+        );
         $account->save();
 
         // Hosted identity / Seeds onboarding URL.
@@ -167,28 +169,39 @@ class HotelPayMongoConnectService
                     $account->last_error = null;
                     $account->save();
                 } else {
-                    Log::warning('PayMongo identity verification ok but missing url', [
+                    Log::warning('PayMongo identity verification ok but missing usable url', [
                         'hotel_id' => $account->hotel_id,
                         'child_id' => $childId,
+                        'message' => $verify['message'] ?? null,
                         'keys' => array_keys((array) data_get($verify, 'json.data', [])),
                     ]);
-                    $account->last_error = 'PayMongo did not return an onboarding link. Please try Continue Setup again.';
+                    $account->last_error = $verify['message'] ?? PayMongoService::mockOnboardingUrlMessage();
+                    $account->onboarding_url = null;
                     $account->save();
 
                     return [
                         'ok' => false,
                         'account' => $account,
-                        'message' => 'PayMongo did not return an onboarding link. Please try again.',
+                        'message' => $verify['message'] ?? PayMongoService::mockOnboardingUrlMessage(),
                     ];
                 }
             } else {
                 // Identity session may already exist — still try GET account for onboarding_url.
                 $got = $this->payMongo->getChildAccount($childId);
                 if (($got['ok'] ?? false) && filled($got['onboarding_url'] ?? null)) {
-                    $account->onboarding_url = (string) $got['onboarding_url'];
-                    $account->onboarding_status = HotelPaymentAccount::ONBOARDING_REQUIREMENTS_PENDING;
-                    $account->last_error = null;
-                    $account->save();
+                    $usable = PayMongoService::usableOnboardingUrl((string) $got['onboarding_url']);
+                    if ($usable !== null) {
+                        $account->onboarding_url = $usable;
+                        $account->onboarding_status = HotelPaymentAccount::ONBOARDING_REQUIREMENTS_PENDING;
+                        $account->last_error = null;
+                        $account->save();
+                    } else {
+                        return [
+                            'ok' => false,
+                            'account' => $account,
+                            'message' => $verify['message'] ?? PayMongoService::mockOnboardingUrlMessage(),
+                        ];
+                    }
                 } else {
                     return [
                         'ok' => false,
@@ -200,13 +213,13 @@ class HotelPayMongoConnectService
         } else {
             $got = $this->payMongo->getChildAccount($childId);
             if (($got['ok'] ?? false) && filled($got['onboarding_url'] ?? null)) {
-                $account->onboarding_url = (string) $got['onboarding_url'];
+                $account->onboarding_url = PayMongoService::usableOnboardingUrl((string) $got['onboarding_url']);
             }
             if (! filled($account->onboarding_url)) {
                 return [
                     'ok' => false,
                     'account' => $account,
-                    'message' => 'PayMongo onboarding link is not available yet. Please try again.',
+                    'message' => PayMongoService::mockOnboardingUrlMessage(),
                 ];
             }
             $account->onboarding_status = HotelPaymentAccount::ONBOARDING_REQUIREMENTS_PENDING;
@@ -238,7 +251,7 @@ class HotelPayMongoConnectService
         $activation = strtolower((string) ($got['activation_status'] ?? ''));
         $account->paymongo_activation_status = $activation !== '' ? $activation : $account->paymongo_activation_status;
         if (filled($got['onboarding_url'] ?? null)) {
-            $account->onboarding_url = (string) $got['onboarding_url'];
+            $account->onboarding_url = \App\Services\PayMongoService::usableOnboardingUrl((string) $got['onboarding_url']);
         }
 
         if ($activation === 'activated') {

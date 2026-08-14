@@ -40,6 +40,29 @@ class PaymentRedirect {
       return false;
     }
 
+    final host = (uri.host).toLowerCase();
+    const blocked = {
+      'example.com',
+      'www.example.com',
+      'example.org',
+      'www.example.org',
+      'example.net',
+      'www.example.net',
+      'localhost',
+      '127.0.0.1',
+    };
+    if (blocked.contains(host)) {
+      if (context.mounted) {
+        showAppMessage(
+          context,
+          'PayMongo returned a test placeholder link (example.com), not a real setup page. '
+          'Use live PayMongo keys on the server, or connect with hotel API keys under Advanced.',
+          isError: true,
+        );
+      }
+      return false;
+    }
+
     final launched = await launchUrl(
       uri,
       mode: LaunchMode.externalApplication,

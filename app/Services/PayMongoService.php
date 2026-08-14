@@ -450,12 +450,78 @@ class PayMongoService
             ?? data_get($json, 'data.attributes.hosted_url')
             ?? data_get($json, 'data.hosted_url');
 
+        $usable = self::usableOnboardingUrl(is_string($hostedUrl) ? $hostedUrl : null);
+        if (is_string($hostedUrl) && $hostedUrl !== '' && $usable === null) {
+            Log::warning('PayMongo identity verification returned a non-usable mock URL', [
+                'url' => $hostedUrl,
+                'mode' => config('services.paymongo.mode'),
+            ]);
+        }
+
         return [
             'ok' => true,
             'verification_id' => (string) data_get($json, 'data.id', ''),
-            'hosted_url' => is_string($hostedUrl) && $hostedUrl !== '' ? $hostedUrl : null,
+            'hosted_url' => $usable,
             'json' => $json,
+            'message' => $usable === null && is_string($hostedUrl) && $hostedUrl !== ''
+                ? self::mockOnboardingUrlMessage()
+                : null,
         ];
+    }
+
+    /**
+     * Reject placeholder / mock hosts (e.g. example.com from PayMongo test mocks).
+     */
+    public static function usableOnboardingUrl(?string $url): ?string
+    {
+        $url = trim((string) $url);
+        if ($url === '') {
+            return null;
+        }
+
+        $parts = parse_url($url);
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+        $host = strtolower((string) ($parts['host'] ?? ''));
+        if (! in_array($scheme, ['http', 'https'], true) || $host === '') {
+            return null;
+        }
+
+        $blocked = [
+            'example.com',
+            'www.example.com',
+            'example.org',
+            'www.example.org',
+            'example.net',
+            'www.example.net',
+            'localhost',
+            '127.0.0.1',
+        ];
+        if (in_array($host, $blocked, true)) {
+            return null;
+        }
+
+        // Real PayMongo hosted pages / dashboard.
+        $allowedSuffixes = [
+            'paymongo.com',
+            'paymongo.link',
+            'pm.link',
+        ];
+        foreach ($allowedSuffixes as $suffix) {
+            if ($host === $suffix || str_ends_with($host, '.'.$suffix)) {
+                return $url;
+            }
+        }
+
+        // Allow other https hosts PayMongo may use, except known placeholders above.
+        return $url;
+    }
+
+    public static function mockOnboardingUrlMessage(): string
+    {
+        return 'PayMongo returned a test/mock setup link (example.com), not a real onboarding page. '
+            .'OaaS child onboarding with sk_test_ keys often returns mock data. '
+            .'Use live PayMongo secret keys (sk_live_…) with PAYMONGO_MODE=production after PayMongo enables Platforms for your account, '
+            .'or connect the hotel with its own PayMongo API keys under Advanced.';
     }
 
     /**
