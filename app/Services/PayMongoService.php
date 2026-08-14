@@ -526,9 +526,10 @@ class PayMongoService
                 .'Keys entered under Advanced in the app do not replace the server secret for Set Up PayMongo.';
         }
 
-        return 'PayMongo returned a non-usable setup link (e.g. example.com). '
-            .'Confirm Platforms / Linked Accounts (OaaS) is enabled for your live PayMongo account, '
-            .'or connect this hotel with its own PayMongo API keys under Advanced.';
+        return 'PayMongo did not return a real setup page. '
+            .'If you just switched to live keys, tap Set Up PayMongo again so we can create a new live child merchant '
+            .'(the previous test account is not found in live). '
+            .'Or skip hosted setup: paste this hotel’s own pk_live_ / sk_live_ under Advanced and tap Connect.';
     }
 
     /**
@@ -672,7 +673,12 @@ class PayMongoService
             };
 
             if (! $response->successful()) {
-                return ['ok' => false, 'message' => $this->formatErrors($response->json())];
+                $message = $this->formatErrors($response->json());
+                if ($response->status() === 404 && ! str_contains(strtolower($message), 'not found')) {
+                    $message = 'Account not found.';
+                }
+
+                return ['ok' => false, 'message' => $message];
             }
 
             $json = $response->json();

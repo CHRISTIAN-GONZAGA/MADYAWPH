@@ -58,14 +58,29 @@ class HotelPayMongoConnectService
         }
 
         $account = $this->ensureAccount($hotelId);
+
+        // Advanced API-key connect is already payment-ready — do not start child onboarding.
+        if ($account->connection_type === HotelPaymentAccount::CONNECTION_API_KEYS
+            && $account->isPaymentReady()) {
+            return [
+                'ok' => true,
+                'account' => $account,
+                'reused' => true,
+                'message' => 'PayMongo is already connected with this hotel’s API keys. Guests can pay via QR Ph.',
+            ];
+        }
+
         if ($account->onboarding_status === HotelPaymentAccount::ONBOARDING_ACTIVE
-            && $account->childMerchantId() !== null) {
+            && filled($account->child_merchant_id)) {
             return ['ok' => true, 'account' => $account, 'reused' => true, 'message' => 'PayMongo is already active.'];
         }
 
-        // Idempotent: reuse existing child merchant id.
-        if ($account->childMerchantId() !== null) {
-            // Drop cached placeholder links (example.com) so we always mint a fresh PayMongo URL.
+        // Test child IDs are invalid after switching to live keys (PayMongo returns "not found").
+        $this->forgetStaleChildMerchantIfNeeded($account);
+        $account = $account->fresh() ?? $account;
+
+        // Idempotent: reuse existing child merchant id (child_merchant_id only — not API-key org ids).
+        if (filled($account->child_merchant_id)) {
             $this->clearUnusableOnboardingUrl($account);
 
             $continued = $this->continueChildOnboarding($account->fresh() ?? $account);
@@ -73,17 +88,24 @@ class HotelPayMongoConnectService
                 return ['ok' => true, 'account' => $continued['account'], 'reused' => true];
             }
 
-            $refreshed = $this->refreshChildOnboarding($hotelId);
-            if (($refreshed['ok'] ?? false) && filled($refreshed['account']?->onboarding_url)) {
-                return ['ok' => true, 'account' => $refreshed['account'], 'reused' => true];
-            }
+            $failMessage = (string) ($continued['message'] ?? '');
+            if ($this->isPayMongoNotFound($failMessage) || $this->isUnusableLinkMessage($failMessage)) {
+                $this->forgetStaleChildMerchant($account->fresh() ?? $account);
+                $account = $account->fresh() ?? $account;
+                // Fall through and create a new child under the current live/test keys.
+            } else {
+                $refreshed = $this->refreshChildOnboarding($hotelId);
+                if (($refreshed['ok'] ?? false) && filled($refreshed['account']?->onboarding_url)) {
+                    return ['ok' => true, 'account' => $refreshed['account'], 'reused' => true];
+                }
 
-            return [
-                'ok' => false,
-                'account' => $account->fresh(),
-                'reused' => true,
-                'message' => $continued['message'] ?? $refreshed['message'] ?? 'Could not refresh PayMongo onboarding.',
-            ];
+                return [
+                    'ok' => false,
+                    'account' => $account->fresh(),
+                    'reused' => true,
+                    'message' => $continued['message'] ?? $refreshed['message'] ?? 'Could not refresh PayMongo onboarding.',
+                ];
+            }
         }
 
         $path = strtolower((string) config('services.paymongo.child_onboarding_path', 'accounts'));
@@ -327,6 +349,86 @@ class HotelPayMongoConnectService
             }
             $account->save();
         }
+    }
+
+    private function currentPlatformMode(): string
+    {
+        $secret = trim((string) config('services.paymongo.secret', ''));
+        if (str_starts_with($secret, 'sk_live_')) {
+            return 'production';
+        }
+        if (str_starts_with($secret, 'sk_test_')) {
+            return 'test';
+        }
+
+        return strtolower((string) config('services.paymongo.mode', 'test'));
+    }
+
+    private function isPayMongoNotFound(string $message): bool
+    {
+        $m = strtolower($message);
+
+        return str_contains($m, 'not found')
+            || str_contains($m, 'not_found')
+            || str_contains($m, 'does not exist');
+    }
+
+    private function isUnusableLinkMessage(string $message): bool
+    {
+        $m = strtolower($message);
+
+        return str_contains($m, 'example.com')
+            || str_contains($m, 'mock setup')
+            || str_contains($m, 'non-usable');
+    }
+
+    /**
+     * Drop a child merchant created under the other key mode (test vs live).
+     * Reusing a test org_ id with sk_live_ returns PayMongo "not found".
+     */
+    private function forgetStaleChildMerchantIfNeeded(HotelPaymentAccount $account): void
+    {
+        if (! filled($account->child_merchant_id)) {
+            return;
+        }
+
+        $storedMode = strtolower((string) ($account->mode ?? ''));
+        $current = $this->currentPlatformMode();
+        if ($storedMode !== '' && $storedMode !== $current
+            && in_array($storedMode, ['test', 'production'], true)
+            && in_array($current, ['test', 'production'], true)) {
+            Log::info('PayMongo child merchant discarded after key mode change', [
+                'hotel_id' => $account->hotel_id,
+                'stored_mode' => $storedMode,
+                'current_mode' => $current,
+            ]);
+            $this->forgetStaleChildMerchant($account);
+
+            return;
+        }
+
+        $got = $this->payMongo->getChildAccount((string) $account->child_merchant_id);
+        if (! ($got['ok'] ?? false) && $this->isPayMongoNotFound((string) ($got['message'] ?? ''))) {
+            Log::info('PayMongo child merchant not found under current keys — will recreate', [
+                'hotel_id' => $account->hotel_id,
+            ]);
+            $this->forgetStaleChildMerchant($account);
+        }
+    }
+
+    private function forgetStaleChildMerchant(HotelPaymentAccount $account): void
+    {
+        $account->child_merchant_id = null;
+        if ($account->connection_type === HotelPaymentAccount::CONNECTION_CHILD_MERCHANT) {
+            $account->merchant_account_id = null;
+        }
+        $account->onboarding_url = null;
+        $account->paymongo_activation_status = null;
+        $account->onboarding_status = HotelPaymentAccount::ONBOARDING_NOT_STARTED;
+        $account->status = HotelPaymentAccount::STATUS_NOT_CONNECTED;
+        $account->last_error = null;
+        $account->mode = $this->currentPlatformMode();
+        $account->save();
     }
 
     private function clearUnusableOnboardingUrl(HotelPaymentAccount $account): void
