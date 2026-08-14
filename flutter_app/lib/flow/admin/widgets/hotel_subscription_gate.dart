@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../../../dio_client.dart';
 import '../../../utils/money_format.dart';
+import '../../../widgets/app_scaffold.dart';
 import '../../../widgets/payment_redirect.dart';
 
 /// Blocks hotel portal access when subscription trial/payment is due.
