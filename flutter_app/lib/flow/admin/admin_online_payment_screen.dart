@@ -223,6 +223,7 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
 
   Future<bool> _openPaymongoOnboardingUrl(Map<String, dynamic>? data) async {
     if (data == null) return false;
+    if (data['open_onboarding_url'] == false) return false;
     final fromTop = (data['redirect_url'] ?? data['onboarding_url'] ?? '')
         .toString()
         .trim();
@@ -253,18 +254,6 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
         (res.data?['message'] ?? 'Status updated.').toString(),
       );
       await _loadPaymongo();
-      // If still pending and a link was minted, offer to open it.
-      final url = (res.data?['redirect_url'] ??
-              res.data?['onboarding_url'] ??
-              ((_paymongo?['account'] as Map?)?['onboarding_url']) ??
-              '')
-          .toString()
-          .trim();
-      if (url.isNotEmpty &&
-          !(_paymongo?['payment_ready'] == true ||
-              _paymongo?['connected'] == true)) {
-        await PaymentRedirect.openCheckout(context, url);
-      }
     } on DioException catch (e) {
       if (!mounted) return;
       showAppMessage(context, dioErrorMessage(e), isError: true);
@@ -280,9 +269,9 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
         return 'Status: Not Started';
       case 'ONBOARDING':
       case 'REQUIREMENTS_PENDING':
-        return 'Status: Setup Required';
+        return 'Status: Identity done — PayMongo review / activation';
       case 'VERIFICATION_PENDING':
-        return 'Status: Verification In Progress';
+        return 'Status: Complete ID verification in PayMongo';
       case 'REJECTED':
         return 'Status: Action Required';
       case 'ONBOARDING_FAILED':

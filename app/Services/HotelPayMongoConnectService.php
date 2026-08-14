@@ -162,6 +162,7 @@ class HotelPayMongoConnectService
         $continued = $this->continueChildOnboarding($account->fresh() ?? $account);
         $fresh = ($continued['account'] ?? null) ?: ($account->fresh() ?? $account);
         $this->syncRequirements($fresh);
+        $this->maybeRegisterWebhook($fresh);
 
         if (! filled($fresh->onboarding_url)) {
             return [
@@ -192,57 +193,7 @@ class HotelPayMongoConnectService
         $account = $account->fresh() ?? $account;
 
         $path = strtolower((string) config('services.paymongo.child_onboarding_path', 'accounts'));
-        if ($path !== 'seeds') {
-            $verify = $this->payMongo->startHostedIdentityVerification($childId);
-            if ($verify['ok'] ?? false) {
-                if (filled($verify['hosted_url'] ?? null)) {
-                    $account->onboarding_url = (string) $verify['hosted_url'];
-                    $account->onboarding_status = HotelPaymentAccount::ONBOARDING_VERIFICATION_PENDING;
-                    $account->last_error = null;
-                    $account->save();
-                } else {
-                    Log::warning('PayMongo identity verification ok but missing usable url', [
-                        'hotel_id' => $account->hotel_id,
-                        'child_id' => $childId,
-                        'message' => $verify['message'] ?? null,
-                        'keys' => array_keys((array) data_get($verify, 'json.data', [])),
-                    ]);
-                    $account->last_error = $verify['message'] ?? PayMongoService::mockOnboardingUrlMessage();
-                    $account->onboarding_url = null;
-                    $account->save();
-
-                    return [
-                        'ok' => false,
-                        'account' => $account,
-                        'message' => $verify['message'] ?? PayMongoService::mockOnboardingUrlMessage(),
-                    ];
-                }
-            } else {
-                // Identity session may already exist — still try GET account for onboarding_url.
-                $got = $this->payMongo->getChildAccount($childId);
-                if (($got['ok'] ?? false) && filled($got['onboarding_url'] ?? null)) {
-                    $usable = PayMongoService::usableOnboardingUrl((string) $got['onboarding_url']);
-                    if ($usable !== null) {
-                        $account->onboarding_url = $usable;
-                        $account->onboarding_status = HotelPaymentAccount::ONBOARDING_REQUIREMENTS_PENDING;
-                        $account->last_error = null;
-                        $account->save();
-                    } else {
-                        return [
-                            'ok' => false,
-                            'account' => $account,
-                            'message' => $verify['message'] ?? PayMongoService::mockOnboardingUrlMessage(),
-                        ];
-                    }
-                } else {
-                    return [
-                        'ok' => false,
-                        'account' => $account,
-                        'message' => $verify['message'] ?? 'Could not start PayMongo identity verification.',
-                    ];
-                }
-            }
-        } else {
+        if ($path === 'seeds') {
             $got = $this->payMongo->getChildAccount($childId);
             if (($got['ok'] ?? false) && filled($got['onboarding_url'] ?? null)) {
                 $account->onboarding_url = PayMongoService::usableOnboardingUrl((string) $got['onboarding_url']);
@@ -257,6 +208,75 @@ class HotelPayMongoConnectService
             $account->onboarding_status = HotelPaymentAccount::ONBOARDING_REQUIREMENTS_PENDING;
             $account->last_error = null;
             $account->save();
+            $this->syncRequirements($account);
+
+            return ['ok' => true, 'account' => $account->fresh()];
+        }
+
+        $reconciled = $this->reconcileChildAccountFromPayMongo($account, $childId);
+        if ($reconciled['payment_ready'] ?? false) {
+            return ['ok' => true, 'account' => $reconciled['account'], 'message' => 'PayMongo is active.'];
+        }
+
+        $account = $reconciled['account'];
+        if ($reconciled['identity_complete'] ?? false) {
+            $this->syncRequirements($account->fresh() ?? $account);
+
+            return [
+                'ok' => true,
+                'account' => $account->fresh(),
+                'message' => $account->last_error
+                    ?: 'Identity verification submitted. Waiting for PayMongo to finish review/activation.',
+            ];
+        }
+
+        $verify = $this->payMongo->startHostedIdentityVerification($childId);
+        if ($verify['ok'] ?? false) {
+            if (filled($verify['hosted_url'] ?? null)) {
+                $account->onboarding_url = (string) $verify['hosted_url'];
+                $account->onboarding_status = HotelPaymentAccount::ONBOARDING_VERIFICATION_PENDING;
+                $account->last_error = null;
+                $account->save();
+            } else {
+                Log::warning('PayMongo identity verification ok but missing usable url', [
+                    'hotel_id' => $account->hotel_id,
+                    'child_id' => $childId,
+                    'message' => $verify['message'] ?? null,
+                    'keys' => array_keys((array) data_get($verify, 'json.data', [])),
+                ]);
+                $account->last_error = $verify['message'] ?? PayMongoService::mockOnboardingUrlMessage();
+                $account->onboarding_url = null;
+                $account->save();
+
+                return [
+                    'ok' => false,
+                    'account' => $account,
+                    'message' => $verify['message'] ?? PayMongoService::mockOnboardingUrlMessage(),
+                ];
+            }
+        } else {
+            $got = $this->payMongo->getChildAccount($childId);
+            if (($got['ok'] ?? false) && filled($got['onboarding_url'] ?? null)) {
+                $usable = PayMongoService::usableOnboardingUrl((string) $got['onboarding_url']);
+                if ($usable !== null) {
+                    $account->onboarding_url = $usable;
+                    $account->onboarding_status = HotelPaymentAccount::ONBOARDING_REQUIREMENTS_PENDING;
+                    $account->last_error = null;
+                    $account->save();
+                } else {
+                    return [
+                        'ok' => false,
+                        'account' => $account,
+                        'message' => $verify['message'] ?? PayMongoService::mockOnboardingUrlMessage(),
+                    ];
+                }
+            } else {
+                return [
+                    'ok' => false,
+                    'account' => $account,
+                    'message' => $verify['message'] ?? 'Could not start PayMongo identity verification.',
+                ];
+            }
         }
 
         $this->syncRequirements($account);
@@ -274,37 +294,144 @@ class HotelPayMongoConnectService
             return ['ok' => false, 'message' => 'No PayMongo child merchant for this hotel.'];
         }
 
-        $childId = $account->childMerchantId();
+        $childId = (string) $account->childMerchantId();
+        $reconciled = $this->reconcileChildAccountFromPayMongo($account, $childId);
+        $account = $reconciled['account'];
+        $this->syncRequirements($account->fresh() ?? $account);
+        $account = $account->fresh() ?? $account;
+
+        $message = $reconciled['message'] ?? 'PayMongo status updated.';
+        if ($account->isPaymentReady()) {
+            $message = 'PayMongo is active. Guests can pay with QR Ph.';
+        } elseif ($reconciled['identity_complete'] ?? false) {
+            $message = $account->last_error
+                ?: 'Identity verification submitted. PayMongo is still reviewing or finishing activation — no need to resubmit your ID.';
+        }
+
+        return ['ok' => true, 'account' => $account, 'message' => $message];
+    }
+
+    /**
+     * Sync local child-merchant state from PayMongo and attempt activation when eligible.
+     *
+     * @return array{
+     *     account: HotelPaymentAccount,
+     *     payment_ready: bool,
+     *     identity_complete: bool,
+     *     message?: string
+     * }
+     */
+    private function reconcileChildAccountFromPayMongo(
+        HotelPaymentAccount $account,
+        string $childId,
+    ): array {
         $got = $this->payMongo->getChildAccount($childId);
         if (! ($got['ok'] ?? false)) {
-            return ['ok' => false, 'account' => $account, 'message' => $got['message'] ?? 'Could not refresh PayMongo status.'];
+            return [
+                'account' => $account,
+                'payment_ready' => $account->isPaymentReady(),
+                'identity_complete' => false,
+                'message' => $got['message'] ?? 'Could not refresh PayMongo status.',
+            ];
         }
 
         $activation = strtolower((string) ($got['activation_status'] ?? ''));
-        $account->paymongo_activation_status = $activation !== '' ? $activation : $account->paymongo_activation_status;
-        if (filled($got['onboarding_url'] ?? null)) {
-            $account->onboarding_url = \App\Services\PayMongoService::usableOnboardingUrl((string) $got['onboarding_url']);
-        }
+        $identityStatus = (string) ($got['identity_verification_status'] ?? '');
+        $identityComplete = PayMongoService::identityVerificationLooksComplete($identityStatus);
+
+        $account->paymongo_activation_status = $activation !== ''
+            ? $activation
+            : $account->paymongo_activation_status;
 
         if ($activation === 'activated') {
             $this->markChildActivated($account);
-        } elseif ($activation === 'declined') {
-            $account->onboarding_status = HotelPaymentAccount::ONBOARDING_REJECTED;
-            $account->status = HotelPaymentAccount::STATUS_ERROR;
-            $account->save();
-        } elseif ($activation === 'under_review') {
-            $account->onboarding_status = HotelPaymentAccount::ONBOARDING_VERIFICATION_PENDING;
-            $account->save();
-        } else {
-            $account->onboarding_status = $account->onboarding_url
-                ? HotelPaymentAccount::ONBOARDING_REQUIREMENTS_PENDING
-                : HotelPaymentAccount::ONBOARDING_ONBOARDING;
-            $account->save();
+
+            return [
+                'account' => $account->fresh() ?? $account,
+                'payment_ready' => true,
+                'identity_complete' => true,
+            ];
         }
 
-        $this->syncRequirements($account);
+        if ($activation === 'declined') {
+            $account->onboarding_status = HotelPaymentAccount::ONBOARDING_REJECTED;
+            $account->status = HotelPaymentAccount::STATUS_ERROR;
+            $account->last_error = 'PayMongo declined this merchant account.';
+            $account->onboarding_url = null;
+            $account->save();
 
-        return ['ok' => true, 'account' => $account->fresh()];
+            return [
+                'account' => $account->fresh() ?? $account,
+                'payment_ready' => false,
+                'identity_complete' => $identityComplete,
+                'message' => $account->last_error,
+            ];
+        }
+
+        if ($identityComplete || $activation === 'under_review') {
+            // Do not keep reopening the finished identity-verification link.
+            $account->onboarding_url = null;
+            $account->onboarding_status = HotelPaymentAccount::ONBOARDING_REQUIREMENTS_PENDING;
+            $account->last_error = $activation === 'under_review'
+                ? 'Identity submitted. PayMongo is reviewing your application (often 3–5 business days).'
+                : 'Identity verification submitted. PayMongo is finishing account activation.';
+            $account->save();
+
+            $activate = $this->payMongo->activateChildAccount($childId);
+            if ($activate['ok'] ?? false) {
+                $refreshed = $this->payMongo->getChildAccount($childId);
+                if (($refreshed['ok'] ?? false)
+                    && strtolower((string) ($refreshed['activation_status'] ?? '')) === 'activated') {
+                    $this->markChildActivated($account->fresh() ?? $account);
+
+                    return [
+                        'account' => $account->fresh() ?? $account,
+                        'payment_ready' => true,
+                        'identity_complete' => true,
+                    ];
+                }
+            }
+
+            $activateMessage = trim((string) ($activate['message'] ?? ''));
+            if ($activateMessage !== '' && ! ($activate['ok'] ?? false) && $activation !== 'under_review') {
+                $account->last_error = $this->humanizeActivateError($activateMessage);
+                $account->save();
+            }
+
+            return [
+                'account' => $account->fresh() ?? $account,
+                'payment_ready' => false,
+                'identity_complete' => true,
+                'message' => $account->last_error,
+            ];
+        }
+
+        if (filled($got['onboarding_url'] ?? null)) {
+            $account->onboarding_url = PayMongoService::usableOnboardingUrl((string) $got['onboarding_url']);
+        }
+
+        $account->onboarding_status = filled($account->onboarding_url)
+            ? HotelPaymentAccount::ONBOARDING_VERIFICATION_PENDING
+            : HotelPaymentAccount::ONBOARDING_ONBOARDING;
+        $account->last_error = null;
+        $account->save();
+
+        return [
+            'account' => $account->fresh() ?? $account,
+            'payment_ready' => false,
+            'identity_complete' => false,
+        ];
+    }
+
+    private function humanizeActivateError(string $message): string
+    {
+        $m = strtolower($message);
+        if (str_contains($m, 'missing') || str_contains($m, 'incomplete') || str_contains($m, 'required')) {
+            return 'Identity is done, but PayMongo still needs business/account details before activation. '
+                .'Contact PayMongo support or wait for their review email.';
+        }
+
+        return 'Identity submitted. PayMongo activation is still pending: '.$message;
     }
 
     /**

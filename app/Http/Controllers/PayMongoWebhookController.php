@@ -157,10 +157,7 @@ class PayMongoWebhookController extends Controller
 
     private function onIdentityPassed(HotelPaymentAccount $account): bool
     {
-        $account->onboarding_status = HotelPaymentAccount::ONBOARDING_REQUIREMENTS_PENDING;
-        $account->paymongo_activation_status = $account->paymongo_activation_status ?: 'pending';
-        $account->last_error = null;
-        $account->save();
+        $this->connect->refreshChildOnboarding((string) $account->hotel_id);
 
         return true;
     }

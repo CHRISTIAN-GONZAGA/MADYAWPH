@@ -560,23 +560,107 @@ class PayMongoService
             }
             $json = $seeds['json'] ?? [];
 
+            $parsed = self::parseChildAccountPayload($json);
+
             return [
                 'ok' => true,
                 'json' => $json,
-                'activation_status' => data_get($json, 'data.attributes.activation_status'),
-                'onboarding_url' => data_get($json, 'data.attributes.onboarding_url'),
+                'activation_status' => $parsed['activation_status'],
+                'onboarding_url' => $parsed['onboarding_url'],
+                'identity_verification_status' => $parsed['identity_verification_status'],
             ];
         }
 
         $json = $response['json'] ?? [];
+        $parsed = self::parseChildAccountPayload($json);
 
         return [
             'ok' => true,
             'json' => $json,
-            'activation_status' => data_get($json, 'data.activation_status')
-                ?? data_get($json, 'data.attributes.activation_status'),
-            'onboarding_url' => data_get($json, 'data.attributes.onboarding_url')
-                ?? data_get($json, 'data.onboarding_url'),
+            'activation_status' => $parsed['activation_status'],
+            'onboarding_url' => $parsed['onboarding_url'],
+            'identity_verification_status' => $parsed['identity_verification_status'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $json
+     * @return array{
+     *     activation_status: ?string,
+     *     onboarding_url: ?string,
+     *     identity_verification_status: ?string
+     * }
+     */
+    public static function parseChildAccountPayload(array $json): array
+    {
+        $activation = data_get($json, 'data.activation_status')
+            ?? data_get($json, 'data.attributes.activation_status');
+        $onboardingUrl = data_get($json, 'data.attributes.onboarding_url')
+            ?? data_get($json, 'data.onboarding_url');
+        $identityStatus = data_get($json, 'data.identity_verification.status')
+            ?? data_get($json, 'data.attributes.identity_verification.status')
+            ?? data_get($json, 'data.identity_verification_status')
+            ?? data_get($json, 'data.attributes.identity_verification_status');
+
+        return [
+            'activation_status' => is_string($activation) && $activation !== '' ? $activation : null,
+            'onboarding_url' => is_string($onboardingUrl) && $onboardingUrl !== ''
+                ? self::usableOnboardingUrl($onboardingUrl)
+                : null,
+            'identity_verification_status' => is_string($identityStatus) && $identityStatus !== ''
+                ? strtolower($identityStatus)
+                : null,
+        ];
+    }
+
+    public static function identityVerificationLooksComplete(?string $status): bool
+    {
+        if ($status === null || $status === '') {
+            return false;
+        }
+
+        return in_array(strtolower($status), [
+            'passed',
+            'completed',
+            'complete',
+            'verified',
+            'submitted',
+            'success',
+            'succeeded',
+            'approved',
+        ], true);
+    }
+
+    /**
+     * @return array{ok: bool, activation_status?: ?string, json?: array, message?: string}
+     */
+    public function activateChildAccount(string $childAccountId): array
+    {
+        $secret = trim((string) config('services.paymongo.secret'));
+        if ($secret === '') {
+            return ['ok' => false, 'message' => 'Platform PAYMONGO_SECRET_KEY is not configured.'];
+        }
+
+        $response = $this->request(
+            'POST',
+            self::API_V2.'/accounts/'.rawurlencode($childAccountId).'/activate',
+            $secret,
+        );
+
+        if (! ($response['ok'] ?? false)) {
+            return $response;
+        }
+
+        $json = $response['json'] ?? [];
+        $parsed = self::parseChildAccountPayload($json);
+
+        return [
+            'ok' => true,
+            'json' => $json,
+            'activation_status' => $parsed['activation_status'],
+            'message' => strtolower((string) ($parsed['activation_status'] ?? '')) === 'activated'
+                ? 'Account activated.'
+                : null,
         ];
     }
 

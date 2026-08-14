@@ -135,6 +135,7 @@ class HotelPayMongoController extends Controller
             'payment_ready' => $result['account']?->isPaymentReady() ?? false,
             'redirect_url' => $result['account']?->onboarding_url,
             'onboarding_url' => $result['account']?->onboarding_url,
+            'open_onboarding_url' => filled($result['account']?->onboarding_url),
             'account' => $result['account']?->toPublicArray(),
         ]);
     }
@@ -170,6 +171,7 @@ class HotelPayMongoController extends Controller
             'payment_ready' => $account?->isPaymentReady() ?? false,
             'redirect_url' => $account?->onboarding_url,
             'onboarding_url' => $account?->onboarding_url,
+            'open_onboarding_url' => filled($account?->onboarding_url),
             'account' => $account?->toPublicArray(),
         ]);
     }
