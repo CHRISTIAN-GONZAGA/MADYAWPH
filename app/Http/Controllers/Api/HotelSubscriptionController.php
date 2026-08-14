@@ -39,4 +39,34 @@ class HotelSubscriptionController extends Controller
             )
         );
     }
+
+    public function startCheckoutPayment(Request $request, \App\Services\PlatformPayMongoCheckoutService $checkout): JsonResponse
+    {
+        $validated = $request->validate([
+            'amount' => ['nullable', 'numeric', 'min:1'],
+        ]);
+
+        $hotelId = (string) ($request->user()?->hotel_id ?? '');
+        $hotel = Hotel::withoutGlobalScopes()->findOrFail($hotelId);
+
+        $result = $checkout->createSubscriptionCheckout(
+            $hotel,
+            $request->user(),
+            isset($validated['amount']) ? (float) $validated['amount'] : null,
+        );
+
+        if (! ($result['ok'] ?? false)) {
+            return response()->json([
+                'message' => $result['message'] ?? 'Unable to start PayMongo checkout.',
+            ], 422);
+        }
+
+        return response()->json([
+            'ok' => true,
+            'requires_redirect' => true,
+            'redirect_url' => $result['checkout_url'] ?? null,
+            'checkout_url' => $result['checkout_url'] ?? null,
+            'message' => $result['message'] ?? 'Opening PayMongo QR Ph checkout.',
+        ]);
+    }
 }

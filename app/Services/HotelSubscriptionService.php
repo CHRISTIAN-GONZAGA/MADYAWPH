@@ -165,6 +165,7 @@ class HotelSubscriptionService
                     ? (string) $row->hotel_subscription_qr_url
                     : null
             ),
+            'paymongo_checkout_enabled' => trim((string) config('services.paymongo.secret', '')) !== '',
             'pending_request' => $pending ? $this->serializeRequest($pending) : null,
             'message' => match ($status) {
                 self::STATUS_PROCESSING => 'Processing payment',

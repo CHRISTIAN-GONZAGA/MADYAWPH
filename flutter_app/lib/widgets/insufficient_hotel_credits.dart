@@ -1,10 +1,10 @@
 import 'package:dio/dio.dart';
 import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../dio_client.dart';
 import 'hotel_credits_policy.dart';
+import 'payment_redirect.dart';
 
 /// True when the API rejected confirmation because hotel wallet credits are too low.
 bool isHotelCreditsApprovalError(DioException e) {
@@ -43,7 +43,7 @@ Future<bool?> showInsufficientHotelCreditsDialog(
       content: Text(
         message ??
             'Your hotel credit balance is too low to confirm this booking. '
-                'Recharge via GCash or PayMaya in Settings, then try again.',
+                'Recharge via QR Ph, GCash, or PayMaya in Settings, then try again.',
       ),
       actions: [
         TextButton(
@@ -62,7 +62,7 @@ Future<bool?> showInsufficientHotelCreditsDialog(
 /// Recharge flow shared by booking approval and settings.
 Future<void> showHotelCreditsRechargeDialog(BuildContext context) async {
   final amountCtrl = TextEditingController(text: '100');
-  String method = 'gcash';
+  String method = 'qrph';
   final payload = await showDialog<Map<String, dynamic>>(
     context: context,
     builder: (context) => StatefulBuilder(
@@ -83,12 +83,16 @@ Future<void> showHotelCreditsRechargeDialog(BuildContext context) async {
             DropdownButtonFormField<String>(
               initialValue: method,
               items: const [
+                DropdownMenuItem(
+                  value: 'qrph',
+                  child: Text('QR Ph — PayMongo checkout (instant)'),
+                ),
                 DropdownMenuItem(value: 'gcash', child: Text('GCash')),
                 DropdownMenuItem(value: 'paymaya', child: Text('PayMaya')),
               ],
               onChanged: (v) => setLocal(() => method = v ?? method),
               decoration: const InputDecoration(
-                labelText: 'Wallet',
+                labelText: 'Payment method',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -104,7 +108,7 @@ Future<void> showHotelCreditsRechargeDialog(BuildContext context) async {
               'amount': double.tryParse(amountCtrl.text.trim()) ?? 0,
               'method': method,
             }),
-            child: const Text('Continue'),
+            child: Text(method == 'qrph' ? 'Pay with QR Ph' : 'Continue'),
           ),
         ],
       ),
@@ -120,19 +124,13 @@ Future<void> showHotelCreditsRechargeDialog(BuildContext context) async {
     );
     if (!context.mounted) return;
     final data = Map<String, dynamic>.from(res.data ?? {});
-    final checkoutUrl = (data['checkout_url'] ?? data['invoice_url'] ?? '')
-        .toString()
-        .trim();
+    if (PaymentRedirect.responseRequiresRedirect(data)) {
+      await PaymentRedirect.maybeOpenFromResponse(context, data);
+    }
+    if (!context.mounted) return;
     final msg = (data['message'] ??
             'Complete payment in your browser. Credits update after payment succeeds.')
         .toString();
-    if (checkoutUrl.isNotEmpty) {
-      final uri = Uri.tryParse(checkoutUrl);
-      if (uri != null) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-    }
-    if (!context.mounted) return;
     showAppMessage(context, msg);
   } on DioException catch (e) {
     if (!context.mounted) return;

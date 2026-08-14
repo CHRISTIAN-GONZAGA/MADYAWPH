@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../../../dio_client.dart';
 import '../../../utils/money_format.dart';
-import '../../../widgets/app_scaffold.dart';
+import '../../../widgets/payment_redirect.dart';
 
 /// Blocks hotel portal access when subscription trial/payment is due.
 Future<bool> ensureHotelSubscriptionAccess(BuildContext context) async {
@@ -65,6 +65,39 @@ class _HotelSubscriptionGateScreenState extends State<HotelSubscriptionGateScree
   String get _status => (_data['status'] ?? '').toString();
   bool get _showPayUi => _data['show_payment_ui'] == true;
   bool get _canSubmit => _data['can_submit_payment'] == true;
+  bool get _paymongoCheckout => _data['paymongo_checkout_enabled'] == true;
+
+  Future<void> _payWithQrPh() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final res = await portalDio().post<Map<String, dynamic>>(
+        '/hotel/subscription/payment/checkout',
+      );
+      if (!mounted) return;
+      final data = Map<String, dynamic>.from(res.data ?? const {});
+      if (PaymentRedirect.responseRequiresRedirect(data)) {
+        await PaymentRedirect.maybeOpenFromResponse(context, data);
+      }
+      if (!mounted) return;
+      setState(() => _busy = false);
+      await _refresh();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = dioErrorMessage(e);
+        _busy = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '$e';
+        _busy = false;
+      });
+    }
+  }
 
   Future<void> _refresh() async {
     final res = await portalDio().get<Map<String, dynamic>>('/hotel/subscription');
@@ -188,7 +221,7 @@ class _HotelSubscriptionGateScreenState extends State<HotelSubscriptionGateScree
             const SizedBox(height: 8),
             Text(
               _showPayUi
-                  ? 'Your free trial has ended. Pay via QR Ph and submit the reference number for central admin approval.'
+                  ? 'Your free trial has ended. Pay with PayMongo QR Ph for instant activation, or scan the platform QR and submit a reference for manual approval.'
                   : 'Your hotel subscription payment is required. Ask an admin or super admin to complete payment.',
               style: TextStyle(color: scheme.onSurfaceVariant),
             ),
@@ -213,6 +246,28 @@ class _HotelSubscriptionGateScreenState extends State<HotelSubscriptionGateScree
                 ),
               ],
               const SizedBox(height: 12),
+              if (_paymongoCheckout) ...[
+                FilledButton.icon(
+                  onPressed: _busy || !_canSubmit ? null : _payWithQrPh,
+                  icon: const Icon(Icons.qr_code_scanner),
+                  label: Text('Pay with QR Ph · ${formatPeso(fee)}'),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Instant — subscription activates automatically after PayMongo payment.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Or pay manually',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 8),
+              ],
               if (qr.isNotEmpty)
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),

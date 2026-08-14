@@ -7,6 +7,7 @@ use App\Models\WebhookEvent;
 use App\Services\ReservationPayMongoService;
 use App\Services\HotelCreditRechargeService;
 use App\Services\HotelPayMongoConnectService;
+use App\Services\PlatformPayMongoCheckoutService;
 use App\Services\PayMongoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -17,6 +18,7 @@ class PayMongoWebhookController extends Controller
     public function __construct(
         private readonly HotelCreditRechargeService $creditRecharge,
         private readonly ReservationPayMongoService $bookingPayments,
+        private readonly PlatformPayMongoCheckoutService $platformCheckout,
         private readonly PayMongoService $payMongo,
         private readonly HotelPayMongoConnectService $connect,
     ) {}
@@ -64,6 +66,15 @@ class PayMongoWebhookController extends Controller
             'account.identity_verification.failed',
         ], true)) {
             $handled = $this->handleOnboardingEvent($eventType, $payload);
+        }
+
+        // Platform checkout (credit recharge, hotel subscription).
+        if (! $handled && (in_array($eventType, [
+            'checkout_session.payment.paid',
+            'payment.paid',
+            'payment.failed',
+        ], true) || data_get($payload, 'data.resource') === 'checkout_session')) {
+            $handled = $this->platformCheckout->handleWebhookPayload($payload);
         }
 
         // Guest booking checkout / payment events.

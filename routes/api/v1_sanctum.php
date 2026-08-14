@@ -136,11 +136,34 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
 
     Route::post('/admin/credits/recharge', function (Request $request) {
         $gateway = app(PaymentGatewayService::class);
-        $minRecharge = $gateway->minimumRechargeAmount();
+        $method = (string) $request->input('method', '');
+        $minRecharge = $method === 'qrph' ? 1.0 : $gateway->minimumRechargeAmount();
         $validated = $request->validate([
             'amount' => ['required', 'numeric', 'min:'.$minRecharge],
-            'method' => ['required', 'in:gcash,paymaya'],
+            'method' => ['required', 'in:gcash,paymaya,qrph'],
         ]);
+
+        if ($validated['method'] === 'qrph') {
+            $checkout = app(\App\Services\PlatformPayMongoCheckoutService::class)
+                ->createCreditRechargeCheckout(
+                    (string) $request->user()->hotel_id,
+                    (float) $validated['amount'],
+                    (string) $request->user()->id,
+                );
+            if (! ($checkout['ok'] ?? false)) {
+                return response()->json([
+                    'message' => $checkout['message'] ?? 'Unable to start PayMongo checkout.',
+                ], 422);
+            }
+
+            return response()->json([
+                'ok' => true,
+                'requires_redirect' => true,
+                'redirect_url' => $checkout['checkout_url'] ?? null,
+                'checkout_url' => $checkout['checkout_url'] ?? null,
+                'message' => $checkout['message'] ?? 'Opening PayMongo QR Ph checkout.',
+            ]);
+        }
 
         $credit = HotelCredit::query()->firstOrCreate(
             ['hotel_id' => (string) $request->user()->hotel_id],
@@ -2476,6 +2499,7 @@ Route::post('/reports/expenses', [ReportController::class, 'storeExpense'])->mid
 Route::delete('/reports/expenses/{id}', [ReportController::class, 'deleteExpense'])->middleware('role:admin,super_admin');
 Route::get('/hotel/subscription', [\App\Http\Controllers\Api\HotelSubscriptionController::class, 'status'])->middleware('role:admin,frontdesk,staff,super_admin,owner');
 Route::post('/hotel/subscription/payment', [\App\Http\Controllers\Api\HotelSubscriptionController::class, 'submitPayment'])->middleware('role:admin,super_admin,owner');
+Route::post('/hotel/subscription/payment/checkout', [\App\Http\Controllers\Api\HotelSubscriptionController::class, 'startCheckoutPayment'])->middleware('role:admin,super_admin,owner');
 Route::get('/reports/shift-summary', [ReportController::class, 'shiftSummary'])->middleware('role:admin,frontdesk,staff');
 Route::get('/reports/shift-summary/pdf', [ReportController::class, 'shiftSummaryPdf'])->middleware('role:admin,frontdesk,staff');
 Route::post('/reports/shift-summary/email', [ReportController::class, 'shiftSummaryEmail'])->middleware('role:admin,frontdesk,staff');

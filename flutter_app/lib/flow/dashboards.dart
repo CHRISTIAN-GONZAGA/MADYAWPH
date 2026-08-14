@@ -283,7 +283,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                 DropdownButtonFormField<String>(
                   initialValue: method,
                   items: const [
-                    DropdownMenuItem(value: 'qrph', child: Text('QR Ph (manual approval)')),
+                    DropdownMenuItem(
+                      value: 'qrph',
+                      child: Text('QR Ph — PayMongo checkout (instant)'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'qrph_manual',
+                      child: Text('QR Ph — manual approval (scan platform QR)'),
+                    ),
                     DropdownMenuItem(value: 'gcash', child: Text('GCash (online)')),
                     DropdownMenuItem(value: 'paymaya', child: Text('PayMaya (online)')),
                   ],
@@ -293,7 +300,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                     border: OutlineInputBorder(),
                   ),
                 ),
-                if (method == 'qrph') ...[
+                if (method == 'qrph_manual') ...[
                   const SizedBox(height: 12),
                   if (qrUrl.isNotEmpty)
                     ClipRRect(
@@ -325,9 +332,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
               onPressed: () => Navigator.of(context).pop({
                 'amount': double.tryParse(amountCtrl.text.trim()) ?? 0,
                 'method': method,
-                if (method == 'qrph') 'payment_reference': refCtrl.text.trim(),
+                if (method == 'qrph_manual') 'payment_reference': refCtrl.text.trim(),
               }),
-              child: Text(method == 'qrph' ? 'Submit for approval' : 'Recharge'),
+              child: Text(
+                method == 'qrph_manual'
+                    ? 'Submit for approval'
+                    : method == 'qrph'
+                        ? 'Pay with QR Ph'
+                        : 'Recharge',
+              ),
             ),
           ],
         ),
@@ -335,7 +348,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     );
     if (payload == null) return;
 
-    if (payload['method'] == 'qrph') {
+    if (payload['method'] == 'qrph_manual') {
       await _runAction('Submit credit top-up', () async {
         final res = await portalDio().post<Map<String, dynamic>>(
           '/admin/credits/recharge-request',

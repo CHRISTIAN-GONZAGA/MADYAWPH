@@ -300,6 +300,7 @@ class PlatformSettingsService
             'hotel_subscription_qr_url' => $this->safeAttachmentUrl($this->row()->hotel_subscription_qr_url ?? null),
             'hotel_subscription_fee' => $this->hotelSubscriptionFee(),
             'hotel_subscription_per_room_daily' => $this->hotelSubscriptionPerRoomDaily(),
+            'paymongo_checkout_enabled' => trim((string) config('services.paymongo.secret', '')) !== '',
         ];
     }
 
