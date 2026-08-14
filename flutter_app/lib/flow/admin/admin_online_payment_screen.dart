@@ -217,14 +217,7 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
   }
 
   Future<void> _continueOrOpenOnboarding() async {
-    final existing = (((_paymongo?['account'] as Map?)?['onboarding_url']) ?? '')
-        .toString()
-        .trim();
-    if (existing.isNotEmpty) {
-      await PaymentRedirect.openCheckout(context, existing);
-      return;
-    }
-    // No cached link — create/refresh a hosted verification session.
+    // Always mint/refresh via API — never reopen a cached example.com link.
     await _startChildOnboarding();
   }
 
@@ -307,6 +300,9 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
     final account =
         (_paymongo?['account'] as Map?)?.cast<String, dynamic>() ?? const {};
     final envLabel = (_paymongo?['environment_label'] ?? 'TEST').toString();
+    final platformSecretMode =
+        (_paymongo?['platform_secret_mode'] ?? account['platform_secret_mode'] ?? '')
+            .toString();
     final linkedEnabled = _paymongo?['linked_accounts_enabled'] == true;
     final childEnabled = _paymongo?['child_onboarding_enabled'] != false;
     final onboarding =
@@ -375,6 +371,18 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
                             : scheme.onSurfaceVariant,
                   ),
             ),
+            if (platformSecretMode == 'test' || platformSecretMode == 'missing') ...[
+              const SizedBox(height: 8),
+              Text(
+                platformSecretMode == 'missing'
+                    ? 'Server PayMongo secret is missing. Set PAYMONGO_SECRET_KEY (sk_live_…) on Render — keys typed under Advanced do not drive Set Up PayMongo.'
+                    : 'Server is still using a TEST PayMongo secret (sk_test_). That often returns example.com mock links. Put sk_live_/pk_live_ in Render env, set PAYMONGO_MODE=production, redeploy.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.error,
+                      height: 1.35,
+                    ),
+              ),
+            ],
             if (merchantHint.isNotEmpty) ...[
               const SizedBox(height: 4),
               Text('PayMongo Account: $merchantHint'),

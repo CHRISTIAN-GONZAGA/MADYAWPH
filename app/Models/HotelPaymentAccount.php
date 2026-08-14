@@ -176,7 +176,9 @@ class HotelPaymentAccount extends Model
             'payment_ready' => $this->isPaymentReady(),
             'merchant_account_id' => $childId ? $this->maskId($childId) : null,
             'child_merchant_id' => $childId ? $this->maskId($childId) : null,
-            'onboarding_url' => $this->onboarding_url,
+            'onboarding_url' => \App\Services\PayMongoService::usableOnboardingUrl(
+                $this->onboarding_url ? (string) $this->onboarding_url : null
+            ),
             'requirements_data' => $this->requirements_data,
             'public_key_hint' => $this->public_key
                 ? $this->maskId((string) $this->public_key)
@@ -184,14 +186,33 @@ class HotelPaymentAccount extends Model
             'has_secret' => filled($this->secret_key_encrypted),
             'invite_id' => $this->invite_id,
             'invite_email' => $this->invite_email,
-            'invite_signup_url' => $this->invite_signup_url,
+            'invite_signup_url' => \App\Services\PayMongoService::usableOnboardingUrl(
+                $this->invite_signup_url ? (string) $this->invite_signup_url : null
+            ),
             'connected_at' => optional($this->connected_at)?->toIso8601String(),
             'activated_at' => optional($this->activated_at)?->toIso8601String(),
             'mode' => $this->mode,
             'last_error' => $this->last_error,
             'linked_accounts_enabled' => (bool) config('services.paymongo.linked_accounts_enabled'),
             'child_onboarding_enabled' => (bool) config('services.paymongo.child_onboarding_enabled', true),
+            'platform_secret_mode' => $this->platformSecretModeHint(),
         ];
+    }
+
+    /**
+     * Whether the platform PAYMONGO_SECRET_KEY looks like test or live (never the key itself).
+     */
+    private function platformSecretModeHint(): string
+    {
+        $secret = trim((string) config('services.paymongo.secret', ''));
+        if (str_starts_with($secret, 'sk_live_')) {
+            return 'live';
+        }
+        if (str_starts_with($secret, 'sk_test_')) {
+            return 'test';
+        }
+
+        return 'missing';
     }
 
     private function maskId(string $value): string

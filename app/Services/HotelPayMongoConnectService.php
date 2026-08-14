@@ -53,6 +53,10 @@ class HotelPayMongoConnectService
             return ['ok' => false, 'message' => 'PayMongo child onboarding is disabled.'];
         }
 
+        if ($guard = $this->assertPlatformSecretReadyForChildOnboarding()) {
+            return $guard;
+        }
+
         $account = $this->ensureAccount($hotelId);
         if ($account->onboarding_status === HotelPaymentAccount::ONBOARDING_ACTIVE
             && $account->childMerchantId() !== null) {
@@ -61,14 +65,17 @@ class HotelPayMongoConnectService
 
         // Idempotent: reuse existing child merchant id.
         if ($account->childMerchantId() !== null) {
+            // Drop cached placeholder links (example.com) so we always mint a fresh PayMongo URL.
+            $this->clearUnusableOnboardingUrl($account);
+
+            $continued = $this->continueChildOnboarding($account->fresh() ?? $account);
+            if ($continued['ok'] ?? false) {
+                return ['ok' => true, 'account' => $continued['account'], 'reused' => true];
+            }
+
             $refreshed = $this->refreshChildOnboarding($hotelId);
             if (($refreshed['ok'] ?? false) && filled($refreshed['account']?->onboarding_url)) {
                 return ['ok' => true, 'account' => $refreshed['account'], 'reused' => true];
-            }
-            // Continue setup: refresh identity / onboarding URL for existing child.
-            $continued = $this->continueChildOnboarding($account);
-            if ($continued['ok'] ?? false) {
-                return ['ok' => true, 'account' => $continued['account'], 'reused' => true];
             }
 
             return [
@@ -158,6 +165,9 @@ class HotelPayMongoConnectService
         if ($childId === null) {
             return ['ok' => false, 'message' => 'No child merchant to continue.'];
         }
+
+        $this->clearUnusableOnboardingUrl($account);
+        $account = $account->fresh() ?? $account;
 
         $path = strtolower((string) config('services.paymongo.child_onboarding_path', 'accounts'));
         if ($path !== 'seeds') {
@@ -317,6 +327,53 @@ class HotelPayMongoConnectService
             }
             $account->save();
         }
+    }
+
+    private function clearUnusableOnboardingUrl(HotelPaymentAccount $account): void
+    {
+        $raw = trim((string) ($account->onboarding_url ?? ''));
+        if ($raw === '') {
+            return;
+        }
+        if (PayMongoService::usableOnboardingUrl($raw) !== null) {
+            return;
+        }
+        $account->onboarding_url = null;
+        $account->last_error = PayMongoService::mockOnboardingUrlMessage();
+        $account->save();
+    }
+
+    /**
+     * Guard: child merchant APIs must use the platform secret from server .env,
+     * not keys typed in the Flutter Advanced form.
+     *
+     * @return array{ok: bool, message?: string}|null  null = ok to proceed
+     */
+    private function assertPlatformSecretReadyForChildOnboarding(): ?array
+    {
+        $secret = trim((string) config('services.paymongo.secret', ''));
+        if ($secret === '') {
+            return [
+                'ok' => false,
+                'message' => 'Platform PAYMONGO_SECRET_KEY is not set on the server. '
+                    .'Entering keys in the app Advanced form does not start child onboarding — set sk_live_… on Render, then redeploy.',
+            ];
+        }
+
+        $mode = strtolower((string) config('services.paymongo.mode', 'test'));
+        if ($mode === 'production' && ! str_starts_with($secret, 'sk_live_')) {
+            return [
+                'ok' => false,
+                'message' => 'PAYMONGO_MODE is production but PAYMONGO_SECRET_KEY is not sk_live_. '
+                    .'Update the Render secret to your live key and redeploy.',
+            ];
+        }
+        if (str_starts_with($secret, 'sk_test_')) {
+            // Allow, but continueChildOnboarding will reject example.com mocks with a clear message.
+            Log::info('PayMongo child onboarding using test platform secret (mock URLs possible)');
+        }
+
+        return null;
     }
 
     private function normalizePhMobile(string $raw): string

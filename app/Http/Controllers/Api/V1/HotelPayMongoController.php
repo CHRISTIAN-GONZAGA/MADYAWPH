@@ -28,9 +28,15 @@ class HotelPayMongoController extends Controller
         $mode = strtolower((string) config('services.paymongo.mode', 'test'));
         $onboarding = $account?->onboarding_status ?? 'NOT_STARTED';
 
+        $secret = trim((string) config('services.paymongo.secret', ''));
+        $platformSecretMode = str_starts_with($secret, 'sk_live_')
+            ? 'live'
+            : (str_starts_with($secret, 'sk_test_') ? 'test' : 'missing');
+
         return response()->json([
             'mode' => $mode,
             'environment_label' => strtoupper($mode === 'production' ? 'LIVE' : 'TEST'),
+            'platform_secret_mode' => $platformSecretMode,
             'linked_accounts_enabled' => (bool) config('services.paymongo.linked_accounts_enabled'),
             'child_onboarding_enabled' => (bool) config('services.paymongo.child_onboarding_enabled', true),
             'connected' => $account?->isConnected() ?? false,
@@ -44,6 +50,7 @@ class HotelPayMongoController extends Controller
                 'linked_accounts_enabled' => (bool) config('services.paymongo.linked_accounts_enabled'),
                 'child_onboarding_enabled' => (bool) config('services.paymongo.child_onboarding_enabled', true),
                 'mode' => $mode,
+                'platform_secret_mode' => $platformSecretMode,
             ],
             'supported_methods_hint' => [
                 'QR Ph',

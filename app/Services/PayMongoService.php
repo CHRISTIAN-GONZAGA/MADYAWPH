@@ -518,10 +518,17 @@ class PayMongoService
 
     public static function mockOnboardingUrlMessage(): string
     {
-        return 'PayMongo returned a test/mock setup link (example.com), not a real onboarding page. '
-            .'OaaS child onboarding with sk_test_ keys often returns mock data. '
-            .'Use live PayMongo secret keys (sk_live_…) with PAYMONGO_MODE=production after PayMongo enables Platforms for your account, '
-            .'or connect the hotel with its own PayMongo API keys under Advanced.';
+        $secret = trim((string) config('services.paymongo.secret', ''));
+        if (str_starts_with($secret, 'sk_test_')) {
+            return 'PayMongo returned a mock setup link (example.com). '
+                .'Your server PAYMONGO_SECRET_KEY is still sk_test_. '
+                .'Set sk_live_… + pk_live_… on Render, PAYMONGO_MODE=production, redeploy. '
+                .'Keys entered under Advanced in the app do not replace the server secret for Set Up PayMongo.';
+        }
+
+        return 'PayMongo returned a non-usable setup link (e.g. example.com). '
+            .'Confirm Platforms / Linked Accounts (OaaS) is enabled for your live PayMongo account, '
+            .'or connect this hotel with its own PayMongo API keys under Advanced.';
     }
 
     /**
