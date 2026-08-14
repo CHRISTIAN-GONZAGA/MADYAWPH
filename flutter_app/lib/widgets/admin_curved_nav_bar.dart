@@ -190,8 +190,9 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar>
                     final enabled =
                         widget.canSelectTab?.call(i) ?? true;
                     final item = widget.items[i];
+                    // Selected tab: larger icon + elastic pop for a clearer tap feel.
                     final popScale = active
-                        ? 1.0 + 0.12 * Curves.elasticOut.transform(_iconPop.value)
+                        ? 1.0 + 0.22 * Curves.elasticOut.transform(_iconPop.value)
                         : 1.0;
                     return SizedBox(
                       width: _itemWidth,
@@ -220,8 +221,8 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar>
                                 child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 320),
                                   curve: Curves.easeOutCubic,
-                                  width: active ? 54 : 40,
-                                  height: active ? 54 : 40,
+                                  width: active ? 58 : 40,
+                                  height: active ? 58 : 40,
                                   decoration: BoxDecoration(
                                     gradient: active
                                         ? LinearGradient(
@@ -264,7 +265,7 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar>
                                         child: Icon(
                                           item.icon,
                                           key: ValueKey('$i-$active'),
-                                          size: active ? 26 : 22,
+                                          size: active ? 30 : 22,
                                           color: active
                                               ? activeColor
                                               : scheme.onSurfaceVariant,

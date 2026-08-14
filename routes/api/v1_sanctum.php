@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\V1\AdminChatController;
 use App\Http\Controllers\Api\V1\AdminDashboardApiController;
 use App\Http\Controllers\Api\V1\HotelNotificationEmailController;
+use App\Http\Controllers\Api\V1\HotelPayMongoController;
 use App\Http\Controllers\Api\V1\PortalAuthController;
 use App\Http\Controllers\Api\V1\StaffDashboardApiController;
 use App\Models\AmenityClaim;
@@ -2920,6 +2921,28 @@ Route::get('/admin/hotel/payment-qr', function (Request $request) {
         'has_wallet_number' => $wallets['has_wallet_number'],
     ]);
 })->middleware('role:admin,frontdesk,super_admin')->name('api.v1.admin.hotel.payment-qr.show');
+
+Route::get('/admin/payments/paymongo/status', [HotelPayMongoController::class, 'status'])
+    ->middleware('role:admin,super_admin')
+    ->name('api.v1.admin.payments.paymongo.status');
+Route::post('/admin/payments/paymongo/connect', [HotelPayMongoController::class, 'connect'])
+    ->middleware('role:admin,super_admin')
+    ->name('api.v1.admin.payments.paymongo.connect');
+Route::post('/admin/payments/paymongo/start-child-onboarding', [HotelPayMongoController::class, 'startChildOnboarding'])
+    ->middleware('role:admin,super_admin')
+    ->name('api.v1.admin.payments.paymongo.start-child-onboarding');
+Route::post('/admin/payments/paymongo/refresh-child', [HotelPayMongoController::class, 'refreshChildOnboarding'])
+    ->middleware('role:admin,super_admin')
+    ->name('api.v1.admin.payments.paymongo.refresh-child');
+Route::post('/admin/payments/paymongo/refresh-link', [HotelPayMongoController::class, 'refreshLink'])
+    ->middleware('role:admin,super_admin')
+    ->name('api.v1.admin.payments.paymongo.refresh-link');
+Route::post('/admin/payments/paymongo/disconnect', [HotelPayMongoController::class, 'disconnect'])
+    ->middleware('role:admin,super_admin')
+    ->name('api.v1.admin.payments.paymongo.disconnect');
+Route::post('/admin/payments/{payment}/refund', [HotelPayMongoController::class, 'refund'])
+    ->middleware('role:admin,super_admin')
+    ->name('api.v1.admin.payments.refund');
 
 Route::post('/admin/hotel/payment-qr', function (Request $request) {
     $validated = $request->validate([

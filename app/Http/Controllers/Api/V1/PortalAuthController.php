@@ -920,6 +920,36 @@ class PortalAuthController extends Controller
 
         $token = $admin->createToken('flutter-register')->plainTextToken;
 
+        $paymongoOnboarding = null;
+        try {
+            $paymongoOnboarding = app(\App\Services\HotelPayMongoConnectService::class)
+                ->startChildMerchantOnboarding(
+                    (string) $hotel->id,
+                    (string) $validated['hotel_name'],
+                    (string) $validated['owner_email'],
+                    (string) $validated['contact_number'],
+                );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('PayMongo auto-onboarding failed after hotel register', [
+                'hotel_id' => (string) $hotel->id,
+                'message' => $e->getMessage(),
+            ]);
+        }
+
+        $paymongoPayload = null;
+        if (is_array($paymongoOnboarding)) {
+            $paymongoPayload = [
+                'ok' => (bool) ($paymongoOnboarding['ok'] ?? false),
+                'message' => $paymongoOnboarding['message']
+                    ?? (($paymongoOnboarding['ok'] ?? false)
+                        ? 'PayMongo child merchant onboarding started.'
+                        : 'PayMongo setup could not be started. Retry from Settings → Payments.'),
+                'account' => isset($paymongoOnboarding['account'])
+                    ? $paymongoOnboarding['account']->toPublicArray()
+                    : null,
+            ];
+        }
+
         return response()->json([
             'hotel_id' => (string) $hotel->id,
             'token' => $token,
@@ -945,6 +975,7 @@ class PortalAuthController extends Controller
             'registration_status' => \App\Support\HotelRegistrationStatus::PENDING,
             'registration_password' => $ownerPassword,
             'passwords_verified' => $passwordsVerified,
+            'paymongo' => $paymongoPayload,
             'portal_accounts' => [
                 'property' => [
                     'username' => $validated['username'],

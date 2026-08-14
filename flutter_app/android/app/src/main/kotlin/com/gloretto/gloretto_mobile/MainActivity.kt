@@ -1,7 +1,9 @@
 package com.gloretto.gloretto_mobile
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.telephony.SmsManager
 import android.telephony.SubscriptionManager
@@ -18,6 +20,7 @@ import io.flutter.plugin.common.MethodChannel
  */
 class MainActivity : FlutterActivity() {
     private val channelName = "gloretto/device_sms"
+    private val appsChannelName = "gloretto/installed_apps"
     private val smsPermissionRequest = 9911
     private var pendingSmsResult: MethodChannel.Result? = null
     private var pendingPhone: String? = null
@@ -59,6 +62,79 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, appsChannelName)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "isAppInstalled" -> {
+                        val packageName = call.argument<String>("package")?.trim().orEmpty()
+                        if (packageName.isEmpty()) {
+                            result.error("invalid_args", "package is required", null)
+                            return@setMethodCallHandler
+                        }
+                        result.success(isPackageInstalled(packageName))
+                    }
+                    "launchApp" -> {
+                        val packageName = call.argument<String>("package")?.trim().orEmpty()
+                        if (packageName.isEmpty()) {
+                            result.error("invalid_args", "package is required", null)
+                            return@setMethodCallHandler
+                        }
+                        result.success(launchInstalledApp(packageName))
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    private fun isPackageInstalled(packageName: String): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.getPackageInfo(
+                    packageName,
+                    PackageManager.PackageInfoFlags.of(0),
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageInfo(packageName, 0)
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Opens an installed app via its launcher intent (never Play Store).
+     */
+    private fun launchInstalledApp(packageName: String): Boolean {
+        return try {
+            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+            if (launchIntent != null) {
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(launchIntent)
+                return true
+            }
+
+            // Some wallets expose a VIEW scheme even if launcher intent is odd.
+            val scheme = when (packageName) {
+                "com.globe.gcash.android" -> "gcash://"
+                "com.paymaya", "com.maya.maya" -> "maya://"
+                else -> null
+            }
+            if (scheme != null) {
+                val view = Intent(Intent.ACTION_VIEW, Uri.parse(scheme))
+                view.setPackage(packageName)
+                view.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (view.resolveActivity(packageManager) != null) {
+                    startActivity(view)
+                    return true
+                }
+            }
+            false
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun hasSmsPermission(): Boolean {

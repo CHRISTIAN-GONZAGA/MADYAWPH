@@ -1,5 +1,3 @@
-import 'package:android_intent_plus/android_intent.dart';
-import 'package:android_intent_plus/flag.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +15,7 @@ enum HotelWalletApp { gcash, maya }
 class HotelWalletPayNow {
   HotelWalletPayNow._();
 
+  static const _appsChannel = MethodChannel('gloretto/installed_apps');
   static const _gcashPackages = <String>['com.globe.gcash.android'];
   static const _mayaPackages = <String>[
     'com.paymaya',
@@ -36,61 +35,48 @@ class HotelWalletPayNow {
   static List<String> _packagesFor(HotelWalletApp wallet) =>
       wallet == HotelWalletApp.gcash ? _gcashPackages : _mayaPackages;
 
+  /// Native PackageManager only — never market:// / Play Store.
+  static Future<bool> _launchViaNativeChannel(String packageName) async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return false;
+    }
+    try {
+      final opened = await _appsChannel.invokeMethod<bool>(
+        'launchApp',
+        {'package': packageName},
+      );
+      return opened == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Opens the installed wallet app. Returns false if not installed.
   /// Never opens Play Store automatically.
   static Future<bool> openWalletApp(HotelWalletApp wallet) async {
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      // Only native getLaunchIntentForPackage. Do not use url_launcher /
+      // android_intent_plus here — those often fall through to Play Store
+      // when resolve fails or when a scheme is unbound.
       for (final package in _packagesFor(wallet)) {
-        // Preferred: open the app's launcher activity (installed app).
-        final launch = AndroidIntent(
-          action: 'action_main',
-          category: 'category_launcher',
-          package: package,
-          flags: <int>[Flag.FLAG_ACTIVITY_NEW_TASK],
-        );
-        try {
-          if (await launch.canResolveActivity() ?? false) {
-            await launch.launch();
-            return true;
-          }
-        } catch (_) {
-          // try next
-        }
-
-        // Fallback: VIEW with package + scheme.
-        final scheme =
-            wallet == HotelWalletApp.gcash ? 'gcash://' : 'maya://';
-        final view = AndroidIntent(
-          action: 'action_view',
-          package: package,
-          data: scheme,
-          flags: <int>[Flag.FLAG_ACTIVITY_NEW_TASK],
-        );
-        try {
-          if (await view.canResolveActivity() ?? false) {
-            await view.launch();
-            return true;
-          }
-        } catch (_) {
-          // try next
+        if (await _launchViaNativeChannel(package)) {
+          return true;
         }
       }
       return false;
     }
 
-    // iOS / other platforms: scheme only.
+    // iOS / other platforms: scheme only (no Play Store URL).
     final schemes = wallet == HotelWalletApp.gcash
         ? <Uri>[Uri.parse('gcash://')]
         : <Uri>[Uri.parse('maya://'), Uri.parse('paymaya://')];
     for (final uri in schemes) {
       try {
-        if (await canLaunchUrl(uri)) {
-          final ok = await launchUrl(
-            uri,
-            mode: LaunchMode.externalApplication,
-          );
-          if (ok) return true;
-        }
+        final ok = await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+        if (ok) return true;
       } catch (_) {
         // try next
       }

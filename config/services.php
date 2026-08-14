@@ -49,9 +49,38 @@ return [
     ],
 
     'paymongo' => [
+        // Platform keys (wallet recharge + Linked Accounts parent).
         'secret' => env('PAYMONGO_SECRET_KEY'),
         'public' => env('PAYMONGO_PUBLIC_KEY'),
         'webhook_secret' => env('PAYMONGO_WEBHOOK_SECRET'),
+        // test | production — display + key-prefix checks for hotel connections.
+        'mode' => strtolower((string) env('PAYMONGO_MODE', 'test')),
+        'linked_accounts_enabled' => filter_var(
+            env('PAYMONGO_LINKED_ACCOUNTS_ENABLED', false),
+            FILTER_VALIDATE_BOOLEAN
+        ),
+        'child_onboarding_enabled' => filter_var(
+            env('PAYMONGO_CHILD_ONBOARDING_ENABLED', true),
+            FILTER_VALIDATE_BOOLEAN
+        ),
+        'child_onboarding_path' => strtolower((string) env('PAYMONGO_CHILD_ONBOARDING_PATH', 'accounts')),
+        'child_features' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('PAYMONGO_CHILD_FEATURES', 'payment_gateway'))
+        ))),
+        // Optional platform commission for linked-account checkouts (not hard-coded).
+        'platform_fee_type' => env('PAYMONGO_PLATFORM_FEE_TYPE'), // percentage | fixed
+        'platform_fee_value' => env('PAYMONGO_PLATFORM_FEE_VALUE'),
+        'checkout_ttl_minutes' => (int) env('PAYMONGO_CHECKOUT_TTL_MINUTES', 45),
+        'platform_org_id' => env('PAYMONGO_PLATFORM_ORG_ID'),
+        'default_payment_method_types' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env(
+                'PAYMONGO_PAYMENT_METHOD_TYPES',
+                // Current platform PayMongo account: QR Ph only.
+                'qrph'
+            ))
+        ))),
     ],
 
     'integrations' => [

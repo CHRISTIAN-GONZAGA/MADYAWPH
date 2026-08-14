@@ -98,6 +98,10 @@
         <package android:name="com.paymaya" />
         <package android:name="com.maya.maya" />
         <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="gcash" />
         </intent>

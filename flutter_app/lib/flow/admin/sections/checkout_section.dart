@@ -6,15 +6,18 @@ import '../../../dio_client.dart';
 import '../admin_dashboard_models.dart';
 import '../widgets/admin_room_navigation.dart';
 import '../widgets/collectibles_summary_dialog.dart';
+import '../widgets/hotel_totals_reports_sheet.dart';
 import '../widgets/stay_receipt_dialog.dart';
 
 class CheckoutSection extends StatefulWidget {
   const CheckoutSection({
     super.key,
     required this.rooms,
+    this.isFrontDesk = false,
   });
 
   final List<Map<String, dynamic>> rooms;
+  final bool isFrontDesk;
 
   @override
   State<CheckoutSection> createState() => _CheckoutSectionState();
@@ -24,11 +27,70 @@ class _CheckoutSectionState extends State<CheckoutSection> {
   List<dynamic> _history = const [];
   bool _loadingHistory = true;
   String? _historyError;
+  double _cashOnHand = 0;
+  bool _loadingCash = true;
+  String? _cashError;
 
   @override
   void initState() {
     super.initState();
     _loadHistory();
+    _loadCashOnHand();
+  }
+
+  Future<void> _refreshAll() async {
+    await Future.wait([_loadHistory(), _loadCashOnHand()]);
+  }
+
+  Future<void> _loadCashOnHand() async {
+    setState(() {
+      _loadingCash = true;
+      _cashError = null;
+    });
+    try {
+      final today = DateUtils.dateOnly(DateTime.now());
+      final end = DateTime(today.year, today.month, today.day, 23, 59, 59);
+      final res = await portalDio().get<Map<String, dynamic>>(
+        '/reports/shift-summary',
+        queryParameters: {
+          'time_in': today.toIso8601String(),
+          'time_out': end.toIso8601String(),
+          'summary_only': 1,
+        },
+      );
+      if (!mounted) return;
+      final summary = (res.data?['summary'] as Map?)?.cast<String, dynamic>() ??
+          const <String, dynamic>{};
+      final cash = _asDouble(summary['cash_collected']);
+      final expenses = _asDouble(summary['expenses']);
+      final fallbackExpenses = _asDouble(summary['refund_expense']) +
+          _asDouble(summary['reseller_commissions_paid']) +
+          _asDouble(summary['custom_expenses']);
+      final resolvedExpenses =
+          expenses >= fallbackExpenses - 0.009 ? expenses : fallbackExpenses;
+      setState(() {
+        // Same formula as Reports: cash payments − expenses (not below 0).
+        _cashOnHand = (cash - resolvedExpenses).clamp(0, double.infinity);
+        _loadingCash = false;
+      });
+    } on DioException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _cashError = dioErrorMessage(e);
+        _loadingCash = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _cashError = '$e';
+        _loadingCash = false;
+      });
+    }
+  }
+
+  static double _asDouble(dynamic v) {
+    if (v is num) return v.toDouble();
+    return double.tryParse('$v') ?? 0;
   }
 
   Future<void> _loadHistory() async {
@@ -98,14 +160,21 @@ class _CheckoutSectionState extends State<CheckoutSection> {
     final keys = grouped.keys.toList()..sort();
     final collectibles = AdminDashboardModels.collectiblesForRooms(_soonRooms);
 
+    final scheme = Theme.of(context).colorScheme;
+    final cashLabel = _loadingCash
+        ? '…'
+        : _cashError != null
+            ? '—'
+            : '₱${_cashOnHand.toStringAsFixed(2)}';
+
     return RefreshIndicator(
-      onRefresh: _loadHistory,
+      onRefresh: _refreshAll,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
         children: [
           Material(
-            color: Theme.of(context).colorScheme.primaryContainer,
+            color: scheme.primaryContainer,
             borderRadius: BorderRadius.circular(12),
             child: InkWell(
               borderRadius: BorderRadius.circular(12),
@@ -141,6 +210,56 @@ class _CheckoutSectionState extends State<CheckoutSection> {
                       ),
                     ),
                     const Icon(Icons.receipt_long_outlined, size: 40),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Material(
+            color: scheme.secondaryContainer,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () async {
+                await openHotelTotalsReports(
+                  context,
+                  rooms: widget.rooms,
+                  isFrontDesk: widget.isFrontDesk,
+                  initialExpanded: 'cash',
+                );
+                if (!mounted) return;
+                await _loadCashOnHand();
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'CASH ON HAND',
+                            style: Theme.of(context).textTheme.labelLarge,
+                          ),
+                          Text(
+                            cashLabel,
+                            style: Theme.of(context)
+                                .textTheme
+                                .headlineMedium
+                                ?.copyWith(fontWeight: FontWeight.w800),
+                          ),
+                          Text(
+                            _cashError != null
+                                ? 'Tap to open details · $_cashError'
+                                : 'Today: cash sales − expenses · tap for breakdown',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.account_balance_wallet_outlined, size: 40),
                   ],
                 ),
               ),

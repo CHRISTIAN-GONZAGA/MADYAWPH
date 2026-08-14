@@ -353,7 +353,7 @@ class WalkInCheckInCleaningAndReportsTest extends TestCase
             'name' => 'admin',
             'email' => 'checkin-admin@test.local',
             'password' => bcrypt('secret123'),
-            'role' => UserRole::ADMIN,
+            'role' => UserRole::FRONTDESK,
         ]);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,

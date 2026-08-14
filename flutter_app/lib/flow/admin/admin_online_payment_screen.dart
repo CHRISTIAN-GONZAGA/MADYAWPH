@@ -5,8 +5,10 @@ import '../../dio_client.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/chat_attachment.dart';
+import '../../widgets/payment_redirect.dart';
 
-/// Upload QR Ph for online guest payments, set wallet numbers, verify refs.
+/// Upload QR Ph for online guest payments, set wallet numbers, verify refs,
+/// and connect the hotel PayMongo merchant account.
 class AdminOnlinePaymentScreen extends StatefulWidget {
   const AdminOnlinePaymentScreen({super.key});
 
@@ -25,15 +27,22 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
   final _refCtrl = TextEditingController();
   final _gcashCtrl = TextEditingController();
   final _mayaCtrl = TextEditingController();
+  final _pmSecretCtrl = TextEditingController();
+  final _pmPublicCtrl = TextEditingController();
+  final _pmInviteEmailCtrl = TextEditingController();
   List<Map<String, dynamic>> _refResults = const [];
   bool _searching = false;
   String? _error;
+  bool _loadingPaymongo = true;
+  bool _connectingPaymongo = false;
+  Map<String, dynamic>? _paymongo;
 
   @override
   void initState() {
     super.initState();
     _tabs = TabController(length: 2, vsync: this);
     _loadQr();
+    _loadPaymongo();
   }
 
   @override
@@ -42,7 +51,434 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
     _refCtrl.dispose();
     _gcashCtrl.dispose();
     _mayaCtrl.dispose();
+    _pmSecretCtrl.dispose();
+    _pmPublicCtrl.dispose();
+    _pmInviteEmailCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadPaymongo() async {
+    setState(() => _loadingPaymongo = true);
+    try {
+      final res = await portalDio().get<Map<String, dynamic>>(
+        '/admin/payments/paymongo/status',
+      );
+      if (!mounted) return;
+      setState(() {
+        _paymongo = res.data;
+        _loadingPaymongo = false;
+      });
+    } on DioException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingPaymongo = false;
+        _error ??= dioErrorMessage(e);
+      });
+    }
+  }
+
+  Future<void> _connectPaymongoKeys() async {
+    final secret = _pmSecretCtrl.text.trim();
+    final public = _pmPublicCtrl.text.trim();
+    if (secret.isEmpty || public.isEmpty) {
+      showAppMessage(context, 'Enter both PayMongo secret and public keys.', isError: true);
+      return;
+    }
+    setState(() => _connectingPaymongo = true);
+    try {
+      final res = await portalDio().post<Map<String, dynamic>>(
+        '/admin/payments/paymongo/connect',
+        data: {
+          'connection_type': 'api_keys',
+          'secret_key': secret,
+          'public_key': public,
+        },
+      );
+      if (!mounted) return;
+      _pmSecretCtrl.clear();
+      _pmPublicCtrl.clear();
+      showAppMessage(context, (res.data?['message'] ?? 'PayMongo connected.').toString());
+      await _loadPaymongo();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    } finally {
+      if (mounted) setState(() => _connectingPaymongo = false);
+    }
+  }
+
+  Future<void> _connectPaymongoInvite() async {
+    final email = _pmInviteEmailCtrl.text.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      showAppMessage(context, 'Enter a valid invite email.', isError: true);
+      return;
+    }
+    setState(() => _connectingPaymongo = true);
+    try {
+      final res = await portalDio().post<Map<String, dynamic>>(
+        '/admin/payments/paymongo/connect',
+        data: {
+          'connection_type': 'linked_account',
+          'invite_email': email,
+        },
+      );
+      if (!mounted) return;
+      showAppMessage(context, (res.data?['message'] ?? 'Invite created.').toString());
+      await _loadPaymongo();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    } finally {
+      if (mounted) setState(() => _connectingPaymongo = false);
+    }
+  }
+
+  Future<void> _refreshPaymongoLink() async {
+    setState(() => _connectingPaymongo = true);
+    try {
+      final res = await portalDio().post<Map<String, dynamic>>(
+        '/admin/payments/paymongo/refresh-link',
+      );
+      if (!mounted) return;
+      showAppMessage(context, (res.data?['message'] ?? 'Status updated.').toString());
+      await _loadPaymongo();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    } finally {
+      if (mounted) setState(() => _connectingPaymongo = false);
+    }
+  }
+
+  Future<void> _disconnectPaymongo() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Disconnect PayMongo?'),
+        content: const Text(
+          'Guests will no longer be redirected to PayMongo checkout until you connect again. Manual QR / wallet numbers can still be used as fallback.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Disconnect')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() => _connectingPaymongo = true);
+    try {
+      await portalDio().post('/admin/payments/paymongo/disconnect');
+      if (!mounted) return;
+      showAppMessage(context, 'PayMongo disconnected.');
+      await _loadPaymongo();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    } finally {
+      if (mounted) setState(() => _connectingPaymongo = false);
+    }
+  }
+
+  Future<void> _startChildOnboarding() async {
+    setState(() => _connectingPaymongo = true);
+    try {
+      final res = await portalDio().post<Map<String, dynamic>>(
+        '/admin/payments/paymongo/start-child-onboarding',
+      );
+      if (!mounted) return;
+      showAppMessage(
+        context,
+        (res.data?['message'] ?? 'PayMongo setup started.').toString(),
+      );
+      await _loadPaymongo();
+      final url = (((res.data?['account'] as Map?)?['onboarding_url']) ?? '')
+          .toString();
+      if (url.isNotEmpty) {
+        await PaymentRedirect.openCheckout(context, url);
+      }
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+      await _loadPaymongo();
+    } finally {
+      if (mounted) setState(() => _connectingPaymongo = false);
+    }
+  }
+
+  Future<void> _refreshChildOnboarding() async {
+    setState(() => _connectingPaymongo = true);
+    try {
+      final res = await portalDio().post<Map<String, dynamic>>(
+        '/admin/payments/paymongo/refresh-child',
+      );
+      if (!mounted) return;
+      showAppMessage(
+        context,
+        (res.data?['message'] ?? 'Status updated.').toString(),
+      );
+      await _loadPaymongo();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    } finally {
+      if (mounted) setState(() => _connectingPaymongo = false);
+    }
+  }
+
+  String _onboardingStatusLabel(String status, {required bool ready}) {
+    if (ready || status == 'ACTIVE') return 'Status: Payment Ready';
+    switch (status) {
+      case 'NOT_STARTED':
+        return 'Status: Not Started';
+      case 'ONBOARDING':
+      case 'REQUIREMENTS_PENDING':
+        return 'Status: Setup Required';
+      case 'VERIFICATION_PENDING':
+        return 'Status: Verification In Progress';
+      case 'REJECTED':
+        return 'Status: Action Required';
+      case 'ONBOARDING_FAILED':
+        return 'Status: Setup Failed — Retry';
+      case 'DISCONNECTED':
+        return 'Status: Disconnected';
+      default:
+        return 'Status: $status';
+    }
+  }
+
+  Widget _paymongoCard(ColorScheme scheme) {
+    final connected = _paymongo?['connected'] == true ||
+        _paymongo?['payment_ready'] == true;
+    final account =
+        (_paymongo?['account'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final envLabel = (_paymongo?['environment_label'] ?? 'TEST').toString();
+    final linkedEnabled = _paymongo?['linked_accounts_enabled'] == true;
+    final childEnabled = _paymongo?['child_onboarding_enabled'] != false;
+    final onboarding =
+        (account['onboarding_status'] ?? _paymongo?['onboarding_status'] ?? 'NOT_STARTED')
+            .toString();
+    final connectedAt = (account['connected_at'] ?? '').toString();
+    final activatedAt = (account['activated_at'] ?? '').toString();
+    final merchantHint =
+        (account['child_merchant_id'] ?? account['merchant_account_id'] ?? '')
+            .toString();
+    final onboardingUrl = (account['onboarding_url'] ?? '').toString();
+    final signupUrl = (account['invite_signup_url'] ?? '').toString();
+    final lastError = (account['last_error'] ?? '').toString();
+    final needsSetup = !connected &&
+        (onboarding == 'NOT_STARTED' ||
+            onboarding == 'ONBOARDING_FAILED' ||
+            onboarding == 'DISCONNECTED');
+    final inProgress = !connected &&
+        (onboarding == 'ONBOARDING' ||
+            onboarding == 'REQUIREMENTS_PENDING' ||
+            onboarding == 'VERIFICATION_PENDING' ||
+            onboarding == 'REJECTED');
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'PAYMENT SETUP · PayMongo',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'Payment Environment: $envLabel',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _onboardingStatusLabel(onboarding, ready: connected),
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: connected
+                        ? scheme.primary
+                        : onboarding == 'REJECTED' ||
+                                onboarding == 'ONBOARDING_FAILED'
+                            ? scheme.error
+                            : scheme.onSurfaceVariant,
+                  ),
+            ),
+            if (merchantHint.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text('PayMongo Account: $merchantHint'),
+            ],
+            if (activatedAt.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text('Activated: $activatedAt'),
+            ] else if (connectedAt.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text('Started: $connectedAt'),
+            ],
+            if (lastError.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                lastError,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.error,
+                    ),
+              ),
+            ],
+            const SizedBox(height: 8),
+            Text(
+              connected
+                  ? 'Guests pay via PayMongo Hosted Checkout using QR Ph (currently the only active method on this PayMongo account).'
+                  : 'Complete PayMongo verification so guests can pay bookings securely with QR Ph. KYC/KYB is handled by PayMongo — we never bypass it.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    height: 1.35,
+                  ),
+            ),
+            const SizedBox(height: 12),
+            if (_loadingPaymongo)
+              const Center(child: CircularProgressIndicator())
+            else ...[
+              if (childEnabled && needsSetup)
+                FilledButton(
+                  onPressed:
+                      _connectingPaymongo ? null : _startChildOnboarding,
+                  child: Text(
+                    _connectingPaymongo
+                        ? 'Starting…'
+                        : onboarding == 'ONBOARDING_FAILED'
+                            ? 'Retry PayMongo Setup'
+                            : 'Set Up PayMongo',
+                  ),
+                ),
+              if (childEnabled && inProgress) ...[
+                FilledButton(
+                  onPressed: _connectingPaymongo
+                      ? null
+                      : () async {
+                          if (onboardingUrl.isNotEmpty) {
+                            await PaymentRedirect.openCheckout(
+                              context,
+                              onboardingUrl,
+                            );
+                          } else {
+                            await _startChildOnboarding();
+                          }
+                        },
+                  child: Text(
+                    onboarding == 'REJECTED'
+                        ? 'Continue Setup'
+                        : 'Continue PayMongo Setup',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  onPressed:
+                      _connectingPaymongo ? null : _refreshChildOnboarding,
+                  child: const Text('Refresh status'),
+                ),
+              ],
+              if (connected) ...[
+                Text(
+                  'PayMongo Connected ✓',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: scheme.primary,
+                      ),
+                ),
+                TextButton(
+                  onPressed:
+                      _connectingPaymongo ? null : _disconnectPaymongo,
+                  child: const Text('Disconnect'),
+                ),
+              ],
+              if (!connected) ...[
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 8),
+                Text(
+                  'Advanced: connect with your own PayMongo API keys',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _pmPublicCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Public key (pk_test_… / pk_live_…)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _pmSecretCtrl,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Secret key (sk_test_… / sk_live_…)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton(
+                  onPressed:
+                      _connectingPaymongo ? null : _connectPaymongoKeys,
+                  child: Text(
+                    _connectingPaymongo
+                        ? 'Connecting…'
+                        : 'Connect with API keys',
+                  ),
+                ),
+                if (linkedEnabled) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _pmInviteEmailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(
+                      labelText: 'Linked Accounts invite email',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    onPressed:
+                        _connectingPaymongo ? null : _connectPaymongoInvite,
+                    child: const Text('Send Linked Accounts invite'),
+                  ),
+                  if (signupUrl.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    SelectableText(
+                      signupUrl,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    OutlinedButton(
+                      onPressed:
+                          _connectingPaymongo ? null : _refreshPaymongoLink,
+                      child: const Text('Refresh invite status'),
+                    ),
+                  ],
+                ],
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _loadQr() async {
@@ -171,13 +607,23 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
             padding: const EdgeInsets.all(20),
             children: [
               Text(
-                'Guests who book online see this QR and can tap Pay Now. '
-                'For Pay Now, set the GCash and/or Maya mobile number that should receive payments.',
+                'Connect PayMongo so guests pay via Hosted Checkout with QR Ph '
+                '(currently the only active method on this PayMongo account). '
+                'QR and wallet numbers below remain available as a manual fallback only — they are not the PayMongo payment destination.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),
               ),
+              const SizedBox(height: 16),
+              _paymongoCard(scheme),
               const SizedBox(height: 20),
+              Text(
+                'Manual fallback (QR / wallet numbers)',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              const SizedBox(height: 8),
               if (_loadingQr)
                 const Center(child: CircularProgressIndicator())
               else if (_error != null)
@@ -217,15 +663,15 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
               ),
               const SizedBox(height: 28),
               Text(
-                'Wallet numbers for Pay Now',
+                'Wallet numbers (manual fallback only)',
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),
               ),
               const SizedBox(height: 6),
               Text(
-                'Required for the Pay Now button. Guests are sent to GCash/Maya with this number and the amount to pay. '
-                'GCash/Maya do not allow auto-filling Send Money from other apps — guests confirm the number and amount in the wallet, then paste the reference back in MADYAW.',
+                'Optional contact / manual Send Money fallback when PayMongo is not connected. '
+                'Do not treat these numbers as the PayMongo merchant destination.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: scheme.onSurfaceVariant,
                       height: 1.35,

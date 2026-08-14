@@ -306,6 +306,8 @@ class CustomerPortalApiController extends Controller
             ->first();
         $stored = (string) ($settings?->payment_qr_url ?? '');
         $wallets = \App\Support\HotelPaymentWalletSupport::numbersFromSettings($settings);
+        $paymongo = app(\App\Services\HotelPayMongoConnectService::class)->accountForHotel($hotelId);
+        $paymongoConnected = $paymongo?->isConnected() ?? false;
 
         return response()->json([
             'qr_url' => ChatAttachmentUrl::fromStoredUrl($stored) ?? '',
@@ -314,6 +316,13 @@ class CustomerPortalApiController extends Controller
             'payment_gcash_mobile' => $wallets['payment_gcash_mobile'],
             'payment_maya_mobile' => $wallets['payment_maya_mobile'],
             'has_wallet_number' => $wallets['has_wallet_number'],
+            'paymongo' => [
+                'connected' => $paymongoConnected,
+                'mode' => strtolower((string) config('services.paymongo.mode', 'test')),
+                'payment_methods_hint' => [
+                    'QR Ph',
+                ],
+            ],
         ]);
     }
 
@@ -455,9 +464,24 @@ class CustomerPortalApiController extends Controller
             $total = $this->applyDiscountToTotal($gross, (float) ($validated['discount_percent'] ?? 0));
             $depositPercent = OnlineBookingDepositSupport::percentForHotel($hotelId);
             $depositAmount = OnlineBookingDepositSupport::amountForHotel($hotelId, $total);
-            $paymentStatus = ($depositAmount + 0.009 >= $total)
-                ? 'paid_pending_approval'
-                : 'deposit_pending_approval';
+            $hasReference = filled(trim((string) ($validated['payment_reference'] ?? '')));
+            $paymongoConnected = app(\App\Services\HotelPayMongoConnectService::class)
+                ->hotelHasConnectedPayMongo($hotelId);
+
+            if ($hasReference) {
+                $paymentStatus = ($depositAmount + 0.009 >= $total)
+                    ? 'paid_pending_approval'
+                    : 'deposit_pending_approval';
+                $amountPaid = $depositAmount;
+            } elseif ($paymongoConnected) {
+                $paymentStatus = 'pending_payment';
+                $amountPaid = 0;
+            } else {
+                $paymentStatus = ($depositAmount + 0.009 >= $total)
+                    ? 'paid_pending_approval'
+                    : 'deposit_pending_approval';
+                $amountPaid = $depositAmount;
+            }
 
             return ExternalReservation::query()->create([
             'hotel_id' => $hotelId,
@@ -478,11 +502,13 @@ class CustomerPortalApiController extends Controller
                     'payment_method' => $validated['payment_method'] ?? 'Online',
                     'payment_reference' => $validated['payment_reference'] ?? null,
                     'estimated_total' => $total,
-                    'amount_paid' => $depositAmount,
+                    'total_amount' => $total,
+                    'amount_paid' => $amountPaid,
                     'deposit_percent' => $depositPercent,
                     'deposit_required' => $depositAmount,
-                    'balance_due' => max(0, round($total - $depositAmount, 2)),
+                    'balance_due' => max(0, round($total - $amountPaid, 2)),
                     'payment_status' => $paymentStatus,
+                    'gateway' => (! $hasReference && $paymongoConnected) ? 'paymongo' : null,
                     'billing_mode' => $charge['billing_mode'],
                     'stay_hours' => $charge['stay_hours'] ?? null,
                     'block_hours' => $charge['block_hours'] ?? null,
@@ -555,11 +581,11 @@ class CustomerPortalApiController extends Controller
                 'room_id' => (string) $room->id,
                 'guest_name' => (string) $reservation->guest_name,
                 'payment_method' => 'Online',
-                'payment_reference' => (string) ((is_array($reservation->metadata) ? $reservation->metadata['payment_reference'] : null) ?? ''),
-                'amount' => (float) ((is_array($reservation->metadata) ? $reservation->metadata['estimated_total'] : 0) ?? 0),
-                'amount_paid' => (float) ((is_array($reservation->metadata) ? $reservation->metadata['amount_paid'] : 0) ?? 0),
-                'payment_status' => (string) ((is_array($reservation->metadata) ? $reservation->metadata['payment_status'] : null) ?? 'deposit_pending_approval'),
-                'deposit_percent' => (float) ((is_array($reservation->metadata) ? $reservation->metadata['deposit_percent'] : 0) ?? 0),
+                'payment_reference' => (string) ((is_array($reservation->metadata) ? ($reservation->metadata['payment_reference'] ?? null) : null) ?? ''),
+                'amount' => (float) ((is_array($reservation->metadata) ? ($reservation->metadata['estimated_total'] ?? 0) : 0) ?? 0),
+                'amount_paid' => (float) ((is_array($reservation->metadata) ? ($reservation->metadata['amount_paid'] ?? 0) : 0) ?? 0),
+                'payment_status' => (string) ((is_array($reservation->metadata) ? ($reservation->metadata['payment_status'] ?? null) : null) ?? 'deposit_pending_approval'),
+                'deposit_percent' => (float) ((is_array($reservation->metadata) ? ($reservation->metadata['deposit_percent'] ?? 0) : 0) ?? 0),
                 'source' => 'customer_online_booking',
             ],
         );
@@ -662,7 +688,7 @@ class CustomerPortalApiController extends Controller
             'discount_id_file' => ['nullable', 'image', 'max:5120'],
             'guest_id_file' => ['nullable', 'image', 'max:5120'],
             'payment_method' => ['required', 'string', 'in:Online'],
-            'payment_reference' => ['required', 'string', 'min:4', 'max:120'],
+            'payment_reference' => ['nullable', 'string', 'min:4', 'max:120'],
             'rooms' => ['nullable', 'integer', 'min:1', 'max:10'],
             'adults' => ['nullable', 'integer', 'min:1', 'max:30'],
             'children' => ['nullable', 'integer', 'min:0', 'max:20'],
@@ -711,13 +737,17 @@ class CustomerPortalApiController extends Controller
             ]);
         }
         $reference = trim((string) ($validated['payment_reference'] ?? ''));
-        if ($reference === '') {
+        $hotelId = (string) ($validated['hotel_id'] ?? '');
+        $paymongoConnected = $hotelId !== ''
+            && app(\App\Services\HotelPayMongoConnectService::class)->hotelHasConnectedPayMongo($hotelId);
+
+        if ($reference === '' && ! $paymongoConnected) {
             throw ValidationException::withMessages([
                 'payment_reference' => ['Enter your GCash / Maya / QR Ph payment reference.'],
             ]);
         }
         $validated['payment_method'] = 'Online';
-        $validated['payment_reference'] = $reference;
+        $validated['payment_reference'] = $reference !== '' ? $reference : null;
 
         return $validated;
     }

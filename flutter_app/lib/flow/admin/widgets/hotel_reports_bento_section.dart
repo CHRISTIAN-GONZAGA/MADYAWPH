@@ -97,7 +97,8 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
         queryParameters: {
           'time_in': today.toIso8601String(),
           'time_out': end.toIso8601String(),
-          'summary_only': true,
+          // Laravel `boolean` rejects query string "true"; use 1/0.
+          'summary_only': 1,
         },
       );
       if (!mounted) return;

@@ -160,7 +160,10 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
         destinations: [
           const NavigationDestination(
             icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
+            selectedIcon: Transform.scale(
+              scale: 1.18,
+              child: Icon(Icons.person, size: 26),
+            ),
             label: 'Account',
           ),
           NavigationDestination(
@@ -172,13 +175,19 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
             selectedIcon: Badge(
               isLabelVisible: _activeBookings.isNotEmpty,
               label: Text('${_activeBookings.length}'),
-              child: const Icon(Icons.hotel),
+              child: const Transform.scale(
+                scale: 1.18,
+                child: Icon(Icons.hotel, size: 26),
+              ),
             ),
             label: 'Bookings',
           ),
           const NavigationDestination(
             icon: Icon(Icons.travel_explore_outlined),
-            selectedIcon: Icon(Icons.travel_explore),
+            selectedIcon: Transform.scale(
+              scale: 1.18,
+              child: Icon(Icons.travel_explore, size: 26),
+            ),
             label: 'Browse',
           ),
         ],

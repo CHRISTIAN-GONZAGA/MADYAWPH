@@ -2,7 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\HotelPaymentAccount;
+use App\Models\WebhookEvent;
+use App\Services\ReservationPayMongoService;
 use App\Services\HotelCreditRechargeService;
+use App\Services\HotelPayMongoConnectService;
+use App\Services\PayMongoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
@@ -10,7 +15,10 @@ use Symfony\Component\HttpFoundation\Response;
 class PayMongoWebhookController extends Controller
 {
     public function __construct(
-        private readonly HotelCreditRechargeService $creditRecharge
+        private readonly HotelCreditRechargeService $creditRecharge,
+        private readonly ReservationPayMongoService $bookingPayments,
+        private readonly PayMongoService $payMongo,
+        private readonly HotelPayMongoConnectService $connect,
     ) {}
 
     public function handle(Request $request): Response
@@ -25,7 +33,7 @@ class PayMongoWebhookController extends Controller
             return response()->json(['received' => true], 200);
         }
 
-        if ($webhookSecret !== '' && ! $this->signatureValid($raw, (string) $header, $webhookSecret)) {
+        if ($webhookSecret !== '' && ! $this->payMongo->verifyWebhookSignature($raw, (string) $header, $webhookSecret)) {
             Log::warning('PayMongo webhook signature verification failed');
 
             return response('Invalid signature', 401);
@@ -36,43 +44,140 @@ class PayMongoWebhookController extends Controller
             return response()->json(['ok' => true], 200);
         }
 
+        $eventId = (string) data_get($payload, 'data.id', '');
         $eventType = (string) data_get($payload, 'data.attributes.type', '');
-
-        if ($eventType === 'payment.paid') {
-            $this->maybeCreditHotel($payload);
+        if ($eventType === '') {
+            $eventType = (string) data_get($payload, 'data.type', '');
         }
 
-        return response()->json(['received' => true], 200);
+        if ($eventId !== '' && ! WebhookEvent::claim('paymongo', $eventId, $eventType, $payload)) {
+            return response()->json(['received' => true, 'duplicate' => true], 200);
+        }
+
+        $handled = false;
+
+        // Child merchant onboarding / activation (parent webhook).
+        if (in_array($eventType, [
+            'merchant.activated',
+            'merchant.declined',
+            'account.identity_verification.passed',
+            'account.identity_verification.failed',
+        ], true)) {
+            $handled = $this->handleOnboardingEvent($eventType, $payload);
+        }
+
+        // Guest booking checkout / payment events.
+        if (! $handled && (in_array($eventType, [
+            'checkout_session.payment.paid',
+            'payment.paid',
+            'payment.failed',
+        ], true) || data_get($payload, 'data.resource') === 'checkout_session')) {
+            $handled = $this->bookingPayments->handleWebhookPayload($payload);
+        }
+
+        // Platform hotel-credit wallet recharge.
+        if (! $handled && $eventType === 'payment.paid') {
+            $this->maybeCreditHotel($payload);
+            $handled = true;
+        }
+
+        if ($eventId !== '') {
+            WebhookEvent::markProcessed('paymongo', $eventId);
+        }
+
+        return response()->json(['received' => true, 'handled' => $handled], 200);
     }
 
-    private function signatureValid(string $payload, string $signatureHeader, string $webhookSecret): bool
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function handleOnboardingEvent(string $eventType, array $payload): bool
     {
-        $parts = array_map('trim', explode(',', $signatureHeader));
-        $map = [];
-        foreach ($parts as $part) {
-            if (! str_contains($part, '=')) {
-                continue;
-            }
-            [$k, $v] = explode('=', $part, 2);
-            $map[trim($k)] = $v;
-        }
-        $t = $map['t'] ?? '';
-        if ($t === '') {
+        $data = data_get($payload, 'data.attributes.data');
+        if (! is_array($data)) {
             return false;
         }
-        $te = $map['te'] ?? '';
-        $li = $map['li'] ?? '';
-        $signedPayload = $t.'.'.$payload;
-        $expected = hash_hmac('sha256', $signedPayload, $webhookSecret);
 
-        if ($li !== '' && hash_equals($expected, $li)) {
-            return true;
-        }
-        if ($te !== '' && hash_equals($expected, $te)) {
-            return true;
+        $merchantId = (string) ($data['merchant_id']
+            ?? $data['account_id']
+            ?? data_get($data, 'id')
+            ?? '');
+
+        if ($merchantId === '') {
+            return false;
         }
 
-        return false;
+        $account = HotelPaymentAccount::withoutGlobalScopes()
+            ->where('provider', HotelPaymentAccount::PROVIDER_PAYMONGO)
+            ->where(function ($q) use ($merchantId) {
+                $q->where('child_merchant_id', $merchantId)
+                    ->orWhere('merchant_account_id', $merchantId);
+            })
+            ->first();
+
+        if (! $account) {
+            Log::info('PayMongo onboarding event for unknown child', [
+                'event' => $eventType,
+                'merchant_id' => $merchantId,
+            ]);
+
+            return false;
+        }
+
+        return match ($eventType) {
+            'merchant.activated' => $this->onMerchantActivated($account, $data),
+            'merchant.declined' => $this->onMerchantDeclined($account, $data),
+            'account.identity_verification.passed' => $this->onIdentityPassed($account),
+            'account.identity_verification.failed' => $this->onIdentityFailed($account, $data),
+            default => false,
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function onMerchantActivated(HotelPaymentAccount $account, array $data): bool
+    {
+        $keys = is_array($data['keys'] ?? null) ? $data['keys'] : [];
+        $this->connect->markChildActivated($account, ['keys' => $keys]);
+
+        return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function onMerchantDeclined(HotelPaymentAccount $account, array $data): bool
+    {
+        $message = (string) ($data['declined_message'] ?? $data['decline_message'] ?? '');
+        $this->connect->markChildDeclined($account, $message !== '' ? $message : null);
+
+        return true;
+    }
+
+    private function onIdentityPassed(HotelPaymentAccount $account): bool
+    {
+        $account->onboarding_status = HotelPaymentAccount::ONBOARDING_REQUIREMENTS_PENDING;
+        $account->paymongo_activation_status = $account->paymongo_activation_status ?: 'pending';
+        $account->last_error = null;
+        $account->save();
+
+        return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function onIdentityFailed(HotelPaymentAccount $account, array $data): bool
+    {
+        $reason = (string) ($data['failure_reason'] ?? 'Identity verification failed. Please retry PayMongo setup.');
+        $account->onboarding_status = HotelPaymentAccount::ONBOARDING_VERIFICATION_PENDING;
+        $account->last_error = $reason;
+        $account->save();
+        // Generate a fresh hosted verification session when possible.
+        $this->connect->continueChildOnboarding($account);
+
+        return true;
     }
 
     /**
@@ -97,10 +202,12 @@ class PayMongoWebhookController extends Controller
             return;
         }
 
+        if ((string) ($meta['purpose'] ?? '') === 'guest_booking') {
+            return;
+        }
+
         $hotelId = (string) ($meta['hotel_id'] ?? '');
         if ($hotelId === '') {
-            Log::info('PayMongo payment.paid without hotel_id metadata; skipping credit.');
-
             return;
         }
 

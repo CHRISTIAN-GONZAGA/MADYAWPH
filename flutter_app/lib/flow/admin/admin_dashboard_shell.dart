@@ -522,7 +522,14 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         ),
         0,
       ),
-      wrapTab(CheckoutSection(key: refreshKey, rooms: _rooms), 1),
+      wrapTab(
+        CheckoutSection(
+          key: refreshKey,
+          rooms: _rooms,
+          isFrontDesk: widget.isFrontDesk,
+        ),
+        1,
+      ),
       wrapTab(GuestPortfolioSection(key: refreshKey, rooms: _rooms), 2),
       wrapTab(
         BookingsSection(

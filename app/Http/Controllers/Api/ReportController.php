@@ -1440,13 +1440,14 @@ class ReportController extends Controller
             'time_in' => ['required', 'date'],
             'time_out' => ['required', 'date', 'after:time_in'],
             'staff_name' => ['nullable', 'string', 'max:160'],
-            'summary_only' => ['nullable', 'boolean'],
+            // Accept 1/0/true/false/"true"/"false" from query strings (Dio/Flutter).
+            'summary_only' => ['nullable'],
         ]);
 
         $from = $this->parseReportBound($validated['time_in'], end: false);
         $to = $this->parseReportBound($validated['time_out'], end: true);
         $staffName = trim((string) ($validated['staff_name'] ?? ''));
-        $summaryOnly = filter_var($validated['summary_only'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $summaryOnly = filter_var($request->input('summary_only', false), FILTER_VALIDATE_BOOLEAN);
 
         return response()->json(
             $this->buildShiftReportPayload(

@@ -397,12 +397,18 @@ class PlatformAdminController extends Controller
                 ->get()
                 ->keyBy(fn (HotelCredit $c) => (string) $c->hotel_id);
 
+            $payRows = \App\Models\HotelPaymentAccount::withoutGlobalScopes()
+                ->where('provider', \App\Models\HotelPaymentAccount::PROVIDER_PAYMONGO)
+                ->get()
+                ->keyBy(fn ($a) => (string) $a->hotel_id);
+
             $hotels = Hotel::withoutGlobalScopes()
                 ->orderBy('name')
                 ->get()
-                ->map(function (Hotel $h) use ($creditRows) {
+                ->map(function (Hotel $h) use ($creditRows, $payRows) {
                     $credit = $creditRows->get((string) $h->id);
                     $balance = (float) ($credit->current_credits ?? 0);
+                    $pay = $payRows->get((string) $h->id);
 
                     return [
                         'id' => (string) $h->id,
@@ -419,6 +425,9 @@ class PlatformAdminController extends Controller
                         'current_credits' => $balance,
                         'is_depleted' => $balance <= 0,
                         'is_low_balance' => $balance > 0 && $balance < (float) config('services.hotel_credits.low_balance_threshold', 3000),
+                        'paymongo_status' => $pay?->onboarding_status ?? 'NOT_STARTED',
+                        'paymongo_payment_ready' => $pay?->isPaymentReady() ?? false,
+                        'paymongo_child_merchant_hint' => $pay?->toPublicArray()['child_merchant_id'] ?? null,
                     ];
                 });
 
@@ -528,6 +537,11 @@ class PlatformAdminController extends Controller
      */
     private function serializeHotelRegistration(Hotel $h): array
     {
+        $pay = \App\Models\HotelPaymentAccount::withoutGlobalScopes()
+            ->where('hotel_id', (string) $h->id)
+            ->where('provider', \App\Models\HotelPaymentAccount::PROVIDER_PAYMONGO)
+            ->first();
+
         return [
             'id' => (string) $h->id,
             'name' => (string) $h->name,
@@ -542,6 +556,9 @@ class PlatformAdminController extends Controller
             'registration_reviewed_at' => optional($h->registration_reviewed_at)->toISOString(),
             'registration_reject_notes' => (string) ($h->registration_reject_notes ?? ''),
             'created_at' => optional($h->created_at)->toISOString(),
+            'paymongo_status' => $pay?->onboarding_status ?? 'NOT_STARTED',
+            'paymongo_payment_ready' => $pay?->isPaymentReady() ?? false,
+            'paymongo_child_merchant_hint' => $pay?->toPublicArray()['child_merchant_id'] ?? null,
         ];
     }
 

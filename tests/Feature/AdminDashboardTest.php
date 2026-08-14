@@ -87,6 +87,13 @@ class AdminDashboardTest extends TestCase
             'password' => bcrypt('secret123'),
             'role' => UserRole::ADMIN,
         ]);
+        $frontDesk = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'fd_walkin_dash',
+            'email' => 'fd-walkin-dash@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::FRONTDESK,
+        ]);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
             'room_number' => 'W1',
@@ -99,7 +106,7 @@ class AdminDashboardTest extends TestCase
         $checkIn = now()->setTime(14, 0);
         $checkOut = now()->addDay()->setTime(11, 0);
 
-        $this->actingAs($admin)
+        $this->actingAs($frontDesk)
             ->postJson('/api/v1/admin/bookings', [
                 'room_id' => (string) $room->id,
                 'guest_name' => 'Walk-in Dash Guest',

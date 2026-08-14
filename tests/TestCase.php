@@ -26,6 +26,11 @@ abstract class TestCase extends BaseTestCase
     {
         parent::setUp();
 
+        // Avoid hitting real PayMongo during hotel registration unless a test opts in.
+        config([
+            'services.paymongo.child_onboarding_enabled' => false,
+        ]);
+
         if (config('database.default') === 'mongodb') {
             $this->refreshMongoDatabase();
         }
@@ -62,6 +67,9 @@ abstract class TestCase extends BaseTestCase
             'platform_settings',
             'credit_wallet_requests',
             'member_subscription_requests',
+            'hotel_payment_accounts',
+            'payments',
+            'webhook_events',
         ] as $collection) {
             try {
                 $db->dropCollection($collection);

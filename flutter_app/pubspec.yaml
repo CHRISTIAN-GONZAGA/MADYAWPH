@@ -22,7 +22,6 @@ dependencies:
   mobile_scanner: ^6.0.2
   qr_flutter: ^4.1.0
   app_links: ^6.4.0
-  android_intent_plus: ^6.1.0
 
 dev_dependencies:
   flutter_test:

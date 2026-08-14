@@ -1711,6 +1711,22 @@ class _HotelRegistrationCard extends StatelessWidget {
   final VoidCallback onApprove;
   final VoidCallback onReject;
 
+  static String _paymongoStatusLabel(Map<String, dynamic> item) {
+    final ready = item['paymongo_payment_ready'] == true;
+    if (ready) return '🟢 ACTIVE';
+    final status = (item['paymongo_status'] ?? 'NOT_STARTED').toString().toUpperCase();
+    return switch (status) {
+      'ACTIVE' => '🟢 ACTIVE',
+      'ONBOARDING' ||
+      'REQUIREMENTS_PENDING' ||
+      'VERIFICATION_PENDING' =>
+        '🟡 ONBOARDING',
+      'REJECTED' || 'ONBOARDING_FAILED' || 'SUSPENDED' => '🔴 ACTION REQUIRED',
+      'DISCONNECTED' => '⚪ DISCONNECTED',
+      _ => '⚪ NOT STARTED',
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final rooms = ((item['total_rooms'] as num?)?.toInt() ?? 0);
@@ -1754,6 +1770,12 @@ class _HotelRegistrationCard extends StatelessWidget {
             Text(
               'Username: ${(item['access_username'] ?? '—')}',
               style: Theme.of(context).textTheme.bodySmall,
+            ),
+            Text(
+              'PayMongo: ${_paymongoStatusLabel(item)}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
             ),
             const SizedBox(height: 14),
             Row(
@@ -3397,6 +3419,13 @@ class _HotelsSectionState extends State<_HotelsSection> {
                             ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'PayMongo: ${_HotelRegistrationCard._paymongoStatusLabel(h)}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
                       ),
                       const SizedBox(height: 12),
                       Row(

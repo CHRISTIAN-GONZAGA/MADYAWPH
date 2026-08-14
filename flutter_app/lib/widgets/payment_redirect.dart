@@ -29,7 +29,7 @@ class PaymentRedirect {
     return extractUrl(data) != null;
   }
 
-  /// Launches the checkout page externally (GCash / PayMaya / card via Xendit).
+  /// Launches the checkout page externally (PayMongo Hosted Checkout / QR Ph, or Xendit).
   static Future<bool> openCheckout(BuildContext context, String url) async {
     final trimmed = url.trim();
     final uri = Uri.tryParse(trimmed);
