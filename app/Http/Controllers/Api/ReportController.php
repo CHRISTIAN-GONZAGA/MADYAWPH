@@ -389,6 +389,7 @@ class ReportController extends Controller
             if ($hotelId === '') {
                 return response()->json([
                     'anchor_date' => $anchor->toDateString(),
+                    'yesterday' => $this->emptyFinancialSummary($anchor->copy()->subDay()->startOfDay(), $anchor->copy()->subDay()->endOfDay()),
                     'daily' => $this->emptyFinancialSummary($anchor->copy()->startOfDay(), $anchor->copy()->endOfDay()),
                     'weekly' => $this->emptyFinancialSummary($anchor->copy()->startOfWeek(), $anchor->copy()->endOfWeek()),
                     'monthly' => $this->emptyFinancialSummary($anchor->copy()->startOfMonth(), $anchor->copy()->endOfMonth()),
@@ -409,6 +410,10 @@ class ReportController extends Controller
 
             return response()->json([
                 'anchor_date' => $anchor->toDateString(),
+                'yesterday' => $this->emptyFinancialSummary(
+                    $anchor->copy()->subDay()->startOfDay(),
+                    $anchor->copy()->subDay()->endOfDay()
+                ),
                 'daily' => $this->emptyFinancialSummary(
                     $anchor->copy()->startOfDay(),
                     $anchor->copy()->endOfDay()
@@ -1438,7 +1443,7 @@ class ReportController extends Controller
     {
         $validated = $request->validate([
             'time_in' => ['required', 'date'],
-            'time_out' => ['required', 'date', 'after:time_in'],
+            'time_out' => ['required', 'date', 'after_or_equal:time_in'],
             'staff_name' => ['nullable', 'string', 'max:160'],
             // Accept 1/0/true/false/"true"/"false" from query strings (Dio/Flutter).
             'summary_only' => ['nullable'],
@@ -1463,7 +1468,7 @@ class ReportController extends Controller
     {
         $validated = $request->validate([
             'time_in' => ['required', 'date'],
-            'time_out' => ['required', 'date', 'after:time_in'],
+            'time_out' => ['required', 'date', 'after_or_equal:time_in'],
             'staff_name' => ['nullable', 'string', 'max:160'],
             'title' => ['nullable', 'string', 'max:200'],
         ]);
@@ -1499,7 +1504,7 @@ class ReportController extends Controller
     {
         $validated = $request->validate([
             'time_in' => ['required', 'date'],
-            'time_out' => ['required', 'date', 'after:time_in'],
+            'time_out' => ['required', 'date', 'after_or_equal:time_in'],
             'staff_name' => ['nullable', 'string', 'max:160'],
         ]);
 

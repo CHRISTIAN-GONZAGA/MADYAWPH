@@ -172,8 +172,14 @@ class HotelSearchResultsScreen extends StatelessWidget {
               elevation: 0,
         title: Text(
           hotels.isEmpty
-              ? context.tr('no_matches')
+              ? (destination.isNotEmpty
+                  ? context.tr('no_hotels_for_location', {
+                      'location': destination,
+                    })
+                  : context.tr('no_matches'))
               : context.tr('hotels_found_count', {'n': '${hotels.length}'}),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
         ),
               actions: [
                 IconButton(
@@ -342,7 +348,11 @@ class _EmptyResults extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             Text(
-              context.tr('no_hotels_for_stay'),
+              search.destinationQuery.trim().isNotEmpty
+                  ? context.tr('no_hotels_for_location', {
+                      'location': search.destinationQuery.trim(),
+                    })
+                  : context.tr('no_hotels_for_stay'),
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
@@ -350,7 +360,9 @@ class _EmptyResults extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              context.tr('try_different_search'),
+              search.destinationQuery.trim().isNotEmpty
+                  ? context.tr('no_hotels_for_location_sub')
+                  : context.tr('try_different_search'),
               textAlign: TextAlign.center,
               style: TextStyle(color: scheme.onSurfaceVariant),
             ),

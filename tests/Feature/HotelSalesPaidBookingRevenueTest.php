@@ -86,4 +86,76 @@ class HotelSalesPaidBookingRevenueTest extends TestCase
             (float) ($payload['booking_transactions'][0]['amount'] ?? 0)
         );
     }
+
+    public function test_shift_summary_includes_payments_without_created_by_and_date_only_bounds(): void
+    {
+        $hotel = Hotel::create(['name' => 'Date Only Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'Admin',
+            'email' => 'date-only-admin@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '801',
+            'room_type' => 'Deluxe',
+            'price_per_night' => 1500,
+            'status' => RoomStatus::CHECKED_IN->value,
+        ]);
+        $booking = Booking::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'guest_name' => 'Online Guest',
+            'guest_phone' => '09170002222',
+            'check_in_date' => now()->toDateString(),
+            'check_out_date' => now()->addDay()->toDateString(),
+            'total_amount' => 0,
+            'payment_method' => 'GCash',
+            'payment_status' => 'paid',
+            'paid_at' => now(),
+            'status' => 'checked_in',
+            'source' => 'web',
+        ]);
+
+        BillingCharge::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'booking_id' => (string) $booking->id,
+            'room_id' => (string) $room->id,
+            'type' => 'room',
+            'label' => 'Room charge',
+            'amount' => 1500,
+            'quantity' => 1,
+        ]);
+        BillingCharge::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'booking_id' => (string) $booking->id,
+            'room_id' => (string) $room->id,
+            'type' => 'partial_payment',
+            'label' => 'Online payment (PayMongo)',
+            'amount' => -1500,
+            'quantity' => 1,
+            'metadata' => ['payment_method' => 'Online'],
+        ]);
+
+        Sanctum::actingAs($admin);
+
+        $day = now()->toDateString();
+        $payload = $this->getJson('/api/v1/reports/shift-summary?'.http_build_query([
+            'time_in' => $day,
+            'time_out' => $day,
+        ]))->assertOk()->json();
+
+        $this->assertSame(1500.0, (float) ($payload['summary']['gross_revenue'] ?? 0));
+        $this->assertNotEmpty($payload['booking_transactions'] ?? []);
+        $this->assertSame(1500.0, (float) ($payload['booking_transactions'][0]['amount'] ?? 0));
+
+        $profit = $this->getJson('/api/v1/reports/profit-overview?'.http_build_query([
+            'anchor_date' => $day,
+        ]))->assertOk()->json();
+        $this->assertArrayHasKey('yesterday', $profit);
+        $this->assertArrayHasKey('daily', $profit);
+    }
 }

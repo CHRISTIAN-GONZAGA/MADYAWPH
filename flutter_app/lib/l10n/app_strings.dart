@@ -176,6 +176,9 @@ class AppStrings {
       'no_matches': 'No matches',
       'edit_search': 'Edit search',
       'no_hotels_for_stay': 'No hotels can accommodate your stay',
+      'no_hotels_for_location': 'No hotels available for {location}',
+      'no_hotels_for_location_sub':
+          'There are no hotels available in this location for your dates. Try another city or different dates.',
       'try_different_search': 'Try different dates, fewer rooms, or another destination.',
       'rooms_available': '{n} rooms available',
       'limited_availability': 'Limited availability',
@@ -360,6 +363,9 @@ class AppStrings {
       'no_matches': 'Walang tugma',
       'edit_search': 'Baguhin ang paghahanap',
       'no_hotels_for_stay': 'Walang hotel para sa iyong pananatili',
+      'no_hotels_for_location': 'Walang available na hotel sa {location}',
+      'no_hotels_for_location_sub':
+          'Walang hotel sa lokasyong ito para sa iyong mga petsa. Subukan ang ibang lungsod o ibang petsa.',
       'try_different_search':
           'Subukan ang ibang petsa, mas kaunting kuwarto, o ibang destinasyon.',
       'rooms_available': '{n} kuwartong available',

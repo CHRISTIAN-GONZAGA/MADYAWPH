@@ -2543,24 +2543,49 @@ Route::post('/activity-logs', [ActivityLogController::class, 'store'])->middlewa
 
 Route::get('/admin/guest-history', function (Request $request) {
     $hotelId = (string) $request->user()->hotel_id;
-    $rows = Booking::withoutGlobalScopes()
+    $bookings = Booking::withoutGlobalScopes()
         ->where('hotel_id', $hotelId)
         ->where('status', BookingStatus::COMPLETED->value)
         ->orderByDesc('checked_out_at')
         ->orderByDesc('updated_at')
         ->limit(200)
-        ->get()
-        ->map(function (Booking $booking) use ($hotelId) {
-            $room = Room::withoutGlobalScopes()
-                ->where('hotel_id', $hotelId)
-                ->find((string) ($booking->room_id ?? ''));
+        ->get();
+    $summaries = app(BookingPaymentService::class)->summariesByBookingIds(
+        $hotelId,
+        $bookings->map(fn ($b) => (string) $b->id)->all(),
+    );
 
-            return array_merge($booking->toArray(), [
-                'room_number' => (string) ($room?->room_number ?? ''),
-                'checked_out_display' => optional($booking->checked_out_at)->format('M j, Y g:i A')
-                    ?? optional($booking->updated_at)->format('M j, Y g:i A'),
-            ]);
-        });
+    $rows = $bookings->map(function (Booking $booking) use ($hotelId, $summaries) {
+        $room = Room::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->find((string) ($booking->room_id ?? ''));
+        $bill = $summaries[(string) $booking->id] ?? [];
+        $balanceDue = (float) ($bill['balance_due'] ?? 0);
+        $additionalUnpaid = (bool) ($bill['additional_charges_unpaid'] ?? false);
+        $stayPaid = (bool) ($bill['stay_paid'] ?? false);
+        if ($balanceDue <= 0.009) {
+            $paymentStatus = 'paid';
+            $paymentLabel = 'Paid';
+            $additionalUnpaid = false;
+        } else {
+            $paymentStatus = (string) ($bill['payment_status'] ?? $booking->payment_status ?? 'unpaid');
+            $paymentLabel = (string) ($bill['payment_status_label'] ?? '');
+            if ($paymentLabel === '') {
+                $paymentLabel = $stayPaid && $additionalUnpaid ? 'Paid' : ucfirst($paymentStatus);
+            }
+        }
+
+        return array_merge($booking->toArray(), [
+            'room_number' => (string) ($room?->room_number ?? ''),
+            'checked_out_display' => optional($booking->checked_out_at)->format('M j, Y g:i A')
+                ?? optional($booking->updated_at)->format('M j, Y g:i A'),
+            'payment_status' => $paymentStatus,
+            'payment_status_label' => $paymentLabel,
+            'additional_charges_unpaid' => $additionalUnpaid,
+            'amount_paid' => (float) ($bill['amount_paid'] ?? 0),
+            'balance_due' => $balanceDue,
+        ]);
+    });
 
     return response()->json(['data' => $rows]);
 })->middleware('role:admin,frontdesk');

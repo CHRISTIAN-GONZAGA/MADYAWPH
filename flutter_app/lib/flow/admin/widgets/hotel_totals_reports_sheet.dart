@@ -47,7 +47,7 @@ Future<void> openHotelTotalsReports(
 
 enum _PaymentBucket { cash, ewallet, bank, other }
 
-enum _ReportPeriod { daily, weekly, monthly, annual }
+enum _ReportPeriod { yesterday, daily, weekly, monthly, annual }
 
 class _HotelTotalsReportsSheet extends StatefulWidget {
   const _HotelTotalsReportsSheet({
@@ -102,6 +102,9 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
   static (DateTime start, DateTime end) _rangeFor(_ReportPeriod period) {
     final anchor = DateUtils.dateOnly(DateTime.now());
     switch (period) {
+      case _ReportPeriod.yesterday:
+        final start = anchor.subtract(const Duration(days: 1));
+        return (start, _endOfDay(start));
       case _ReportPeriod.weekly:
         final start = anchor.subtract(Duration(days: anchor.weekday - 1));
         return (start, _endOfDay(start.add(const Duration(days: 6))));
@@ -118,6 +121,8 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
 
   static String _periodLabel(_ReportPeriod period) {
     switch (period) {
+      case _ReportPeriod.yesterday:
+        return 'Yesterday';
       case _ReportPeriod.daily:
         return 'Daily';
       case _ReportPeriod.weekly:
@@ -131,6 +136,7 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
 
   static String _demoApiPeriod(_ReportPeriod period) {
     switch (period) {
+      case _ReportPeriod.yesterday:
       case _ReportPeriod.daily:
         return 'day';
       case _ReportPeriod.weekly:
@@ -159,8 +165,8 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
     final res = await portalDio().get<Map<String, dynamic>>(
       '/reports/shift-summary',
       queryParameters: {
-        'time_in': start.toIso8601String(),
-        'time_out': end.toIso8601String(),
+        'time_in': _fmtDay(start),
+        'time_out': _fmtDay(end),
       },
     );
     return res.data ?? const <String, dynamic>{};
@@ -1490,6 +1496,25 @@ class _HotelTotalsReportsSheetState extends State<_HotelTotalsReportsSheet> {
           ],
           if (_showSection('rev_daily')) ...[
             if (!_focused) const SizedBox(height: 10),
+          _DropdownSection(
+            title: 'Yesterday’s sales',
+            subtitle: 'Hotel-wide previous day',
+            icon: Icons.history_outlined,
+            accent: Colors.orange,
+            expanded: _sectionExpanded('rev_yesterday'),
+            locked: _focused,
+            onToggle: () => _toggle('rev_yesterday'),
+            child: _DetailTile(
+              label: 'View yesterday’s sales',
+              countLabel: _rangeCaption(_ReportPeriod.yesterday),
+              total: null,
+              color: Colors.orange,
+              onTap: () =>
+                  _openFinancePeriod('Yesterday', _ReportPeriod.yesterday),
+            ),
+          ),
+          if (!_focused)
+          const SizedBox(height: 10),
           _DropdownSection(
             title: 'Daily revenue',
             subtitle: 'Hotel-wide today',

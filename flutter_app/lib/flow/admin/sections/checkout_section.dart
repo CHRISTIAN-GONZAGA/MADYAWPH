@@ -49,12 +49,13 @@ class _CheckoutSectionState extends State<CheckoutSection> {
     });
     try {
       final today = DateUtils.dateOnly(DateTime.now());
-      final end = DateTime(today.year, today.month, today.day, 23, 59, 59);
+      final day =
+          '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
       final res = await portalDio().get<Map<String, dynamic>>(
         '/reports/shift-summary',
         queryParameters: {
-          'time_in': today.toIso8601String(),
-          'time_out': end.toIso8601String(),
+          'time_in': day,
+          'time_out': day,
           'summary_only': 1,
         },
       );
@@ -357,8 +358,12 @@ class _CheckoutSectionState extends State<CheckoutSection> {
                     [
                       if (roomNo.isNotEmpty) 'Room $roomNo',
                       if (ref.isNotEmpty) ref,
+                      (m['payment_status_label'] ?? m['payment_status'] ?? '')
+                          .toString(),
+                      if (m['additional_charges_unpaid'] == true)
+                        'Additional charges not paid',
                       (m['checked_out_display'] ?? '').toString(),
-                    ].where((s) => s.isNotEmpty).join(' · '),
+                    ].where((s) => s.toString().isNotEmpty).join(' · '),
                   ),
                   trailing: IconButton(
                     icon: const Icon(Icons.picture_as_pdf_outlined),

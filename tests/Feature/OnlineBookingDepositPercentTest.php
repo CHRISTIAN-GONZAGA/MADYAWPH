@@ -149,6 +149,71 @@ class OnlineBookingDepositPercentTest extends TestCase
         $bill = app(\App\Services\BookingPaymentService::class)->billSummary($booking->fresh());
         $this->assertEqualsWithDelta($paid, (float) ($bill['amount_paid'] ?? 0), 1.0);
         $this->assertLessThanOrEqual(0.009, (float) ($bill['balance_due'] ?? 0));
+        $this->assertSame('paid', (string) ($booking->payment_status ?? ''));
+        $this->assertSame('Paid', \App\Support\OnlineBookingDepositSupport::guestPaymentLabel(
+            is_array($reservation->fresh()->metadata) ? $reservation->fresh()->metadata : []
+        ));
+    }
+
+    public function test_hundred_percent_paymongo_deposit_without_reference_marks_booking_paid(): void
+    {
+        $hotel = Hotel::create(['name' => 'PayMongo Full Deposit', 'location' => 'Loc']);
+        SystemSetting::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'theme_color' => '#2563eb',
+            'theme_mode' => 'light',
+            'online_booking_deposit_percent' => 100,
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '801',
+            'room_type' => 'Standard',
+            'price_per_night' => 2000,
+            'status' => 'available',
+        ]);
+
+        $reservation = ExternalReservation::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'source' => 'app-customer',
+            'external_reference' => 'RESPAY100',
+            'guest_name' => 'Paid Guest',
+            'guest_email' => 'paid@test.local',
+            'guest_phone' => '09170001111',
+            'check_in_date' => Carbon::today()->addDays(2)->toDateString(),
+            'check_out_date' => Carbon::today()->addDays(3)->toDateString(),
+            'assigned_room_id' => (string) $room->id,
+            'status' => 'approved',
+            'metadata' => [
+                'payment_method' => 'Online',
+                'estimated_total' => 2000,
+                'total_amount' => 2000,
+                'amount_paid' => 2000,
+                'deposit_percent' => 100,
+                'deposit_required' => 2000,
+                'balance_due' => 0,
+                'payment_status' => 'paid_pending_approval',
+                'gateway_status' => 'PAID',
+            ],
+        ]);
+
+        $this->assertFalse(
+            \App\Support\OnlineBookingDepositSupport::guestStillOwesOnlineDeposit(
+                is_array($reservation->metadata) ? $reservation->metadata : []
+            )
+        );
+        $this->assertSame(
+            'Paid',
+            \App\Support\OnlineBookingDepositSupport::guestPaymentLabel(
+                is_array($reservation->metadata) ? $reservation->metadata : []
+            )
+        );
+
+        $booking = app(ReservationActivationService::class)->activate($reservation->fresh());
+        $this->assertNotNull($booking);
+        $this->assertSame('paid', (string) ($booking->payment_status ?? ''));
+        $bill = app(\App\Services\BookingPaymentService::class)->billSummary($booking->fresh());
+        $this->assertEqualsWithDelta(2000.0, (float) ($bill['amount_paid'] ?? 0), 0.5);
+        $this->assertLessThanOrEqual(0.009, (float) ($bill['balance_due'] ?? 0));
     }
 
     public function test_customer_reservation_stores_deposit_not_full_total(): void

@@ -363,6 +363,14 @@ class CustomerPortalApiController extends Controller
             ? Booking::withoutGlobalScopes()->find($reservation->booking_id)
             : null;
 
+        try {
+            app(\App\Services\ReservationPayMongoService::class)
+                ->syncCheckoutPaymentIfPaid($reservation);
+            $reservation->refresh();
+        } catch (Throwable) {
+            // Status still returns even if PayMongo retrieve fails.
+        }
+
         return response()->json([
             'reservation' => $this->serializeReservation($reservation, $room, $booking),
         ]);
@@ -1126,6 +1134,7 @@ class CustomerPortalApiController extends Controller
         $stayHours = (int) ($meta['stay_hours'] ?? 0);
         $blockHours = (int) ($meta['block_hours'] ?? 0);
         $staySummary = $this->reservationStaySummary($reservation, $room, $meta);
+        $paymentLabel = \App\Support\OnlineBookingDepositSupport::guestPaymentLabel($meta);
 
         return [
             'id' => (string) $reservation->id,
@@ -1152,6 +1161,8 @@ class CustomerPortalApiController extends Controller
                 ? (float) $meta['balance_due']
                 : max(0, (float) ($meta['estimated_total'] ?? 0) - (float) ($meta['amount_paid'] ?? 0)),
             'payment_status' => (string) ($meta['payment_status'] ?? ''),
+            'payment_status_label' => $paymentLabel,
+            'needs_online_payment' => \App\Support\OnlineBookingDepositSupport::guestStillOwesOnlineDeposit($meta),
             'billing_mode' => $billingMode,
             'stay_hours' => $stayHours > 0 ? $stayHours : null,
             'block_hours' => $blockHours > 0 ? $blockHours : null,

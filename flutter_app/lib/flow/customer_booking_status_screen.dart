@@ -160,13 +160,25 @@ class _CustomerBookingStatusScreenState
 
   bool get _needsOnlinePayment {
     if (!_isOnlinePayment || _reservation == null) return false;
+    if (_reservation!['needs_online_payment'] is bool) {
+      return _reservation!['needs_online_payment'] == true;
+    }
     final status = (_reservation!['payment_status'] ?? '').toString().toLowerCase();
-    if (status == 'paid' || status == 'deposit_paid') return false;
     final paid = (_reservation!['amount_paid'] as num?)?.toDouble() ?? 0;
     final due = (_reservation!['deposit_required'] as num?)?.toDouble();
     final total = (_reservation!['estimated_total'] as num?)?.toDouble() ?? 0;
-    if (due != null && due > 0) return paid + 0.009 < due;
-    return status == 'pending_payment' || paid + 0.009 < total;
+    const settled = {
+      'paid',
+      'deposit_paid',
+      'paid_pending_approval',
+      'deposit_pending_approval',
+    };
+    final target = (due != null && due > 0) ? due : total;
+    if (settled.contains(status) && paid + 0.009 >= target) {
+      return false;
+    }
+    if (target > 0) return paid + 0.009 < target;
+    return !settled.contains(status);
   }
 
   bool get _isProcessing => !_isApproved && !_isRejected;
@@ -403,6 +415,11 @@ class _ReservationSummaryCard extends StatelessWidget {
             _row(context.tr('lbl_checkin'), '${reservation['check_in_date']}'),
             _row(context.tr('lbl_checkout'), '${reservation['check_out_date']}'),
             _row(context.tr('lbl_reservation'), resRef),
+            if ((reservation['payment_status_label'] ?? '').toString().isNotEmpty)
+              _row(
+                'Payment status',
+                (reservation['payment_status_label'] ?? '').toString(),
+              ),
           ],
         ),
       ),
@@ -482,6 +499,12 @@ class _TicketCard extends StatelessWidget {
             _row(context.tr('lbl_payment'), paymentMethod),
             if (paymentMethod.toLowerCase() == 'online' && paymentRef.isNotEmpty)
               _row(context.tr('lbl_payment_ref'), paymentRef, highlight: true),
+            if ((reservation['payment_status_label'] ?? '').toString().isNotEmpty)
+              _row(
+                'Payment status',
+                (reservation['payment_status_label'] ?? '').toString(),
+                highlight: true,
+              ),
             if ((reservation['estimated_total'] as num?) != null &&
                 (reservation['estimated_total'] as num) > 0)
               _row(

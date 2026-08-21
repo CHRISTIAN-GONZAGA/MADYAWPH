@@ -64,6 +64,29 @@ class BookingPaymentService
             ->filter(fn ($c) => strtolower((string) ($c->type ?? '')) === BillingChargeTypes::CASH_CHANGE)
             ->sum(fn ($c) => abs((float) ($c->amount ?? 0)));
 
+        $stayGross = 0.0;
+        $extraGross = 0.0;
+        foreach ($balanceCharges as $charge) {
+            $type = strtolower(trim((string) ($charge->type ?? '')));
+            if (BillingChargeTypes::isCredit($type)) {
+                continue;
+            }
+            $amount = max(0.0, (float) ($charge->amount ?? 0));
+            if ($this->isStayChargeType($type)) {
+                $stayGross += $amount;
+            } else {
+                $extraGross += $amount;
+            }
+        }
+        $stayGross = round($stayGross, 2);
+        $extraGross = round($extraGross, 2);
+        $stayCovered = min($amountPaid, $stayGross);
+        $paidTowardExtras = max(0.0, round($amountPaid - $stayCovered, 2));
+        $extraUnpaid = max(0.0, round($extraGross - $paidTowardExtras, 2));
+        $stayPaid = $stayGross <= 0.009 || $stayCovered + 0.009 >= $stayGross;
+        $additionalChargesUnpaid = $extraUnpaid > 0.009;
+        $status = $this->derivePaymentStatus($amountPaid, $balanceDue, $currentPaymentStatus);
+
         return [
             'lines' => $lines,
             'subtotal' => round($subtotal, 2),
@@ -72,8 +95,43 @@ class BookingPaymentService
             'change_given' => round($changeGiven, 2),
             'balance_due' => $balanceDue,
             'total_due' => $balanceDue,
-            'payment_status' => $this->derivePaymentStatus($amountPaid, $balanceDue, $currentPaymentStatus),
+            'stay_charges' => $stayGross,
+            'extra_charges' => $extraGross,
+            'extra_charges_unpaid' => $extraUnpaid,
+            'stay_paid' => $stayPaid,
+            'additional_charges_unpaid' => $additionalChargesUnpaid,
+            'payment_status' => $status,
+            'payment_status_label' => $this->guestPaymentStatusLabel(
+                $status,
+                $stayPaid,
+                $additionalChargesUnpaid,
+            ),
         ];
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    public function summariesByBookingIds(string $hotelId, array $bookingIds): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('strval', $bookingIds))));
+        if ($ids === []) {
+            return [];
+        }
+
+        $grouped = BillingCharge::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->whereIn('booking_id', $ids)
+            ->orderBy('created_at')
+            ->get()
+            ->groupBy(fn ($c) => (string) ($c->booking_id ?? ''));
+
+        $out = [];
+        foreach ($ids as $id) {
+            $out[$id] = $this->summarizeCharges($grouped->get($id, collect()), 'unpaid');
+        }
+
+        return $out;
     }
 
     /**
@@ -504,6 +562,37 @@ class BookingPaymentService
         $normalized = strtolower(trim($current));
 
         return in_array($normalized, ['paid', 'partial'], true) ? 'unpaid' : ($normalized !== '' ? $normalized : 'unpaid');
+    }
+
+    private function isStayChargeType(string $type): bool
+    {
+        return in_array($type, [
+            'room',
+            'extend-stay',
+            'early-check-in',
+            'early_check_in',
+            'late-checkout',
+            'late_checkout',
+            'late_check_out',
+        ], true);
+    }
+
+    private function guestPaymentStatusLabel(
+        string $status,
+        bool $stayPaid,
+        bool $additionalChargesUnpaid,
+    ): string {
+        if ($status === 'paid') {
+            return 'Paid';
+        }
+        if ($stayPaid && $additionalChargesUnpaid) {
+            return 'Paid';
+        }
+        if ($status === 'partial') {
+            return 'Partial';
+        }
+
+        return 'Unpaid';
     }
 
     private function chargesForBooking(Booking $booking): Collection

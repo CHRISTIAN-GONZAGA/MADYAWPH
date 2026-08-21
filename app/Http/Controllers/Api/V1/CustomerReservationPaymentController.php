@@ -65,6 +65,13 @@ class CustomerReservationPaymentController extends Controller
             return response()->json(['message' => 'Reservation not found.'], 404);
         }
 
+        try {
+            $this->bookingPayments->syncCheckoutPaymentIfPaid($reservation);
+            $reservation->refresh();
+        } catch (\Throwable) {
+            // Still return current payment state.
+        }
+
         $payment = $this->bookingPayments->latestPaymentForReservation($reservation);
         $meta = is_array($reservation->metadata) ? $reservation->metadata : [];
 

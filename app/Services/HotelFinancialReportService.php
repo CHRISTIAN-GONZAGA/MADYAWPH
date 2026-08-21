@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\BillingCharge;
 use App\Models\Booking;
 use App\Models\HotelExpense;
+use App\Models\Payment;
 use App\Models\ResellerCommissionPayment;
 use App\Models\Room;
 use App\Models\RoomTransfer;
@@ -94,6 +95,7 @@ class HotelFinancialReportService
     {
         return $this->withTenant(function () use ($anchor) {
             $periods = [
+                'yesterday' => [$anchor->copy()->subDay()->startOfDay(), $anchor->copy()->subDay()->endOfDay()],
                 'daily' => [$anchor->copy()->startOfDay(), $anchor->copy()->endOfDay()],
                 'weekly' => [$anchor->copy()->startOfWeek(), $anchor->copy()->endOfWeek()],
                 'monthly' => [$anchor->copy()->startOfMonth(), $anchor->copy()->endOfMonth()],
@@ -104,7 +106,8 @@ class HotelFinancialReportService
             /** @var Carbon $yearTo */
             $yearTo = $periods['annual'][1];
 
-            $charges = BillingCharge::query()
+            $charges = BillingCharge::withoutGlobalScopes()
+                ->where('hotel_id', $this->hotelId)
                 ->where('created_at', '>=', $yearFrom)
                 ->where('created_at', '<=', $yearTo)
                 ->get(['amount', 'type', 'created_at', 'booking_id', 'metadata']);
@@ -167,6 +170,7 @@ class HotelFinancialReportService
 
             return [
                 'anchor_date' => $anchor->toDateString(),
+                'yesterday' => $summaries['yesterday'],
                 'daily' => $summaries['daily'],
                 'weekly' => $summaries['weekly'],
                 'monthly' => $summaries['monthly'],
@@ -193,7 +197,8 @@ class HotelFinancialReportService
             $bookingRows = $this->paymentCollectionRows($from, $to, isoTimestamps: false);
             $amenityRows = $this->amenityTransactionRows($from, $to, isoTimestamps: false);
 
-            $refundCharges = BillingCharge::query()
+            $refundCharges = BillingCharge::withoutGlobalScopes()
+                ->where('hotel_id', $this->hotelId)
                 ->where('type', 'refund')
                 ->whereBetween('created_at', [$from, $to])
                 ->orderByDesc('created_at')
@@ -288,7 +293,8 @@ class HotelFinancialReportService
     {
         return $this->withTenant(function () use ($from, $to) {
             // One charge scan covers payments + refunds + amenity/room revenue.
-            $charges = BillingCharge::query()
+            $charges = BillingCharge::withoutGlobalScopes()
+                ->where('hotel_id', $this->hotelId)
                 ->where('created_at', '>=', $from)
                 ->where('created_at', '<=', $to)
                 ->get(['amount', 'type', 'booking_id', 'metadata']);
@@ -299,7 +305,9 @@ class HotelFinancialReportService
             $collections = (float) $paymentCharges->sum(
                 fn ($c) => abs((float) ($c->amount ?? 0))
             );
+            $collections += $this->gatewayPaymentsTotal($from, $to, $paymentCharges);
             [$cashCollected, $onlineCollected] = $this->splitCashOnline($paymentCharges);
+            $onlineCollected += $this->gatewayPaymentsTotal($from, $to, $paymentCharges);
 
             $bookings = $this->paidBookingsInRange($from, $to);
             $revenueMap = $this->recognizedRevenueByBooking($bookings);
@@ -575,7 +583,8 @@ class HotelFinancialReportService
             }
         }
 
-        $amenity = (float) BillingCharge::query()
+        $amenity = (float) BillingCharge::withoutGlobalScopes()
+            ->where('hotel_id', $this->hotelId)
             ->where('type', 'amenity')
             ->whereBetween('created_at', [$from, $to])
             ->get(['amount'])
@@ -596,7 +605,8 @@ class HotelFinancialReportService
     public function paymentChargesInRange(Carbon $from, Carbon $to): Collection
     {
         return $this->withTenant(function () use ($from, $to) {
-            return BillingCharge::query()
+            return BillingCharge::withoutGlobalScopes()
+                ->where('hotel_id', $this->hotelId)
                 ->where('type', BillingChargeTypes::PARTIAL_PAYMENT)
                 ->where('created_at', '>=', $from)
                 ->where('created_at', '<=', $to)
@@ -624,83 +634,193 @@ class HotelFinancialReportService
     {
         return $this->withTenant(function () use ($from, $to, $isoTimestamps) {
             $charges = $this->paymentChargesInRange($from, $to);
-            if ($charges->isEmpty()) {
-                // Legacy: fully paid stays with no payment charge rows.
-                return $this->legacyPaidBookingRows($from, $to, $isoTimestamps);
+            $chargeRows = $charges->isEmpty()
+                ? []
+                : $this->mapPaymentChargeRows($charges, $isoTimestamps);
+            $legacyRows = $this->legacyPaidBookingRows($from, $to, $isoTimestamps);
+            $gatewayRows = $this->gatewayPaymentRows($from, $to, $isoTimestamps, $chargeRows);
+
+            $seenRefs = [];
+            $merged = [];
+            foreach (array_merge($chargeRows, $legacyRows, $gatewayRows) as $row) {
+                $key = strtolower(trim((string) ($row['booking_id'] ?? $row['charge_id'] ?? $row['reference'] ?? '')));
+                if ($key !== '' && isset($seenRefs[$key])) {
+                    continue;
+                }
+                if ($key !== '') {
+                    $seenRefs[$key] = true;
+                }
+                $merged[] = $row;
             }
 
-            $bookingIds = $charges
-                ->map(fn ($c) => (string) ($c->booking_id ?? ''))
-                ->filter(fn ($id) => $id !== '')
-                ->unique()
-                ->values()
-                ->all();
+            usort($merged, fn ($a, $b) => strcmp((string) ($b['paid_at_sort'] ?? ''), (string) ($a['paid_at_sort'] ?? '')));
 
-            $bookings = $bookingIds === []
-                ? collect()
-                : Booking::query()
-                    ->whereIn('id', $bookingIds)
-                    ->get()
-                    ->keyBy(fn ($b) => (string) $b->id);
-
-            $roomIds = $charges
-                ->map(fn ($c) => (string) ($c->room_id ?? ''))
-                ->merge($bookings->map(fn ($b) => (string) ($b->room_id ?? '')))
-                ->filter(fn ($id) => $id !== '')
-                ->unique()
-                ->values()
-                ->all();
-            $roomNumbers = $this->roomNumbersByIds($roomIds);
-
-            return $charges->map(function ($charge) use ($bookings, $isoTimestamps, $roomNumbers) {
-                $bookingId = (string) ($charge->booking_id ?? '');
-                $booking = $bookingId !== '' ? $bookings->get($bookingId) : null;
-                $amount = abs((float) ($charge->amount ?? 0));
-                $createdAt = SafeModelAttributes::carbonFromModel($charge, 'created_at');
-                $meta = is_array($charge->metadata ?? null) ? $charge->metadata : [];
-                $method = trim((string) ($meta['payment_method'] ?? ''));
-                if ($method === '' && $booking) {
-                    $method = $this->paymentMethodLabel($booking);
-                }
-                $methodLower = strtolower($method);
-                $channel = $methodLower === 'cash'
-                    ? 'cash'
-                    : ($method === ''
-                        ? ($booking ? $this->paymentChannel($booking) : 'unknown')
-                        : 'online');
-
-                $label = trim((string) ($charge->label ?? ''));
-                $description = $label !== '' ? $label : 'Payment received';
-                $reference = trim((string) ($booking?->booking_reference ?? ''));
-                if ($reference === '') {
-                    $reference = $bookingId !== '' ? $bookingId : (string) ($charge->id ?? '');
-                }
-
-                $paidAtValue = $isoTimestamps
-                    ? $createdAt?->toIso8601String()
-                    : $createdAt?->format('M d, Y g:i A');
-
-                $roomId = (string) ($booking?->room_id ?? $charge->room_id ?? '');
-
-                return [
-                    'category' => 'Booking',
-                    'reference' => $reference,
-                    'guest_name' => (string) ($booking?->guest_name ?? ''),
-                    'room_number' => $roomNumbers[$roomId] ?? '-',
-                    'description' => $description,
-                    'payment_method' => $method,
-                    'payment_channel' => $channel,
-                    'amount' => round($amount, 2),
-                    'paid_at' => $paidAtValue,
-                    'paid_at_sort' => $createdAt?->toIso8601String() ?? '',
-                    'charge_id' => (string) ($charge->id ?? ''),
-                    'booking_id' => $bookingId,
-                ];
-            })
-                ->sortByDesc(fn ($row) => $row['paid_at_sort'] ?? '')
-                ->values()
-                ->all();
+            return array_values($merged);
         });
+    }
+
+    /**
+     * @param  Collection<int, BillingCharge>  $charges
+     * @return list<array<string, mixed>>
+     */
+    private function mapPaymentChargeRows(Collection $charges, bool $isoTimestamps): array
+    {
+        $bookingIds = $charges
+            ->map(fn ($c) => (string) ($c->booking_id ?? ''))
+            ->filter(fn ($id) => $id !== '')
+            ->unique()
+            ->values()
+            ->all();
+
+        $bookings = $bookingIds === []
+            ? collect()
+            : Booking::withoutGlobalScopes()
+                ->where('hotel_id', $this->hotelId)
+                ->whereIn('id', $bookingIds)
+                ->get()
+                ->keyBy(fn ($b) => (string) $b->id);
+
+        $roomIds = $charges
+            ->map(fn ($c) => (string) ($c->room_id ?? ''))
+            ->merge($bookings->map(fn ($b) => (string) ($b->room_id ?? '')))
+            ->filter(fn ($id) => $id !== '')
+            ->unique()
+            ->values()
+            ->all();
+        $roomNumbers = $this->roomNumbersByIds($roomIds);
+
+        return $charges->map(function ($charge) use ($bookings, $isoTimestamps, $roomNumbers) {
+            $bookingId = (string) ($charge->booking_id ?? '');
+            $booking = $bookingId !== '' ? $bookings->get($bookingId) : null;
+            $amount = abs((float) ($charge->amount ?? 0));
+            $createdAt = SafeModelAttributes::carbonFromModel($charge, 'created_at');
+            $meta = is_array($charge->metadata ?? null) ? $charge->metadata : [];
+            $method = trim((string) ($meta['payment_method'] ?? ''));
+            if ($method === '' && $booking) {
+                $method = $this->paymentMethodLabel($booking);
+            }
+            $methodLower = strtolower($method);
+            $channel = $methodLower === 'cash'
+                ? 'cash'
+                : ($method === ''
+                    ? ($booking ? $this->paymentChannel($booking) : 'online')
+                    : 'online');
+
+            $label = trim((string) ($charge->label ?? ''));
+            $description = $label !== '' ? $label : 'Payment received';
+            $reference = trim((string) ($booking?->booking_reference ?? ''));
+            if ($reference === '') {
+                $reference = $bookingId !== '' ? $bookingId : (string) ($charge->id ?? '');
+            }
+
+            $paidAtValue = $isoTimestamps
+                ? $createdAt?->toIso8601String()
+                : $createdAt?->format('M d, Y g:i A');
+
+            $roomId = (string) ($booking?->room_id ?? $charge->room_id ?? '');
+
+            return [
+                'category' => 'Booking',
+                'reference' => $reference,
+                'guest_name' => (string) ($booking?->guest_name ?? ''),
+                'room_number' => $roomNumbers[$roomId] ?? '-',
+                'description' => $description,
+                'payment_method' => $method !== '' ? $method : 'Online',
+                'payment_channel' => $channel,
+                'amount' => round($amount, 2),
+                'paid_at' => $paidAtValue,
+                'paid_at_sort' => $createdAt?->toIso8601String() ?? '',
+                'charge_id' => (string) ($charge->id ?? ''),
+                'booking_id' => $bookingId,
+            ];
+        })->values()->all();
+    }
+
+    /**
+     * PayMongo / gateway collections not yet posted as billing charges (pre-activation).
+     *
+     * @param  list<array<string, mixed>>  $chargeRows
+     * @return list<array<string, mixed>>
+     */
+    private function gatewayPaymentRows(Carbon $from, Carbon $to, bool $isoTimestamps, array $chargeRows): array
+    {
+        $bookingIdsFromCharges = [];
+        foreach ($chargeRows as $row) {
+            $id = (string) ($row['booking_id'] ?? '');
+            if ($id !== '') {
+                $bookingIdsFromCharges[$id] = true;
+            }
+        }
+
+        try {
+            $payments = Payment::withoutGlobalScopes()
+                ->where('hotel_id', $this->hotelId)
+                ->where('status', Payment::STATUS_PAID)
+                ->where('paid_at', '>=', $from)
+                ->where('paid_at', '<=', $to)
+                ->get();
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $rows = [];
+        foreach ($payments as $payment) {
+            $bookingId = (string) ($payment->booking_id ?? '');
+            if ($bookingId !== '' && isset($bookingIdsFromCharges[$bookingId])) {
+                continue;
+            }
+            $paidAt = $payment->paid_at;
+            $rows[] = [
+                'category' => 'Booking',
+                'reference' => (string) ($payment->reference_number ?? $payment->id),
+                'guest_name' => '',
+                'room_number' => '-',
+                'description' => 'Online payment (QR Ph)',
+                'payment_method' => 'Online',
+                'payment_channel' => 'online',
+                'amount' => round((float) ($payment->amount ?? 0), 2),
+                'paid_at' => $isoTimestamps
+                    ? $paidAt?->toIso8601String()
+                    : $paidAt?->format('M d, Y g:i A'),
+                'paid_at_sort' => $paidAt?->toIso8601String() ?? '',
+                'charge_id' => 'pay-'.(string) $payment->id,
+                'booking_id' => $bookingId,
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param  Collection<int, BillingCharge>  $paymentCharges
+     */
+    private function gatewayPaymentsTotal(Carbon $from, Carbon $to, Collection $paymentCharges): float
+    {
+        $bookingIds = $paymentCharges
+            ->map(fn ($c) => (string) ($c->booking_id ?? ''))
+            ->filter(fn ($id) => $id !== '')
+            ->unique()
+            ->values()
+            ->all();
+
+        try {
+            $q = Payment::withoutGlobalScopes()
+                ->where('hotel_id', $this->hotelId)
+                ->where('status', Payment::STATUS_PAID)
+                ->where('paid_at', '>=', $from)
+                ->where('paid_at', '<=', $to);
+            if ($bookingIds !== []) {
+                $q->where(function ($query) use ($bookingIds) {
+                    $query->whereNull('booking_id')
+                        ->orWhere('booking_id', '')
+                        ->orWhereNotIn('booking_id', $bookingIds);
+                });
+            }
+
+            return round((float) $q->get(['amount'])->sum(fn ($p) => (float) ($p->amount ?? 0)), 2);
+        } catch (\Throwable) {
+            return 0.0;
+        }
     }
 
     /**
@@ -742,7 +862,8 @@ class HotelFinancialReportService
      */
     private function amenityTransactionRows(Carbon $from, Carbon $to, bool $isoTimestamps): array
     {
-        return BillingCharge::query()
+        return BillingCharge::withoutGlobalScopes()
+            ->where('hotel_id', $this->hotelId)
             ->where('type', 'amenity')
             ->whereBetween('created_at', [$from, $to])
             ->orderByDesc('created_at')
@@ -785,12 +906,14 @@ class HotelFinancialReportService
     public function paidBookingsInRange(Carbon $from, Carbon $to): Collection
     {
         return $this->withTenant(function () use ($from, $to) {
-            $withPaidAt = Booking::query()
+            $withPaidAt = Booking::withoutGlobalScopes()
+                ->where('hotel_id', $this->hotelId)
                 ->where('payment_status', 'paid')
                 ->whereBetween('paid_at', [$from, $to])
                 ->get();
 
-            $legacyPaid = Booking::query()
+            $legacyPaid = Booking::withoutGlobalScopes()
+                ->where('hotel_id', $this->hotelId)
                 ->where('payment_status', 'paid')
                 ->where(function ($query) {
                     $query->whereNull('paid_at')->orWhere('paid_at', '');
@@ -823,7 +946,8 @@ class HotelFinancialReportService
             if ($bookingIds->isEmpty()) {
                 return [];
             }
-            $charges = BillingCharge::query()
+            $charges = BillingCharge::withoutGlobalScopes()
+                ->where('hotel_id', $this->hotelId)
                 ->whereIn('booking_id', $bookingIds->all())
                 ->get(['booking_id', 'amount', 'type']);
             $byBooking = [];

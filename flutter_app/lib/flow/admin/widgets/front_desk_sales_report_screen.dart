@@ -935,6 +935,15 @@ class _FrontDeskAccountSalesScreenState
                                 width: tileWidth,
                                 child: _periodTile(
                                   context,
+                                  title: 'Yesterday',
+                                  period: periodOf('yesterday'),
+                                  accent: Colors.orange,
+                                ),
+                              ),
+                              SizedBox(
+                                width: tileWidth,
+                                child: _periodTile(
+                                  context,
                                   title: 'Daily',
                                   period: periodOf('daily'),
                                   accent: scheme.primary,

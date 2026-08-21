@@ -10,6 +10,7 @@ use App\Enums\RoomStatus;
 use App\Models\BillingCharge;
 use App\Models\Booking;
 use App\Models\ExternalReservation;
+use App\Models\Payment;
 use App\Models\Room;
 use App\Support\CustomerStayPricing;
 use App\Support\PriceRounding;
@@ -100,9 +101,19 @@ class ReservationActivationService
             ? PaymentMethod::GCASH->value
             : PaymentMethod::CASH->value;
         $paymentRef = (string) ($meta['payment_reference'] ?? '');
-        $isOnlinePaid = strcasecmp((string) ($meta['payment_method'] ?? ''), 'Online') === 0
-            && $paymentRef !== '';
         $amountPaidOnline = round((float) ($meta['amount_paid'] ?? 0), 2);
+        $gatewayPaid = strtoupper((string) ($meta['gateway_status'] ?? '')) === 'PAID';
+        $metaPaymentStatus = strtolower((string) ($meta['payment_status'] ?? ''));
+        $isOnlinePaid = (
+            strcasecmp((string) ($meta['payment_method'] ?? ''), 'Online') === 0
+            && ($paymentRef !== '' || $amountPaidOnline > 0.009 || $gatewayPaid
+                || in_array($metaPaymentStatus, [
+                    'paid',
+                    'deposit_paid',
+                    'paid_pending_approval',
+                    'deposit_pending_approval',
+                ], true))
+        );
 
         $bookingAttrs = [
             'hotel_id' => $hotelId,
@@ -181,6 +192,8 @@ class ReservationActivationService
                 .' '.(float) $meta['discount_percent'].'% off applied';
         }
 
+        $paymentRefLabel = $paymentRef !== '' ? $paymentRef : 'PayMongo';
+
         BillingCharge::withoutGlobalScopes()->create([
             'hotel_id' => $hotelId,
             'booking_id' => (string) $booking->id,
@@ -202,19 +215,24 @@ class ReservationActivationService
                 'room_id' => (string) $room->id,
                 'type' => \App\Support\BillingChargeTypes::PARTIAL_PAYMENT,
                 'label' => $isFullyPrepaid
-                    ? 'Online payment ('.$paymentRef.')'
-                    : 'Online deposit ('.$paymentRef.')',
+                    ? 'Online payment ('.$paymentRefLabel.')'
+                    : 'Online deposit ('.$paymentRefLabel.')',
                 'amount' => -1 * abs($amountPaidOnline),
                 'quantity' => 1,
                 'is_manual' => false,
                 'metadata' => [
                     'payment_method' => 'Online',
-                    'payment_reference' => $paymentRef,
+                    'payment_reference' => $paymentRef !== '' ? $paymentRef : $paymentRefLabel,
                     'from_reservation' => (string) $res->external_reference,
                     'source' => $isFullyPrepaid ? 'online_full_payment' : 'online_deposit',
                     'deposit_percent' => (float) ($meta['deposit_percent'] ?? 0),
                 ],
             ]);
+
+            Payment::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
+                ->where('external_reservation_id', (string) $res->id)
+                ->update(['booking_id' => (string) $booking->id]);
 
             app(PaymentTransactionLogService::class)->recordForBooking(
                 $booking,

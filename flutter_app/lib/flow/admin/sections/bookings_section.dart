@@ -380,7 +380,7 @@ class _BookingsSectionState extends State<BookingsSection>
                   : '—',
             ),
             _detailRow('Type', '${b['booking_type'] ?? 'local'}'),
-            _detailRow('Status', '${_bookingStatusLabel(b)} / ${b['payment_status'] ?? ''}'),
+            _detailRow('Status', '${_bookingStatusLabel(b)} / ${_paymentStatusLabel(b['payment_status'])}'),
             _detailRow('Total', '₱${(b['total_amount'] as num?) ?? 0}'),
             _detailRow('Booked on', '${b['date_booked'] ?? b['created_at'] ?? '—'}'),
             const SizedBox(height: 12),
@@ -435,7 +435,8 @@ class _BookingsSectionState extends State<BookingsSection>
             _detailRow('Status', _reservationStatusLabel(status)),
             _detailRow(
               'Payment',
-              (r['payment_method'] ?? 'Online').toString(),
+              (r['payment_status_label'] ?? r['payment_status'] ?? r['payment_method'] ?? 'Online')
+                  .toString(),
             ),
             _detailRow(
               'Payment reference',
@@ -724,6 +725,17 @@ class _BookingsSectionState extends State<BookingsSection>
   String _reservationStatusLabel(String status) =>
       AdminDashboardModels.reservationStatusLabel(status);
 
+  String _paymentStatusLabel(dynamic raw) {
+    final s = (raw ?? '').toString().toLowerCase().trim();
+    return switch (s) {
+      'paid' || 'paid_pending_approval' => 'Paid',
+      'deposit_paid' || 'deposit_pending_approval' => 'Deposit paid',
+      'partial' => 'Partial',
+      'unpaid' || 'pending_payment' || '' => 'Unpaid',
+      _ => s[0].toUpperCase() + s.substring(1).replaceAll('_', ' '),
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -802,7 +814,7 @@ class _BookingsSectionState extends State<BookingsSection>
                 ),
                 _detailRow('Rooms', '${b['rooms_booked'] ?? 1}'),
                 _detailRow('Room', roomLabel.isEmpty ? '—' : roomLabel),
-                _detailRow('Status', '${_bookingStatusLabel(b)} / ${b['payment_status'] ?? ''}'),
+                _detailRow('Status', '${_bookingStatusLabel(b)} / ${_paymentStatusLabel(b['payment_status'])}'),
                 _detailRow('Date booked', '${b['date_booked'] ?? b['created_at'] ?? '—'}'),
                 _detailRow(
                   'Total',

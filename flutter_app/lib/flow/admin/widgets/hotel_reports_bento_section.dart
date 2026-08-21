@@ -44,6 +44,7 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
   double _expenses = 0;
   double _cashSales = 0;
   double _dailyRevenue = 0;
+  double _yesterdayRevenue = 0;
   double _weeklyRevenue = 0;
   double _monthlyRevenue = 0;
   double _annualRevenue = 0;
@@ -61,6 +62,9 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
   static (DateTime start, DateTime end) _rangeFor(_BentoPeriod period) {
     final anchor = DateUtils.dateOnly(DateTime.now());
     switch (period) {
+      case _BentoPeriod.yesterday:
+        final start = anchor.subtract(const Duration(days: 1));
+        return (start, _endOfDay(start));
       case _BentoPeriod.weekly:
         final start = anchor.subtract(Duration(days: anchor.weekday - 1));
         return (start, _endOfDay(start.add(const Duration(days: 6))));
@@ -90,13 +94,14 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
     }
     try {
       final today = DateUtils.dateOnly(DateTime.now());
-      final end = _endOfDay(today);
       // Primary: lightweight shift summary so tiles paint quickly.
       final shiftRes = await portalDio().get<Map<String, dynamic>>(
         '/reports/shift-summary',
         queryParameters: {
-          'time_in': today.toIso8601String(),
-          'time_out': end.toIso8601String(),
+          'time_in':
+              '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}',
+          'time_out':
+              '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}',
           // Laravel `boolean` rejects query string "true"; use 1/0.
           'summary_only': 1,
         },
@@ -178,6 +183,7 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
 
       setState(() {
         _dailyRevenue = periodGross('daily');
+        _yesterdayRevenue = periodGross('yesterday');
         _weeklyRevenue = periodGross('weekly');
         _monthlyRevenue = periodGross('monthly');
         _annualRevenue = periodGross('annual');
@@ -399,6 +405,13 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
                 },
               ),
             _BentoTile(
+              title: 'Yesterday’s sales',
+              subtitle: formatPeso(_yesterdayRevenue),
+              icon: Icons.history_outlined,
+              accent: Colors.orange,
+              onTap: () => _openPeriod(_BentoPeriod.yesterday, 'Yesterday'),
+            ),
+            _BentoTile(
               title: 'Daily revenue',
               subtitle: formatPeso(_dailyRevenue),
               icon: Icons.today_outlined,
@@ -433,7 +446,7 @@ class _HotelReportsBentoSectionState extends State<HotelReportsBentoSection> {
   }
 }
 
-enum _BentoPeriod { daily, weekly, monthly, annual }
+enum _BentoPeriod { yesterday, daily, weekly, monthly, annual }
 
 enum _BentoSpan { single, wide }
 

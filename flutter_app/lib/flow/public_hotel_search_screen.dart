@@ -432,9 +432,9 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
     }).toList();
   }
 
-  Map<String, dynamic> _searchQueryParams({bool includeDestination = true}) {
+  Map<String, dynamic> _searchQueryParams() {
     return {
-      if (includeDestination && _destinationCtrl.text.trim().isNotEmpty)
+      if (_destinationCtrl.text.trim().isNotEmpty)
         'q': _destinationCtrl.text.trim(),
       'check_in': _isoDate(_checkIn),
       'check_out': _isoDate(_checkOut),
@@ -444,36 +444,30 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
     };
   }
 
-  Future<({List<Map<String, dynamic>> hotels, bool usedLegacy, bool broadened})>
+  List<Map<String, dynamic>> _onlyAvailableHotels(
+    List<Map<String, dynamic>> hotels,
+  ) {
+    return hotels.where((h) {
+      final available = (h['available_rooms'] as num?)?.toInt() ?? 0;
+      if (available <= 0) return false;
+      return h['can_accommodate'] != false;
+    }).toList();
+  }
+
+  Future<({List<Map<String, dynamic>> hotels, bool usedLegacy})>
       _fetchSearchResults() async {
     try {
       final res = await publicDio().get<Map<String, dynamic>>(
         '/hotels/search',
         queryParameters: _searchQueryParams(),
       );
-      var raw = res.data?['hotels'] as List<dynamic>? ?? const [];
-      var hotels =
+      final raw = res.data?['hotels'] as List<dynamic>? ?? const [];
+      final hotels =
           raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      var broadened = false;
-      if (hotels.isEmpty && _destinationCtrl.text.trim().isNotEmpty) {
-        final retry = await publicDio().get<Map<String, dynamic>>(
-          '/hotels/search',
-          queryParameters: _searchQueryParams(includeDestination: false),
-        );
-        raw = retry.data?['hotels'] as List<dynamic>? ?? const [];
-        hotels = raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-        broadened = hotels.isNotEmpty;
-      }
-      if (hotels.isEmpty) {
-        if (_allHotels.isEmpty) {
-          await _ensureHotelsLoaded();
-        }
-        final fallback = _fallbackDirectorySearch(usedLegacyApi: true);
-        if (fallback.isNotEmpty) {
-          return (hotels: fallback, usedLegacy: true, broadened: false);
-        }
-      }
-      return (hotels: hotels, usedLegacy: false, broadened: broadened);
+      return (
+        hotels: _onlyAvailableHotels(hotels),
+        usedLegacy: false,
+      );
     } on DioException catch (e) {
       if (e.response?.statusCode != 404 && e.response?.statusCode != 501) {
         rethrow;
@@ -482,9 +476,10 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
         await _ensureHotelsLoaded();
       }
       return (
-        hotels: _fallbackDirectorySearch(usedLegacyApi: true),
+        hotels: _onlyAvailableHotels(
+          _fallbackDirectorySearch(usedLegacyApi: true),
+        ),
         usedLegacy: true,
-        broadened: false,
       );
     }
   }
@@ -503,7 +498,6 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
       );
       final hotels = result.hotels;
       final usedLegacy = result.usedLegacy;
-      final broadened = result.broadened;
       final search = CustomerSearchContext(
         checkIn: _checkIn,
         checkOut: _checkOut,
@@ -515,8 +509,6 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
       if (!mounted) return;
       if (usedLegacy) {
         showAppMessage(context, context.tr('legacy_search_hint'));
-      } else if (broadened) {
-        showAppMessage(context, context.tr('broadened_search_hint'));
       }
       await Navigator.of(context).push<void>(
         LuxuryPageRoute<void>(

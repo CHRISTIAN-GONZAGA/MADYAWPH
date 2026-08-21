@@ -173,23 +173,114 @@ class ReservationPayMongoService
      */
     public function markPaymentPaid(Payment $payment, array $extra = []): void
     {
+        if ($payment->status !== Payment::STATUS_PAID) {
+            $payment->status = Payment::STATUS_PAID;
+            $payment->paid_at = $payment->paid_at ?: Carbon::now();
+            if (isset($extra['paymongo_payment_id'])) {
+                $payment->paymongo_payment_id = (string) $extra['paymongo_payment_id'];
+            }
+            if (isset($extra['paymongo_payment_intent_id'])) {
+                $payment->paymongo_payment_intent_id = (string) $extra['paymongo_payment_intent_id'];
+            }
+            if (isset($extra['payment_method'])) {
+                $payment->payment_method = (string) $extra['payment_method'];
+            }
+            $payment->save();
+        } elseif ($extra !== []) {
+            $dirty = false;
+            if (isset($extra['paymongo_payment_id']) && ! filled($payment->paymongo_payment_id)) {
+                $payment->paymongo_payment_id = (string) $extra['paymongo_payment_id'];
+                $dirty = true;
+            }
+            if (isset($extra['paymongo_payment_intent_id']) && ! filled($payment->paymongo_payment_intent_id)) {
+                $payment->paymongo_payment_intent_id = (string) $extra['paymongo_payment_intent_id'];
+                $dirty = true;
+            }
+            if (isset($extra['payment_method']) && ! filled($payment->payment_method)) {
+                $payment->payment_method = (string) $extra['payment_method'];
+                $dirty = true;
+            }
+            if ($dirty) {
+                $payment->save();
+            }
+        }
+
+        $this->applyPaidMetadataToReservation($payment);
+    }
+
+    /**
+     * Pull PayMongo checkout status when webhooks are delayed so guest/admin status is current.
+     */
+    public function syncCheckoutPaymentIfPaid(ExternalReservation $reservation): void
+    {
+        $meta = is_array($reservation->metadata) ? $reservation->metadata : [];
+        if (! OnlineBookingDepositSupport::guestStillOwesOnlineDeposit($meta)
+            && strtoupper((string) ($meta['gateway_status'] ?? '')) === Payment::STATUS_PAID) {
+            return;
+        }
+
+        $payment = $this->latestPaymentForReservation($reservation);
+        if ($payment === null) {
+            return;
+        }
+
         if ($payment->status === Payment::STATUS_PAID) {
-            return; // idempotent
+            $this->applyPaidMetadataToReservation($payment);
+
+            return;
         }
 
-        $payment->status = Payment::STATUS_PAID;
-        $payment->paid_at = Carbon::now();
-        if (isset($extra['paymongo_payment_id'])) {
-            $payment->paymongo_payment_id = (string) $extra['paymongo_payment_id'];
+        if (! filled($payment->paymongo_checkout_id)) {
+            return;
         }
-        if (isset($extra['paymongo_payment_intent_id'])) {
-            $payment->paymongo_payment_intent_id = (string) $extra['paymongo_payment_intent_id'];
-        }
-        if (isset($extra['payment_method'])) {
-            $payment->payment_method = (string) $extra['payment_method'];
-        }
-        $payment->save();
 
+        $account = $this->connect->accountForHotel((string) $reservation->hotel_id);
+        if (! $account || ! $account->isConnected()) {
+            return;
+        }
+        $creds = $this->payMongo->credentialsForAccount($account);
+        if (! ($creds['ok'] ?? false)) {
+            return;
+        }
+
+        $retrieved = $this->payMongo->retrieveCheckout(
+            (string) $creds['secret'],
+            (string) $payment->paymongo_checkout_id,
+            $creds['account_id'] ?? null,
+        );
+        if (! ($retrieved['ok'] ?? false)) {
+            return;
+        }
+
+        $json = is_array($retrieved['json'] ?? null) ? $retrieved['json'] : [];
+        $attrs = data_get($json, 'data.attributes', []);
+        if (! is_array($attrs)) {
+            return;
+        }
+        $payments = $attrs['payments'] ?? [];
+        $firstPay = is_array($payments) && $payments !== [] ? $payments[0] : null;
+        $payStatus = strtolower((string) ($attrs['payment_status'] ?? $attrs['status'] ?? ''));
+        $paid = $payStatus === 'paid'
+            || (is_array($firstPay) && strtolower((string) data_get($firstPay, 'attributes.status', '')) === 'paid');
+        if (! $paid) {
+            return;
+        }
+
+        $payId = is_array($firstPay) ? (string) ($firstPay['id'] ?? '') : '';
+        $method = is_array($firstPay)
+            ? (string) data_get($firstPay, 'attributes.source.type', data_get($firstPay, 'attributes.payment_method_used', ''))
+            : '';
+        $intentId = (string) data_get($attrs, 'payment_intent.id', '');
+
+        $this->markPaymentPaid($payment, array_filter([
+            'paymongo_payment_id' => $payId !== '' ? $payId : null,
+            'paymongo_payment_intent_id' => $intentId !== '' ? $intentId : null,
+            'payment_method' => $method !== '' ? $method : null,
+        ]));
+    }
+
+    private function applyPaidMetadataToReservation(Payment $payment): void
+    {
         $reservation = ExternalReservation::withoutGlobalScopes()->find($payment->external_reservation_id);
         if (! $reservation) {
             return;
@@ -200,7 +291,7 @@ class ReservationPayMongoService
         $depositRequired = isset($meta['deposit_required'])
             ? (float) $meta['deposit_required']
             : OnlineBookingDepositSupport::amountForHotel((string) $reservation->hotel_id, $total);
-        $paidAmount = (float) $payment->amount;
+        $paidAmount = max((float) $payment->amount, (float) ($meta['amount_paid'] ?? 0));
 
         $meta['gateway'] = 'paymongo';
         $meta['gateway_status'] = Payment::STATUS_PAID;
@@ -208,14 +299,16 @@ class ReservationPayMongoService
         $meta['paymongo_checkout_id'] = $payment->paymongo_checkout_id;
         $meta['payment_reference'] = $payment->paymongo_payment_id
             ?: $payment->paymongo_checkout_id
-            ?: $payment->reference_number;
+            ?: $payment->reference_number
+            ?: ($meta['payment_reference'] ?? null);
         $meta['amount_paid'] = $paidAmount;
-        $meta['payment_status'] = ($paidAmount + 0.009 >= $total)
+        $fullyPaid = $paidAmount + 0.009 >= $total || ($depositRequired + 0.009 >= $total && $paidAmount + 0.009 >= $depositRequired);
+        $meta['payment_status'] = $fullyPaid
             ? 'paid_pending_approval'
             : 'deposit_pending_approval';
         $meta['deposit_required'] = $depositRequired;
         $meta['balance_due'] = max(0, round($total - $paidAmount, 2));
-        $meta['paid_at'] = Carbon::now()->toIso8601String();
+        $meta['paid_at'] = ($payment->paid_at ?? Carbon::now())->toIso8601String();
         $reservation->metadata = $meta;
         $reservation->save();
     }

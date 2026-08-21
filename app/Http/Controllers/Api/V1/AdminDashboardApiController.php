@@ -200,6 +200,9 @@ class AdminDashboardApiController extends Controller
                     $balanceDue = 0.0;
                     $amountPaid = 0.0;
                     $billPaymentStatus = (string) ($booking?->payment_status ?? 'unpaid');
+                    $billPaymentLabel = '';
+                    $additionalChargesUnpaid = false;
+                    $stayPaid = false;
                     if ($booking) {
                         $charges = BillingCharge::withoutGlobalScopes()
                             ->where('hotel_id', $hotelId)
@@ -214,6 +217,9 @@ class AdminDashboardApiController extends Controller
                         $balanceDue = (float) ($bill['balance_due'] ?? 0);
                         $amountPaid = (float) ($bill['amount_paid'] ?? 0);
                         $billPaymentStatus = (string) ($bill['payment_status'] ?? $billPaymentStatus);
+                        $billPaymentLabel = (string) ($bill['payment_status_label'] ?? '');
+                        $additionalChargesUnpaid = (bool) ($bill['additional_charges_unpaid'] ?? false);
+                        $stayPaid = (bool) ($bill['stay_paid'] ?? false);
                     }
                     $roomCategory = $categoriesById->get((string) ($room->getAttributes()['category_id'] ?? ''));
                     $hourly = \App\Support\RoomBillingSupport::hourlyConfig($room, $roomCategory);
@@ -263,6 +269,11 @@ class AdminDashboardApiController extends Controller
                             'billing_mode' => (string) ($booking->billing_mode ?? ''),
                             'status' => (string) ($booking->status?->value ?? $booking->status ?? ''),
                             'payment_status' => $billPaymentStatus,
+                            'payment_status_label' => $billPaymentLabel !== ''
+                                ? $billPaymentLabel
+                                : ($billPaymentStatus === 'paid' ? 'Paid' : ucfirst($billPaymentStatus)),
+                            'additional_charges_unpaid' => $additionalChargesUnpaid,
+                            'stay_paid' => $stayPaid,
                             'payment_method' => SafeModelAttributes::paymentMethodLabel($booking),
                             // Keep total_amount aligned with live outstanding balance.
                             'total_amount' => $balanceDue,
@@ -276,6 +287,8 @@ class AdminDashboardApiController extends Controller
                         ] : null,
                         'balance_due' => round($balanceDue, 2),
                         'amount_paid' => round($amountPaid, 2),
+                        'additional_charges_unpaid' => $additionalChargesUnpaid,
+                        'payment_status_label' => $billPaymentLabel,
                         'charges' => $charges->map(fn ($charge) => [
                             'id' => (string) $charge->id,
                             'label' => $charge->label,
@@ -364,9 +377,10 @@ class AdminDashboardApiController extends Controller
                         'payment_method' => (string) ($meta['payment_method'] ?? ''),
                         'payment_reference' => (string) ($meta['payment_reference'] ?? ''),
                         'estimated_total' => (float) ($meta['estimated_total'] ?? 0),
-                        'amount_paid' => (float) ($meta['amount_paid'] ?? $meta['estimated_total'] ?? 0),
+                        'amount_paid' => (float) ($meta['amount_paid'] ?? 0),
                         'total_amount' => (float) ($meta['estimated_total'] ?? 0),
                         'payment_status' => (string) ($meta['payment_status'] ?? ''),
+                        'payment_status_label' => \App\Support\OnlineBookingDepositSupport::guestPaymentLabel($meta),
                     ]);
                 }),
             'reminders' => CheckoutReminder::query()->latest()->limit(30)->get(),

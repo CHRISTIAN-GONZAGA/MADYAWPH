@@ -33,6 +33,10 @@ class AdminReportsScreen extends StatelessWidget {
     late final DateTime start;
     late final DateTime end;
     switch (periodKey) {
+      case 'yesterday':
+        start = anchor.subtract(const Duration(days: 1));
+        end = _endOfDay(start);
+        break;
       case 'weekly':
         start = anchor.subtract(Duration(days: anchor.weekday - 1));
         end = _endOfDay(start.add(const Duration(days: 6)));
@@ -105,6 +109,17 @@ class AdminReportsScreen extends StatelessWidget {
             ),
           ),
         ),
+      _HubTile(
+        title: 'Yesterday’s sales',
+        subtitle: 'Hotel-wide previous day',
+        icon: Icons.history_outlined,
+        color: Colors.orange,
+        onTap: () => _openFinancePeriod(
+          context,
+          buttonLabel: 'Yesterday',
+          periodKey: 'yesterday',
+        ),
+      ),
       _HubTile(
         title: 'Daily revenue',
         subtitle: 'Hotel-wide today',

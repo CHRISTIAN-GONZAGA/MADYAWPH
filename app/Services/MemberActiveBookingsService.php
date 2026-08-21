@@ -113,17 +113,24 @@ final class MemberActiveBookingsService
         foreach ($reservations as $res) {
             $meta = is_array($res->metadata) ? $res->metadata : [];
             $method = (string) ($meta['payment_method'] ?? 'Cash');
+            if (strcasecmp($method, 'Online') === 0) {
+                try {
+                    app(\App\Services\ReservationPayMongoService::class)
+                        ->syncCheckoutPaymentIfPaid($res);
+                    $res->refresh();
+                    $meta = is_array($res->metadata) ? $res->metadata : [];
+                    $method = (string) ($meta['payment_method'] ?? $method);
+                } catch (\Throwable) {
+                    // Keep listing even if PayMongo retrieve fails.
+                }
+            }
             $estimated = (float) ($meta['estimated_total'] ?? 0);
             $amountPaid = (float) ($meta['amount_paid'] ?? 0);
             $depositRequired = isset($meta['deposit_required'])
                 ? (float) $meta['deposit_required']
                 : null;
             $paymentStatus = strtolower((string) ($meta['payment_status'] ?? 'pending'));
-            $needsPayment = strtolower($method) === 'online'
-                && ! in_array($paymentStatus, ['paid', 'deposit_paid'], true)
-                && ($depositRequired !== null
-                    ? $amountPaid + 0.009 < $depositRequired
-                    : $amountPaid + 0.009 < $estimated);
+            $needsPayment = \App\Support\OnlineBookingDepositSupport::guestStillOwesOnlineDeposit($meta);
 
             $items[] = [
                 'kind' => 'reservation',
@@ -143,6 +150,7 @@ final class MemberActiveBookingsService
                 'total_amount' => $estimated,
                 'deposit_required' => $depositRequired,
                 'payment_status' => $paymentStatus !== '' ? $paymentStatus : 'pending',
+                'payment_status_label' => \App\Support\OnlineBookingDepositSupport::guestPaymentLabel($meta),
                 'needs_online_payment' => $needsPayment,
             ];
         }

@@ -70,6 +70,16 @@ class _GuestPortfolioSectionState extends State<GuestPortfolioSection>
               r['current_check_out'] ?? b?['check_out_date'],
             ),
             'payment_status': (b?['payment_status'] ?? 'unpaid').toString(),
+            'payment_status_label':
+                (b?['payment_status_label'] ?? r['payment_status_label'] ?? '')
+                    .toString(),
+            'additional_charges_unpaid':
+                b?['additional_charges_unpaid'] == true ||
+                    r['additional_charges_unpaid'] == true,
+            'amount_paid': (r['amount_paid'] as num?)?.toDouble() ??
+                (b?['amount_paid'] as num?)?.toDouble() ??
+                0,
+            'balance_due': (r['balance_due'] as num?)?.toDouble() ?? 0,
             'booking_reference': (b?['booking_reference'] ?? '').toString(),
             'adults': (b?['adults'] as num?)?.toInt() ?? 1,
             'children': (b?['children'] as num?)?.toInt() ?? 0,
@@ -157,6 +167,10 @@ class _GuestPortfolioSectionState extends State<GuestPortfolioSection>
                             ),
                             'payment_status':
                                 (h['payment_status'] ?? '').toString(),
+                            'payment_status_label':
+                                (h['payment_status_label'] ?? '').toString(),
+                            'additional_charges_unpaid':
+                                h['additional_charges_unpaid'] == true,
                             'booking_reference':
                                 (h['booking_reference'] ?? '').toString(),
                             'category': '',
@@ -190,8 +204,10 @@ class _GuestCard extends StatelessWidget {
   final Map<String, dynamic> data;
   final bool isHistory;
 
-  String _paymentLabel(Object? raw) {
-    switch (raw.toString().toLowerCase().trim()) {
+  String _paymentLabel(Map<String, dynamic> data) {
+    final explicit = (data['payment_status_label'] ?? '').toString().trim();
+    if (explicit.isNotEmpty) return explicit;
+    switch ((data['payment_status'] ?? '').toString().toLowerCase().trim()) {
       case 'paid':
         return 'Paid';
       case 'partial':
@@ -201,7 +217,7 @@ class _GuestCard extends StatelessWidget {
       case '':
         return '';
       default:
-        return raw.toString();
+        return data['payment_status'].toString();
     }
   }
 
@@ -209,7 +225,8 @@ class _GuestCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final guest = (data['guest_name'] ?? 'Guest').toString();
     final roomNo = (data['room_number'] ?? '').toString();
-    final payment = _paymentLabel(data['payment_status']);
+    final payment = _paymentLabel(data);
+    final extraUnpaid = data['additional_charges_unpaid'] == true;
     final summary = [
       if (roomNo.isNotEmpty) 'Room $roomNo',
       if (isHistory && (data['check_out'] ?? '').toString().isNotEmpty)
@@ -223,10 +240,26 @@ class _GuestCard extends StatelessWidget {
       child: ExpansionTile(
         leading: Icon(isHistory ? Icons.history_edu_outlined : Icons.person),
         title: Text(guest, style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Text(
-          summary.isEmpty ? 'Tap for details' : summary,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              summary.isEmpty ? 'Tap for details' : summary,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (extraUnpaid) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Additional charges not paid',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ],
         ),
         children: [
           Padding(
@@ -264,7 +297,11 @@ class _GuestCard extends StatelessWidget {
                   _row('Nationality', data['guest_nationality'].toString()),
                 if ((data['free_breakfast'] ?? '').toString().isNotEmpty)
                   _row('Complimentary items', data['free_breakfast'].toString()),
-                if (payment.isNotEmpty) _row('Payment', payment),
+                if (payment.isNotEmpty)
+                  _row(
+                    'Payment',
+                    extraUnpaid ? '$payment · Additional charges not paid' : payment,
+                  ),
                 if ((data['booking_reference'] ?? '').toString().isNotEmpty)
                   _row('Reference', data['booking_reference'].toString()),
                 if ((data['guest_id_url'] ?? '').toString().isNotEmpty) ...[

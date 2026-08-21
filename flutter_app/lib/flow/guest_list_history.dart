@@ -93,9 +93,13 @@ class _GuestListHistoryScreenState extends State<GuestListHistoryScreen> {
           final phone = (m['guest_phone'] ?? '').toString();
           final email = (m['guest_email'] ?? '').toString();
           final total = (m['total_amount'] as num?)?.toDouble();
+          final payment = (m['payment_status_label'] ?? m['payment_status'] ?? '')
+              .toString();
+          final extraUnpaid = m['additional_charges_unpaid'] == true;
           final summary = [
             if (roomNo.isNotEmpty) 'Room $roomNo',
             if (checkedOutAt.isNotEmpty) checkedOutAt,
+            if (payment.isNotEmpty) payment,
           ].join(' · ');
 
           return Card(
@@ -108,8 +112,11 @@ class _GuestListHistoryScreenState extends State<GuestListHistoryScreen> {
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               subtitle: Text(
-                summary.isEmpty ? (ref.isEmpty ? 'Completed stay' : ref) : summary,
-                maxLines: 1,
+                [
+                  summary.isEmpty ? (ref.isEmpty ? 'Completed stay' : ref) : summary,
+                  if (extraUnpaid) 'Additional charges not paid',
+                ].join(' · '),
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
               children: [
@@ -124,6 +131,13 @@ class _GuestListHistoryScreenState extends State<GuestListHistoryScreen> {
                       if (checkedOutAt.isNotEmpty) _detail('Checked out', checkedOutAt),
                       if (phone.isNotEmpty) _detail('Phone', phone),
                       if (email.isNotEmpty) _detail('Email', email),
+                      if (payment.isNotEmpty)
+                        _detail(
+                          'Payment',
+                          extraUnpaid
+                              ? '$payment · Additional charges not paid'
+                              : payment,
+                        ),
                       if (total != null)
                         _detail('Total', '₱${total.toStringAsFixed(0)}'),
                     ],

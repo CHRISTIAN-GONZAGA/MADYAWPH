@@ -55,8 +55,9 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar>
   int _fromIndex = 0;
 
   static const _itemWidth = 86.0;
-  static const _barHeight = 72.0;
-  static const _bumpRadius = 30.0;
+  static const _barHeight = 76.0;
+  static const _bumpRadius = 32.0;
+  static const _navHeight = 128.0;
 
   @override
   void initState() {
@@ -143,10 +144,11 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar>
         ? scheme.primary
         : widget.activeColor;
 
-    return Container(
-      height: 100,
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-      child: Stack(
+    return SizedBox(
+      height: _navHeight,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+        child: Stack(
         clipBehavior: Clip.none,
         alignment: Alignment.bottomCenter,
         children: [
@@ -157,7 +159,7 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar>
                 left: 0,
                 right: 0,
                 bottom: 0,
-                height: _barHeight + 14,
+                height: _barHeight + 40,
                 child: CustomPaint(
                   painter: _WaveNavPainter(
                     activeCenterX: _activeCenterX(viewportWidth),
@@ -176,11 +178,12 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar>
           Positioned(
             left: 0,
             right: 0,
-            bottom: 6,
-            height: _barHeight,
+            bottom: 4,
+            height: _barHeight + 32,
             child: SingleChildScrollView(
               controller: _scroll,
               scrollDirection: Axis.horizontal,
+              clipBehavior: Clip.none,
               physics: const BouncingScrollPhysics(),
               child: SizedBox(
                 width: barWidth,
@@ -190,9 +193,8 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar>
                     final enabled =
                         widget.canSelectTab?.call(i) ?? true;
                     final item = widget.items[i];
-                    // Selected tab: larger icon + elastic pop for a clearer tap feel.
                     final popScale = active
-                        ? 1.0 + 0.22 * Curves.elasticOut.transform(_iconPop.value)
+                        ? 1.0 + 0.10 * Curves.easeOutBack.transform(_iconPop.value)
                         : 1.0;
                     return SizedBox(
                       width: _itemWidth,
@@ -216,13 +218,16 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar>
                             child: Column(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
-                              Transform.scale(
-                                scale: popScale,
-                                child: AnimatedContainer(
+                              Transform.translate(
+                                offset: Offset(0, active ? -16 : 0),
+                                child: Transform.scale(
+                                  scale: popScale,
+                                  alignment: Alignment.bottomCenter,
+                                  child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 320),
                                   curve: Curves.easeOutCubic,
-                                  width: active ? 58 : 40,
-                                  height: active ? 58 : 40,
+                                  width: active ? 54 : 40,
+                                  height: active ? 54 : 40,
                                   decoration: BoxDecoration(
                                     gradient: active
                                         ? LinearGradient(
@@ -285,6 +290,7 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar>
                                     ],
                                   ),
                                 ),
+                                ),
                               ),
                               const SizedBox(height: 2),
                               AnimatedOpacity(
@@ -341,6 +347,7 @@ class _AdminCurvedNavBarState extends State<AdminCurvedNavBar>
             ),
           ),
         ],
+        ),
       ),
     );
   }

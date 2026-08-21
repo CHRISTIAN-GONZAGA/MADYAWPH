@@ -43,6 +43,9 @@ class _HotelPeriodReportScreenState extends State<HotelPeriodReportScreen> {
     _load();
   }
 
+  String _fmtDay(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -52,8 +55,8 @@ class _HotelPeriodReportScreenState extends State<HotelPeriodReportScreen> {
       final res = await portalDio().get<Map<String, dynamic>>(
         '/reports/shift-summary',
         queryParameters: {
-          'time_in': widget.timeIn.toIso8601String(),
-          'time_out': widget.timeOut.toIso8601String(),
+          'time_in': _fmtDay(widget.timeIn),
+          'time_out': _fmtDay(widget.timeOut),
         },
       );
       if (!mounted) return;
@@ -84,8 +87,8 @@ class _HotelPeriodReportScreenState extends State<HotelPeriodReportScreen> {
         context: context,
         path: '/reports/shift-summary/pdf',
         queryParameters: {
-          'time_in': widget.timeIn.toIso8601String(),
-          'time_out': widget.timeOut.toIso8601String(),
+          'time_in': _fmtDay(widget.timeIn),
+          'time_out': _fmtDay(widget.timeOut),
           'title': widget.title,
         },
         filename: 'hotel_report_${DateTime.now().millisecondsSinceEpoch}.pdf',

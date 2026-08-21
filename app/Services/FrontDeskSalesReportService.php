@@ -12,6 +12,8 @@ use Illuminate\Support\Collection;
 
 class FrontDeskSalesReportService
 {
+    public const ONLINE_ACCOUNT_ID = '__online__';
+
     public function __construct(
         private readonly FrontDeskActivityReportService $frontDeskActivity,
         private readonly FrontDeskShiftSessionService $shiftSessions,
@@ -121,6 +123,36 @@ class FrontDeskSalesReportService
                     'cash_on_hand' => round(max(0, $cash - $expensesRounded), 2),
                 ];
             })
+            ->values();
+
+        if ($onlyUserIds === null) {
+            $unassigned = $this->chargesInRange($hotelId, $from, $to, [self::ONLINE_ACCOUNT_ID]);
+            if ($unassigned->isNotEmpty()) {
+                $agg = $this->aggregateCharges($unassigned);
+                $accounts->push([
+                    'user_id' => self::ONLINE_ACCOUNT_ID,
+                    'username' => 'Online / system',
+                    'amenity_sales' => 0.0,
+                    'manual_sales' => 0.0,
+                    'room_sales' => 0.0,
+                    'booking_sales' => 0.0,
+                    'payments_collected' => $agg['payments_collected'],
+                    'total_sales' => $agg['total_sales'],
+                    'display_total' => $agg['display_total'],
+                    'order_count' => $agg['order_count'],
+                    'by_payment_method' => $agg['by_payment_method'],
+                    'cash' => 0.0,
+                    'cash_sales' => 0.0,
+                    'ewallet' => round((float) ($agg['payments_collected'] ?? 0), 2),
+                    'ewallet_sales' => round((float) ($agg['payments_collected'] ?? 0), 2),
+                    'bank_transfer' => 0.0,
+                    'expenses' => 0.0,
+                    'cash_on_hand' => 0.0,
+                ]);
+            }
+        }
+
+        $accounts = $accounts
             ->sortByDesc('display_total')
             ->values()
             ->all();
@@ -185,6 +217,11 @@ class FrontDeskSalesReportService
         $anchor = $anchor->copy()->startOfDay();
 
         $ranges = [
+            'yesterday' => [
+                'label' => 'Yesterday',
+                'from' => $anchor->copy()->subDay()->startOfDay(),
+                'to' => $anchor->copy()->subDay()->endOfDay(),
+            ],
             'daily' => [
                 'label' => 'Daily',
                 'from' => $anchor->copy()->startOfDay(),
@@ -748,9 +785,13 @@ class FrontDeskSalesReportService
             return collect();
         }
 
-        $userIdSet = array_fill_keys(array_map('strval', $userIds), true);
+        $wantUnassigned = in_array(self::ONLINE_ACCOUNT_ID, $userIds, true);
+        $staffIds = array_values(array_filter(
+            $userIds,
+            fn ($id) => (string) $id !== self::ONLINE_ACCOUNT_ID
+        ));
+        $userIdSet = array_fill_keys(array_map('strval', $staffIds), true);
 
-        // Filter created_by in PHP so ObjectId/string id forms still match.
         return BillingCharge::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
             ->whereIn('type', $this->trackedChargeTypes())
@@ -758,10 +799,13 @@ class FrontDeskSalesReportService
             ->where('created_at', '<=', $to->copy()->endOfDay())
             ->orderBy('created_at')
             ->get(['id', 'type', 'label', 'amount', 'quantity', 'room_id', 'booking_id', 'created_by', 'created_at', 'metadata'])
-            ->filter(function ($charge) use ($userIdSet) {
-                $uid = (string) ($charge->created_by ?? '');
+            ->filter(function ($charge) use ($userIdSet, $wantUnassigned) {
+                $uid = trim((string) ($charge->created_by ?? ''));
+                if ($uid === '') {
+                    return $wantUnassigned;
+                }
 
-                return $uid !== '' && isset($userIdSet[$uid]);
+                return isset($userIdSet[$uid]);
             })
             ->values();
     }
@@ -810,6 +854,18 @@ class FrontDeskSalesReportService
 
     private function requireFrontDeskUser(string $hotelId, string $userId): User
     {
+        if ($userId === self::ONLINE_ACCOUNT_ID) {
+            $user = new User;
+            $user->forceFill([
+                'name' => 'Online / system',
+                'hotel_id' => $hotelId,
+                'role' => 'frontdesk',
+            ]);
+            $user->id = self::ONLINE_ACCOUNT_ID;
+
+            return $user;
+        }
+
         $user = $this->frontDeskActivity->frontDeskUsers($hotelId)
             ->first(fn (User $u) => (string) $u->id === $userId);
 
