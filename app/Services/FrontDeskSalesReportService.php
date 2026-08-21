@@ -456,9 +456,8 @@ class FrontDeskSalesReportService
             if ($isSale) {
                 $totalSales += $amount;
                 $orderCount++;
-                $byMethod[$bucket]['count']++;
-                $byMethod[$bucket]['total'] += $amount;
-                $this->bumpMethodTypeBreakdown($byMethod[$bucket]['by_type'], $type, $amount);
+                // Payment-method buckets are collections only. Room/amenity
+                // accruals stay in total_sales so one stay is not counted twice.
             }
         }
 
@@ -761,7 +760,9 @@ class FrontDeskSalesReportService
             || str_contains($m, 'maya')
             || str_contains($m, 'ewallet')
             || str_contains($m, 'e-wallet')
-            || str_contains($m, 'wallet')) {
+            || str_contains($m, 'wallet')
+            || $m === 'online'
+            || str_contains($m, 'paymongo')) {
             return 'ewallet';
         }
         if (str_contains($m, 'bank') || str_contains($m, 'transfer')) {

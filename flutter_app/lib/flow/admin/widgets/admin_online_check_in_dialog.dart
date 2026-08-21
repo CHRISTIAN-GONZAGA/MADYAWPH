@@ -34,16 +34,21 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
   final isOrgBooking = bookingMap['is_org_booking'] == true ||
       (bookingMap['booking_source'] ?? '').toString() == 'admin-org' ||
       (bookingMap['org_name'] ?? '').toString().trim().isNotEmpty;
+  final isOnlineStay =
+      (bookingMap['booking_type'] ?? '').toString().toLowerCase() == 'online' ||
+          (bookingMap['booking_source'] ?? '').toString() == 'app-customer' ||
+          (bookingMap['source'] ?? '').toString().toLowerCase() == 'web';
   final scheduledOut =
       AdminDashboardModels.stayEndDate(room) ?? DateTime.now().add(const Duration(days: 1));
 
-  // Hourly: stay window is always clock-now + block_hours (server also enforces).
-  // Nightly: check-in at clock now; checkout stays on scheduled overnight date @ 11:00.
-  final window = HourlyBilling.clockBasedStayWindow(
-    room,
-    DateTime.now(),
-    checkOutDate: scheduledOut,
-  );
+  // Online stays keep the quoted window. Walk-in hourly still uses clock-now + block.
+  final window = isOnlineStay
+      ? (checkIn: DateTime.now(), checkOut: scheduledOut)
+      : HourlyBilling.clockBasedStayWindow(
+          room,
+          DateTime.now(),
+          checkOutDate: scheduledOut,
+        );
   final checkOutAt = window.checkOut;
 
   double balanceDue = parseJsonDouble(
@@ -54,6 +59,8 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
         room['total_amount'] ??
         0,
   );
+  double amountAlreadyPaid = 0;
+  List<BookingSummaryLine> billLines = const [];
   double minPercent = isOrgBooking ? 0 : 50;
   double minDue = 0;
   final paymentCtrl = TextEditingController();
@@ -86,29 +93,46 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
       balanceDue = parseJsonDouble(
         bill?['balance_due'] ?? bill?['total_due'] ?? balanceDue,
       );
+      amountAlreadyPaid = parseJsonDouble(bill?['amount_paid'] ?? 0);
+      final rawLines = bill?['lines'];
+      if (rawLines is List) {
+        billLines = [
+          for (final raw in rawLines)
+            if (raw is Map)
+              BookingSummaryLine(
+                label: (raw['label'] ?? '').toString(),
+                amount: parseJsonDouble(raw['amount']),
+              ),
+        ];
+      }
     }
     minDue = isOrgBooking
         ? 0
         : (balanceDue * (minPercent / 100)).clamp(0, double.infinity);
-    if (minDue > 0) {
+    if (minDue > 0.009) {
       paymentCtrl.text = minDue.toStringAsFixed(2);
     }
   } catch (_) {
     minDue = isOrgBooking
         ? 0
         : (balanceDue * (minPercent / 100)).clamp(0, double.infinity);
-    if (minDue > 0) {
+    if (minDue > 0.009) {
       paymentCtrl.text = minDue.toStringAsFixed(2);
     }
   } finally {
     loadingPolicy = false;
   }
 
-  final staySummary = isHourly
-      ? '${HourlyBilling.blockHours(room)}h stay · check-in now · '
-          'checkout ~${_formatClock(checkOutAt)}'
-      : 'Check-in now · overnight through ${formatAdminCheckInDate(checkOutAt)} '
-          '(checkout ${_formatClock(checkOutAt)})';
+  final stayPaid = balanceDue <= 0.009;
+  final staySummary = isOnlineStay
+      ? (stayPaid
+          ? 'Online payment already applied. Check in without collecting again.'
+          : 'Collect the remaining balance only — online payment is already on the bill.')
+      : (isHourly
+          ? '${HourlyBilling.blockHours(room)}h stay · check-in now · '
+              'checkout ~${_formatClock(checkOutAt)}'
+          : 'Check-in now · overnight through ${formatAdminCheckInDate(checkOutAt)} '
+              '(checkout ${_formatClock(checkOutAt)})');
 
   // Ask for SEND_SMS before check-in so the welcome SMS can go out silently.
   await DeviceGuestWelcomeSms.ensurePermission();
@@ -148,12 +172,17 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
                         ? 'Government / org charge account — check-in allowed without payment.\n'
                             'Outstanding balance: ₱${balanceDue.toStringAsFixed(2)} '
                             '(collect later in Gov/Org Booking).'
-                        : 'Balance due: ₱${balanceDue.toStringAsFixed(2)}\n'
-                            'Company policy: at least ${minPercent.toStringAsFixed(minPercent % 1 == 0 ? 0 : 1)}%'
-                            '${minDue > 0 ? ' (₱${minDue.toStringAsFixed(2)})' : ''}.',
+                        : stayPaid
+                            ? 'Already paid'
+                                '${amountAlreadyPaid > 0.009 ? ' (₱${amountAlreadyPaid.toStringAsFixed(2)} received)' : ''}.\n'
+                                'No check-in payment needed.'
+                            : 'Remaining balance: ₱${balanceDue.toStringAsFixed(2)}'
+                                '${amountAlreadyPaid > 0.009 ? '\nAlready paid online: ₱${amountAlreadyPaid.toStringAsFixed(2)}' : ''}\n'
+                                'Company policy: at least ${minPercent.toStringAsFixed(minPercent % 1 == 0 ? 0 : 1)}%'
+                                '${minDue > 0 ? ' (₱${minDue.toStringAsFixed(2)})' : ''} of the remaining balance.',
                 style: Theme.of(ctx).textTheme.bodySmall,
               ),
-              if (!isOrgBooking) ...[
+              if (!isOrgBooking && !stayPaid) ...[
               const SizedBox(height: 10),
               TextField(
                 controller: paymentCtrl,
@@ -235,13 +264,14 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
             onPressed: () {
               final paid = double.tryParse(paymentCtrl.text.trim()) ?? 0;
               if (!isOrgBooking &&
+                  !stayPaid &&
                   minPercent > 0 &&
                   balanceDue > 0 &&
                   paid + 0.009 < minDue) {
                 showAppMessage(
                   ctx,
                   'Enter at least ₱${minDue.toStringAsFixed(2)} '
-                  '(${minPercent.toStringAsFixed(minPercent % 1 == 0 ? 0 : 1)}% of the balance).',
+                  '(${minPercent.toStringAsFixed(minPercent % 1 == 0 ? 0 : 1)}% of the remaining balance).',
                   isError: true,
                 );
                 return;
@@ -256,7 +286,9 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
                     ? (tendered - balanceDue).clamp(0, double.infinity)
                     : 0.0;
                 return Text(
-                  change > 0 ? 'Make payment' : 'Check in guest',
+                  stayPaid
+                      ? 'Check in guest'
+                      : (change > 0 ? 'Make payment' : 'Check in guest'),
                 );
               },
             ),
@@ -266,16 +298,27 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
     ),
   );
 
-  final payAmount = isOrgBooking ? 0.0 : (double.tryParse(paymentCtrl.text.trim()) ?? 0);
+  final payAmount = isOrgBooking || stayPaid
+      ? 0.0
+      : (double.tryParse(paymentCtrl.text.trim()) ?? 0);
   paymentCtrl.dispose();
   if (ok != true || !context.mounted) return false;
 
-  // Recompute at submit so the window matches the actual check-in clock.
-  final liveWindow = HourlyBilling.clockBasedStayWindow(
-    room,
-    DateTime.now(),
-    checkOutDate: scheduledOut,
-  );
+  final liveWindow = isOnlineStay
+      ? (checkIn: DateTime.now(), checkOut: scheduledOut)
+      : HourlyBilling.clockBasedStayWindow(
+          room,
+          DateTime.now(),
+          checkOutDate: scheduledOut,
+        );
+
+  final summaryLines = billLines.isNotEmpty
+      ? billLines
+      : bookingSummaryLinesForRooms(
+          rooms: [room],
+          checkIn: liveWindow.checkIn,
+          checkOut: liveWindow.checkOut,
+        );
 
   final summaryOk = await showBookingConfirmationSummary(
     context: context,
@@ -284,19 +327,17 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
     roomLabel: 'Room ${room['room_number']}',
     checkIn: liveWindow.checkIn,
     checkOut: liveWindow.checkOut,
-    totalAmount: balanceDue,
-    lines: bookingSummaryLinesForRooms(
-      rooms: [room],
-      checkIn: liveWindow.checkIn,
-      checkOut: liveWindow.checkOut,
-    ),
-    paymentMethod: isOrgBooking ? 'B2B charge account' : paymentMethod,
-    amountTendered: isOrgBooking ? null : payAmount,
-    changeDue: !isOrgBooking && payAmount > balanceDue
+    totalAmount: stayPaid ? amountAlreadyPaid : balanceDue,
+    lines: summaryLines,
+    paymentMethod: isOrgBooking
+        ? 'B2B charge account'
+        : (stayPaid ? 'Already paid online' : paymentMethod),
+    amountTendered: isOrgBooking || stayPaid ? null : payAmount,
+    changeDue: !isOrgBooking && !stayPaid && payAmount > balanceDue
         ? (payAmount - balanceDue).clamp(0, double.infinity)
         : 0,
     checkInNow: true,
-    confirmLabel: 'Make payment',
+    confirmLabel: stayPaid ? 'Check in guest' : 'Make payment',
   );
   if (!summaryOk || !context.mounted) return false;
 
@@ -308,8 +349,8 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
         'status': 'checked_in',
         'check_in_at': liveWindow.checkIn.toIso8601String(),
         'check_out_at': liveWindow.checkOut.toIso8601String(),
-        if (payAmount > 0) 'check_in_payment_amount': payAmount,
-        if (payAmount > 0) 'payment_method': paymentMethod,
+        if (!stayPaid && payAmount > 0) 'check_in_payment_amount': payAmount,
+        if (!stayPaid && payAmount > 0) 'payment_method': paymentMethod,
       },
     );
     checkInResponse = res.data;

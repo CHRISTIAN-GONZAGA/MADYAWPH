@@ -167,7 +167,11 @@ class RoomCheckoutService
         $booking = $this->resolveActiveBookingForRoom($hotelId, $room);
 
         if ($booking && $checkInAt && $checkOutAt) {
-            $this->applyStayScheduleToBooking($booking, $room, $checkInAt, $checkOutAt, $actor);
+            if ($this->shouldPreserveBookedStayOnCheckIn($booking)) {
+                $this->recordArrivalWithoutRepricing($booking, $room, $checkInAt, $actor);
+            } else {
+                $this->applyStayScheduleToBooking($booking, $room, $checkInAt, $checkOutAt, $actor);
+            }
         } elseif ($checkInAt) {
             $inDate = $checkInAt->copy()->startOfDay();
             if ($booking) {
@@ -965,6 +969,81 @@ class RoomCheckoutService
         }
     }
 
+    /**
+     * Online / already-priced stays keep the quoted room charge at check-in.
+     * Walk-in hourly still shifts a 1-block window to clock-now.
+     */
+    public function shouldPreserveBookedStayOnCheckIn(Booking $booking): bool
+    {
+        $source = strtolower((string) ($booking->source?->value ?? $booking->source ?? ''));
+        $type = strtolower((string) ($booking->booking_type?->value ?? $booking->booking_type ?? ''));
+        $bookingSource = strtolower((string) ($booking->booking_source ?? ''));
+        if (in_array($source, ['web', 'online'], true)) {
+            return true;
+        }
+        if ($type === 'online') {
+            return true;
+        }
+        if (in_array($bookingSource, ['app-customer', 'web-customer'], true)) {
+            return true;
+        }
+
+        return BillingCharge::withoutGlobalScopes()
+            ->where('booking_id', (string) $booking->id)
+            ->where('type', 'room')
+            ->get()
+            ->contains(function (BillingCharge $charge) {
+                $from = (string) data_get($charge->metadata, 'from_reservation', '');
+
+                return $from !== '';
+            });
+    }
+
+    public function bookedCheckoutAt(Booking $booking): ?Carbon
+    {
+        $date = $booking->check_out_date;
+        if ($date === null || trim((string) $date) === '') {
+            return null;
+        }
+        $out = Carbon::parse($date);
+        $time = trim((string) ($booking->check_out_time ?? ''));
+        if ($time !== '') {
+            $parts = explode(':', $time);
+            $out->setTime((int) ($parts[0] ?? 11), (int) ($parts[1] ?? 0));
+        } else {
+            $out->setTime(11, 0);
+        }
+
+        return $out;
+    }
+
+    private function recordArrivalWithoutRepricing(
+        Booking $booking,
+        Room $room,
+        Carbon $arrivedAt,
+        User $actor,
+    ): void {
+        $booking->forceFill([
+            'check_in_time' => $arrivedAt->format('H:i'),
+        ])->save();
+
+        if (trim((string) ($room->getAttributes()['current_check_in'] ?? '')) === ''
+            && filled($booking->check_in_date)) {
+            $room->forceFill([
+                'current_check_in' => optional($booking->check_in_date)->toDateString(),
+            ]);
+        }
+        if (trim((string) ($room->getAttributes()['current_check_out'] ?? '')) === ''
+            && filled($booking->check_out_date)) {
+            $room->forceFill([
+                'current_check_out' => optional($booking->check_out_date)->toDateString(),
+            ]);
+        }
+
+        $this->stayTimingFeeService->applyEarlyCheckInFeeIfNeeded($booking, $room, $arrivedAt, $actor);
+        $booking->refresh();
+    }
+
     private function applyStayScheduleToBooking(
         Booking $booking,
         Room $room,
@@ -1006,10 +1085,18 @@ class RoomCheckoutService
             ->limit(1)
             ->get()
             ->each(function (BillingCharge $roomCharge) use ($charge): void {
+                $oldAmount = (float) ($roomCharge->amount ?? 0);
+                $newAmount = (float) ($charge['amount'] ?? 0);
+                // Never inflate a quoted stay at check-in (online ₱1950 must not become ₱5200).
+                $amount = $oldAmount > 0.009 && $newAmount > $oldAmount + 0.009
+                    ? $oldAmount
+                    : $newAmount;
                 $roomCharge->update([
-                    'label' => $charge['label'],
-                    'amount' => $charge['amount'],
-                    'metadata' => $charge['metadata'],
+                    'label' => $newAmount > $oldAmount + 0.009 ? $roomCharge->label : $charge['label'],
+                    'amount' => $amount,
+                    'metadata' => $newAmount > $oldAmount + 0.009
+                        ? $roomCharge->metadata
+                        : $charge['metadata'],
                 ]);
             });
 

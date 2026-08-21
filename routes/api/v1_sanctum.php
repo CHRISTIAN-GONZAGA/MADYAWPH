@@ -487,20 +487,30 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
                 ? Carbon::parse($validated['check_out_at'])
                 : null;
 
-            // Prefer the booked multi-day checkout (long stays) over a fresh 1-block window.
-            $scheduledOut = $checkOut
-                ?? ($activeBooking?->check_out_date
-                    ? Carbon::parse($activeBooking->check_out_date)
-                    : null);
+            $preserveBookedStay = $activeBooking
+                && $roomCheckoutService->shouldPreserveBookedStayOnCheckIn($activeBooking);
 
-            if ($checkIn === null || RoomBillingSupport::isHourly($room)) {
-                $window = CustomerStayPricing::resolveClockCheckInWindow(
-                    $room,
-                    null,
-                    $scheduledOut,
-                );
-                $checkIn = $window['check_in'];
-                $checkOut = $window['check_out'];
+            if ($preserveBookedStay) {
+                // Keep the quoted stay. Do not reprice from clock-now → checkout
+                // (that turns a ₱1950 block into a long hourly stay).
+                $checkIn = $checkIn ?? now();
+                $checkOut = $roomCheckoutService->bookedCheckoutAt($activeBooking) ?? $checkOut;
+            } else {
+                // Prefer the booked multi-day checkout (long stays) over a fresh 1-block window.
+                $scheduledOut = $checkOut
+                    ?? ($activeBooking?->check_out_date
+                        ? Carbon::parse($activeBooking->check_out_date)
+                        : null);
+
+                if ($checkIn === null || RoomBillingSupport::isHourly($room)) {
+                    $window = CustomerStayPricing::resolveClockCheckInWindow(
+                        $room,
+                        null,
+                        $scheduledOut,
+                    );
+                    $checkIn = $window['check_in'];
+                    $checkOut = $window['check_out'];
+                }
             }
 
             $paymentInfo = null;
@@ -508,8 +518,15 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
                 ? round((float) $validated['check_in_payment_amount'], 2)
                 : 0.0;
             if ($activeBooking && ! $isOrgBooking) {
+                app(\App\Services\ReservationActivationService::class)
+                    ->applyReservationPaymentToBooking($activeBooking);
+                $activeBooking->refresh();
+
                 $bill = $bookingPaymentService->billSummary($activeBooking);
                 $balanceDue = (float) ($bill['balance_due'] ?? 0);
+                if ($balanceDue <= 0.009) {
+                    $payAmount = 0.0;
+                }
                 $minPercent = \App\Support\MinCheckInPaymentSupport::percentForHotel($hotelId);
                 $minDue = round($balanceDue * ($minPercent / 100), 2);
 
@@ -527,8 +544,8 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
                 ], 422);
             }
 
-                // Collect required payment before marking the room checked in.
-                if ($payAmount > 0) {
+                // Collect remaining balance only — never a second copy of the online payment.
+                if ($payAmount > 0 && $balanceDue > 0.009) {
                     $paymentInfo = $bookingPaymentService->applyPartialPayment(
                         $activeBooking,
                         $request->user(),

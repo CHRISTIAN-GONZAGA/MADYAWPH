@@ -12,6 +12,7 @@ use App\Models\Booking;
 use App\Models\ExternalReservation;
 use App\Models\Payment;
 use App\Models\Room;
+use App\Support\BillingChargeTypes;
 use App\Support\CustomerStayPricing;
 use App\Support\PriceRounding;
 use App\Support\RoomBillingSupport;
@@ -192,8 +193,6 @@ class ReservationActivationService
                 .' '.(float) $meta['discount_percent'].'% off applied';
         }
 
-        $paymentRefLabel = $paymentRef !== '' ? $paymentRef : 'PayMongo';
-
         BillingCharge::withoutGlobalScopes()->create([
             'hotel_id' => $hotelId,
             'booking_id' => (string) $booking->id,
@@ -208,57 +207,12 @@ class ReservationActivationService
             ]),
         ]);
 
-        if ($isOnlinePaid && $amountPaidOnline > 0.009) {
-            BillingCharge::withoutGlobalScopes()->create([
-                'hotel_id' => $hotelId,
-                'booking_id' => (string) $booking->id,
-                'room_id' => (string) $room->id,
-                'type' => \App\Support\BillingChargeTypes::PARTIAL_PAYMENT,
-                'label' => $isFullyPrepaid
-                    ? 'Online payment ('.$paymentRefLabel.')'
-                    : 'Online deposit ('.$paymentRefLabel.')',
-                'amount' => -1 * abs($amountPaidOnline),
-                'quantity' => 1,
-                'is_manual' => false,
-                'metadata' => [
-                    'payment_method' => 'Online',
-                    'payment_reference' => $paymentRef !== '' ? $paymentRef : $paymentRefLabel,
-                    'from_reservation' => (string) $res->external_reference,
-                    'source' => $isFullyPrepaid ? 'online_full_payment' : 'online_deposit',
-                    'deposit_percent' => (float) ($meta['deposit_percent'] ?? 0),
-                ],
-            ]);
+        $res->update([
+            'status' => 'booked',
+            'booking_id' => (string) $booking->id,
+        ]);
 
-            Payment::withoutGlobalScopes()
-                ->where('hotel_id', $hotelId)
-                ->where('external_reservation_id', (string) $res->id)
-                ->update(['booking_id' => (string) $booking->id]);
-
-            app(PaymentTransactionLogService::class)->recordForBooking(
-                $booking,
-                null,
-                $isFullyPrepaid
-                    ? "Online payment applied on activation for booking {$booking->booking_reference}"
-                    : "Online deposit applied on activation for booking {$booking->booking_reference}",
-                [
-                    'payment_method' => 'Online',
-                    'payment_reference' => $paymentRef,
-                    'amount' => $amountPaidOnline,
-                    'amount_paid' => $amountPaidOnline,
-                    'payment_status' => $isFullyPrepaid ? 'paid' : 'partial',
-                    'source' => 'reservation_activation',
-                    'reservation_id' => (string) $res->id,
-                ],
-            );
-
-            // Keep booking.total_amount as remaining balance for FO collectibles.
-            if (! $isFullyPrepaid) {
-                $remaining = max(0, round($total - $amountPaidOnline, 2));
-                $booking->update(['total_amount' => $remaining]);
-            } else {
-                $booking->update(['total_amount' => 0]);
-            }
-        }
+        $this->applyReservationPaymentToBooking($booking, $res->fresh() ?? $res);
 
         $generatedPassword = $this->guestRoomAccessCodeService->generateUnique();
         $room->update([
@@ -267,11 +221,6 @@ class ReservationActivationService
             'current_check_in' => $window['check_in_date'],
             'current_check_out' => $window['check_out_date'],
             'current_access_code' => $generatedPassword,
-        ]);
-
-        $res->update([
-            'status' => 'booked',
-            'booking_id' => (string) $booking->id,
         ]);
 
         $this->smsService->send(
@@ -297,5 +246,161 @@ class ReservationActivationService
         // Do not award member points at activation for online bookings.
 
         return $booking;
+    }
+
+    /**
+     * Credit online / PayMongo money onto the stay bill (idempotent).
+     * Used at approval/activation and again at check-in if the webhook landed late.
+     */
+    public function applyReservationPaymentToBooking(Booking $booking, ?ExternalReservation $res = null): void
+    {
+        $hotelId = (string) $booking->hotel_id;
+        $res ??= ExternalReservation::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where('booking_id', (string) $booking->id)
+            ->first();
+        if (! $res) {
+            return;
+        }
+
+        try {
+            app(ReservationPayMongoService::class)->syncCheckoutPaymentIfPaid($res);
+            $res->refresh();
+        } catch (\Throwable) {
+        }
+
+        $meta = is_array($res->metadata) ? $res->metadata : [];
+        $amountPaidOnline = round((float) ($meta['amount_paid'] ?? 0), 2);
+        $gatewayPaidTotal = (float) Payment::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where(function ($query) use ($res, $booking) {
+                $query->where('external_reservation_id', (string) $res->id)
+                    ->orWhere('booking_id', (string) $booking->id);
+            })
+            ->where('status', Payment::STATUS_PAID)
+            ->get()
+            ->sum(fn (Payment $payment) => (float) ($payment->amount ?? 0));
+        $amountPaidOnline = max($amountPaidOnline, round($gatewayPaidTotal, 2));
+
+        $paymentRef = trim((string) ($meta['payment_reference'] ?? $booking->payment_reference ?? ''));
+        $gatewayPaid = strtoupper((string) ($meta['gateway_status'] ?? '')) === Payment::STATUS_PAID;
+        $metaPaymentStatus = strtolower((string) ($meta['payment_status'] ?? ''));
+        $isOnlinePaid = strcasecmp((string) ($meta['payment_method'] ?? ''), 'Online') === 0
+            || $amountPaidOnline > 0.009
+            || $gatewayPaid
+            || $gatewayPaidTotal > 0.009
+            || in_array($metaPaymentStatus, [
+                'paid',
+                'deposit_paid',
+                'paid_pending_approval',
+                'deposit_pending_approval',
+            ], true);
+
+        if (! $isOnlinePaid) {
+            return;
+        }
+
+        $stayTotal = (float) BillingCharge::withoutGlobalScopes()
+            ->where('booking_id', (string) $booking->id)
+            ->where('hotel_id', $hotelId)
+            ->where('type', 'room')
+            ->get()
+            ->sum(fn (BillingCharge $charge) => (float) ($charge->amount ?? 0));
+        if ($stayTotal <= 0.009) {
+            $stayTotal = (float) ($meta['estimated_total'] ?? $booking->total_amount ?? 0);
+        }
+
+        if ($amountPaidOnline <= 0.009) {
+            $amountPaidOnline = round((float) ($meta['estimated_total'] ?? $stayTotal), 2);
+        }
+        $amountPaidOnline = min(max(0, $amountPaidOnline), max(0, $stayTotal));
+        if ($amountPaidOnline <= 0.009) {
+            return;
+        }
+
+        $alreadyPosted = (float) BillingCharge::withoutGlobalScopes()
+            ->where('booking_id', (string) $booking->id)
+            ->where('hotel_id', $hotelId)
+            ->where('type', BillingChargeTypes::PARTIAL_PAYMENT)
+            ->get()
+            ->filter(fn (BillingCharge $charge) => $this->isOnlineDepositCharge($charge, $res))
+            ->sum(fn (BillingCharge $charge) => abs((float) ($charge->amount ?? 0)));
+        $missing = round($amountPaidOnline - $alreadyPosted, 2);
+
+        Payment::withoutGlobalScopes()
+            ->where('hotel_id', $hotelId)
+            ->where('external_reservation_id', (string) $res->id)
+            ->update(['booking_id' => (string) $booking->id]);
+
+        $credited = $alreadyPosted;
+        if ($missing > 0.009) {
+            $isFullyPrepaid = $amountPaidOnline + 0.009 >= $stayTotal;
+            $paymentRefLabel = $paymentRef !== '' ? $paymentRef : 'PayMongo';
+            BillingCharge::withoutGlobalScopes()->create([
+                'hotel_id' => $hotelId,
+                'booking_id' => (string) $booking->id,
+                'room_id' => (string) $booking->room_id,
+                'type' => BillingChargeTypes::PARTIAL_PAYMENT,
+                'label' => $isFullyPrepaid
+                    ? 'Online payment ('.$paymentRefLabel.')'
+                    : 'Online deposit ('.$paymentRefLabel.')',
+                'amount' => -1 * abs($missing),
+                'quantity' => 1,
+                'is_manual' => false,
+                'metadata' => [
+                    'payment_method' => 'Online',
+                    'payment_reference' => $paymentRef !== '' ? $paymentRef : $paymentRefLabel,
+                    'from_reservation' => (string) $res->external_reference,
+                    'source' => $isFullyPrepaid ? 'online_full_payment' : 'online_deposit',
+                    'deposit_percent' => (float) ($meta['deposit_percent'] ?? 0),
+                ],
+            ]);
+            $credited = round($alreadyPosted + $missing, 2);
+
+            app(PaymentTransactionLogService::class)->recordForBooking(
+                $booking,
+                null,
+                $isFullyPrepaid
+                    ? "Online payment applied for booking {$booking->booking_reference}"
+                    : "Online deposit applied for booking {$booking->booking_reference}",
+                [
+                    'payment_method' => 'Online',
+                    'payment_reference' => $paymentRef,
+                    'amount' => $missing,
+                    'amount_paid' => $credited,
+                    'payment_status' => $isFullyPrepaid ? 'paid' : 'partial',
+                    'source' => 'reservation_activation',
+                    'reservation_id' => (string) $res->id,
+                ],
+            );
+        }
+
+        $isFullyPrepaid = $credited + 0.009 >= $stayTotal;
+        $booking->update([
+            'payment_status' => $isFullyPrepaid ? 'paid' : ($credited > 0.009 ? 'partial' : 'unpaid'),
+            'paid_at' => $isFullyPrepaid ? ($booking->paid_at ?? now()) : null,
+            // Remaining balance for FO collectibles — not a second stay charge.
+            'total_amount' => max(0, round($stayTotal - min($credited, $stayTotal), 2)),
+        ]);
+    }
+
+    private function isOnlineDepositCharge(BillingCharge $charge, ExternalReservation $res): bool
+    {
+        $meta = is_array($charge->metadata) ? $charge->metadata : [];
+        $source = strtolower((string) ($meta['source'] ?? ''));
+        if (in_array($source, ['online_deposit', 'online_full_payment', 'reservation_activation'], true)) {
+            return true;
+        }
+        $from = (string) ($meta['from_reservation'] ?? '');
+        if ($from !== '' && $from === (string) $res->external_reference) {
+            return true;
+        }
+        $method = strtolower((string) ($meta['payment_method'] ?? ''));
+        if (in_array($method, ['online', 'paymongo'], true)) {
+            return true;
+        }
+        $label = strtolower((string) ($charge->label ?? ''));
+
+        return str_contains($label, 'online payment') || str_contains($label, 'online deposit');
     }
 }

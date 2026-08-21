@@ -86,7 +86,7 @@ class FrontDeskSalesRoomChargesTest extends TestCase
         $overview->assertJsonPath('periods.monthly.total_sales', 1500);
         $overview->assertJsonPath('periods.annual.total_sales', 1500);
         $overview->assertJsonPath('periods.daily.payments_collected', 500);
-        $overview->assertJsonPath('periods.daily.by_payment_method.cash.total', 2000);
+        $overview->assertJsonPath('periods.daily.by_payment_method.cash.total', 500);
 
         $summary = $this->getJson('/api/v1/reports/frontdesk-sales/summary?granularity=day');
         $summary->assertOk();

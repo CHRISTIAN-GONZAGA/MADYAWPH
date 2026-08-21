@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Booking;
 use App\Models\ExternalReservation;
 use App\Models\HotelPaymentAccount;
 use App\Models\Payment;
@@ -206,6 +207,15 @@ class ReservationPayMongoService
         }
 
         $this->applyPaidMetadataToReservation($payment);
+
+        $reservation = ExternalReservation::withoutGlobalScopes()->find($payment->external_reservation_id);
+        if ($reservation && filled($reservation->booking_id)) {
+            $booking = Booking::withoutGlobalScopes()->find($reservation->booking_id);
+            if ($booking) {
+                app(ReservationActivationService::class)
+                    ->applyReservationPaymentToBooking($booking, $reservation);
+            }
+        }
     }
 
     /**
