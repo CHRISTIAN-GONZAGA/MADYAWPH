@@ -20,12 +20,12 @@ class _ThemeFabState extends State<ThemeFab> {
   static const _fabSize = 56.0;
 
   static const _accentPresets = <Color>[
+    Color(0xFF1A365D),
+    Color(0xFF152238),
     Color(0xFF1565C0),
-    Color(0xFF007AFF),
     Color(0xFF5856D6),
-    Color(0xFF34C759),
-    Color(0xFFFF9500),
-    Color(0xFFFF2D55),
+    Color(0xFF2E7D32),
+    Color(0xFFC6A15B),
     Color(0xFF1C1C1E),
   ];
 

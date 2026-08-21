@@ -4,7 +4,7 @@ import 'auth_storage.dart';
 import 'dio_client.dart';
 
 final ValueNotifier<Color> themeSeedColorNotifier =
-    ValueNotifier<Color>(const Color(0xFF1565C0));
+    ValueNotifier<Color>(const Color(0xFF1A365D));
 
 final ValueNotifier<ThemeMode> themeModeNotifier =
     ValueNotifier<ThemeMode>(ThemeMode.light);

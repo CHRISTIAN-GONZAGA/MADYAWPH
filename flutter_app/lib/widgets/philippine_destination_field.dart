@@ -3,7 +3,8 @@ import 'package:flutter/services.dart';
 
 import '../data/philippine_city_index.dart';
 
-/// Destination input with scrollable Philippine city suggestions.
+/// Destination input with overlay city suggestions that scroll independently
+/// of the parent search page.
 class PhilippineDestinationField extends StatefulWidget {
   const PhilippineDestinationField({
     super.key,
@@ -23,16 +24,18 @@ class PhilippineDestinationField extends StatefulWidget {
 
 class _PhilippineDestinationFieldState extends State<PhilippineDestinationField> {
   final _focus = FocusNode();
+  final _fieldKey = GlobalKey();
+  final _layerLink = LayerLink();
+  OverlayEntry? _overlay;
   PhilippineCityIndex? _index;
   List<PhilippineCityEntry> _suggestions = const [];
   bool _loadingIndex = true;
-  bool _showList = false;
 
   @override
   void initState() {
     super.initState();
     _focus.addListener(_onFocus);
-    widget.controller.addListener(_refreshSuggestions);
+    widget.controller.addListener(_onQueryChanged);
     PhilippineCityIndex.load().then((idx) {
       if (!mounted) return;
       setState(() {
@@ -40,100 +43,130 @@ class _PhilippineDestinationFieldState extends State<PhilippineDestinationField>
         _loadingIndex = false;
       });
       _refreshSuggestions();
+      _rebuildOverlay();
     });
   }
 
   @override
   void dispose() {
+    _removeOverlay();
     _focus.removeListener(_onFocus);
-    widget.controller.removeListener(_refreshSuggestions);
+    widget.controller.removeListener(_onQueryChanged);
     _focus.dispose();
     super.dispose();
   }
 
   void _onFocus() {
-    setState(() => _showList = _focus.hasFocus);
-    if (_focus.hasFocus) _refreshSuggestions();
+    if (_focus.hasFocus) {
+      _refreshSuggestions();
+      _showOverlay();
+    }
+  }
+
+  void _onQueryChanged() {
+    _refreshSuggestions();
+    if (mounted) setState(() {});
+    _rebuildOverlay();
   }
 
   void _refreshSuggestions() {
     final idx = _index;
     if (idx == null) return;
-    setState(() {
-      _suggestions = idx.search(widget.controller.text);
-    });
+    _suggestions = idx.search(widget.controller.text);
+  }
+
+  bool get _shouldShowOverlay =>
+      _focus.hasFocus && (_loadingIndex || _suggestions.isNotEmpty);
+
+  void _showOverlay() {
+    if (_overlay != null) {
+      _rebuildOverlay();
+      return;
+    }
+    if (!_shouldShowOverlay) return;
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+    _overlay = OverlayEntry(builder: _buildOverlay);
+    overlay.insert(_overlay!);
+  }
+
+  void _rebuildOverlay() {
+    if (_overlay == null) {
+      if (_shouldShowOverlay) _showOverlay();
+      return;
+    }
+    if (!_shouldShowOverlay) {
+      _removeOverlay();
+      return;
+    }
+    _overlay!.markNeedsBuild();
+  }
+
+  void _removeOverlay() {
+    _overlay?.remove();
+    _overlay = null;
+  }
+
+  void _closeSuggestions() {
+    _removeOverlay();
+    _focus.unfocus();
   }
 
   void _pick(PhilippineCityEntry entry) {
     HapticFeedback.selectionClick();
     widget.controller.text = entry.searchQuery;
     widget.onSelected?.call(entry);
-    setState(() => _showList = false);
-    _focus.unfocus();
+    _closeSuggestions();
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildOverlay(BuildContext overlayContext) {
+    final box = _fieldKey.currentContext?.findRenderObject() as RenderBox?;
+    final width = box?.size.width ?? MediaQuery.sizeOf(overlayContext).width - 32;
     final scheme = Theme.of(context).colorScheme;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Stack(
       children: [
-        TextField(
-          controller: widget.controller,
-          focusNode: _focus,
-          textInputAction: TextInputAction.search,
-          decoration: InputDecoration(
-            hintText: widget.hintText,
-            prefixIcon: const Icon(Icons.location_on_outlined),
-            suffixIcon: widget.controller.text.isNotEmpty
-                ? IconButton(
-                    onPressed: () {
-                      widget.controller.clear();
-                      _refreshSuggestions();
-                    },
-                    icon: const Icon(Icons.close, size: 20),
-                  )
-                : Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    color: scheme.onSurfaceVariant,
-                  ),
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: _closeSuggestions,
           ),
-          onTap: () => setState(() => _showList = true),
         ),
-        AnimatedCrossFade(
-          duration: const Duration(milliseconds: 220),
-          crossFadeState: _showList && (_suggestions.isNotEmpty || _loadingIndex)
-              ? CrossFadeState.showSecond
-              : CrossFadeState.showFirst,
-          firstChild: const SizedBox.shrink(),
-          secondChild: Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Material(
-              elevation: 2,
-              shadowColor: Colors.black12,
-              borderRadius: BorderRadius.circular(14),
-              color: scheme.surfaceContainerHigh,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 220),
-                child: _loadingIndex
-                    ? const Padding(
-                        padding: EdgeInsets.all(20),
-                        child: Center(
-                          child: SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        ),
-                      )
-                    : ListView.separated(
-                        shrinkWrap: true,
+        CompositedTransformFollower(
+          link: _layerLink,
+          showWhenUnlinked: false,
+          offset: const Offset(0, 58),
+          child: Material(
+            elevation: 10,
+            shadowColor: Colors.black26,
+            borderRadius: BorderRadius.circular(16),
+            color: scheme.surface,
+            clipBehavior: Clip.antiAlias,
+            child: SizedBox(
+              width: width,
+              height: 260,
+              child: _loadingIndex
+                  ? const Center(
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : ScrollConfiguration(
+                      behavior: const ScrollBehavior().copyWith(
+                        overscroll: false,
+                        physics: const ClampingScrollPhysics(),
+                      ),
+                      child: ListView.separated(
+                        primary: false,
                         padding: const EdgeInsets.symmetric(vertical: 6),
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.manual,
                         itemCount: _suggestions.length,
                         separatorBuilder: (_, __) => Divider(
                           height: 1,
-                          color: scheme.outlineVariant.withValues(alpha: 0.5),
+                          color: scheme.outlineVariant.withValues(alpha: 0.45),
                         ),
                         itemBuilder: (context, i) {
                           final entry = _suggestions[i];
@@ -157,11 +190,46 @@ class _PhilippineDestinationFieldState extends State<PhilippineDestinationField>
                           );
                         },
                       ),
-              ),
+                    ),
             ),
           ),
         ),
       ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return CompositedTransformTarget(
+      link: _layerLink,
+      child: TextField(
+        key: _fieldKey,
+        controller: widget.controller,
+        focusNode: _focus,
+        textInputAction: TextInputAction.search,
+        onTap: _showOverlay,
+        onTapOutside: (_) {},
+        decoration: InputDecoration(
+          hintText: widget.hintText,
+          prefixIcon: const Icon(Icons.location_on_outlined),
+          suffixIcon: widget.controller.text.isNotEmpty
+              ? IconButton(
+                  onPressed: () {
+                    widget.controller.clear();
+                    _refreshSuggestions();
+                    _rebuildOverlay();
+                    setState(() {});
+                  },
+                  icon: const Icon(Icons.close, size: 20),
+                )
+              : Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: scheme.onSurfaceVariant,
+                ),
+        ),
+      ),
     );
   }
 }

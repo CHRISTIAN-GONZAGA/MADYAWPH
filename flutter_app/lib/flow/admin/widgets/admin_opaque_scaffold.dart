@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../widgets/app_scaffold.dart';
+
 /// Solid-background scaffold for admin routes pushed over the dashboard.
 class AdminOpaqueScaffold extends StatelessWidget {
   const AdminOpaqueScaffold({
@@ -21,18 +23,27 @@ class AdminOpaqueScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final bg = backgroundColor ?? scheme.surface;
-    return Material(
-      color: bg,
-      child: Scaffold(
-        backgroundColor: bg,
-        resizeToAvoidBottomInset: resizeToAvoidBottomInset,
-        appBar: appBar,
-        body: body,
-        floatingActionButton: floatingActionButton,
-        bottomNavigationBar: bottomNavigationBar,
-      ),
+    if (backgroundColor != null) {
+      return Material(
+        color: backgroundColor,
+        child: Scaffold(
+          backgroundColor: backgroundColor,
+          resizeToAvoidBottomInset: resizeToAvoidBottomInset,
+          appBar: appBar,
+          body: body,
+          floatingActionButton: floatingActionButton,
+          bottomNavigationBar: bottomNavigationBar,
+        ),
+      );
+    }
+
+    return AppScaffold(
+      appBar: appBar,
+      body: body,
+      resizeToAvoidBottomInset: resizeToAvoidBottomInset,
+      floatingActionButton: floatingActionButton,
+      bottomNavigationBar: bottomNavigationBar,
+      extendBody: bottomNavigationBar != null,
     );
   }
 }

@@ -5,6 +5,7 @@ import '../auth_storage.dart';
 import '../dio_client.dart';
 import '../locale_controller.dart';
 import '../ui/app_visual.dart';
+import '../ui/luxury_page_route.dart';
 import '../widgets/chat_attachment.dart';
 import 'customer_browse_layout.dart';
 import 'customer_search_context.dart';
@@ -41,18 +42,11 @@ class HotelSearchResultsScreen extends StatelessWidget {
     await AuthStorage.setHotelContext(id: id, name: name);
     if (!context.mounted) return;
     await Navigator.of(context).push<void>(
-      PageRouteBuilder<void>(
-        pageBuilder: (_, animation, __) => SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0.05, 0),
-            end: Offset.zero,
-          ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
-          child: CustomerDashboardScreen(
-            hotelId: id,
-            searchContext: search,
-          ),
+      LuxuryPageRoute<void>(
+        builder: (_) => CustomerDashboardScreen(
+          hotelId: id,
+          searchContext: search,
         ),
-        transitionDuration: const Duration(milliseconds: 300),
       ),
     );
   }
@@ -118,7 +112,7 @@ class HotelSearchResultsScreen extends StatelessWidget {
       child: _MemberPromoBanner(
         onTap: () {
           Navigator.of(context).push<void>(
-            MaterialPageRoute<void>(
+            LuxuryPageRoute<void>(
               builder: (_) => const MemberRegistrationScreen(),
             ),
           );
@@ -255,6 +249,7 @@ class _MemberPromoBannerState extends State<_MemberPromoBanner> {
   @override
   Widget build(BuildContext context) {
     final fee = _fee;
+    final scheme = Theme.of(context).colorScheme;
     final subtitle = fee == null
         ? 'Exclusive perks & priority booking'
         : fee <= 0
@@ -262,15 +257,21 @@ class _MemberPromoBannerState extends State<_MemberPromoBanner> {
             : '₱${fee.toStringAsFixed(0)}/month — exclusive perks & priority booking';
 
     return Material(
-      elevation: 2,
-      borderRadius: BorderRadius.circular(16),
+      elevation: 0,
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(18),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: widget.onTap,
         child: Ink(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [Color(0xFF1A2B4A), Color(0xFF2D4A7A)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                const Color(0xFF152238),
+                Color.lerp(const Color(0xFF152238), scheme.primary, 0.38)!,
+              ],
             ),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
@@ -279,11 +280,11 @@ class _MemberPromoBannerState extends State<_MemberPromoBanner> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFD4A843).withValues(alpha: 0.25),
+                  color: const Color(0xFFC6A15B).withValues(alpha: 0.22),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(Icons.workspace_premium_outlined,
-                    color: Color(0xFFD4A843), size: 28),
+                    color: Color(0xFFC6A15B), size: 28),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -291,11 +292,11 @@ class _MemberPromoBannerState extends State<_MemberPromoBanner> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'BE A MEMBER',
+                      'Become a member',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1.2,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.2,
                           ),
                     ),
                     const SizedBox(height: 4),
@@ -488,10 +489,21 @@ class _HotelResultCard extends StatelessWidget {
     final bannerHeight = compact ? 100.0 : 160.0;
     final contentPadding = compact ? 12.0 : 16.0;
 
-    return Material(
-      elevation: compact ? 2 : 3,
-      shadowColor: Colors.black26,
-      borderRadius: BorderRadius.circular(compact ? 16 : 20),
+    final visual = AppVisual.of(context);
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(compact ? 18 : 22),
+        boxShadow: visual.cardShadow,
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.45),
+        ),
+      ),
+      child: Material(
+      elevation: 0,
+      color: Theme.of(context).colorScheme.surface,
+      shadowColor: Colors.transparent,
+      borderRadius: BorderRadius.circular(compact ? 18 : 22),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
@@ -592,6 +604,7 @@ class _HotelResultCard extends StatelessWidget {
               ),
           ],
         ),
+      ),
       ),
     );
   }

@@ -2,6 +2,8 @@ import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
 
+import 'design_tokens.dart';
+
 /// Brand surfaces, radii, and shadows — never hardcode these in widgets.
 @immutable
 class AppVisual extends ThemeExtension<AppVisual> {
@@ -25,47 +27,53 @@ class AppVisual extends ThemeExtension<AppVisual> {
   final BorderRadius radiusLg;
   final BorderRadius radiusHero;
 
-  /// Press overlay for Ink/Material buttons (0–1 alpha applied to onSurface).
   final double dimHover;
   final double pressScale;
 
   final List<BoxShadow> cardShadow;
   final List<BoxShadow> elevatedShadow;
 
-  /// Icon circle background alpha toward primary.
   final double iconInsetMuted;
-
-  /// How much primaryContainer lerps into scaffold gradient bottom.
   final double gradientAccentMix;
 
-  static AppVisual light(ColorScheme scheme) {
-    final muted = scheme.brightness == Brightness.dark ? 0.14 : 0.12;
+  static AppVisual forScheme(ColorScheme scheme) {
+    final dark = scheme.brightness == Brightness.dark;
     return AppVisual(
-      radiusXs: BorderRadius.circular(6),
-      radiusSm: BorderRadius.circular(10),
-      radiusMd: BorderRadius.circular(14),
-      radiusLg: BorderRadius.circular(20),
-      radiusHero: BorderRadius.circular(28),
-      dimHover: 0.06,
-      pressScale: 0.985,
+      radiusXs: BorderRadius.circular(8),
+      radiusSm: BorderRadius.circular(12),
+      radiusMd: BorderRadius.circular(16),
+      radiusLg: BorderRadius.circular(22),
+      radiusHero: BorderRadius.circular(32),
+      dimHover: dark ? 0.08 : 0.05,
+      pressScale: 0.982,
       cardShadow: [
         BoxShadow(
-          color: scheme.shadow.withValues(alpha: scheme.brightness == Brightness.dark ? 0.35 : 0.08),
-          blurRadius: 18,
-          offset: const Offset(0, 8),
+          color: (dark ? Colors.black : UiTokens.luxuryNavy)
+              .withValues(alpha: dark ? 0.42 : 0.07),
+          blurRadius: 22,
+          offset: const Offset(0, 10),
+        ),
+        BoxShadow(
+          color: UiTokens.luxuryGold.withValues(alpha: dark ? 0.04 : 0.06),
+          blurRadius: 28,
+          offset: const Offset(0, 4),
         ),
       ],
       elevatedShadow: [
         BoxShadow(
-          color: scheme.shadow.withValues(alpha: scheme.brightness == Brightness.dark ? 0.45 : 0.12),
-          blurRadius: 28,
-          offset: const Offset(0, 14),
+          color: (dark ? Colors.black : UiTokens.luxuryNavy)
+              .withValues(alpha: dark ? 0.5 : 0.1),
+          blurRadius: 36,
+          offset: const Offset(0, 16),
         ),
       ],
-      iconInsetMuted: muted,
-      gradientAccentMix: 0.38,
+      iconInsetMuted: dark ? 0.16 : 0.1,
+      gradientAccentMix: dark ? 0.28 : 0.22,
     );
   }
+
+  /// Kept for existing call sites.
+  static AppVisual light(ColorScheme scheme) => forScheme(scheme);
 
   LinearGradient scaffoldGradient(ColorScheme scheme) {
     final glow = Color.lerp(
@@ -73,16 +81,22 @@ class AppVisual extends ThemeExtension<AppVisual> {
       scheme.primaryContainer,
       gradientAccentMix,
     )!;
-    final depth = scheme.surfaceContainerLowest;
+    final linen = Color.lerp(
+      scheme.surface,
+      scheme.brightness == Brightness.dark
+          ? scheme.surfaceContainerLowest
+          : const Color(0xFFF1EBE3),
+      0.55,
+    )!;
     return LinearGradient(
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
       colors: [
         scheme.surface,
-        Color.lerp(scheme.surface, glow, 0.55)!,
-        Color.lerp(depth, scheme.primaryContainer, 0.08)!,
+        Color.lerp(scheme.surface, glow, 0.42)!,
+        linen,
       ],
-      stops: const [0.0, 0.48, 1.0],
+      stops: const [0.0, 0.42, 1.0],
     );
   }
 
@@ -90,8 +104,8 @@ class AppVisual extends ThemeExtension<AppVisual> {
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
         colors: [
-          scheme.surfaceContainerHigh.withValues(alpha: 0.65),
-          scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+          scheme.surfaceContainerHigh.withValues(alpha: 0.72),
+          scheme.surfaceContainerHighest.withValues(alpha: 0.4),
         ],
       );
 

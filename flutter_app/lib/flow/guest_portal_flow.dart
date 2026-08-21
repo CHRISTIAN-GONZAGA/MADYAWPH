@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../auth_storage.dart';
+import '../ui/luxury_page_route.dart';
 import 'dashboards.dart';
 import 'hotel_screens.dart';
 
@@ -19,7 +20,7 @@ Future<void> openGuestPortalLogin(
   if (!context.mounted) return;
 
   final loggedIn = await Navigator.of(context).push<bool>(
-    MaterialPageRoute<bool>(
+    LuxuryPageRoute<bool>(
       builder: (_) => GuestRoomLoginScreen(
         hotelId: hotelId,
         hotelName: hotelName,
@@ -32,9 +33,8 @@ Future<void> openGuestPortalLogin(
 
   if (loggedIn != true || !context.mounted) return;
 
-  // Drop scan/login routes so back from the dashboard returns to the landing screen.
   await Navigator.of(context).pushAndRemoveUntil(
-    MaterialPageRoute<void>(
+    LuxuryPageRoute<void>(
       builder: (_) => const GuestDashboardScreen(),
     ),
     (route) => route.isFirst,

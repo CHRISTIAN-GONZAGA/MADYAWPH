@@ -12,6 +12,7 @@ import '../data/philippine_destination_presets.dart';
 import '../dio_client.dart';
 import '../locale_controller.dart';
 import '../ui/app_visual.dart';
+import '../ui/luxury_page_route.dart';
 import '../widgets/app_install_share_dialog.dart';
 import '../widgets/language_picker_button.dart';
 import '../widgets/philippine_destination_field.dart';
@@ -518,15 +519,11 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
         showAppMessage(context, context.tr('broadened_search_hint'));
       }
       await Navigator.of(context).push<void>(
-        PageRouteBuilder<void>(
-          pageBuilder: (_, animation, __) => FadeTransition(
-            opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
-            child: HotelSearchResultsScreen(
-              hotels: hotels,
-              search: search,
-            ),
+        LuxuryPageRoute<void>(
+          builder: (_) => HotelSearchResultsScreen(
+            hotels: hotels,
+            search: search,
           ),
-          transitionDuration: const Duration(milliseconds: 280),
         ),
       );
     } on TimeoutException {
@@ -557,7 +554,7 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
 
   void _openStaffPropertyLogin() {
     Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
+      LuxuryPageRoute<void>(
         builder: (_) => const PropertyStaffEntryScreen(),
       ),
     );
@@ -565,7 +562,7 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
 
   void _openGuestQrScanner() {
     Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
+      LuxuryPageRoute<void>(
         builder: (_) => const GuestPortalQrScanScreen(),
       ),
     );
@@ -577,7 +574,7 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
 
   void _openMemberLogin() {
     Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
+      LuxuryPageRoute<void>(
         builder: (_) => const MemberLoginScreen(),
       ),
     );
@@ -660,9 +657,8 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                         Text(
                           context.tr('where_to_go'),
                           style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: -0.5,
-                                height: 1.15,
+                                fontWeight: FontWeight.w600,
+                                height: 1.18,
                               ),
                         ),
                         const SizedBox(height: 8),
@@ -748,14 +744,13 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                           Text(
                             context.tr('where_to_go'),
                             textAlign: TextAlign.center,
-                            style: Theme.of(context)
-                                .textTheme
-                                .headlineMedium
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: -0.5,
-                                  height: 1.15,
-                                ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .headlineMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                height: 1.18,
+                              ),
                           ),
                           const SizedBox(height: 8),
                           Text(
@@ -1073,8 +1068,8 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                                 Text(
                                   context.tr('search_hotels_btn'),
                                   style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: 1.1,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.3,
                                     fontSize: 15,
                                   ),
                                 ),

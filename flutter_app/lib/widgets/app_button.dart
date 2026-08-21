@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../ui/app_visual.dart';
 
 class AppPrimaryButton extends StatelessWidget {
   const AppPrimaryButton({
@@ -16,6 +19,7 @@ class AppPrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final visual = AppVisual.of(context);
     final child = isLoading
         ? const SizedBox(
             width: 18,
@@ -34,9 +38,19 @@ class AppPrimaryButton extends StatelessWidget {
           );
 
     return SizedBox(
-      height: 44,
+      height: 50,
       child: FilledButton(
-        onPressed: isLoading ? null : onPressed,
+        onPressed: isLoading
+            ? null
+            : onPressed == null
+                ? null
+                : () {
+                    HapticFeedback.selectionClick();
+                    onPressed!();
+                  },
+        style: FilledButton.styleFrom(
+          shape: RoundedRectangleBorder(borderRadius: visual.radiusSm),
+        ),
         child: child,
       ),
     );
@@ -58,9 +72,14 @@ class AppSecondaryButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 44,
+      height: 50,
       child: OutlinedButton(
-        onPressed: onPressed,
+        onPressed: onPressed == null
+            ? null
+            : () {
+                HapticFeedback.selectionClick();
+                onPressed!();
+              },
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

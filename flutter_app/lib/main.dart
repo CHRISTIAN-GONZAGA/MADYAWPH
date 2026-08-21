@@ -9,6 +9,7 @@ import 'services/guest_room_deep_link.dart';
 import 'theme_controller.dart';
 import 'ui/app_theme.dart';
 import 'ui/design_tokens.dart';
+import 'ui/luxury_scroll_behavior.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -49,6 +50,7 @@ class MadyawPhApp extends StatelessWidget {
                     ],
                     themeAnimationDuration: UiTokens.dStd,
                     themeAnimationCurve: UiTokens.easeOperational,
+                    scrollBehavior: const LuxuryScrollBehavior(),
                     themeMode: mode,
                     theme: AppTheme.light(seed),
                     darkTheme: AppTheme.dark(seed),

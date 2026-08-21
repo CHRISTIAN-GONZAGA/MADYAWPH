@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../auth_storage.dart';
 import '../dio_client.dart';
 import '../locale_controller.dart';
+import '../ui/luxury_page_route.dart';
 import 'central_admin/central_admin_dashboard_screen.dart';
 import 'dashboards.dart';
 import 'flow_state.dart';
@@ -81,7 +82,7 @@ class _FlowRootState extends State<FlowRoot> {
       };
 
       await Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute<void>(builder: (_) => screen),
+        LuxuryPageRoute<void>(builder: (_) => screen),
         (_) => false,
       );
     } on DioException catch (_) {
@@ -96,7 +97,7 @@ class _FlowRootState extends State<FlowRoot> {
       await portalDio().get<Map<String, dynamic>>('/platform/settings');
       if (!mounted) return;
       await Navigator.of(context).push(
-        MaterialPageRoute<void>(
+        LuxuryPageRoute<void>(
           builder: (_) => const CentralAdminDashboardScreen(),
         ),
       );
@@ -113,7 +114,7 @@ class _FlowRootState extends State<FlowRoot> {
       await guestDio().get<Map<String, dynamic>>('/guest/dashboard');
       if (!mounted) return;
       await Navigator.of(context).push(
-        MaterialPageRoute<void>(
+        LuxuryPageRoute<void>(
           builder: (_) => const GuestDashboardScreen(),
         ),
       );
@@ -133,7 +134,7 @@ class _FlowRootState extends State<FlowRoot> {
       if (!mounted) return;
       final member = res.data?['member'];
       await Navigator.of(context).push(
-        MaterialPageRoute<void>(
+        LuxuryPageRoute<void>(
           builder: (_) => MemberDashboardScreen(
             initialMember: member is Map
                 ? Map<String, dynamic>.from(member)

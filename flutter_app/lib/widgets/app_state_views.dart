@@ -16,20 +16,21 @@ class AppLoadingView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(
-              width: 52,
-              height: 52,
+              width: 44,
+              height: 44,
               child: CircularProgressIndicator(
-                strokeWidth: 3,
+                strokeWidth: 2.4,
                 color: scheme.primary,
                 backgroundColor: scheme.surfaceContainerHighest,
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 18),
             Text(
-              'Loading…',
+              'One moment…',
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
                     color: scheme.onSurfaceVariant,
-                    letterSpacing: 0.4,
+                    letterSpacing: 0.6,
+                    fontWeight: FontWeight.w500,
                   ),
             ),
           ],

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../navigation_keys.dart';
 import '../ui/app_visual.dart';
+import '../ui/design_tokens.dart';
 
 /// Resolves a mounted context for dialogs (nested admin navigator safe).
 BuildContext? resolveNoticeContext(BuildContext? context) {
@@ -26,94 +28,118 @@ Future<void> showAppMessage(
   final ctx = resolveNoticeContext(context);
   if (ctx == null) return;
 
-  await showDialog<void>(
+  if (isError) {
+    HapticFeedback.mediumImpact();
+  } else {
+    HapticFeedback.lightImpact();
+  }
+
+  await showGeneralDialog<void>(
     context: ctx,
     useRootNavigator: true,
     barrierDismissible: actionLabel == null,
-    builder: (dialogContext) {
+    barrierLabel: 'Dismiss',
+    barrierColor: Theme.of(ctx).colorScheme.scrim.withValues(alpha: 0.45),
+    transitionDuration: UiTokens.dStd,
+    pageBuilder: (dialogContext, animation, secondary) {
       final scheme = Theme.of(dialogContext).colorScheme;
       final visual = Theme.of(dialogContext).extension<AppVisual>() ??
           AppVisual.light(scheme);
       final tone = isError ? scheme.error : scheme.primary;
-      final surface = isError ? scheme.errorContainer : scheme.primaryContainer;
-      final onSurface =
-          isError ? scheme.onErrorContainer : scheme.onPrimaryContainer;
+      final surface =
+          isError ? scheme.errorContainer : scheme.primaryContainer;
 
-      return Dialog(
-        backgroundColor: scheme.surface,
-        surfaceTintColor: scheme.surfaceTint,
-        shape: RoundedRectangleBorder(borderRadius: visual.radiusLg),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: surface.withValues(alpha: 0.55),
-                    shape: BoxShape.circle,
-                  ),
+      return FadeTransition(
+        opacity: CurvedAnimation(parent: animation, curve: UiTokens.easeEnter),
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.96, end: 1).animate(
+            CurvedAnimation(parent: animation, curve: UiTokens.easeEnter),
+          ),
+          child: Align(
+            alignment: Alignment.center,
+            child: Material(
+              color: Colors.transparent,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 380),
+                child: Dialog(
+                  insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+                  backgroundColor: scheme.surface,
+                  surfaceTintColor: Colors.transparent,
+                  shape: RoundedRectangleBorder(borderRadius: visual.radiusLg),
                   child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Icon(
-                      isError
-                          ? Icons.error_outline_rounded
-                          : Icons.check_circle_outline_rounded,
-                      color: tone,
-                      size: 36,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                if (title != null && title.isNotEmpty) ...[
-                  Text(
-                    title,
-                    textAlign: TextAlign.center,
-                    style:
-                        Theme.of(dialogContext).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w800,
+                    padding: const EdgeInsets.fromLTRB(26, 30, 26, 20),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: surface.withValues(alpha: 0.55),
+                            shape: BoxShape.circle,
+                            boxShadow: visual.cardShadow,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Icon(
+                              isError
+                                  ? Icons.error_outline_rounded
+                                  : Icons.check_circle_outline_rounded,
+                              color: tone,
+                              size: 34,
                             ),
-                  ),
-                  const SizedBox(height: 8),
-                ],
-                Text(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(dialogContext).textTheme.bodyMedium?.copyWith(
-                        color: scheme.onSurface,
-                        height: 1.4,
-                      ),
-                ),
-                const SizedBox(height: 22),
-                Row(
-                  children: [
-                    if (actionLabel != null && onAction != null) ...[
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () {
-                            Navigator.of(dialogContext).pop();
-                            onAction();
-                          },
-                          child: Text(actionLabel),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                    ],
-                    Expanded(
-                      child: FilledButton(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: tone,
-                          foregroundColor: onSurface,
+                        const SizedBox(height: 18),
+                        if (title != null && title.isNotEmpty) ...[
+                          Text(
+                            title,
+                            textAlign: TextAlign.center,
+                            style: Theme.of(dialogContext)
+                                .textTheme
+                                .headlineSmall
+                                ?.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                        Text(
+                          message,
+                          textAlign: TextAlign.center,
+                          style: Theme.of(dialogContext)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(
+                                color: scheme.onSurface,
+                                height: 1.45,
+                              ),
                         ),
-                        onPressed: () => Navigator.of(dialogContext).pop(),
-                        child: Text(confirmLabel),
-                      ),
+                        const SizedBox(height: 24),
+                        Row(
+                          children: [
+                            if (actionLabel != null && onAction != null) ...[
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: () {
+                                    Navigator.of(dialogContext).pop();
+                                    onAction();
+                                  },
+                                  child: Text(actionLabel),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                            ],
+                            Expanded(
+                              child: FilledButton(
+                                onPressed: () =>
+                                    Navigator.of(dialogContext).pop(),
+                                child: Text(confirmLabel),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ],
+              ),
             ),
           ),
         ),
