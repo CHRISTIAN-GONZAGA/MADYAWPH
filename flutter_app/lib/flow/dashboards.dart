@@ -34,6 +34,7 @@ import 'customer_landscape_grid.dart';
 import 'customer_search_context.dart';
 import 'customer_tools.dart';
 import '../widgets/chat_attachment.dart';
+import '../widgets/insufficient_hotel_credits.dart';
 import '../widgets/payment_redirect.dart';
 import '../utils/money_format.dart';
 import 'portal_sign_out.dart';
@@ -250,136 +251,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   }
 
   Future<void> _showRechargeDialog() async {
-    final amountCtrl = TextEditingController(text: '1000');
-    final refCtrl = TextEditingController();
-    String method = 'qrph';
-    String qrUrl = '';
-    try {
-      final info = await publicDio().get<Map<String, dynamic>>('/platform/info');
-      qrUrl = ChatAttachment.resolveMediaUrl(
-        (info.data?['credit_wallet_qr_url'] ?? '').toString(),
-      );
-    } catch (_) {}
-
-    if (!mounted) return;
-    final payload = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setLocal) => AlertDialog(
-          title: const Text('Recharge credits'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: amountCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Amount (PHP)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  initialValue: method,
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'qrph',
-                      child: Text('QR Ph — opens PayMongo in browser'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'qrph_manual',
-                      child: Text('QR Ph — manual approval (scan platform QR)'),
-                    ),
-                    DropdownMenuItem(value: 'gcash', child: Text('GCash (online)')),
-                    DropdownMenuItem(value: 'paymaya', child: Text('PayMaya (online)')),
-                  ],
-                  onChanged: (v) => setLocal(() => method = v ?? method),
-                  decoration: const InputDecoration(
-                    labelText: 'Payment method',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                if (method == 'qrph_manual') ...[
-                  const SizedBox(height: 12),
-                  if (qrUrl.isNotEmpty)
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: NetworkMediaImage(
-                        url: qrUrl,
-                        width: 180,
-                        height: 180,
-                        fit: BoxFit.contain,
-                      ),
-                    ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: refCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Payment reference / transaction ID',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel')),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop({
-                'amount': double.tryParse(amountCtrl.text.trim()) ?? 0,
-                'method': method,
-                if (method == 'qrph_manual') 'payment_reference': refCtrl.text.trim(),
-              }),
-              child: Text(
-                method == 'qrph_manual'
-                    ? 'Submit for approval'
-                    : method == 'qrph'
-                        ? 'Continue to PayMongo'
-                        : 'Recharge',
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (payload == null) return;
-
-    if (payload['method'] == 'qrph_manual') {
-      await _runAction('Submit credit top-up', () async {
-        final res = await portalDio().post<Map<String, dynamic>>(
-          '/admin/credits/recharge-request',
-          data: {
-            'amount': payload['amount'],
-            'payment_reference': payload['payment_reference'],
-          },
-        );
-        return {
-          ...Map<String, dynamic>.from(res.data ?? {}),
-          'message':
-              'Top-up submitted. Credits apply after platform approval.',
-        };
-      });
-      return;
-    }
-
-    await _runAction('Recharge credits', () async {
-      final res = await portalDio().post<Map<String, dynamic>>(
-        '/admin/credits/recharge',
-        data: payload,
-      );
-      final data = Map<String, dynamic>.from(res.data ?? {});
-
-      return {
-        ...data,
-        'message': (data['message'] ??
-                'Complete payment in your browser. Credits update after payment succeeds.')
-            .toString(),
-      };
-    });
+    await showHotelCreditsRechargeDialog(context);
+    if (mounted) await _load(silent: true);
   }
 
   Future<void> _manageAmenityMenu() async {

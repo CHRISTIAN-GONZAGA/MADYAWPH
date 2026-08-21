@@ -9,8 +9,12 @@ class LuxuryPageRoute<T> extends PageRouteBuilder<T> {
     super.settings,
     Duration? duration,
   }) : super(
-          pageBuilder: (context, animation, secondaryAnimation) =>
-              builder(context),
+          pageBuilder: (context, animation, secondaryAnimation) {
+            return ColoredBox(
+              color: Theme.of(context).colorScheme.surface,
+              child: builder(context),
+            );
+          },
           transitionDuration: duration ?? UiTokens.dStd,
           reverseTransitionDuration: UiTokens.dFast,
           transitionsBuilder: (context, animation, secondary, child) {

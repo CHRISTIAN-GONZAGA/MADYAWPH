@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../../dio_client.dart';
 import '../../locale_controller.dart';
 import '../admin/widgets/hourly_billing.dart';
 import '../customer_search_context.dart' as customer;
 import '../../widgets/app_button.dart';
 import '../../widgets/app_input.dart';
 import '../../widgets/chat_attachment.dart';
+import '../../widgets/guest_online_payment.dart';
 import '../admin/widgets/free_breakfast_selection.dart';
 import '../admin/widgets/booking_mode_field.dart';
 import '../../widgets/admin_time_slot_field.dart';
@@ -214,7 +214,7 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
   var _bookingMode = BookingModeOptions.defaultValue;
   XFile? _guestIdFile;
   XFile? _discountIdFile;
-  String _paymentQrUrl = '';
+  GuestPaymentConfig _guestPay = const GuestPaymentConfig();
   var _qrLoading = false;
 
   CompleteGuestBookingConfig get config => widget.config;
@@ -274,13 +274,9 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
     if (hotelId == null || hotelId.isEmpty) return;
     setState(() => _qrLoading = true);
     try {
-      final res = await publicDio().get<Map<String, dynamic>>(
-        '/customer/payment-qr',
-        queryParameters: {'hotel_id': hotelId},
-      );
-      _paymentQrUrl = (res.data?['qr_url'] ?? '').toString();
+      _guestPay = await loadGuestPaymentConfig(hotelId);
     } catch (_) {
-      _paymentQrUrl = '';
+      _guestPay = const GuestPaymentConfig();
     } finally {
       if (mounted) setState(() => _qrLoading = false);
     }
@@ -409,8 +405,12 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
       return;
     }
     if (config.showOnlinePayment) {
-      final ref = _paymentRefCtrl.text.trim();
-      if (ref.length < 4) {
+      if (!_guestPay.canBookOnline) {
+        _snack('Hotel has not set up PayMongo, a payment QR, or a wallet number yet.');
+        return;
+      }
+      if (!_guestPay.usesPaymongoQrPh &&
+          _paymentRefCtrl.text.trim().length < 4) {
         _snack('Enter your GCash / Maya / QR Ph payment reference.');
         return;
       }
@@ -755,35 +755,24 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
           const SizedBox(height: 12),
           if (_qrLoading)
             const Center(child: CircularProgressIndicator())
-          else if (_paymentQrUrl.isEmpty)
+          else if (!_guestPay.canBookOnline)
             const Text(
-              'Hotel has not uploaded a payment QR yet. Online booking is unavailable until they do.',
+              'Hotel has not set up PayMongo, a payment QR, or a wallet number yet. Online booking is unavailable until they do.',
               style: TextStyle(fontSize: 12),
             )
           else
-            Center(
-              child: Column(
-                children: [
-                  const Text(
-                    'Scan to pay the full amount via GCash / Maya / QR Ph',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 8),
-                  NetworkMediaImage(
-                    url: _paymentQrUrl,
-                    width: 200,
-                    height: 200,
-                    fit: BoxFit.contain,
-                  ),
-                ],
-              ),
+            GuestOnlinePaymentPanel(
+              config: _guestPay,
+              amountDue: estAfterDiscount > 0 ? estAfterDiscount : estTotal,
+              stayTotal: estTotal,
+              depositPctLabel: '100%',
+              isFullDeposit: true,
+              paymentRefController: _paymentRefCtrl,
+              onPrimaryAction: _submit,
+              primaryLabel: _guestPay.usesPaymongoQrPh
+                  ? 'Continue — pay with QR Ph after submit'
+                  : 'Continue',
             ),
-          const SizedBox(height: 12),
-          AppInput(
-            controller: _paymentRefCtrl,
-            label: 'Payment reference',
-            hint: 'GCash / Maya / QR Ph transaction ID',
-          ),
         ],
       ],
       const SizedBox(height: 10),

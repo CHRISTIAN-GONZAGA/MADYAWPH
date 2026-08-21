@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../../../dio_client.dart';
 import '../../../utils/money_format.dart';
 import '../../../widgets/app_scaffold.dart';
+import '../../../widgets/chat_attachment.dart';
 import '../../../widgets/payment_redirect.dart';
 
 /// Blocks hotel portal access when subscription trial/payment is due.
@@ -151,7 +152,9 @@ class _HotelSubscriptionGateScreenState extends State<HotelSubscriptionGateScree
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final fee = parseJsonDouble(_data['subscription_fee']);
-    final qr = (_data['subscription_qr_url'] ?? '').toString();
+    final qr = ChatAttachment.resolveMediaUrl(
+      (_data['subscription_qr_url'] ?? '').toString(),
+    );
 
     // Non-dismissible processing screen for all roles.
     if (_status == 'processing') {
@@ -262,9 +265,16 @@ class _HotelSubscriptionGateScreenState extends State<HotelSubscriptionGateScree
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Or pay manually',
+                  'Or pay with the platform QR Ph (backup)',
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Scan the QR uploaded by central admin, then submit the transaction reference for approval.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
                       ),
                 ),
                 const SizedBox(height: 8),
@@ -272,23 +282,20 @@ class _HotelSubscriptionGateScreenState extends State<HotelSubscriptionGateScree
               if (qr.isNotEmpty)
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: AspectRatio(
-                    aspectRatio: 1,
-                    child: Image.network(
-                      qr,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const ColoredBox(
-                        color: Color(0xFFECEFF1),
-                        child: Center(child: Text('QR unavailable')),
-                      ),
-                    ),
+                  child: NetworkMediaImage(
+                    url: qr,
+                    fit: BoxFit.contain,
+                    height: 240,
+                    width: double.infinity,
                   ),
                 )
               else
                 const Card(
                   child: ListTile(
-                    title: Text('QR Ph not configured yet'),
-                    subtitle: Text('Central admin must upload the subscription QR.'),
+                    title: Text('Backup QR Ph not posted yet'),
+                    subtitle: Text(
+                      'Central admin must upload the hotel subscription QR screenshot under Platform → QR.',
+                    ),
                   ),
                 ),
               const SizedBox(height: 16),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'app_visual.dart';
@@ -104,6 +105,11 @@ class AppTheme {
         centerTitle: false,
         surfaceTintColor: Colors.transparent,
         titleTextStyle: text.titleLarge,
+        iconTheme: IconThemeData(color: scheme.onSurface),
+        actionsIconTheme: IconThemeData(color: scheme.onSurface),
+        systemOverlayStyle: scheme.brightness == Brightness.dark
+            ? SystemUiOverlayStyle.light
+            : SystemUiOverlayStyle.dark,
       ),
       dividerTheme: DividerThemeData(
         thickness: 0.6,

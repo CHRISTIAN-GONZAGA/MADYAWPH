@@ -2441,13 +2441,13 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
         const _PlatformSectionHeader(
           icon: Icons.qr_code_2_outlined,
           title: 'QR Ph images',
-          subtitle: 'Hotels and guests scan these for credits, membership, or hotel subscription',
+          subtitle: 'Backup QR Ph for hotels and guests who do not use PayMongo checkout. Upload a screenshot of your receiving QR. Hotels and members see these images when they pay.',
         ),
         const SizedBox(height: 8),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Text(
-            'Upload payment QR codes',
+            'Backup QR Ph screenshots (manual pay)',
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w800,
                   color: _kPlatformNavy,
@@ -2461,7 +2461,8 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
             children: [
               _QrUploadCard(
                 title: 'Hotel credit wallet',
-                subtitle: 'Used when hotels request credit top-ups.',
+                subtitle:
+                    'Backup when hotels top up credits without PayMongo. Shown in Recharge → scan platform QR.',
                 imageUrl: creditQr,
                 onUpload: widget.onUploadCredit,
               ),
@@ -2491,7 +2492,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
                       (widget.settings['hotel_subscription_fee'] as num?)
                           ?.toDouble() ??
                       5;
-                  return 'Shown when a hotel trial ends. Monthly due = rooms × ₱${daily.toStringAsFixed(daily % 1 == 0 ? 0 : 2)}/room/day × days in month.';
+                  return 'Backup when a hotel trial ends and they skip PayMongo. Monthly due = rooms × ₱${daily.toStringAsFixed(daily % 1 == 0 ? 0 : 2)}/room/day × days in month.';
                 }(),
                 imageUrl: hotelSubQr,
                 onUpload: widget.onUploadSubscription,

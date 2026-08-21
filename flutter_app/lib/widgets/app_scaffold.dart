@@ -30,25 +30,18 @@ class AppScaffold extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final visual = AppVisual.of(context);
 
-    return Scaffold(
-      extendBody: extendBody,
-      backgroundColor: Colors.transparent,
-      resizeToAvoidBottomInset: resizeToAvoidBottomInset,
-      appBar: appBar,
-      drawer: drawer,
-      endDrawer: endDrawer,
-      bottomNavigationBar: bottomNavigationBar,
-      floatingActionButton: floatingActionButton,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          RepaintBoundary(
-            child: DecoratedBox(
-              decoration: BoxDecoration(gradient: visual.scaffoldGradient(scheme)),
-            ),
-          ),
-          body,
-        ],
+    return DecoratedBox(
+      decoration: BoxDecoration(gradient: visual.scaffoldGradient(scheme)),
+      child: Scaffold(
+        extendBody: extendBody,
+        backgroundColor: Colors.transparent,
+        resizeToAvoidBottomInset: resizeToAvoidBottomInset,
+        appBar: appBar,
+        drawer: drawer,
+        endDrawer: endDrawer,
+        bottomNavigationBar: bottomNavigationBar,
+        floatingActionButton: floatingActionButton,
+        body: body,
       ),
     );
   }

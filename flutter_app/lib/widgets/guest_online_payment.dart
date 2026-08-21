@@ -360,6 +360,37 @@ class _GuestOnlinePaymentPendingCardState
                     : 'Pay with QR Ph · ₱${_amountDue.toStringAsFixed(2)}',
                 compact: true,
               ),
+              if (cfg.hasStaticQr || cfg.hasManualWallet) ...[
+                const SizedBox(height: 8),
+                ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  title: Text(
+                    'Backup: scan hotel QR / wallet',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  subtitle: const Text(
+                    'Use this if PayMongo checkout is unavailable.',
+                  ),
+                  children: [
+                    if (cfg.hasStaticQr) ...[
+                      _StaticQrSection(qrUrl: cfg.qrUrl),
+                      const SizedBox(height: 8),
+                    ],
+                    if (cfg.hasManualWallet)
+                      _ManualWalletSection(config: cfg, amountDue: _amountDue),
+                    const SizedBox(height: 8),
+                    Text(
+                      paymentRef.isEmpty
+                          ? 'After paying, send your transaction reference to the hotel.'
+                          : 'Reference on file: $paymentRef',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
+              ],
             ] else if (cfg != null && cfg.hasStaticQr) ...[
               Text(
                 'Scan the hotel QR, pay ₱${_amountDue.toStringAsFixed(2)}, '

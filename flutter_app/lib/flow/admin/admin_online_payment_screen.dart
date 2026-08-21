@@ -775,9 +775,9 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
             padding: const EdgeInsets.all(20),
             children: [
               Text(
-                'Connect PayMongo so guests pay via Hosted Checkout with QR Ph '
-                '(currently the only active method on this PayMongo account). '
-                'QR and wallet numbers below remain available as a manual fallback only — they are not the PayMongo payment destination.',
+                'Connect PayMongo so guests can pay via Hosted Checkout with QR Ph. '
+                'Always upload a backup QR Ph screenshot below so guests can still pay if they skip PayMongo or checkout is unavailable. '
+                'Wallet numbers are an extra manual fallback — they are not the PayMongo destination.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),
@@ -786,7 +786,7 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
               _paymongoCard(scheme),
               const SizedBox(height: 20),
               Text(
-                'Manual fallback (QR / wallet numbers)',
+                'Backup QR Ph screenshot (if guests skip PayMongo)',
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),
