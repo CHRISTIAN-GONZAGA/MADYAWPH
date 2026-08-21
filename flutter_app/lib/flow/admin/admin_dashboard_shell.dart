@@ -362,7 +362,6 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         children: [
           SafeArea(
             child: Column(
-              clipBehavior: Clip.none,
               children: [
                 AdminDashboardHeader(
                   hotelName: hotelName,
