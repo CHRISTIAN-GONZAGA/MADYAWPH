@@ -33,7 +33,7 @@ class StoreBookingRequest extends FormRequest
             'check_out_at' => ['required_without:check_out_date', 'date', 'after:check_in_at'],
             'check_in_time' => ['nullable', 'date_format:H:i'],
             'check_out_time' => ['nullable', 'date_format:H:i'],
-            'payment_method' => ['required', 'in:Cash,GCash,PayMaya,Credit Card'],
+            'payment_method' => ['required', 'in:Cash,GCash,PayMaya,Credit Card,QR Ph,E-wallet'],
             'source' => ['required', 'in:kiosk,web,admin'],
         ];
     }

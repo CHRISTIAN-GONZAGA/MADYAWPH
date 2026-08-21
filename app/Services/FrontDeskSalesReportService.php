@@ -7,6 +7,8 @@ use App\Models\Booking;
 use App\Models\Room;
 use App\Models\User;
 use App\Support\BillingChargeTypes;
+use App\Support\OnlineBookingPaymentSupport;
+use App\Support\SafeModelAttributes;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 
@@ -52,8 +54,8 @@ class FrontDeskSalesReportService
                 $userCharges = $charges->filter(
                     fn ($c) => (string) ($c->created_by ?? '') === $id
                 );
-                $agg = $this->aggregateCharges($userCharges);
-                $methodsByBooking = $this->paymentMethodsByBooking($userCharges);
+                $bookings = $this->bookingsById($userCharges);
+                $agg = $this->aggregateCharges($userCharges, $bookings);
 
                 $amenity = 0.0;
                 $manual = 0.0;
@@ -70,9 +72,7 @@ class FrontDeskSalesReportService
                         continue;
                     }
                     if (BillingChargeTypes::isPartialPayment($type)) {
-                        $bookingId = (string) ($charge->booking_id ?? '');
-                        $method = $methodsByBooking[$bookingId]
-                            ?? (string) data_get($charge->metadata, 'payment_method', '');
+                        $method = $this->chargePaymentMethod($charge, $bookings);
                         $bucket = $this->paymentMethodBucket($method);
                         $paid = abs($amount);
                         if ($bucket === 'cash') {
@@ -251,9 +251,9 @@ class FrontDeskSalesReportService
             /** @var Carbon $to */
             $to = $range['to'];
             $charges = $this->chargesInRange($hotelId, $from, $to, [$userId]);
-            $methodsByBooking = $this->paymentMethodsByBooking($charges);
-            $summary = $this->aggregateCharges($charges, $methodsByBooking);
-            $transactions = $this->mapChargeTransactions($charges, $methodsByBooking);
+            $bookings = $this->bookingsById($charges);
+            $summary = $this->aggregateCharges($charges, $bookings);
+            $transactions = $this->mapChargeTransactions($charges, $bookings);
             $categories = $this->categorizeTransactions($transactions);
 
             $periods[$key] = [
@@ -382,9 +382,9 @@ class FrontDeskSalesReportService
         $to = $day->copy()->endOfDay();
         $charges = $this->chargesInRange($hotelId, $from, $to, [$userId]);
 
-        $methodsByBooking = $this->paymentMethodsByBooking($charges);
-        $summary = $this->aggregateCharges($charges, $methodsByBooking);
-        $transactions = $this->mapChargeTransactions($charges, $methodsByBooking);
+        $bookings = $this->bookingsById($charges);
+        $summary = $this->aggregateCharges($charges, $bookings);
+        $transactions = $this->mapChargeTransactions($charges, $bookings);
         $categories = $this->categorizeTransactions($transactions);
 
         return [
@@ -408,7 +408,7 @@ class FrontDeskSalesReportService
 
     /**
      * @param  Collection<int, BillingCharge>  $charges
-     * @param  array<string, string>|null  $methodsByBooking
+     * @param  Collection<string, Booking>|null  $bookings
      * @return array{
      *     total_sales: float,
      *     payments_collected: float,
@@ -417,9 +417,9 @@ class FrontDeskSalesReportService
      *     by_payment_method: array<string, array{count: int, total: float}>
      * }
      */
-    private function aggregateCharges(Collection $charges, ?array $methodsByBooking = null): array
+    private function aggregateCharges(Collection $charges, ?Collection $bookings = null): array
     {
-        $methodsByBooking ??= $this->paymentMethodsByBooking($charges);
+        $bookings ??= $this->bookingsById($charges);
 
         $totalSales = 0.0;
         $payments = 0.0;
@@ -437,9 +437,7 @@ class FrontDeskSalesReportService
             $isPayment = BillingChargeTypes::isPartialPayment($type);
             $isSale = $this->isSaleType($type) && $amount > 0;
 
-            $bookingId = (string) ($charge->booking_id ?? '');
-            $method = $methodsByBooking[$bookingId]
-                ?? (string) data_get($charge->metadata, 'payment_method', '');
+            $method = $this->chargePaymentMethod($charge, $bookings);
             $bucket = $this->paymentMethodBucket($method);
 
             if ($isPayment) {
@@ -488,9 +486,9 @@ class FrontDeskSalesReportService
 
     /**
      * @param  Collection<int, BillingCharge>  $charges
-     * @return array<string, string>
+     * @return Collection<string, Booking>
      */
-    private function paymentMethodsByBooking(Collection $charges): array
+    private function bookingsById(Collection $charges): Collection
     {
         $bookingIds = $charges
             ->map(fn ($c) => (string) ($c->booking_id ?? ''))
@@ -498,28 +496,41 @@ class FrontDeskSalesReportService
             ->unique()
             ->values()
             ->all();
-        $methodsByBooking = [];
         if ($bookingIds === []) {
-            return $methodsByBooking;
+            return collect();
         }
 
-        $bookings = \App\Models\Booking::withoutGlobalScopes()
+        return Booking::withoutGlobalScopes()
             ->whereIn('id', $bookingIds)
-            ->get(['id', 'payment_method']);
-        foreach ($bookings as $booking) {
-            $methodsByBooking[(string) $booking->id] =
-                \App\Support\SafeModelAttributes::paymentMethodLabel($booking);
+            ->get()
+            ->keyBy(fn (Booking $booking) => (string) $booking->id);
+    }
+
+    /**
+     * @param  Collection<string, Booking>  $bookings
+     */
+    private function chargePaymentMethod(BillingCharge $charge, Collection $bookings): string
+    {
+        $type = strtolower(trim((string) ($charge->type ?? '')));
+        if (! BillingChargeTypes::isPartialPayment($type)) {
+            return '';
         }
 
-        return $methodsByBooking;
+        $booking = $bookings->get((string) ($charge->booking_id ?? ''));
+        $fromCharge = trim((string) data_get($charge->metadata, 'payment_method', ''));
+        $raw = $fromCharge !== ''
+            ? $fromCharge
+            : ($booking ? SafeModelAttributes::paymentMethodLabel($booking) : '');
+
+        return OnlineBookingPaymentSupport::displayMethod($raw, $booking);
     }
 
     /**
      * @param  Collection<int, BillingCharge>  $charges
-     * @param  array<string, string>  $methodsByBooking
+     * @param  Collection<string, Booking>  $bookings
      * @return list<array<string, mixed>>
      */
-    private function mapChargeTransactions(Collection $charges, array $methodsByBooking): array
+    private function mapChargeTransactions(Collection $charges, Collection $bookings): array
     {
         $roomIds = $charges
             ->map(fn ($c) => (string) ($c->room_id ?? ''))
@@ -609,8 +620,7 @@ class FrontDeskSalesReportService
             if ($categoryName === '') {
                 $categoryName = (string) ($roomMeta['room_type'] ?? '');
             }
-            $method = $methodsByBooking[$bookingId]
-                ?? (string) data_get($charge->metadata, 'payment_method', '');
+            $method = $this->chargePaymentMethod($charge, $bookings);
             $bucket = $this->paymentMethodBucket($method);
             $typeLabel = $this->chargeTypeLabel($type);
 

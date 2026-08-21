@@ -26,7 +26,8 @@ class FlexiblePaymentMethodCast implements CastsAttributes
 
         return match ($lower) {
             'cash' => PaymentMethod::CASH,
-            'gcash', 'g-cash', 'ewallet', 'e-wallet', 'qrph', 'qr ph', 'online' => PaymentMethod::GCASH,
+            'ewallet', 'e-wallet', 'qrph', 'qr ph', 'qr_ph', 'online', 'paymongo' => PaymentMethod::E_WALLET,
+            'gcash', 'g-cash' => PaymentMethod::GCASH,
             'paymaya', 'maya', 'pay maya' => PaymentMethod::PAYMAYA,
             'credit card', 'credit_card', 'card' => PaymentMethod::CREDIT_CARD,
             'bank transfer', 'bank_transfer', 'ebank', 'e-bank', 'bank' => PaymentMethod::BANK_TRANSFER,

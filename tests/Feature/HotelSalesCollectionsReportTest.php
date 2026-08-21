@@ -165,5 +165,10 @@ class HotelSalesCollectionsReportTest extends TestCase
 
         $this->assertEqualsWithDelta(3000.0, (float) ($payload['summary']['gross_revenue'] ?? 0), 0.01);
         $this->assertCount(2, $payload['booking_transactions'] ?? []);
+        $methods = collect($payload['booking_transactions'] ?? [])
+            ->map(fn ($row) => (string) ($row['payment_method'] ?? ''))
+            ->all();
+        $this->assertContains('Cash', $methods);
+        $this->assertContains('GCash', $methods);
     }
 }

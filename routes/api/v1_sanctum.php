@@ -450,6 +450,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             'maintenance_reason' => ['nullable', 'string', 'max:255'],
             'check_in_payment_amount' => ['nullable', 'numeric', 'min:0'],
             'payment_method' => ['nullable', 'string', 'max:50'],
+            'payment_reference' => ['nullable', 'string', 'max:120'],
             'free_breakfast_options' => ['nullable', 'array'],
             'free_breakfast_options.*.menu_item_id' => ['nullable', 'string', 'max:64'],
             'free_breakfast_options.*.name' => ['required_with:free_breakfast_options', 'string', 'max:255'],
@@ -546,12 +547,28 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
 
                 // Collect remaining balance only — never a second copy of the online payment.
                 if ($payAmount > 0 && $balanceDue > 0.009) {
+                    $methodRaw = trim((string) ($validated['payment_method'] ?? 'Cash'));
+                    $paymentRef = trim((string) ($validated['payment_reference'] ?? ''));
+                    if (\App\Support\OnlineBookingPaymentSupport::isOnlineMethod($methodRaw)
+                        || in_array($methodRaw, ['GCash', 'PayMaya', 'Credit Card', 'QR Ph', 'E-wallet'], true)) {
+                        if ($paymentRef === '') {
+                            return response()->json([
+                                'message' => 'Payment reference is required for QR Ph / e-wallet check-in.',
+                                'errors' => [
+                                    'payment_reference' => [
+                                        'Enter the QR Ph transaction ID after the guest pays.',
+                                    ],
+                                ],
+                            ], 422);
+                        }
+                    }
                     $paymentInfo = $bookingPaymentService->applyPartialPayment(
                         $activeBooking,
                         $request->user(),
                         [
                             'amount' => $payAmount,
-                            'payment_method' => $validated['payment_method'] ?? 'Cash',
+                            'payment_method' => $methodRaw,
+                            'payment_reference' => $paymentRef !== '' ? $paymentRef : null,
                             'note' => 'Check-in payment',
                         ]
                     );
@@ -760,7 +777,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             'guest_phone' => ['nullable', 'string', 'max:50'],
             'check_in_at' => ['required', 'date'],
             'check_out_at' => ['required', 'date', 'after:check_in_at'],
-            'payment_method' => ['required', 'in:Cash,GCash,PayMaya,Credit Card'],
+            'payment_method' => ['required', 'in:Cash,GCash,PayMaya,Credit Card,QR Ph,E-wallet'],
             'payment_reference' => ['nullable', 'string', 'max:120'],
             'check_in_now' => ['nullable', 'boolean'],
             'check_in_payment_amount' => ['nullable', 'numeric', 'min:0'],
@@ -780,10 +797,10 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
 
         $paymentMethod = (string) ($validated['payment_method'] ?? 'Cash');
         $paymentRef = trim((string) ($validated['payment_reference'] ?? ''));
-        if (in_array($paymentMethod, ['GCash', 'PayMaya', 'Credit Card'], true) && $paymentRef === '') {
+        if (in_array($paymentMethod, ['GCash', 'PayMaya', 'Credit Card', 'QR Ph', 'E-wallet'], true) && $paymentRef === '') {
             return response()->json([
                 'message' => 'Payment reference is required for online payments.',
-                'errors' => ['payment_reference' => ['Enter the GCash / PayMaya / card reference number.']],
+                'errors' => ['payment_reference' => ['Enter the QR Ph / GCash / Maya / card reference number.']],
             ], 422);
         }
         if ($paymentRef !== '') {
@@ -968,7 +985,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             'guest_phone' => ['nullable', 'string', 'max:50'],
             'check_in_at' => ['required', 'date'],
             'check_out_at' => ['required', 'date', 'after:check_in_at'],
-            'payment_method' => ['required', 'in:Cash,GCash,PayMaya,Credit Card'],
+            'payment_method' => ['required', 'in:Cash,GCash,PayMaya,Credit Card,QR Ph,E-wallet'],
             'payment_reference' => ['nullable', 'string', 'max:120'],
             'check_in_now' => ['nullable', 'boolean'],
             'check_in_payment_amount' => ['nullable', 'numeric', 'min:0'],
@@ -988,10 +1005,10 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
 
         $paymentMethod = (string) ($validated['payment_method'] ?? 'Cash');
         $paymentRef = trim((string) ($validated['payment_reference'] ?? ''));
-        if (in_array($paymentMethod, ['GCash', 'PayMaya', 'Credit Card'], true) && $paymentRef === '') {
+        if (in_array($paymentMethod, ['GCash', 'PayMaya', 'Credit Card', 'QR Ph', 'E-wallet'], true) && $paymentRef === '') {
             return response()->json([
                 'message' => 'Payment reference is required for online payments.',
-                'errors' => ['payment_reference' => ['Enter the GCash / PayMaya / card reference number.']],
+                'errors' => ['payment_reference' => ['Enter the QR Ph / GCash / Maya / card reference number.']],
             ], 422);
         }
         if ($paymentRef !== '') {

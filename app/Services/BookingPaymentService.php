@@ -6,6 +6,7 @@ use App\Models\BillingCharge;
 use App\Models\Booking;
 use App\Models\User;
 use App\Support\BillingChargeTypes;
+use App\Support\OnlineBookingPaymentSupport;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 
@@ -223,13 +224,12 @@ class BookingPaymentService
         $amountPaid = (float) ($updatedBill['amount_paid'] ?? 0);
         $newStatus = $newBalance <= 0.009 ? 'paid' : 'partial';
 
-        $booking->update([
+        $booking->update(array_merge([
             'payment_status' => $newStatus,
-            'payment_method' => $method,
             'payment_reference' => $reference,
             'paid_at' => $newStatus === 'paid' ? now() : null,
             'total_amount' => round(max(0, $newBalance), 2),
-        ]);
+        ], $this->paymentMethodWrite($booking, $method)));
 
         $this->activityLogService->log(
             $hotelId,
@@ -360,8 +360,8 @@ class BookingPaymentService
             'payment_status' => $newStatus,
             'paid_at' => $newStatus === 'paid' ? now() : null,
             'payment_reference' => $nextReference,
-            'payment_method' => $normalizedMethod,
         ];
+        $updates = array_merge($updates, $this->paymentMethodWrite($booking, $normalizedMethod));
         if ($newStatus === 'paid') {
             $updates['total_amount'] = 0;
         }
@@ -540,13 +540,29 @@ class BookingPaymentService
     {
         return match (strtolower(trim($methodRaw))) {
             '', 'cash' => 'Cash',
-            'gcash', 'g-cash', 'ewallet', 'e-wallet', 'qrph', 'qr ph', 'online' => 'GCash',
+            'online', 'ewallet', 'e-wallet', 'qrph', 'qr ph', 'qr_ph', 'paymongo' => 'E-wallet',
+            'gcash', 'g-cash' => 'GCash',
             'paymaya', 'maya', 'pay maya' => 'PayMaya',
             'credit card', 'credit_card', 'card' => 'Credit Card',
             'bank transfer', 'bank_transfer', 'ebank', 'e-bank', 'bank' => 'Bank Transfer',
             'member points', 'member_points', 'points' => 'Member Points',
             default => null,
         };
+    }
+
+    /**
+     * Desk cash on an online stay must not retag the booking as Cash.
+     *
+     * @return array<string, string>
+     */
+    private function paymentMethodWrite(Booking $booking, string $newMethod): array
+    {
+        if (OnlineBookingPaymentSupport::isGuestOnlineBooking($booking)
+            && strcasecmp($newMethod, 'Cash') === 0) {
+            return [];
+        }
+
+        return ['payment_method' => $newMethod];
     }
 
     private function derivePaymentStatus(float $amountPaid, float $balanceDue, string $current): string

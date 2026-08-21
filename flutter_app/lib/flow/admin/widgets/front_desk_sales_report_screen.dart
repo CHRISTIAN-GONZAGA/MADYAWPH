@@ -397,7 +397,10 @@ class _FrontDeskAccountSalesScreenState
         m.contains('maya') ||
         m.contains('ewallet') ||
         m.contains('e-wallet') ||
-        m.contains('wallet')) {
+        m.contains('wallet') ||
+        m == 'online' ||
+        m.contains('paymongo') ||
+        m.contains('qr')) {
       return 'ewallet';
     }
     if (m.contains('bank') || m.contains('transfer')) {
@@ -471,7 +474,7 @@ class _FrontDeskAccountSalesScreenState
     if (raw is! Map) return const [];
     final labels = <String, String>{
       'cash': 'Cash',
-      'ewallet': 'E-wallet (GCash / PayMaya)',
+      'ewallet': 'E-wallet',
       'bank_transfer': 'Bank transfer',
       'other': 'Other',
     };

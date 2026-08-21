@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
 import '../../../widgets/app_input.dart';
+import '../../../widgets/chat_attachment.dart';
 
 bool isOnlinePaymentMethod(String method) {
   final m = method.trim().toLowerCase();
@@ -10,6 +11,10 @@ bool isOnlinePaymentMethod(String method) {
       m == 'paymaya' ||
       m == 'maya' ||
       m == 'online' ||
+      m == 'e-wallet' ||
+      m == 'ewallet' ||
+      m == 'qr ph' ||
+      m == 'qrph' ||
       m.contains('card') ||
       m.contains('bank') ||
       m.contains('qr');
@@ -32,6 +37,8 @@ class OnlinePaymentQrBlock extends StatefulWidget {
 
 class _OnlinePaymentQrBlockState extends State<OnlinePaymentQrBlock> {
   String? _qrUrl;
+  String _gcash = '';
+  String _maya = '';
   bool _loading = false;
   String? _error;
 
@@ -67,10 +74,16 @@ class _OnlinePaymentQrBlockState extends State<OnlinePaymentQrBlock> {
       final res = await portalDio().get<Map<String, dynamic>>(
         '/admin/hotel/payment-qr',
       );
-      final url = (res.data?['payment_qr_url'] ?? '').toString().trim();
+      final resolved = (res.data?['qr_url'] ?? '').toString().trim();
+      final stored = (res.data?['payment_qr_url'] ?? '').toString().trim();
+      final url = resolved.isNotEmpty
+          ? resolved
+          : (stored.isEmpty ? '' : ChatAttachment.resolveMediaUrl(stored));
       if (!mounted) return;
       setState(() {
         _qrUrl = url.isEmpty ? null : url;
+        _gcash = (res.data?['payment_gcash_mobile'] ?? '').toString().trim();
+        _maya = (res.data?['payment_maya_mobile'] ?? '').toString().trim();
         _loading = false;
         if (url.isEmpty) {
           _error = 'No QR Ph image uploaded yet. Ask admin to set it in Setup → Online payment.';
@@ -103,10 +116,16 @@ class _OnlinePaymentQrBlockState extends State<OnlinePaymentQrBlock> {
       children: [
         const SizedBox(height: 12),
         Text(
-          'Scan hotel QR Ph to pay',
+          'Hotel QR Ph',
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.w700,
               ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Guest scans this code with GCash, Maya, or any QR Ph app. '
+          'Admins set it in Setup → Online payment.',
+          style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 8),
         if (_loading)
@@ -119,7 +138,7 @@ class _OnlinePaymentQrBlockState extends State<OnlinePaymentQrBlock> {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
               child: Image.network(
-                _qrUrl!,
+                ChatAttachment.resolveMediaUrl(_qrUrl!),
                 height: 180,
                 width: 180,
                 fit: BoxFit.contain,
@@ -137,11 +156,18 @@ class _OnlinePaymentQrBlockState extends State<OnlinePaymentQrBlock> {
                   color: scheme.error,
                 ),
           ),
+        if (_gcash.isNotEmpty || _maya.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          if (_gcash.isNotEmpty)
+            Text('GCash: $_gcash', style: Theme.of(context).textTheme.bodySmall),
+          if (_maya.isNotEmpty)
+            Text('Maya: $_maya', style: Theme.of(context).textTheme.bodySmall),
+        ],
         const SizedBox(height: 10),
         AppInput(
           controller: widget.referenceController,
           label: 'Payment reference number *',
-          hint: 'GCash / PayMaya / bank reference',
+          hint: 'QR Ph / GCash / Maya transaction ID',
         ),
       ],
     );

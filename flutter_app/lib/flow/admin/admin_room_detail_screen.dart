@@ -13,6 +13,7 @@ import 'admin_room_guest_qr_screen.dart';
 import 'widgets/admin_opaque_scaffold.dart';
 import 'widgets/admin_room_booking_calendar_dialog.dart';
 import 'widgets/hourly_billing.dart';
+import 'widgets/online_payment_qr_block.dart';
 import 'widgets/stay_receipt_dialog.dart';
 import 'admin_room_fee_presets_screen.dart';
 import '../member_qr_scan.dart';
@@ -1489,6 +1490,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                     initialValue: method,
                     items: const [
                       DropdownMenuItem(value: 'Cash', child: Text('Cash')),
+                      DropdownMenuItem(value: 'QR Ph', child: Text('QR Ph')),
                       DropdownMenuItem(value: 'GCash', child: Text('GCash')),
                       DropdownMenuItem(value: 'PayMaya', child: Text('PayMaya')),
                       DropdownMenuItem(
@@ -1502,13 +1504,9 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                       border: OutlineInputBorder(),
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: refCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Payment reference (optional)',
-                      border: OutlineInputBorder(),
-                    ),
+                  OnlinePaymentQrBlock(
+                    paymentMethod: method,
+                    referenceController: refCtrl,
                   ),
                   const SizedBox(height: 10),
                   TextField(
@@ -1543,12 +1541,23 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
               FilledButton(
                 onPressed: amount <= 0
                     ? null
-                    : () => Navigator.of(context).pop({
+                    : () {
+                        if (isOnlinePaymentMethod(method) &&
+                            refCtrl.text.trim().isEmpty) {
+                          showAppMessage(
+                            context,
+                            'Enter the QR Ph / e-wallet payment reference.',
+                            isError: true,
+                          );
+                          return;
+                        }
+                        Navigator.of(context).pop({
                           'amount': amount,
                           'payment_method': method,
                           'payment_reference': refCtrl.text.trim(),
                           'note': noteCtrl.text.trim(),
-                        }),
+                        });
+                      },
                 child: const Text('Record payment'),
               ),
             ],

@@ -9,6 +9,7 @@ import '../admin_dashboard_models.dart';
 import 'device_guest_welcome_sms.dart';
 import 'hourly_billing.dart';
 import 'booking_confirmation_summary_dialog.dart';
+import 'online_payment_qr_block.dart';
 
 String formatAdminCheckInDate(DateTime d) =>
     '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -64,6 +65,7 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
   double minPercent = isOrgBooking ? 0 : 50;
   double minDue = 0;
   final paymentCtrl = TextEditingController();
+  final paymentRefCtrl = TextEditingController();
   var paymentMethod = 'Cash';
   var loadingPolicy = true;
 
@@ -173,11 +175,11 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
                             'Outstanding balance: ₱${balanceDue.toStringAsFixed(2)} '
                             '(collect later in Gov/Org Booking).'
                         : stayPaid
-                            ? 'Already paid'
-                                '${amountAlreadyPaid > 0.009 ? ' (₱${amountAlreadyPaid.toStringAsFixed(2)} received)' : ''}.\n'
+                            ? 'Already paid (E-wallet)'
+                                '${amountAlreadyPaid > 0.009 ? ' — ₱${amountAlreadyPaid.toStringAsFixed(2)} received' : ''}.\n'
                                 'No check-in payment needed.'
                             : 'Remaining balance: ₱${balanceDue.toStringAsFixed(2)}'
-                                '${amountAlreadyPaid > 0.009 ? '\nAlready paid online: ₱${amountAlreadyPaid.toStringAsFixed(2)}' : ''}\n'
+                                '${amountAlreadyPaid > 0.009 ? '\nAlready paid (E-wallet): ₱${amountAlreadyPaid.toStringAsFixed(2)}' : ''}\n'
                                 'Company policy: at least ${minPercent.toStringAsFixed(minPercent % 1 == 0 ? 0 : 1)}%'
                                 '${minDue > 0 ? ' (₱${minDue.toStringAsFixed(2)})' : ''} of the remaining balance.',
                 style: Theme.of(ctx).textTheme.bodySmall,
@@ -243,6 +245,7 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
                 ),
                 items: const [
                   DropdownMenuItem(value: 'Cash', child: Text('Cash')),
+                  DropdownMenuItem(value: 'QR Ph', child: Text('QR Ph')),
                   DropdownMenuItem(value: 'GCash', child: Text('GCash')),
                   DropdownMenuItem(value: 'Card', child: Text('Card')),
                   DropdownMenuItem(value: 'Bank transfer', child: Text('Bank transfer')),
@@ -250,6 +253,10 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
                 onChanged: (v) {
                   if (v != null) setLocal(() => paymentMethod = v);
                 },
+              ),
+              OnlinePaymentQrBlock(
+                paymentMethod: paymentMethod,
+                referenceController: paymentRefCtrl,
               ),
               ],
             ],
@@ -272,6 +279,17 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
                   ctx,
                   'Enter at least ₱${minDue.toStringAsFixed(2)} '
                   '(${minPercent.toStringAsFixed(minPercent % 1 == 0 ? 0 : 1)}% of the remaining balance).',
+                  isError: true,
+                );
+                return;
+              }
+              if (!isOrgBooking &&
+                  !stayPaid &&
+                  isOnlinePaymentMethod(paymentMethod) &&
+                  paymentRefCtrl.text.trim().isEmpty) {
+                showAppMessage(
+                  ctx,
+                  'Enter the QR Ph / e-wallet payment reference after the guest pays.',
                   isError: true,
                 );
                 return;
@@ -301,7 +319,9 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
   final payAmount = isOrgBooking || stayPaid
       ? 0.0
       : (double.tryParse(paymentCtrl.text.trim()) ?? 0);
+  final paymentReference = paymentRefCtrl.text.trim();
   paymentCtrl.dispose();
+  paymentRefCtrl.dispose();
   if (ok != true || !context.mounted) return false;
 
   final liveWindow = isOnlineStay
@@ -331,7 +351,7 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
     lines: summaryLines,
     paymentMethod: isOrgBooking
         ? 'B2B charge account'
-        : (stayPaid ? 'Already paid online' : paymentMethod),
+        : (stayPaid ? 'E-wallet' : paymentMethod),
     amountTendered: isOrgBooking || stayPaid ? null : payAmount,
     changeDue: !isOrgBooking && !stayPaid && payAmount > balanceDue
         ? (payAmount - balanceDue).clamp(0, double.infinity)
@@ -351,6 +371,8 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
         'check_out_at': liveWindow.checkOut.toIso8601String(),
         if (!stayPaid && payAmount > 0) 'check_in_payment_amount': payAmount,
         if (!stayPaid && payAmount > 0) 'payment_method': paymentMethod,
+        if (!stayPaid && payAmount > 0 && paymentReference.isNotEmpty)
+          'payment_reference': paymentReference,
       },
     );
     checkInResponse = res.data;

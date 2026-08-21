@@ -49,6 +49,10 @@ class OnlineBookingCheckInPaymentTest extends TestCase
             ->get();
         $this->assertCount(1, $roomCharges);
         $this->assertEqualsWithDelta(1950.0, (float) $roomCharges->first()->amount, 0.5);
+        $this->assertSame(
+            'E-wallet',
+            \App\Support\SafeModelAttributes::paymentMethodLabel($booking->fresh())
+        );
 
         $payments = BillingCharge::withoutGlobalScopes()
             ->where('booking_id', (string) $booking->id)
@@ -56,7 +60,14 @@ class OnlineBookingCheckInPaymentTest extends TestCase
             ->get();
         $this->assertCount(1, $payments);
         $this->assertEqualsWithDelta(1950.0, abs((float) $payments->first()->amount), 0.5);
-        $this->assertSame('Online', (string) data_get($payments->first()->metadata, 'payment_method'));
+        $this->assertSame(
+            'E-wallet',
+            \App\Support\OnlineBookingPaymentSupport::displayMethod(
+                (string) data_get($payments->first()->metadata, 'payment_method'),
+                $booking->fresh()
+            )
+        );
+        $this->assertNotSame('GCash', (string) data_get($payments->first()->metadata, 'payment_method'));
 
         $billAfter = app(\App\Services\BookingPaymentService::class)->billSummary($booking->fresh());
         $this->assertLessThanOrEqual(0.009, (float) ($billAfter['balance_due'] ?? 0));
@@ -93,9 +104,14 @@ class OnlineBookingCheckInPaymentTest extends TestCase
             ->where('type', BillingChargeTypes::PARTIAL_PAYMENT)
             ->get();
         $this->assertCount(2, $payments);
-        $online = $payments->first(
-            fn ($c) => strtolower((string) data_get($c->metadata, 'payment_method', '')) === 'online'
-        );
+        $online = $payments->first(function ($c) use ($booking) {
+            $method = \App\Support\OnlineBookingPaymentSupport::displayMethod(
+                (string) data_get($c->metadata, 'payment_method'),
+                $booking
+            );
+
+            return $method === 'E-wallet';
+        });
         $cash = $payments->first(
             fn ($c) => strtolower((string) data_get($c->metadata, 'payment_method', '')) === 'cash'
         );
@@ -103,10 +119,62 @@ class OnlineBookingCheckInPaymentTest extends TestCase
         $this->assertNotNull($cash);
         $this->assertEqualsWithDelta(975.0, abs((float) $online->amount), 0.5);
         $this->assertEqualsWithDelta(975.0, abs((float) $cash->amount), 0.5);
+        $this->assertSame(
+            'E-wallet',
+            \App\Support\SafeModelAttributes::paymentMethodLabel($booking->fresh())
+        );
+
+        $sales = app(\App\Services\FrontDeskSalesReportService::class)->summarizeAccounts(
+            (string) $booking->hotel_id,
+            'day',
+            now()->startOfDay(),
+            now()->endOfDay(),
+        );
+        $this->assertEqualsWithDelta(975.0, (float) ($sales['totals']['ewallet'] ?? 0), 0.5);
+        $this->assertEqualsWithDelta(975.0, (float) ($sales['totals']['cash'] ?? 0), 0.5);
 
         $billAfter = app(\App\Services\BookingPaymentService::class)->billSummary($booking->fresh());
         $this->assertLessThanOrEqual(0.009, (float) ($billAfter['balance_due'] ?? 0));
         $this->assertEqualsWithDelta(1950.0, (float) ($billAfter['amount_paid'] ?? 0), 0.5);
+    }
+
+    public function test_check_in_qr_ph_remaining_balance_is_e_wallet(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-21 14:00:00'));
+        [$fd, $room, $booking] = $this->activateOnlineStay(amountPaid: 975, stayTotal: 1950);
+
+        Sanctum::actingAs($fd);
+        $this->patchJson('/api/v1/admin/rooms/'.(string) $room->id.'/status', [
+            'status' => 'checked_in',
+            'check_in_at' => now()->toIso8601String(),
+            'check_out_at' => now()->addDay()->setTime(11, 0)->toIso8601String(),
+            'check_in_payment_amount' => 975,
+            'payment_method' => 'QR Ph',
+        ])->assertStatus(422);
+
+        $this->patchJson('/api/v1/admin/rooms/'.(string) $room->id.'/status', [
+            'status' => 'checked_in',
+            'check_in_at' => now()->toIso8601String(),
+            'check_out_at' => now()->addDay()->setTime(11, 0)->toIso8601String(),
+            'check_in_payment_amount' => 975,
+            'payment_method' => 'QR Ph',
+            'payment_reference' => 'QRPH-213-REMAIN',
+        ])->assertOk();
+
+        $payments = BillingCharge::withoutGlobalScopes()
+            ->where('booking_id', (string) $booking->id)
+            ->where('type', BillingChargeTypes::PARTIAL_PAYMENT)
+            ->get();
+        $this->assertCount(2, $payments);
+        foreach ($payments as $payment) {
+            $this->assertSame(
+                'E-wallet',
+                \App\Support\OnlineBookingPaymentSupport::displayMethod(
+                    (string) data_get($payment->metadata, 'payment_method'),
+                    $booking->fresh()
+                )
+            );
+        }
     }
 
     /**

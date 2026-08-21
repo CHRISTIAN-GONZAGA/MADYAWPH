@@ -14,6 +14,7 @@ use App\Models\Payment;
 use App\Models\Room;
 use App\Support\BillingChargeTypes;
 use App\Support\CustomerStayPricing;
+use App\Support\OnlineBookingPaymentSupport;
 use App\Support\PriceRounding;
 use App\Support\RoomBillingSupport;
 use Carbon\Carbon;
@@ -99,7 +100,8 @@ class ReservationActivationService
             : (float) $charge['amount'];
 
         $paymentMethod = strcasecmp((string) ($meta['payment_method'] ?? ''), 'Online') === 0
-            ? PaymentMethod::GCASH->value
+            || OnlineBookingPaymentSupport::isOnlineMethod((string) ($meta['payment_method'] ?? ''))
+            ? PaymentMethod::E_WALLET->value
             : PaymentMethod::CASH->value;
         $paymentRef = (string) ($meta['payment_reference'] ?? '');
         $amountPaidOnline = round((float) ($meta['amount_paid'] ?? 0), 2);
@@ -348,7 +350,7 @@ class ReservationActivationService
                 'quantity' => 1,
                 'is_manual' => false,
                 'metadata' => [
-                    'payment_method' => 'Online',
+                    'payment_method' => OnlineBookingPaymentSupport::METHOD,
                     'payment_reference' => $paymentRef !== '' ? $paymentRef : $paymentRefLabel,
                     'from_reservation' => (string) $res->external_reference,
                     'source' => $isFullyPrepaid ? 'online_full_payment' : 'online_deposit',
@@ -364,7 +366,7 @@ class ReservationActivationService
                     ? "Online payment applied for booking {$booking->booking_reference}"
                     : "Online deposit applied for booking {$booking->booking_reference}",
                 [
-                    'payment_method' => 'Online',
+                    'payment_method' => OnlineBookingPaymentSupport::METHOD,
                     'payment_reference' => $paymentRef,
                     'amount' => $missing,
                     'amount_paid' => $credited,
@@ -396,7 +398,7 @@ class ReservationActivationService
             return true;
         }
         $method = strtolower((string) ($meta['payment_method'] ?? ''));
-        if (in_array($method, ['online', 'paymongo'], true)) {
+        if (OnlineBookingPaymentSupport::isOnlineMethod($method) || $method === 'gcash' || $method === 'g-cash') {
             return true;
         }
         $label = strtolower((string) ($charge->label ?? ''));

@@ -11,6 +11,7 @@ use App\Models\Room;
 use App\Models\RoomTransfer;
 use App\Support\BillingChargeTypes;
 use App\Support\CancellationRetentionSupport;
+use App\Support\OnlineBookingPaymentSupport;
 use App\Support\SafeModelAttributes;
 use App\Support\TenantContext;
 use Carbon\Carbon;
@@ -640,15 +641,40 @@ class HotelFinancialReportService
             $legacyRows = $this->legacyPaidBookingRows($from, $to, $isoTimestamps);
             $gatewayRows = $this->gatewayPaymentRows($from, $to, $isoTimestamps, $chargeRows);
 
-            $seenRefs = [];
+            $seenCharges = [];
+            $bookingsWithCharges = [];
+            $seenReferences = [];
             $merged = [];
-            foreach (array_merge($chargeRows, $legacyRows, $gatewayRows) as $row) {
-                $key = strtolower(trim((string) ($row['booking_id'] ?? $row['charge_id'] ?? $row['reference'] ?? '')));
-                if ($key !== '' && isset($seenRefs[$key])) {
+            foreach (array_merge($chargeRows, $gatewayRows, $legacyRows) as $row) {
+                $chargeId = strtolower(trim((string) ($row['charge_id'] ?? '')));
+                $bookingId = strtolower(trim((string) ($row['booking_id'] ?? '')));
+                $reference = strtolower(trim((string) ($row['reference'] ?? '')));
+                if ($chargeId !== '') {
+                    if (isset($seenCharges[$chargeId])) {
+                        continue;
+                    }
+                    $seenCharges[$chargeId] = true;
+                    if ($bookingId !== '') {
+                        $bookingsWithCharges[$bookingId] = true;
+                    }
+                    if ($reference !== '') {
+                        $seenReferences[$reference] = true;
+                    }
+                    $merged[] = $row;
+                    continue;
+                }
+                if ($bookingId !== '' && isset($bookingsWithCharges[$bookingId])) {
+                    continue;
+                }
+                if ($reference !== '' && isset($seenReferences[$reference])) {
+                    continue;
+                }
+                $key = strtolower(trim((string) ($row['reference'] ?? $bookingId)));
+                if ($key !== '' && isset($seenCharges[$key])) {
                     continue;
                 }
                 if ($key !== '') {
-                    $seenRefs[$key] = true;
+                    $seenCharges[$key] = true;
                 }
                 $merged[] = $row;
             }
@@ -699,12 +725,11 @@ class HotelFinancialReportService
             if ($method === '' && $booking) {
                 $method = $this->paymentMethodLabel($booking);
             }
+            $method = OnlineBookingPaymentSupport::displayMethod($method, $booking);
             $methodLower = strtolower($method);
             $channel = $methodLower === 'cash'
                 ? 'cash'
-                : ($method === ''
-                    ? ($booking ? $this->paymentChannel($booking) : 'online')
-                    : 'online');
+                : 'online';
 
             $label = trim((string) ($charge->label ?? ''));
             $description = $label !== '' ? $label : 'Payment received';
@@ -725,7 +750,7 @@ class HotelFinancialReportService
                 'guest_name' => (string) ($booking?->guest_name ?? ''),
                 'room_number' => $roomNumbers[$roomId] ?? '-',
                 'description' => $description,
-                'payment_method' => $method !== '' ? $method : 'Online',
+                'payment_method' => $method !== '' ? $method : OnlineBookingPaymentSupport::METHOD,
                 'payment_channel' => $channel,
                 'amount' => round($amount, 2),
                 'paid_at' => $paidAtValue,
@@ -776,7 +801,7 @@ class HotelFinancialReportService
                 'guest_name' => '',
                 'room_number' => '-',
                 'description' => 'Online payment (QR Ph)',
-                'payment_method' => 'Online',
+                'payment_method' => OnlineBookingPaymentSupport::METHOD,
                 'payment_channel' => 'online',
                 'amount' => round((float) ($payment->amount ?? 0), 2),
                 'paid_at' => $isoTimestamps
@@ -843,7 +868,10 @@ class HotelFinancialReportService
                     'guest_name' => (string) ($booking->guest_name ?? ''),
                     'room_number' => $this->roomNumberForBooking($booking),
                     'description' => 'Room stay',
-                    'payment_method' => $this->paymentMethodLabel($booking),
+                    'payment_method' => OnlineBookingPaymentSupport::displayMethod(
+                        $this->paymentMethodLabel($booking),
+                        $booking
+                    ),
                     'payment_channel' => $this->paymentChannel($booking),
                     'amount' => round($amount, 2),
                     'paid_at' => $isoTimestamps

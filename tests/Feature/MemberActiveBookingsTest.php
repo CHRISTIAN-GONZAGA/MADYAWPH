@@ -111,7 +111,7 @@ class MemberActiveBookingsTest extends TestCase
         $this->assertNotNull($booking);
         $this->assertSame('Active Stay Hotel', $booking['hotel_name']);
         $this->assertSame('305', $booking['room_number']);
-        $this->assertSame('Online (QR Ph)', $booking['payment_method_label']);
+        $this->assertSame('E-wallet', $booking['payment_method_label']);
         $this->assertSame('BK-ACTIVE-1', $booking['reference']);
 
         $reservation = $active->firstWhere('kind', 'reservation');

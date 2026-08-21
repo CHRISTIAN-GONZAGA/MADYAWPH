@@ -226,7 +226,7 @@ final class MemberActiveBookingsService
         $normalized = strtolower(trim($method));
 
         return match ($normalized) {
-            'online' => 'Online (QR Ph)',
+            'online', 'e-wallet', 'ewallet', 'paymongo', 'qrph', 'qr ph' => 'E-wallet',
             'cash' => 'Cash at hotel',
             'gcash', 'g-cash' => 'GCash',
             'paymaya', 'maya' => 'PayMaya',
@@ -238,8 +238,8 @@ final class MemberActiveBookingsService
     private function bookingPaymentMethodLabel(Booking $booking, string $method): string
     {
         $normalized = strtolower(trim($method));
-        if ($normalized === 'online') {
-            return 'Online (QR Ph)';
+        if (in_array($normalized, ['online', 'e-wallet', 'ewallet', 'paymongo', 'qrph', 'qr ph'], true)) {
+            return 'E-wallet';
         }
 
         $source = strtolower(trim((string) ($booking->booking_source ?? '')));
@@ -247,7 +247,7 @@ final class MemberActiveBookingsService
         $isCustomerOnline = $source === 'app-customer' || $type === 'online';
 
         if ($isCustomerOnline && in_array($normalized, ['gcash', 'g-cash', 'paymaya', 'maya'], true)) {
-            return 'Online (QR Ph)';
+            return 'E-wallet';
         }
 
         return $this->paymentMethodLabel($method);

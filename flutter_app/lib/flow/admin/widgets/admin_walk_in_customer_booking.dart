@@ -393,6 +393,7 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                   ),
                   items: const [
                     DropdownMenuItem(value: 'Cash', child: Text('Cash')),
+                    DropdownMenuItem(value: 'QR Ph', child: Text('QR Ph')),
                     DropdownMenuItem(value: 'GCash', child: Text('GCash')),
                     DropdownMenuItem(value: 'PayMaya', child: Text('PayMaya')),
                     DropdownMenuItem(

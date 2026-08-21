@@ -1083,7 +1083,7 @@ class CustomerPortalApiController extends Controller
             'check_out_date' => $checkOut->toDateString(),
             'nights' => $nights,
             'payment_method' => strcasecmp((string) ($validated['payment_method'] ?? ''), 'Online') === 0
-                ? PaymentMethod::GCASH->value
+                ? PaymentMethod::E_WALLET->value
                 : PaymentMethod::CASH->value,
             'payment_status' => 'unpaid',
             'total_amount' => PriceRounding::nearest50($total),
