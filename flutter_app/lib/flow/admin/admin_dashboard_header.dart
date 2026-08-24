@@ -107,7 +107,6 @@ class AdminDashboardHeader extends StatelessWidget {
     required this.chatBadge,
     required this.onOpenChat,
     required this.onRefresh,
-    this.onSignOut,
     this.isSuperAdmin = false,
     this.isFrontDesk = false,
     this.creditsLocked = false,
@@ -123,7 +122,6 @@ class AdminDashboardHeader extends StatelessWidget {
   final AdminChatBadgeInfo chatBadge;
   final VoidCallback onOpenChat;
   final VoidCallback onRefresh;
-  final VoidCallback? onSignOut;
   final bool creditsLocked;
   final bool canTimeOut;
   final String timeOutLabel;
@@ -225,13 +223,6 @@ class AdminDashboardHeader extends StatelessWidget {
                 onPressed: creditsLocked ? null : onRefresh,
                 icon: const Icon(Icons.refresh),
               ),
-              if (onSignOut != null)
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  tooltip: 'Sign out',
-                  onPressed: onSignOut,
-                  icon: const Icon(Icons.logout),
-                ),
               AdminChatHeaderButton(
                 badge: chatBadge,
                 onPressed: creditsLocked ? null : onOpenChat,

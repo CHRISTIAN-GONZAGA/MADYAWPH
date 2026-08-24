@@ -326,6 +326,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                           'name': nameCtrl.text.trim(),
                           'price': double.tryParse(priceCtrl.text.trim()) ?? 0,
                           'is_active': true,
+                          'is_breakfast': typeCtrl.text.toLowerCase().contains('breakfast')
+                              || nameCtrl.text.toLowerCase().contains('breakfast'),
                         }),
                         child: const Text('Create'),
                       ),
@@ -1756,6 +1758,8 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
   final _chatScroll = ScrollController();
   Timer? _poll;
   bool _chatSending = false;
+  int _lastStaffChatCount = 0;
+  bool _staffChatPrimed = false;
 
   @override
   void initState() {
@@ -1789,6 +1793,20 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
           );
       if (!mounted) return;
       final list = (res.data?['messages'] as List?) ?? [];
+      final staffCount = list.where((raw) {
+        if (raw is! Map) return false;
+        final role =
+            (raw['sender_role'] ?? raw['senderRole'] ?? '').toString().toLowerCase();
+        return role == 'admin' ||
+            role == 'super_admin' ||
+            role == 'frontdesk' ||
+            role == 'staff';
+      }).length;
+      if (_staffChatPrimed && staffCount > _lastStaffChatCount) {
+        unawaited(ChatNotificationSound.play());
+      }
+      _lastStaffChatCount = staffCount;
+      _staffChatPrimed = true;
       setState(() => _chatMessages = list);
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollChatToEnd());
     } catch (_) {
@@ -2015,19 +2033,16 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
   Future<void> _claimFreeBreakfast() async {
     final breakfast =
         (_data?['freeBreakfast'] as Map<String, dynamic>?) ?? const {};
-    if (breakfast['alreadyClaimed'] == true) {
+    final canClaim = breakfast['canClaimToday'] == true;
+    final remaining = (breakfast['remainingToday'] as num?)?.toInt() ??
+        (breakfast['quota'] as num?)?.toInt() ??
+        0;
+    if (!canClaim || remaining < 1) {
       showAppMessage(
         context,
-        'Free breakfast was already requested for this stay.',
-      );
-      return;
-    }
-    final quota = (breakfast['quota'] as num?)?.toInt() ?? 0;
-    if (quota < 1) {
-      showAppMessage(
-        context,
-        'No free breakfast quota for this room. Ask the front desk.',
-        isError: true,
+        (breakfast['reason'] ??
+                'Free breakfast is not available to claim right now.')
+            .toString(),
       );
       return;
     }
@@ -2037,12 +2052,13 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
     if (items.isEmpty) {
       showAppMessage(
         context,
-        'This hotel has no free breakfast options yet.',
+        'This hotel has no breakfast options yet.',
       );
       return;
     }
 
-    final qtyCtrl = TextEditingController(text: '1');
+    final guests = (breakfast['guestCount'] as num?)?.toInt() ?? remaining;
+    final qtyCtrl = TextEditingController(text: '$remaining');
     String selectedId = (items.first['id'] ?? '').toString();
     final payload = await showDialog<Map<String, dynamic>>(
       context: context,
@@ -2059,12 +2075,13 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Free breakfast',
+                    'Claim free breakfast',
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'You can choose up to $quota serving(s) based on guests registered for this room. This can only be requested once.',
+                    'This room has $guests registered guest(s). '
+                    'You can claim $remaining serving(s) this morning.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 16),
@@ -2090,7 +2107,7 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
                     controller: qtyCtrl,
                     keyboardType: TextInputType.number,
                     decoration: InputDecoration(
-                      labelText: 'Servings (max $quota)',
+                      labelText: 'Servings (max $remaining)',
                       prefixIcon: const Icon(Icons.free_breakfast_outlined),
                     ),
                   ),
@@ -2106,10 +2123,10 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
                       FilledButton(
                         onPressed: () {
                           final qty = int.tryParse(qtyCtrl.text.trim()) ?? 0;
-                          if (qty < 1 || qty > quota) {
+                          if (qty < 1 || qty > remaining) {
                             showAppMessage(
                               context,
-                              'Enter a quantity between 1 and $quota.',
+                              'Enter a quantity between 1 and $remaining.',
                               isError: true,
                             );
                             return;
@@ -2119,7 +2136,7 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
                             'quantity': qty,
                           });
                         },
-                        child: const Text('Request'),
+                        child: const Text('Claim'),
                       ),
                     ],
                   ),
@@ -2136,7 +2153,7 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
       await guestDio().post('/guest/amenities/claim', data: payload);
       return {
         'message':
-            'Free breakfast requested. It will appear in amenities for hotel staff.',
+            'Free breakfast claimed. The kitchen will see it in Amenities.',
       };
     });
   }
@@ -2404,21 +2421,25 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
                 ],
                 const SizedBox(height: 16),
                 AppActionTile(
-                  title: 'Free breakfast',
+                  title: 'Claim free breakfast',
                   subtitle: () {
                     final fb = (_data?['freeBreakfast'] as Map<String, dynamic>?) ??
                         const {};
+                    if (fb['canClaimToday'] == true) {
+                      final remaining = fb['remainingToday'] ?? fb['quota'] ?? 0;
+                      final guests = fb['guestCount'] ?? remaining;
+                      return 'Tap to claim $remaining of $guests serving(s) this morning';
+                    }
                     if (fb['alreadyClaimed'] == true) {
                       final claim =
                           (fb['claim'] as Map<String, dynamic>?) ?? const {};
                       final name = (claim['amenityName'] ?? 'Breakfast').toString();
                       final qty = claim['quantity'] ?? 1;
-                      return 'Already requested: $name × $qty';
+                      return 'Already claimed today: $name × $qty';
                     }
-                    final quota = (fb['quota'] as num?)?.toInt() ?? 0;
-                    return quota > 0
-                        ? 'Choose up to $quota free serving(s) for your stay'
-                        : 'Complimentary breakfast options for your stay';
+                    return (fb['reason'] ??
+                            'Complimentary breakfast when your stay includes a morning')
+                        .toString();
                   }(),
                   icon: Icons.free_breakfast_outlined,
                   onTap: _claimFreeBreakfast,
@@ -2538,6 +2559,28 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
                             ),
                     ),
                     Divider(height: 1, color: scheme.outlineVariant),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                      child: FilledButton.tonalIcon(
+                        onPressed: _busyAction ? null : _claimFreeBreakfast,
+                        icon: const Icon(Icons.free_breakfast_outlined),
+                        label: Text(
+                          () {
+                            final fb = (_data?['freeBreakfast']
+                                    as Map<String, dynamic>?) ??
+                                const {};
+                            if (fb['canClaimToday'] == true) {
+                              final n = fb['remainingToday'] ?? fb['quota'] ?? '';
+                              return 'Claim free breakfast ($n)';
+                            }
+                            if (fb['alreadyClaimed'] == true) {
+                              return 'Breakfast claimed today';
+                            }
+                            return 'Claim free breakfast';
+                          }(),
+                        ),
+                      ),
+                    ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(8, 8, 8, 10),
                       child: Row(

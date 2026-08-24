@@ -71,6 +71,12 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
   String _bookingListFilter = 'all';
   Map<String, dynamic>? _inbox;
   int? _lastChatUnread;
+  int? _lastLocalBookings;
+  int? _lastOnlineBookings;
+  int? _lastPendingReservations;
+  int? _lastPendingClaims;
+  int? _lastPendingAmenityProducts;
+  bool _alertsPrimed = false;
   Timer? _chatPoll;
   Timer? _shiftPoll;
   FrontDeskShift? _shift;
@@ -86,6 +92,8 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         d['booking_stats'] as Map<String, dynamic>? ?? const {};
     final pendingApprovals =
         (bookingStats['pending_approvals'] as num?)?.toInt() ?? 0;
+    final pendingAmenityProducts =
+        (bookingStats['pending_amenity_products'] as num?)?.toInt() ?? 0;
 
     final items = <AdminNavItem>[
       const AdminNavItem(
@@ -127,7 +135,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         label: 'Amenities',
         shortLabel: 'Store',
         icon: Icons.storefront_outlined,
-        badgeCount: pendingClaims,
+        badgeCount: pendingClaims + pendingAmenityProducts,
         badgeColor: const Color(0xFF2E7D32),
       ),
     ];
@@ -183,6 +191,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
   void initState() {
     super.initState();
     _pollInbox();
+    _maybePlayDashboardAlerts(widget.data, widget.data);
     _chatPoll = Timer.periodic(const Duration(seconds: 10), (_) => _pollInbox());
     _shiftPoll = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted && widget.isFrontDesk && _shift != null) {
@@ -258,6 +267,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     if (oldWidget.data != widget.data) {
       _pollInbox();
       _maybeRedirectToCreditsTab(oldWidget.data, widget.data);
+      _maybePlayDashboardAlerts(oldWidget.data, widget.data);
     }
     final oldMsgs = oldWidget.data['guestMessages'] as List? ?? const [];
     final newMsgs = widget.data['guestMessages'] as List? ?? const [];
@@ -309,10 +319,48 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         _lastChatUnread = nextBadge.totalUnread;
       });
       if (prev != null && nextBadge.totalUnread > prev) {
-        unawaited(ChatNotificationSound.playNewMessage());
+        unawaited(ChatNotificationSound.play());
       }
     } on DioException {
       // Keep last inbox snapshot; guestMessages fallback still drives badge.
+    }
+  }
+
+  void _maybePlayDashboardAlerts(
+    Map<String, dynamic> oldData,
+    Map<String, dynamic> newData,
+  ) {
+    final newStats = newData['booking_stats'] as Map<String, dynamic>? ?? const {};
+    final local = (newStats['local_total'] as num?)?.toInt() ?? 0;
+    final online = (newStats['online_total'] as num?)?.toInt() ?? 0;
+    final pendingRes = (newStats['pending_reservations'] as num?)?.toInt() ??
+        AdminDashboardModels.pendingReservationCount(
+          newData['reservations'] as List<dynamic>? ?? const [],
+        );
+    final pendingClaims = AdminDashboardModels.pendingAmenityClaimCount(
+      newData['amenityClaims'] as List<dynamic>? ?? const [],
+    );
+    final pendingProducts =
+        (newStats['pending_amenity_products'] as num?)?.toInt() ?? 0;
+
+    final grew = _alertsPrimed &&
+        ((_lastLocalBookings != null && local > _lastLocalBookings!) ||
+            (_lastOnlineBookings != null && online > _lastOnlineBookings!) ||
+            (_lastPendingReservations != null &&
+                pendingRes > _lastPendingReservations!) ||
+            (_lastPendingClaims != null && pendingClaims > _lastPendingClaims!) ||
+            (_lastPendingAmenityProducts != null &&
+                pendingProducts > _lastPendingAmenityProducts!));
+
+    _lastLocalBookings = local;
+    _lastOnlineBookings = online;
+    _lastPendingReservations = pendingRes;
+    _lastPendingClaims = pendingClaims;
+    _lastPendingAmenityProducts = pendingProducts;
+    _alertsPrimed = true;
+
+    if (grew) {
+      unawaited(ChatNotificationSound.play());
     }
   }
 
@@ -388,7 +436,6 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
                     await widget.onRefresh();
                     await _pollInbox();
                   },
-                  onSignOut: widget.onSignOut,
                 ),
                 HotelCreditsReminderBanner(
                   balance: creditAmount,
@@ -629,6 +676,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           onOpenActivityLogs: widget.onOpenActivityLogs,
           onOpenAccountSettings: widget.onOpenAccountSettings,
           onRefreshAfterNav: widget.onRefresh,
+          onSignOut: widget.onSignOut,
         ),
         sections.length,
       ),

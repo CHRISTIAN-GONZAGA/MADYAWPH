@@ -30,6 +30,7 @@ class SettingsSection extends StatelessWidget {
     required this.onOpenActivityLogs,
     required this.onOpenAccountSettings,
     required this.onRefreshAfterNav,
+    this.onSignOut,
     this.creditsLocked = false,
     this.isFrontDesk = false,
     this.isSuperAdmin = false,
@@ -46,6 +47,7 @@ class SettingsSection extends StatelessWidget {
   final VoidCallback onOpenActivityLogs;
   final VoidCallback onOpenAccountSettings;
   final Future<void> Function() onRefreshAfterNav;
+  final VoidCallback? onSignOut;
 
   bool get _opsEnabled => isFrontDesk || !creditsLocked;
 
@@ -387,6 +389,14 @@ class SettingsSection extends StatelessWidget {
               enabled: isFrontDesk || !creditsLocked,
               onTap: onOpenAccountSettings,
             ),
+            if (onSignOut != null)
+              _SettingsTile(
+                icon: Icons.logout,
+                title: 'Sign out',
+                subtitle: 'Return to role selection',
+                enabled: true,
+                onTap: onSignOut!,
+              ),
           ],
         ),
       ],

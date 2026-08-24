@@ -11,14 +11,22 @@ use App\Models\Hotel;
 use App\Models\Room;
 use App\Services\CentralAdminAccountService;
 use App\Support\GuestPortalStore;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Mail;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 class GuestDemographicsBreakfastEmailTest extends TestCase
 {
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
+    }
+
     public function test_guest_can_claim_free_breakfast_once_up_to_registered_guests(): void
     {
+        Carbon::setTestNow(Carbon::parse('2026-08-25 08:10:00', 'Asia/Manila'));
         $hotel = Hotel::create(['name' => 'Breakfast Inn', 'location' => 'Butuan']);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
@@ -34,8 +42,10 @@ class GuestDemographicsBreakfastEmailTest extends TestCase
             'room_id' => (string) $room->id,
             'booking_reference' => 'BK-BF-1',
             'guest_name' => 'Breakfast Guest',
-            'check_in_date' => now()->toDateString(),
-            'check_out_date' => now()->addDay()->toDateString(),
+            'check_in_date' => '2026-08-24',
+            'check_out_date' => '2026-08-25',
+            'check_in_time' => '14:00',
+            'check_out_time' => '12:00',
             'nights' => 1,
             'adults' => 2,
             'children' => 0,
@@ -70,7 +80,8 @@ class GuestDemographicsBreakfastEmailTest extends TestCase
             ->assertOk()
             ->json();
 
-        $this->assertSame(2, (int) ($dash['freeBreakfast']['quota'] ?? 0));
+        $this->assertSame(2, (int) ($dash['freeBreakfast']['quotaPerMorning'] ?? $dash['freeBreakfast']['quota'] ?? 0));
+        $this->assertTrue((bool) ($dash['freeBreakfast']['canClaimToday'] ?? false));
         $this->assertFalse((bool) ($dash['freeBreakfast']['alreadyClaimed'] ?? true));
         $this->assertCount(1, $dash['freeBreakfast']['menu'] ?? []);
         $this->assertCount(1, $dash['amenityMenu'] ?? []);

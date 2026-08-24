@@ -1117,10 +1117,11 @@ class _AvgPriceHighlight extends StatelessWidget {
           hasAmount ? amount : '—',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w900,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
                 color: hasAmount ? scheme.primary : scheme.onSurfaceVariant,
                 height: 1.05,
+                fontSize: 18,
               ),
         ),
       ],

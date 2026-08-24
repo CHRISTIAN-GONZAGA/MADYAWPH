@@ -311,27 +311,25 @@ class GuestPortalApiController extends Controller
             ->where('is_active', true)
             ->orderBy('amenity_type')
             ->orderBy('name')
-            ->get();
+            ->get()
+            ->filter(fn (AmenityMenuItem $item) => AmenityMenuItem::isVisibleToGuests($item))
+            ->values();
 
         $amenityClaims = AmenityClaim::query()
             ->where('hotel_id', $hotelId)
             ->where('room_id', $roomId)
             ->latest('claimed_at')
-            ->limit(25)
+            ->limit(50)
             ->get();
 
-        $breakfastQuota = FreeBreakfastSupport::guestQuota($activeBooking);
-        $existingBreakfastClaim = $amenityClaims->first(
-            fn ($claim) => FreeBreakfastSupport::isBreakfastClaimType(
-                (string) ($claim->amenity_type ?? ''),
-                (string) ($claim->amenity_name ?? ''),
-            )
+        $breakfastState = FreeBreakfastSupport::guestState(
+            $activeBooking,
+            $amenityMenu,
+            $amenityClaims,
+            $room,
         );
-        $freeBreakfastMenu = $amenityMenu
-            ->filter(fn ($item) => FreeBreakfastSupport::isFreeBreakfastItem($item))
-            ->values();
         $paidAmenityMenu = $amenityMenu
-            ->reject(fn ($item) => FreeBreakfastSupport::isFreeBreakfastItem($item))
+            ->reject(fn ($item) => FreeBreakfastSupport::isBreakfastItem($item))
             ->values();
 
         return response()->json([
@@ -382,10 +380,8 @@ class GuestPortalApiController extends Controller
                     'quantity' => (int) $claim->quantity,
                     'status' => $claim->status,
                     'claimedAt' => optional($claim->claimed_at)->toISOString(),
-                    'isFreeBreakfast' => FreeBreakfastSupport::isBreakfastClaimType(
-                        (string) ($claim->amenity_type ?? ''),
-                        (string) ($claim->amenity_name ?? ''),
-                    ),
+                    'isFreeBreakfast' => FreeBreakfastSupport::isBreakfastClaim($claim),
+                    'breakfastDate' => (string) ($claim->breakfast_date ?? ''),
                 ])
                 ->values(),
             'amenityMenu' => $paidAmenityMenu->map(fn ($item) => [
@@ -394,22 +390,7 @@ class GuestPortalApiController extends Controller
                 'amenityName' => (string) $item->name,
                 'price' => (float) $item->price,
             ]),
-            'freeBreakfast' => [
-                'quota' => $breakfastQuota,
-                'alreadyClaimed' => $existingBreakfastClaim !== null,
-                'claim' => $existingBreakfastClaim ? [
-                    'id' => (string) $existingBreakfastClaim->id,
-                    'amenityName' => (string) ($existingBreakfastClaim->amenity_name ?? ''),
-                    'quantity' => (int) ($existingBreakfastClaim->quantity ?? 0),
-                    'status' => (string) ($existingBreakfastClaim->status ?? ''),
-                ] : null,
-                'menu' => $freeBreakfastMenu->map(fn ($item) => [
-                    'id' => (string) $item->id,
-                    'amenityType' => (string) $item->amenity_type,
-                    'amenityName' => (string) $item->name,
-                    'price' => 0,
-                ])->values(),
-            ],
+            'freeBreakfast' => $breakfastState,
         ]);
     }
 
@@ -426,9 +407,14 @@ class GuestPortalApiController extends Controller
             ->where('hotel_id', $hotelId)
             ->where('is_active', true)
             ->findOrFail($validated['amenityItemId']);
+        if (! AmenityMenuItem::isVisibleToGuests($item)) {
+            return response()->json([
+                'message' => 'This amenity is not available.',
+            ], 422);
+        }
 
         $qty = (int) $validated['quantity'];
-        $isFreeBreakfast = FreeBreakfastSupport::isFreeBreakfastItem($item);
+        $isFreeBreakfast = FreeBreakfastSupport::isBreakfastItem($item);
 
         $booking = Booking::query()
             ->where('hotel_id', $hotelId)
@@ -440,46 +426,35 @@ class GuestPortalApiController extends Controller
             ->latest('created_at')
             ->first();
 
+        $room = Room::withoutGlobalScopes()->find($roomId);
+        $existingClaims = AmenityClaim::query()
+            ->where('hotel_id', $hotelId)
+            ->where('room_id', $roomId)
+            ->get();
+
+        $breakfastDate = null;
         if ($isFreeBreakfast) {
-            $quota = FreeBreakfastSupport::guestQuota($booking);
-            if ($quota < 1) {
-                return response()->json([
-                    'message' => 'Free breakfast is not available for this stay. Ask the front desk to confirm registered guests.',
-                ], 422);
+            $check = FreeBreakfastSupport::validateFreeClaim($booking, $existingClaims, $qty, $room);
+            if (! $check['ok']) {
+                return response()->json(['message' => $check['message']], 422);
             }
-
-            $alreadyClaimed = AmenityClaim::query()
-                ->where('hotel_id', $hotelId)
-                ->where('room_id', $roomId)
-                ->get()
-                ->contains(fn ($claim) => FreeBreakfastSupport::isBreakfastClaimType(
-                    (string) ($claim->amenity_type ?? ''),
-                    (string) ($claim->amenity_name ?? ''),
-                ));
-
-            if ($alreadyClaimed) {
-                return response()->json([
-                    'message' => 'Free breakfast was already requested for this stay. You cannot submit another request.',
-                ], 422);
-            }
-
-            if ($qty > $quota) {
-                return response()->json([
-                    'message' => "You can request up to {$quota} free breakfast serving(s) for the guests registered on this room.",
-                ], 422);
-            }
+            $breakfastDate = $check['today'];
         }
 
         $claim = AmenityClaim::query()->create([
             'hotel_id' => $hotelId,
             'room_id' => $roomId,
+            'booking_id' => $booking ? (string) $booking->id : null,
             'room_number' => $portal['room_number'],
             'guest_name' => (string) ($booking?->guest_name ?? 'In-House Guest'),
             'amenity_type' => (string) $item->amenity_type,
             'amenity_name' => (string) $item->name,
+            'amenity_item_id' => (string) $item->id,
             'quantity' => $qty,
             'status' => 'pending',
             'claimed_at' => now(),
+            'is_free_breakfast' => $isFreeBreakfast,
+            'breakfast_date' => $breakfastDate,
         ]);
 
         if ($booking && ! $isFreeBreakfast) {

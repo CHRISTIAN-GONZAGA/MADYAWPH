@@ -1,16 +1,17 @@
 import 'package:flutter/services.dart';
 
-/// Plays a short alert when hotel staff receive a new chat message.
+/// Short device alert for chat, bookings, and other staff/guest notifications.
 class ChatNotificationSound {
   ChatNotificationSound._();
 
   static DateTime? _lastPlayedAt;
 
-  /// Debounced so rapid polls do not spam the device speaker.
-  static Future<void> playNewMessage() async {
+  static Future<void> playNewMessage() => play();
+
+  static Future<void> play() async {
     final now = DateTime.now();
     if (_lastPlayedAt != null &&
-        now.difference(_lastPlayedAt!) < const Duration(seconds: 2)) {
+        now.difference(_lastPlayedAt!) < const Duration(milliseconds: 900)) {
       return;
     }
     _lastPlayedAt = now;

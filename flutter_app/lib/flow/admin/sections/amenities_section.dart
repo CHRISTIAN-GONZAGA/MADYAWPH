@@ -63,10 +63,35 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
 
   List<Map<String, dynamic>> get _filteredMenu {
     return _menu.whereType<Map<String, dynamic>>().where((m) {
+      final status = (m['approval_status'] ?? m['approvalStatus'] ?? 'approved')
+          .toString()
+          .toLowerCase();
+      if (status == 'rejected' && !widget.canManageProducts) return false;
       if (_filterType == null) return true;
       final t = (m['amenity_type'] ?? m['type'] ?? '').toString();
       return t == _filterType;
     }).toList();
+  }
+
+  List<Map<String, dynamic>> get _pendingProducts {
+    return _menu.whereType<Map<String, dynamic>>().where(_isPending).toList();
+  }
+
+  bool _isPending(Map<String, dynamic> item) {
+    return (item['approval_status'] ?? item['approvalStatus'] ?? '')
+            .toString()
+            .toLowerCase() ==
+        'pending';
+  }
+
+  bool _isBreakfastProduct(Map<String, dynamic> item) {
+    if (item['is_breakfast'] == true || item['isBreakfast'] == true) {
+      return true;
+    }
+    final type =
+        (item['amenity_type'] ?? item['type'] ?? '').toString().toLowerCase();
+    final name = (item['name'] ?? '').toString().toLowerCase();
+    return type.contains('breakfast') || name.contains('breakfast');
   }
 
   Set<String> get _types {
@@ -98,6 +123,18 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
         isError: true,
         title: 'Cannot charge product',
       );
+      return;
+    }
+
+    if (_isPending(item)) {
+      if (!widget.canManageProducts) {
+        showAppMessage(
+          context,
+          'This item is waiting for admin or super admin approval.',
+        );
+        return;
+      }
+      await _reviewPendingProduct(item);
       return;
     }
 
@@ -228,6 +265,206 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
     }
   }
 
+  Future<void> _reviewPendingProduct(Map<String, dynamic> item) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      useRootNavigator: true,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                (item['name'] ?? 'Product').toString(),
+                style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Requested by ${item['requested_by_name'] ?? 'front desk'}. '
+                'Approve to add this to the amenity menu.',
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(ctx, 'approve'),
+                icon: const Icon(Icons.check_rounded),
+                label: const Text('Approve product'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.pop(ctx, 'reject'),
+                icon: const Icon(Icons.close_rounded),
+                label: const Text('Reject'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted || action == null) return;
+    if (action == 'approve') await _approveItem(item);
+    if (action == 'reject') await _rejectItem(item);
+  }
+
+  Future<void> _approveItem(Map<String, dynamic> item) async {
+    final id = AdminDashboardModels.documentIdOf(item);
+    if (id.isEmpty) return;
+    try {
+      final res = await portalDio().patch<Map<String, dynamic>>(
+        '/admin/amenity-menu/$id/approve',
+      );
+      await _loadMenu();
+      await widget.onRefresh();
+      if (!mounted) return;
+      showAppMessage(
+        context,
+        (res.data?['message'] ?? 'Product approved.').toString(),
+      );
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
+  Future<void> _rejectItem(Map<String, dynamic> item) async {
+    final id = AdminDashboardModels.documentIdOf(item);
+    if (id.isEmpty) return;
+    try {
+      final res = await portalDio().patch<Map<String, dynamic>>(
+        '/admin/amenity-menu/$id/reject',
+      );
+      await _loadMenu();
+      await widget.onRefresh();
+      if (!mounted) return;
+      showAppMessage(
+        context,
+        (res.data?['message'] ?? 'Product rejected.').toString(),
+      );
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
+  Future<void> _showAddProductDialog() async {
+    final typeCtrl = TextEditingController(text: 'Breakfast');
+    final nameCtrl = TextEditingController();
+    final priceCtrl = TextEditingController(text: '0');
+    var isBreakfast = true;
+    var active = true;
+
+    final payload = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: Text(
+            widget.isFrontDesk ? 'Request amenity product' : 'Add amenity product',
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (widget.isFrontDesk)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text(
+                      'Admin or super admin must approve this in Amenities before guests can claim it.',
+                      style: Theme.of(ctx).textTheme.bodySmall,
+                    ),
+                  ),
+                TextField(
+                  controller: typeCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Category / type',
+                    hintText: 'e.g. Breakfast, Laundry',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(labelText: 'Item name'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: priceCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(labelText: 'Price (PHP)'),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: isBreakfast,
+                  onChanged: (v) => setLocal(() {
+                    isBreakfast = v;
+                    if (v && typeCtrl.text.trim().isEmpty) {
+                      typeCtrl.text = 'Breakfast';
+                    }
+                  }),
+                  title: const Text('Breakfast meal'),
+                  subtitle: const Text(
+                    'Guests can claim this as complimentary breakfast when eligible',
+                  ),
+                ),
+                if (!widget.isFrontDesk)
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: active,
+                    onChanged: (v) => setLocal(() => active = v),
+                    title: const Text('Available now'),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final name = nameCtrl.text.trim();
+                if (name.isEmpty) return;
+                Navigator.pop(ctx, {
+                  'amenity_type': typeCtrl.text.trim().isEmpty
+                      ? (isBreakfast ? 'Breakfast' : 'Other')
+                      : typeCtrl.text.trim(),
+                  'name': name,
+                  'price': double.tryParse(priceCtrl.text.trim()) ?? 0,
+                  'is_active': widget.isFrontDesk ? false : active,
+                  'is_breakfast': isBreakfast,
+                });
+              },
+              child: Text(widget.isFrontDesk ? 'Submit request' : 'Create'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (payload == null) return;
+    try {
+      final res = await portalDio().post<Map<String, dynamic>>(
+        '/admin/amenity-menu',
+        data: payload,
+      );
+      await _loadMenu();
+      await widget.onRefresh();
+      if (!mounted) return;
+      showAppMessage(
+        context,
+        (res.data?['message'] ?? 'Amenity menu item created.').toString(),
+      );
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
   Future<void> _setAvailability(
     Map<String, dynamic> item, {
     required bool available,
@@ -266,6 +503,7 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
     final priceCtrl =
         TextEditingController(text: '${item['price'] ?? 0}');
     var active = item['is_active'] != false;
+    var isBreakfast = _isBreakfastProduct(item);
 
     final ok = await showDialog<bool>(
       context: context,
@@ -292,6 +530,11 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
                     decimal: true,
                   ),
                   decoration: const InputDecoration(labelText: 'Price (PHP)'),
+                ),
+                SwitchListTile(
+                  value: isBreakfast,
+                  onChanged: (v) => setLocal(() => isBreakfast = v),
+                  title: const Text('Breakfast meal'),
                 ),
                 SwitchListTile(
                   value: active,
@@ -325,6 +568,7 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
         'name': nameCtrl.text.trim(),
         'price': double.tryParse(priceCtrl.text.trim()) ?? 0,
         'is_active': active,
+        'is_breakfast': isBreakfast,
       });
       await _loadMenu();
       if (!mounted) return;
@@ -412,8 +656,13 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
       itemBuilder: (context, i) {
         final m = items[i];
         final active = m['is_active'] != false;
+        final pending = _isPending(m);
         return Card(
-          color: active ? null : Colors.grey.shade100,
+          color: pending
+              ? Colors.orange.shade50
+              : active
+                  ? null
+                  : Colors.grey.shade100,
           child: InkWell(
             onTap: () => _onProductTap(m),
             child: Padding(
@@ -479,13 +728,21 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                   Text(
-                    active ? 'Available' : 'Unavailable',
+                    pending
+                        ? 'Pending approval'
+                        : active
+                            ? (_isBreakfastProduct(m)
+                                ? 'Breakfast · Available'
+                                : 'Available')
+                            : 'Unavailable',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: active
-                          ? Colors.green.shade700
-                          : Theme.of(context).colorScheme.error,
+                      color: pending
+                          ? Colors.orange.shade800
+                          : active
+                              ? Colors.green.shade700
+                              : Theme.of(context).colorScheme.error,
                     ),
                   ),
                 ],
@@ -662,6 +919,75 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
     );
   }
 
+  Widget _pendingProductRequests() {
+    final pending = _pendingProducts;
+    if (pending.isEmpty) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Card(
+        color: Colors.orange.shade50,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                widget.canManageProducts
+                    ? 'Front desk product requests'
+                    : 'Waiting for admin approval',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: Colors.orange.shade900,
+                    ),
+              ),
+              const SizedBox(height: 6),
+              ...pending.map((item) {
+                final name = (item['name'] ?? 'Item').toString();
+                final by = (item['requested_by_name'] ?? 'Front desk').toString();
+                return ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    Icons.free_breakfast_outlined,
+                    color: scheme.primary,
+                  ),
+                  title: Text(name),
+                  subtitle: Text(
+                    _isBreakfastProduct(item)
+                        ? 'Breakfast · from $by'
+                        : 'From $by',
+                  ),
+                  trailing: widget.canManageProducts
+                      ? Wrap(
+                          spacing: 4,
+                          children: [
+                            TextButton(
+                              onPressed: () => _rejectItem(item),
+                              child: const Text('Reject'),
+                            ),
+                            FilledButton(
+                              onPressed: () => _approveItem(item),
+                              child: const Text('Approve'),
+                            ),
+                          ],
+                        )
+                      : Text(
+                          'Pending',
+                          style: TextStyle(
+                            color: Colors.orange.shade800,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _claimsList() {
     final claims = widget.claims.whereType<Map<String, dynamic>>().toList();
     if (claims.isEmpty) {
@@ -714,16 +1040,13 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
-              if (widget.canManageProducts)
-                FilledButton.icon(
-                  onPressed: () async {
-                    await widget.onAddProduct();
-                    await _loadMenu();
-                    await widget.onRefresh();
-                  },
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Add product'),
-                ),
+              FilledButton.icon(
+                onPressed: () async {
+                  await _showAddProductDialog();
+                },
+                icon: const Icon(Icons.add, size: 18),
+                label: Text(widget.isFrontDesk ? 'Request product' : 'Add product'),
+              ),
             ],
           ),
         );
@@ -734,6 +1057,7 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
             children: [
               header,
               _breakfastPrepSummary(),
+              _pendingProductRequests(),
               const Expanded(
                 flex: 2,
                 child: SingleChildScrollView(
@@ -781,6 +1105,7 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
             children: [
               header,
               _breakfastPrepSummary(),
+              _pendingProductRequests(),
               const TabBar(
                 tabs: [
                   Tab(text: 'Sales'),

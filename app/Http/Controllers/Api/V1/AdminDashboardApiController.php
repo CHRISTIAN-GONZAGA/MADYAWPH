@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\AmenityClaim;
+use App\Models\AmenityMenuItem;
 use App\Models\BillingCharge;
 use App\Models\Booking;
 use App\Models\CheckoutReminder;
@@ -332,6 +333,8 @@ class AdminDashboardApiController extends Controller
                 'quantity' => (int) $claim->quantity,
                 'status' => $claim->status,
                 'roomNumber' => $claim->room_number,
+                'isFreeBreakfast' => \App\Support\FreeBreakfastSupport::isBreakfastClaim($claim),
+                'breakfastDate' => (string) ($claim->breakfast_date ?? ''),
             ]),
             'tasks' => Task::query()->latest()->limit(25)->get(),
             'staff' => StaffMember::query()->limit(25)->get(),
@@ -352,6 +355,10 @@ class AdminDashboardApiController extends Controller
                 'recent_24h' => $recentBookings,
                 'pending_reservations' => $pendingReservations,
                 'pending_approvals' => $pendingApprovals,
+                'pending_amenity_products' => AmenityMenuItem::query()
+                    ->where('hotel_id', (string) $user->hotel_id)
+                    ->where('approval_status', AmenityMenuItem::STATUS_PENDING)
+                    ->count(),
             ],
             'bookings' => $bookingsList,
             'reservations' => ExternalReservation::query()

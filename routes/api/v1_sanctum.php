@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\StaffController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\V1\AdminChatController;
 use App\Http\Controllers\Api\V1\AdminDashboardApiController;
+use App\Http\Controllers\Api\V1\AmenityMenuController;
 use App\Http\Controllers\Api\V1\HotelNotificationEmailController;
 use App\Http\Controllers\Api\V1\HotelPayMongoController;
 use App\Http\Controllers\Api\V1\PortalAuthController;
@@ -358,15 +359,8 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
         return response()->json(['ok' => true, 'claim' => $claim]);
     })->name('api.v1.admin.amenities.fulfill');
 
-    Route::get('/admin/amenity-menu', function (Request $request) {
-        $items = AmenityMenuItem::query()
-            ->where('hotel_id', (string) $request->user()->hotel_id)
-            ->orderBy('amenity_type')
-            ->orderBy('name')
-            ->get();
-
-        return response()->json(['data' => $items]);
-    })->name('api.v1.admin.amenity.menu.index');
+    Route::get('/admin/amenity-menu', [AmenityMenuController::class, 'index'])
+        ->name('api.v1.admin.amenity.menu.index');
 
     Route::get('/admin/amenity-chargeable-rooms', function (Request $request, RoomCheckoutService $roomCheckoutService) {
         $hotelId = (string) $request->user()->hotel_id;
@@ -376,65 +370,29 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
         ]);
     })->middleware('role:admin,frontdesk,staff')->name('api.v1.admin.amenity.chargeable-rooms');
 
-    Route::post('/admin/amenity-menu', function (Request $request) {
-        $validated = $request->validate([
-            'amenity_type' => ['required', 'string', 'max:100'],
-            'name' => ['required', 'string', 'max:255'],
-            'price' => ['required', 'numeric', 'min:0'],
-            'is_active' => ['nullable', 'boolean'],
-        ]);
+    Route::post('/admin/amenity-menu', [AmenityMenuController::class, 'store'])
+        ->middleware('role:admin,frontdesk')
+        ->name('api.v1.admin.amenity.menu.store');
 
-        $item = AmenityMenuItem::withoutGlobalScopes()->create([
-            ...$validated,
-            'hotel_id' => (string) $request->user()->hotel_id,
-            'is_active' => (bool) ($validated['is_active'] ?? true),
-        ]);
+    Route::put('/admin/amenity-menu/{id}', [AmenityMenuController::class, 'update'])
+        ->middleware('role:admin')
+        ->name('api.v1.admin.amenity.menu.update');
 
-        return response()->json($item, 201);
-    })->middleware('role:admin')->name('api.v1.admin.amenity.menu.store');
+    Route::patch('/admin/amenity-menu/{id}/availability', [AmenityMenuController::class, 'availability'])
+        ->middleware('role:admin,frontdesk')
+        ->name('api.v1.admin.amenity.menu.availability');
 
-    Route::put('/admin/amenity-menu/{id}', function (Request $request, string $id) {
-        $validated = $request->validate([
-            'amenity_type' => ['required', 'string', 'max:100'],
-            'name' => ['required', 'string', 'max:255'],
-            'price' => ['required', 'numeric', 'min:0'],
-            'is_active' => ['required', 'boolean'],
-        ]);
-        $item = AmenityMenuItem::withoutGlobalScopes()
-            ->where('hotel_id', (string) $request->user()->hotel_id)
-            ->findOrFail($id);
-        $item->update($validated);
+    Route::patch('/admin/amenity-menu/{id}/approve', [AmenityMenuController::class, 'approve'])
+        ->middleware('role:admin')
+        ->name('api.v1.admin.amenity.menu.approve');
 
-        return response()->json($item->fresh());
-    })->middleware('role:admin')->name('api.v1.admin.amenity.menu.update');
+    Route::patch('/admin/amenity-menu/{id}/reject', [AmenityMenuController::class, 'reject'])
+        ->middleware('role:admin')
+        ->name('api.v1.admin.amenity.menu.reject');
 
-    Route::patch('/admin/amenity-menu/{id}/availability', function (Request $request, string $id) {
-        $validated = $request->validate([
-            'is_active' => ['required', 'boolean'],
-        ]);
-        $item = AmenityMenuItem::withoutGlobalScopes()
-            ->where('hotel_id', (string) $request->user()->hotel_id)
-            ->findOrFail($id);
-        $item->update(['is_active' => (bool) $validated['is_active']]);
-        $fresh = $item->fresh() ?? $item;
-
-        return response()->json([
-            'ok' => true,
-            'item' => $fresh,
-            'message' => $fresh->is_active
-                ? 'Product is available to charge to rooms.'
-                : 'Product marked unavailable and cannot be charged to rooms.',
-        ]);
-    })->middleware('role:admin,frontdesk')->name('api.v1.admin.amenity.menu.availability');
-
-    Route::delete('/admin/amenity-menu/{id}', function (Request $request, string $id) {
-        AmenityMenuItem::withoutGlobalScopes()
-            ->where('hotel_id', (string) $request->user()->hotel_id)
-            ->findOrFail($id)
-            ->delete();
-
-        return response()->json(['ok' => true]);
-    })->middleware('role:admin')->name('api.v1.admin.amenity.menu.delete');
+    Route::delete('/admin/amenity-menu/{id}', [AmenityMenuController::class, 'destroy'])
+        ->middleware('role:admin')
+        ->name('api.v1.admin.amenity.menu.delete');
 
     Route::patch('/admin/rooms/{id}/status', function (
         Request $request,
