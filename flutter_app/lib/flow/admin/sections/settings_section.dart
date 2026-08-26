@@ -13,6 +13,7 @@ import '../admin_online_payment_screen.dart';
 import '../admin_portal_users_screen.dart';
 import '../admin_room_fee_presets_screen.dart';
 import '../admin_cancellation_retention_screen.dart';
+import '../admin_currency_screen.dart';
 import '../admin_min_check_in_payment_screen.dart';
 import '../admin_online_booking_deposit_screen.dart';
 import '../admin_early_check_in_fee_screen.dart';
@@ -268,13 +269,27 @@ class SettingsSection extends StatelessWidget {
               ),
               _SettingsTile(
                 icon: Icons.qr_code_scanner_outlined,
-                title: 'Online payment (QR Ph)',
-                subtitle: 'Upload QR for guest online payments & verify refs',
+                title: 'Online payment QRs',
+                subtitle:
+                    'Upload a QR per method — QR Ph, GCash, PayMaya, Maribank, bank',
                 enabled: !creditsLocked,
                 onTap: () {
                   Navigator.of(context).push<void>(
                     MaterialPageRoute<void>(
                       builder: (_) => const AdminOnlinePaymentScreen(),
+                    ),
+                  );
+                },
+              ),
+              _SettingsTile(
+                icon: Icons.currency_exchange_outlined,
+                title: 'Display currency',
+                subtitle: 'Show prices in peso, won, yen, and more',
+                enabled: !creditsLocked,
+                onTap: () {
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const AdminCurrencyScreen(),
                     ),
                   );
                 },

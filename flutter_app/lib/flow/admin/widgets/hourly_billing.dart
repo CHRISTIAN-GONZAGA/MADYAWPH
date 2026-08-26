@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'admin_room_form_constants.dart';
+import '../../../utils/money_format.dart';
 
 /// Shared hourly block pricing helpers (mirrors backend RoomBillingSupport).
 class HourlyBilling {
@@ -159,10 +160,10 @@ class HourlyBilling {
     if (isHourly(room)) {
       final price = pricePerBlock(room);
       final hours = blockHours(room);
-      return '₱${price.toStringAsFixed(0)} / $hours hr';
+      return '${formatMoney(price, decimals: 0)} / $hours hr';
     }
     final nightly = parseAdminDouble(room['price_per_night']);
-    return '₱${nightly.toStringAsFixed(0)} / night';
+    return '${formatMoney(nightly, decimals: 0)} / night';
   }
 
   static double extraHourRate(Map<String, dynamic> room) {

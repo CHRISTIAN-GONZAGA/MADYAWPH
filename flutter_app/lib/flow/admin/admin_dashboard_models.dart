@@ -887,9 +887,8 @@ class AdminDashboardModels {
       'maintenance': maintenance,
       'occupancy': occ,
       'avg_price': avgPrice,
-      'avg_price_label': avgPrice > 0
-          ? 'Avg ₱${avgPrice.toStringAsFixed(0)}'
-          : 'Avg —',
+      'avg_price_label':
+          avgPrice > 0 ? formatMoney(avgPrice, decimals: 0) : '—',
     };
   }
 

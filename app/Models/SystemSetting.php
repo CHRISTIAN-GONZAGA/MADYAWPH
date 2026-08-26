@@ -21,6 +21,10 @@ class SystemSetting extends Model
         'payment_qr_url',
         'payment_gcash_mobile',
         'payment_maya_mobile',
+        'payment_method_qrs',
+        'currency_code',
+        'currency_symbol',
+        'currency_rate',
         'room_fee_presets',
         'cancellation_retention_percent',
         'min_check_in_payment_percent',
@@ -35,6 +39,8 @@ class SystemSetting extends Model
     {
         return [
             'room_fee_presets' => 'array',
+            'payment_method_qrs' => 'array',
+            'currency_rate' => 'float',
             'cancellation_retention_percent' => 'float',
             'min_check_in_payment_percent' => 'float',
             'online_booking_deposit_percent' => 'float',

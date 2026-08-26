@@ -6,9 +6,10 @@ import '../../widgets/app_button.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/chat_attachment.dart';
 import '../../widgets/payment_redirect.dart';
+import '../../utils/money_format.dart';
 
-/// Upload QR Ph for online guest payments, set wallet numbers, verify refs,
-/// and connect the hotel PayMongo merchant account.
+/// Upload a payment QR per method (QR Ph, GCash, PayMaya, Maribank, bank
+/// transfer), verify references, and connect the hotel PayMongo account.
 class AdminOnlinePaymentScreen extends StatefulWidget {
   const AdminOnlinePaymentScreen({super.key});
 
@@ -20,13 +21,13 @@ class AdminOnlinePaymentScreen extends StatefulWidget {
 class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs;
-  String? _qrUrl;
+  List<Map<String, dynamic>> _methods = const [];
+  final Map<String, TextEditingController> _nameCtrls = {};
+  final Map<String, TextEditingController> _numberCtrls = {};
+  final Map<String, TextEditingController> _notesCtrls = {};
   bool _loadingQr = true;
-  bool _uploading = false;
-  bool _savingNumbers = false;
+  String? _busyMethod;
   final _refCtrl = TextEditingController();
-  final _gcashCtrl = TextEditingController();
-  final _mayaCtrl = TextEditingController();
   final _pmSecretCtrl = TextEditingController();
   final _pmPublicCtrl = TextEditingController();
   final _pmInviteEmailCtrl = TextEditingController();
@@ -41,7 +42,7 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
   void initState() {
     super.initState();
     _tabs = TabController(length: 2, vsync: this);
-    _loadQr();
+    _loadMethods();
     _loadPaymongo();
   }
 
@@ -49,8 +50,13 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
   void dispose() {
     _tabs.dispose();
     _refCtrl.dispose();
-    _gcashCtrl.dispose();
-    _mayaCtrl.dispose();
+    for (final ctrl in [
+      ..._nameCtrls.values,
+      ..._numberCtrls.values,
+      ..._notesCtrls.values,
+    ]) {
+      ctrl.dispose();
+    }
     _pmSecretCtrl.dispose();
     _pmPublicCtrl.dispose();
     _pmInviteEmailCtrl.dispose();
@@ -649,21 +655,18 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
     );
   }
 
-  Future<void> _loadQr() async {
+  Future<void> _loadMethods() async {
     setState(() {
       _loadingQr = true;
       _error = null;
     });
     try {
       final res = await portalDio().get<Map<String, dynamic>>(
-        '/admin/hotel/payment-qr',
+        '/admin/hotel/payment-methods',
       );
       if (!mounted) return;
       setState(() {
-        _qrUrl = (res.data?['qr_url'] ?? '').toString();
-        _gcashCtrl.text =
-            (res.data?['payment_gcash_mobile'] ?? '').toString();
-        _mayaCtrl.text = (res.data?['payment_maya_mobile'] ?? '').toString();
+        _applyMethods(res.data?['methods']);
         _loadingQr = false;
       });
     } on DioException catch (e) {
@@ -675,10 +678,34 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
     }
   }
 
-  Future<void> _uploadQr() async {
+  void _applyMethods(dynamic raw) {
+    final list = (raw as List?) ?? const [];
+    _methods = list
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+    for (final method in _methods) {
+      final key = (method['key'] ?? '').toString();
+      if (key.isEmpty) continue;
+      _controllerFor(_nameCtrls, key).text =
+          (method['account_name'] ?? '').toString();
+      _controllerFor(_numberCtrls, key).text =
+          (method['account_number'] ?? '').toString();
+      _controllerFor(_notesCtrls, key).text =
+          (method['instructions'] ?? '').toString();
+    }
+  }
+
+  TextEditingController _controllerFor(
+    Map<String, TextEditingController> store,
+    String key,
+  ) =>
+      store.putIfAbsent(key, TextEditingController.new);
+
+  Future<void> _uploadMethodQr(String key, String label) async {
     final file = await ChatAttachment.pick(context);
     if (file == null) return;
-    setState(() => _uploading = true);
+    setState(() => _busyMethod = key);
     try {
       final form = await ChatAttachment.formWithImage(
         fields: const {},
@@ -686,44 +713,228 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
         fileField: 'image_file',
       );
       final res = await portalDio().post<Map<String, dynamic>>(
-        '/admin/hotel/payment-qr',
+        '/admin/hotel/payment-methods/$key/qr',
         data: form,
       );
       if (!mounted) return;
-      setState(() {
-        _qrUrl = (res.data?['qr_url'] ?? '').toString();
-      });
-      showAppMessage(context, 'Payment QR updated.');
+      setState(() => _applyMethods(res.data?['methods']));
+      showAppMessage(context, '$label QR updated.');
     } on DioException catch (e) {
       if (!mounted) return;
       showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
-      if (mounted) setState(() => _uploading = false);
+      if (mounted) setState(() => _busyMethod = null);
     }
   }
 
-  Future<void> _saveWalletNumbers() async {
-    setState(() => _savingNumbers = true);
+  Future<void> _removeMethodQr(String key, String label) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Remove $label QR?'),
+        content: Text('Guests will no longer see $label as a payment option.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() => _busyMethod = key);
     try {
-      await portalDio().patch(
-        '/admin/hotel/payment-wallet-numbers',
-        data: {
-          'payment_gcash_mobile': _gcashCtrl.text.trim(),
-          'payment_maya_mobile': _mayaCtrl.text.trim(),
-        },
+      final res = await portalDio().delete<Map<String, dynamic>>(
+        '/admin/hotel/payment-methods/$key/qr',
       );
       if (!mounted) return;
-      showAppMessage(
-        context,
-        'Wallet numbers saved. Guests can use Pay Now in the booking app.',
-      );
-      await _loadQr();
+      setState(() => _applyMethods(res.data?['methods']));
+      showAppMessage(context, '$label QR removed.');
     } on DioException catch (e) {
       if (!mounted) return;
       showAppMessage(context, dioErrorMessage(e), isError: true);
     } finally {
-      if (mounted) setState(() => _savingNumbers = false);
+      if (mounted) setState(() => _busyMethod = null);
     }
+  }
+
+  Future<void> _saveMethodDetails(String key, String label) async {
+    setState(() => _busyMethod = key);
+    try {
+      final res = await portalDio().patch<Map<String, dynamic>>(
+        '/admin/hotel/payment-methods/$key',
+        data: {
+          'account_name': _controllerFor(_nameCtrls, key).text.trim(),
+          'account_number': _controllerFor(_numberCtrls, key).text.trim(),
+          'instructions': _controllerFor(_notesCtrls, key).text.trim(),
+        },
+      );
+      if (!mounted) return;
+      setState(() => _applyMethods(res.data?['methods']));
+      showAppMessage(context, '$label details saved.');
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    } finally {
+      if (mounted) setState(() => _busyMethod = null);
+    }
+  }
+
+  Widget _methodCard(ColorScheme scheme, Map<String, dynamic> method) {
+    final key = (method['key'] ?? '').toString();
+    final label = (method['label'] ?? key).toString();
+    final hint = (method['hint'] ?? '').toString();
+    final qrUrl = (method['qr_url'] ?? '').toString();
+    final hasQr = qrUrl.isNotEmpty;
+    final busy = _busyMethod == key;
+    final isBank = key == 'bank_transfer';
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 14),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
+                      if (hint.isNotEmpty)
+                        Text(
+                          hint,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                        ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: method['configured'] == true
+                        ? scheme.primaryContainer
+                        : scheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    method['configured'] == true ? 'Live' : 'Not set',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: method['configured'] == true
+                              ? scheme.onPrimaryContainer
+                              : scheme.onSurfaceVariant,
+                        ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (hasQr)
+              Center(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: NetworkMediaImage(
+                    url: qrUrl,
+                    width: 190,
+                    height: 190,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 26),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: scheme.outlineVariant),
+                ),
+                child: Column(
+                  children: [
+                    Icon(Icons.qr_code_2, size: 46, color: scheme.outline),
+                    const SizedBox(height: 8),
+                    Text(
+                      'No $label QR yet',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.tonalIcon(
+                    onPressed: busy ? null : () => _uploadMethodQr(key, label),
+                    icon: const Icon(Icons.upload_outlined, size: 18),
+                    label: Text(hasQr ? 'Replace QR' : 'Upload QR'),
+                  ),
+                ),
+                if (hasQr) ...[
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: 'Remove QR',
+                    onPressed: busy ? null : () => _removeMethodQr(key, label),
+                    icon: const Icon(Icons.delete_outline),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _controllerFor(_nameCtrls, key),
+              decoration: InputDecoration(
+                labelText: isBank ? 'Account name' : 'Account name (optional)',
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _controllerFor(_numberCtrls, key),
+              keyboardType:
+                  isBank ? TextInputType.text : TextInputType.phone,
+              decoration: InputDecoration(
+                labelText: isBank ? 'Account number' : 'Mobile number',
+                hintText: isBank ? '1234-5678-9012' : '09171234567',
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _controllerFor(_notesCtrls, key),
+              maxLines: 2,
+              decoration: const InputDecoration(
+                labelText: 'Note shown to guests (optional)',
+                hintText: 'e.g. Use InstaPay, send the receipt to the front desk',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 10),
+            AppPrimaryButton(
+              label: busy ? 'Saving…' : 'Save $label details',
+              onPressed: busy ? null : () => _saveMethodDetails(key, label),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _searchRefs() async {
@@ -763,7 +974,7 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
         bottom: TabBar(
           controller: _tabs,
           tabs: const [
-            Tab(text: 'QR Ph code'),
+            Tab(text: 'Payment QRs'),
             Tab(text: 'Verify payment'),
           ],
         ),
@@ -775,9 +986,9 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
             padding: const EdgeInsets.all(20),
             children: [
               Text(
-                'Connect PayMongo so guests can pay via Hosted Checkout with QR Ph. '
-                'Always upload a backup QR Ph screenshot below so guests can still pay if they skip PayMongo or checkout is unavailable. '
-                'Wallet numbers are an extra manual fallback — they are not the PayMongo destination.',
+                'Upload one QR per payment method. Guests booking a room see a button '
+                'for every method you set up here and scan the matching code — nothing '
+                'opens their wallet app automatically.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),
@@ -786,7 +997,7 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
               _paymongoCard(scheme),
               const SizedBox(height: 20),
               Text(
-                'Backup QR Ph screenshot (if guests skip PayMongo)',
+                'Payment methods',
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),
@@ -796,82 +1007,8 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
                 const Center(child: CircularProgressIndicator())
               else if (_error != null)
                 Text(_error!, style: TextStyle(color: scheme.error))
-              else if ((_qrUrl ?? '').isNotEmpty)
-                Center(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: NetworkMediaImage(
-                      url: _qrUrl!,
-                      width: 260,
-                      height: 260,
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                )
               else
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      children: [
-                        Icon(Icons.qr_code_2, size: 64, color: scheme.outline),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'No payment QR uploaded yet.',
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              const SizedBox(height: 24),
-              AppPrimaryButton(
-                label: _uploading ? 'Uploading…' : 'Upload / replace QR image',
-                onPressed: _uploading ? null : _uploadQr,
-              ),
-              const SizedBox(height: 28),
-              Text(
-                'Wallet numbers (manual fallback only)',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Optional contact / manual Send Money fallback when PayMongo is not connected. '
-                'Do not treat these numbers as the PayMongo merchant destination.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                      height: 1.35,
-                    ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _gcashCtrl,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(
-                  labelText: 'GCash mobile number',
-                  hintText: '09171234567',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _mayaCtrl,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(
-                  labelText: 'Maya mobile number',
-                  hintText: '09181234567',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: _savingNumbers || _loadingQr ? null : _saveWalletNumbers,
-                child: Text(
-                  _savingNumbers ? 'Saving…' : 'Save wallet numbers',
-                ),
-              ),
+                for (final method in _methods) _methodCard(scheme, method),
             ],
           ),
           ListView(
@@ -926,7 +1063,7 @@ class _AdminOnlinePaymentScreenState extends State<AdminOnlinePaymentScreen>
                     ),
                     subtitle: Text(
                       '$guest · $method · $status'
-                      '${total > 0 ? ' · ₱${total.toStringAsFixed(0)}' : ''}',
+                      '${total > 0 ? ' · ${formatMoney(total, decimals: 0)}' : ''}',
                     ),
                     isThreeLine: true,
                   ),

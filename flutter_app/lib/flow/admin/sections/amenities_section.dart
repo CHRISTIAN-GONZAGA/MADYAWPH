@@ -8,6 +8,7 @@ import '../widgets/admin_room_navigation.dart';
 import '../widgets/admin_sales_panel.dart';
 import '../widgets/amenity_charges_panel.dart';
 import '../widgets/charge_amenity_to_room_dialog.dart';
+import '../../../utils/money_format.dart';
 
 class AmenitiesSection extends StatefulWidget {
   const AmenitiesSection({
@@ -724,7 +725,7 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
                   ),
                   const Spacer(),
                   Text(
-                    '₱${m['price'] ?? 0}',
+                    formatMoney(parseJsonDouble(m['price'])),
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                   Text(

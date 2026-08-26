@@ -200,83 +200,125 @@ class AppTheme {
     );
   }
 
+  /// Hotel typography: one family, Noto Sans. It reads as a real property
+  /// system (and covers Korean, Japanese, and Chinese) instead of a display
+  /// serif paired with a rounded UI sans.
   static TextTheme _textTheme(ColorScheme scheme) {
-    final display = GoogleFonts.playfairDisplayTextTheme();
-    final body = GoogleFonts.outfitTextTheme();
+    final body = GoogleFonts.notoSansTextTheme();
     final on = scheme.onSurface;
     final muted = scheme.onSurfaceVariant;
+    const figures = <FontFeature>[
+      FontFeature.tabularFigures(),
+    ];
 
     return body.copyWith(
-      displayLarge: display.displayLarge?.copyWith(
+      displayLarge: body.displayLarge?.copyWith(
         fontSize: 40,
-        fontWeight: FontWeight.w600,
-        letterSpacing: -0.6,
-        height: 1.12,
-        color: on,
-      ),
-      displayMedium: display.displayMedium?.copyWith(
-        fontSize: 32,
         fontWeight: FontWeight.w600,
         letterSpacing: -0.4,
         height: 1.15,
         color: on,
       ),
-      headlineMedium: display.headlineMedium?.copyWith(
-        fontSize: 28,
+      displayMedium: body.displayMedium?.copyWith(
+        fontSize: 34,
         fontWeight: FontWeight.w600,
-        letterSpacing: -0.35,
+        letterSpacing: -0.3,
         height: 1.18,
         color: on,
       ),
-      headlineSmall: display.headlineSmall?.copyWith(
-        fontSize: 22,
+      displaySmall: body.displaySmall?.copyWith(
+        fontSize: 28,
         fontWeight: FontWeight.w600,
         letterSpacing: -0.2,
         height: 1.2,
         color: on,
       ),
-      titleLarge: body.titleLarge?.copyWith(
-        fontSize: 20,
+      headlineLarge: body.headlineLarge?.copyWith(
+        fontSize: 28,
+        fontWeight: FontWeight.w600,
+        letterSpacing: -0.2,
+        height: 1.22,
+        color: on,
+      ),
+      headlineMedium: body.headlineMedium?.copyWith(
+        fontSize: 24,
         fontWeight: FontWeight.w600,
         letterSpacing: -0.15,
+        height: 1.25,
         color: on,
+      ),
+      headlineSmall: body.headlineSmall?.copyWith(
+        fontSize: 20,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0,
+        height: 1.28,
+        color: on,
+      ),
+      titleLarge: body.titleLarge?.copyWith(
+        fontSize: 18,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0,
+        height: 1.3,
+        color: on,
+        fontFeatures: figures,
       ),
       titleMedium: body.titleMedium?.copyWith(
         fontSize: 16,
         fontWeight: FontWeight.w600,
+        letterSpacing: 0,
+        height: 1.35,
         color: on,
+        fontFeatures: figures,
       ),
       titleSmall: body.titleSmall?.copyWith(
         fontSize: 14,
         fontWeight: FontWeight.w600,
+        letterSpacing: 0,
+        height: 1.35,
         color: on,
+        fontFeatures: figures,
       ),
       bodyLarge: body.bodyLarge?.copyWith(
         fontSize: 16,
-        height: 1.45,
+        height: 1.5,
+        letterSpacing: 0,
         color: on,
+        fontFeatures: figures,
       ),
       bodyMedium: body.bodyMedium?.copyWith(
         fontSize: 14,
-        height: 1.42,
+        height: 1.45,
+        letterSpacing: 0,
         color: on,
+        fontFeatures: figures,
       ),
       bodySmall: body.bodySmall?.copyWith(
-        fontSize: 13,
-        height: 1.38,
+        fontSize: 12.5,
+        height: 1.4,
+        letterSpacing: 0,
         color: muted,
+        fontFeatures: figures,
       ),
       labelLarge: body.labelLarge?.copyWith(
         fontSize: 14,
         fontWeight: FontWeight.w600,
-        letterSpacing: 0.2,
+        letterSpacing: 0.1,
         color: on,
+        fontFeatures: figures,
       ),
       labelMedium: body.labelMedium?.copyWith(
         fontSize: 12,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 0.35,
+        fontWeight: FontWeight.w500,
+        letterSpacing: 0.15,
         color: muted,
+        fontFeatures: figures,
+      ),
+      labelSmall: body.labelSmall?.copyWith(
+        fontSize: 11,
+        fontWeight: FontWeight.w500,
+        letterSpacing: 0.2,
+        color: muted,
+        fontFeatures: figures,
       ),
     );
   }

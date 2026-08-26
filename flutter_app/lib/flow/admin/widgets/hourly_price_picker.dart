@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'hourly_billing.dart';
+import '../../../utils/money_format.dart';
 
 /// Scrollable block-hours picker + price field for hourly room rates.
 class HourlyPricePicker extends StatelessWidget {
@@ -100,7 +101,7 @@ class HourlyPricePicker extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          'Preview: ₱${pricePerBlock.toStringAsFixed(0)} per $blockHours hour${blockHours == 1 ? '' : 's'}',
+          'Preview: ${formatMoney(pricePerBlock, decimals: 0)} per $blockHours hour${blockHours == 1 ? '' : 's'}',
           style: TextStyle(
             color: scheme.primary,
             fontWeight: FontWeight.w600,

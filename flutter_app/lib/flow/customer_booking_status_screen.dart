@@ -7,6 +7,7 @@ import '../dio_client.dart';
 import '../locale_controller.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/guest_online_payment.dart';
+import '../utils/money_format.dart';
 
 /// Maps instant `/customer/bookings` response + room row for the status ticket UI.
 Map<String, dynamic> instantBookingStatusPayload({
@@ -509,7 +510,7 @@ class _TicketCard extends StatelessWidget {
                 (reservation['estimated_total'] as num) > 0)
               _row(
                 context.tr('lbl_total'),
-                '₱${(reservation['estimated_total'] as num).toStringAsFixed(0)}',
+                formatMoney((reservation['estimated_total'] as num), decimals: 0),
               ),
           ],
         ),

@@ -393,6 +393,7 @@ class AdminDashboardApiController extends Controller
             'reminders' => CheckoutReminder::query()->latest()->limit(30)->get(),
             'reviews' => StayReview::query()->latest()->limit(30)->get(),
             'transfers' => RoomTransfer::query()->latest()->limit(30)->get(),
+            'currency' => \App\Support\HotelCurrencySupport::forHotel($hotelId),
         ];
 
         return response()->json($payload);

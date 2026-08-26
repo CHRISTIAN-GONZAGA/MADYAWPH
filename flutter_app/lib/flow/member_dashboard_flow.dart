@@ -5,6 +5,7 @@ import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../auth_storage.dart';
+import '../utils/money_format.dart';
 import '../widgets/guest_online_payment.dart';
 import 'customer_booking_status_screen.dart';
 import '../dio_client.dart';
@@ -749,8 +750,8 @@ class _CompletedStayCard extends StatelessWidget {
             ],
             const SizedBox(height: 8),
             Text(
-              'Paid: ₱${amountPaid.toStringAsFixed(2)} via $payLabel'
-              '${total > 0 ? ' · Total ₱${total.toStringAsFixed(2)}' : ''}',
+              'Paid: ${formatMoney(amountPaid)} via $payLabel'
+              '${total > 0 ? ' · Total ${formatMoney(total)}' : ''}',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -782,8 +783,6 @@ class _ActiveBookingCard extends StatefulWidget {
 }
 
 class _ActiveBookingCardState extends State<_ActiveBookingCard> {
-  var _paying = false;
-
   Map<String, dynamic> get booking => widget.booking;
 
   double get _amountDue {
@@ -811,27 +810,6 @@ class _ActiveBookingCardState extends State<_ActiveBookingCard> {
         ),
       ),
     );
-  }
-
-  Future<void> _payWithQrPh() async {
-    if (_paying) return;
-    final hotelId = (booking['hotel_id'] ?? '').toString();
-    final ref = (booking['reference'] ?? '').toString();
-    if (hotelId.isEmpty || ref.isEmpty) return;
-    setState(() => _paying = true);
-    try {
-      final contact = await AuthStorage.customerGuestContact();
-      if (!mounted) return;
-      await startGuestPaymongoCheckout(
-        context: context,
-        hotelId: hotelId,
-        reference: ref,
-        guestEmail: contact?.email ?? '',
-        guestPhone: contact?.phone ?? '',
-      );
-    } finally {
-      if (mounted) setState(() => _paying = false);
-    }
   }
 
   @override
@@ -891,49 +869,23 @@ class _ActiveBookingCardState extends State<_ActiveBookingCard> {
             ],
             const SizedBox(height: 8),
             if (needsPay) ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: scheme.errorContainer.withValues(alpha: 0.45),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  'Payment required · Pay with QR Ph to complete this booking',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: scheme.error,
-                      ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              FilledButton.icon(
-                onPressed: _paying ? null : _payWithQrPh,
-                icon: _paying
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.qr_code_scanner),
-                label: Text(
-                  _paying
-                      ? 'Opening QR Ph…'
-                      : 'Pay with QR Ph · ₱${_amountDue.toStringAsFixed(2)}',
-                ),
+              GuestOnlinePaymentPendingCard(
+                hotelId: (booking['hotel_id'] ?? '').toString(),
+                reference: ref,
+                reservation: booking,
               ),
               const SizedBox(height: 8),
               OutlinedButton(
                 onPressed: _openStatusScreen,
-                child: const Text('View payment steps & status'),
+                child: const Text('View booking status'),
               ),
               const SizedBox(height: 8),
             ],
             Text(
               needsPay
-                  ? 'Due now: ₱${_amountDue.toStringAsFixed(2)} · Stay total ₱${total.toStringAsFixed(2)}'
-                  : 'Paid: ₱${amountPaid.toStringAsFixed(2)} via $payLabel'
-                      '${total > 0 ? ' · Total ₱${total.toStringAsFixed(2)}' : ''}',
+                  ? 'Due now: ${formatMoney(_amountDue)} · Stay total ${formatMoney(total)}'
+                  : 'Paid: ${formatMoney(amountPaid)} via $payLabel'
+                      '${total > 0 ? ' · Total ${formatMoney(total)}' : ''}',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),

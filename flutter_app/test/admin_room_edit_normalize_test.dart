@@ -50,7 +50,7 @@ void main() {
           'billing_mode': 'nightly',
           'price_per_night': '2000',
         }),
-        '₱2000 / night',
+        '₱2,000 / night',
       );
     });
   });

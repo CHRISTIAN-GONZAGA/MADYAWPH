@@ -1039,23 +1039,14 @@ class _CategoryCard extends StatelessWidget {
                 Expanded(
                   child: Align(
                     alignment: Alignment.centerLeft,
-                    child: _AvgPriceHighlight(
-                      label: (stats['avg_price_label'] ?? 'Avg —').toString(),
+                    child: _CategoryPriceHighlight(
+                      label: (stats['avg_price_label'] ?? '—').toString(),
                     ),
                   ),
                 ),
                 const SizedBox(height: 6),
                 Row(
                   children: [
-                    Expanded(
-                      child: _CategoryMiniStat(
-                        label: 'Rsv',
-                        count: reservedCount,
-                        color: Colors.orange.shade800,
-                        onTap: onReservedTap,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
                     Expanded(
                       child: _CategoryMiniStat(
                         label: 'Occ',
@@ -1073,6 +1064,15 @@ class _CategoryCard extends StatelessWidget {
                         onTap: onVacantTap,
                       ),
                     ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: _CategoryMiniStat(
+                        label: 'Rsv',
+                        count: reservedCount,
+                        color: Colors.orange.shade800,
+                        onTap: onReservedTap,
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -1084,47 +1084,31 @@ class _CategoryCard extends StatelessWidget {
   }
 }
 
-class _AvgPriceHighlight extends StatelessWidget {
-  const _AvgPriceHighlight({required this.label});
+class _CategoryPriceHighlight extends StatelessWidget {
+  const _CategoryPriceHighlight({required this.label});
 
   final String label;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final match =
-        RegExp(r'^(Avg)\s*(.*)$', caseSensitive: false).firstMatch(label);
-    final prefix = match?.group(1) ?? 'Avg';
-    final amount = (match?.group(2) ?? '').trim();
+    final amount =
+        label.replaceFirst(RegExp(r'^avg\s*', caseSensitive: false), '').trim();
     final hasAmount = amount.isNotEmpty && amount != '—';
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.center,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          prefix.toUpperCase(),
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: scheme.onSurfaceVariant,
-                letterSpacing: 0.4,
-                height: 1,
-              ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          hasAmount ? amount : '—',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: hasAmount ? scheme.primary : scheme.onSurfaceVariant,
-                height: 1.05,
-                fontSize: 18,
-              ),
-        ),
-      ],
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        hasAmount ? amount : '—',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: hasAmount ? scheme.primary : scheme.onSurfaceVariant,
+              height: 1.05,
+              fontSize: 18,
+            ),
+      ),
     );
   }
 }

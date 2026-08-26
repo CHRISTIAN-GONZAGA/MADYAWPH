@@ -2960,8 +2960,183 @@ Route::get('/admin/hotel/payment-qr', function (Request $request) {
         'payment_gcash_mobile' => $wallets['payment_gcash_mobile'],
         'payment_maya_mobile' => $wallets['payment_maya_mobile'],
         'has_wallet_number' => $wallets['has_wallet_number'],
+        'payment_methods' => \App\Support\HotelPaymentMethodSupport::all($settings),
     ]);
 })->middleware('role:admin,frontdesk,super_admin')->name('api.v1.admin.hotel.payment-qr.show');
+
+Route::get('/admin/hotel/payment-methods', function (Request $request) {
+    $settings = SystemSetting::withoutGlobalScopes()
+        ->where('hotel_id', (string) $request->user()->hotel_id)
+        ->first();
+
+    return response()->json([
+        'methods' => \App\Support\HotelPaymentMethodSupport::all($settings),
+    ]);
+})->middleware('role:admin,frontdesk,super_admin')->name('api.v1.admin.hotel.payment-methods.index');
+
+Route::post('/admin/hotel/payment-methods/{method}/qr', function (Request $request, string $method) {
+    $key = \App\Support\HotelPaymentMethodSupport::normalizeKey($method);
+    if ($key === null) {
+        return response()->json(['message' => 'Unknown payment method.'], 422);
+    }
+    $request->validate([
+        'image_file' => array_merge(['required'], array_slice(RoomImageUploadRules::fileRules(), 1)),
+    ]);
+
+    $hotelId = (string) $request->user()->hotel_id;
+    $settings = SystemSetting::withoutGlobalScopes()->firstOrCreate(
+        ['hotel_id' => $hotelId],
+        [
+            'theme_color' => '#2563eb',
+            'theme_mode' => 'light',
+            'sound_notifications_enabled' => false,
+        ]
+    );
+
+    $url = RoomMediaStorage::store($request->file('image_file'), 'payment-qr');
+    $map = \App\Support\HotelPaymentMethodSupport::merge($settings, $key, ['qr_url' => $url]);
+    $update = ['payment_method_qrs' => $map];
+    // Keep the legacy single-QR field in sync so older clients still work.
+    if ($key === 'qrph') {
+        $update['payment_qr_url'] = $url;
+    }
+    $settings->update($update);
+
+    app(ActivityLogService::class)->log(
+        $hotelId,
+        $request->user(),
+        'Updated '.\App\Support\HotelPaymentMethodSupport::label($key).' payment QR',
+        ['method' => $key, 'qr_url' => $url]
+    );
+
+    return response()->json([
+        'ok' => true,
+        'methods' => \App\Support\HotelPaymentMethodSupport::all($settings->fresh()),
+    ]);
+})->middleware('role:admin,super_admin')->name('api.v1.admin.hotel.payment-methods.qr.store');
+
+Route::delete('/admin/hotel/payment-methods/{method}/qr', function (Request $request, string $method) {
+    $key = \App\Support\HotelPaymentMethodSupport::normalizeKey($method);
+    if ($key === null) {
+        return response()->json(['message' => 'Unknown payment method.'], 422);
+    }
+    $hotelId = (string) $request->user()->hotel_id;
+    $settings = SystemSetting::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->first();
+    if (! $settings) {
+        return response()->json(['ok' => true, 'methods' => \App\Support\HotelPaymentMethodSupport::all(null)]);
+    }
+
+    $map = \App\Support\HotelPaymentMethodSupport::merge($settings, $key, ['qr_url' => '']);
+    $update = ['payment_method_qrs' => $map];
+    if ($key === 'qrph') {
+        $update['payment_qr_url'] = null;
+    }
+    $settings->update($update);
+
+    app(ActivityLogService::class)->log(
+        $hotelId,
+        $request->user(),
+        'Removed '.\App\Support\HotelPaymentMethodSupport::label($key).' payment QR',
+        ['method' => $key]
+    );
+
+    return response()->json([
+        'ok' => true,
+        'methods' => \App\Support\HotelPaymentMethodSupport::all($settings->fresh()),
+    ]);
+})->middleware('role:admin,super_admin')->name('api.v1.admin.hotel.payment-methods.qr.destroy');
+
+Route::patch('/admin/hotel/payment-methods/{method}', function (Request $request, string $method) {
+    $key = \App\Support\HotelPaymentMethodSupport::normalizeKey($method);
+    if ($key === null) {
+        return response()->json(['message' => 'Unknown payment method.'], 422);
+    }
+    $validated = $request->validate([
+        'account_name' => ['nullable', 'string', 'max:120'],
+        'account_number' => ['nullable', 'string', 'max:80'],
+        'instructions' => ['nullable', 'string', 'max:300'],
+    ]);
+
+    $hotelId = (string) $request->user()->hotel_id;
+    $settings = SystemSetting::withoutGlobalScopes()->firstOrCreate(
+        ['hotel_id' => $hotelId],
+        [
+            'theme_color' => '#2563eb',
+            'theme_mode' => 'light',
+            'sound_notifications_enabled' => false,
+        ]
+    );
+
+    $map = \App\Support\HotelPaymentMethodSupport::merge($settings, $key, $validated);
+    $settings->update(['payment_method_qrs' => $map]);
+
+    return response()->json([
+        'ok' => true,
+        'methods' => \App\Support\HotelPaymentMethodSupport::all($settings->fresh()),
+    ]);
+})->middleware('role:admin,super_admin')->name('api.v1.admin.hotel.payment-methods.update');
+
+Route::get('/admin/settings/currency', function (Request $request) {
+    $hotelId = (string) $request->user()->hotel_id;
+    $settings = SystemSetting::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->first();
+
+    return response()->json([
+        'currency' => \App\Support\HotelCurrencySupport::fromSettings($settings),
+        'options' => \App\Support\HotelCurrencySupport::options(),
+    ]);
+})->middleware('role:admin,super_admin,frontdesk')->name('api.v1.admin.settings.currency.show');
+
+Route::patch('/admin/settings/currency', function (Request $request) {
+    $validated = $request->validate([
+        'currency_code' => ['required', 'string', 'max:8'],
+        'currency_rate' => ['nullable', 'numeric', 'min:0.000001', 'max:1000000'],
+        'currency_symbol' => ['nullable', 'string', 'max:6'],
+    ]);
+
+    $code = \App\Support\HotelCurrencySupport::normalizeCode($validated['currency_code']);
+    if ($code === null) {
+        return response()->json([
+            'message' => 'That currency is not supported yet.',
+            'errors' => ['currency_code' => ['Pick a currency from the list.']],
+        ], 422);
+    }
+
+    $hotelId = (string) $request->user()->hotel_id;
+    $settings = SystemSetting::withoutGlobalScopes()->firstOrCreate(
+        ['hotel_id' => $hotelId],
+        [
+            'theme_color' => '#2563eb',
+            'theme_mode' => 'light',
+            'sound_notifications_enabled' => false,
+        ]
+    );
+
+    $rate = $validated['currency_rate'] ?? null;
+    $symbol = trim((string) ($validated['currency_symbol'] ?? ''));
+    $settings->update([
+        'currency_code' => $code,
+        'currency_rate' => $code === \App\Support\HotelCurrencySupport::BASE_CODE || $rate === null
+            ? null
+            : (float) $rate,
+        'currency_symbol' => $symbol === '' ? null : $symbol,
+    ]);
+
+    app(ActivityLogService::class)->log(
+        $hotelId,
+        $request->user(),
+        'Updated display currency',
+        ['currency_code' => $code, 'currency_rate' => $rate]
+    );
+
+    return response()->json([
+        'ok' => true,
+        'currency' => \App\Support\HotelCurrencySupport::fromSettings($settings->fresh()),
+    ]);
+})->middleware('role:admin,super_admin')->name('api.v1.admin.settings.currency.update');
 
 Route::get('/admin/payments/paymongo/status', [HotelPayMongoController::class, 'status'])
     ->middleware('role:admin,super_admin')

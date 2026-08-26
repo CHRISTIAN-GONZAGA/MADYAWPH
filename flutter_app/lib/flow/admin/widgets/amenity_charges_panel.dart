@@ -4,6 +4,7 @@ import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 import '../../../dio_client.dart';
 import '../admin_dashboard_models.dart';
+import '../../../utils/money_format.dart';
 
 /// Lists recent amenity/manual charges with delete (admin) or request (front desk).
 class AmenityChargesPanel extends StatefulWidget {
@@ -66,7 +67,7 @@ class _AmenityChargesPanelState extends State<AmenityChargesPanel> {
       builder: (ctx) => AlertDialog(
         title: const Text('Remove charge?'),
         content: Text(
-          'Remove "${charge['label']}" (₱${charge['amount']}) from '
+          'Remove "${charge['label']}" (${formatMoney(charge['amount'])}) from '
           'room ${charge['room_number']}?',
         ),
         actions: [
@@ -209,7 +210,7 @@ class _AmenityChargesPanelState extends State<AmenityChargesPanel> {
                     'Room ${c['room_number']}',
                   if ((c['guest_name'] ?? '').toString().isNotEmpty)
                     c['guest_name'].toString(),
-                  '₱${amount.toStringAsFixed(2)}',
+                  formatMoney(amount),
                 ].join(' · '),
               ),
               trailing: pendingId.isNotEmpty

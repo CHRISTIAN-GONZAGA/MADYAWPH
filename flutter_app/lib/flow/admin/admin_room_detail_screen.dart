@@ -336,7 +336,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
                         final label = (preset['label'] ?? '').toString();
                         final amount = (preset['amount'] as num?)?.toDouble() ?? 0;
                         final subtitle = amount > 0
-                            ? '₱${amount.toStringAsFixed(amount == amount.roundToDouble() ? 0 : 2)}'
+                            ? formatMoney(amount, decimals: amount == amount.roundToDouble() ? 0 : 2)
                             : null;
                         return ActionChip(
                           label: Text(

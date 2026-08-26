@@ -172,16 +172,16 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
                     ? 'Loading payment policy…'
                     : isOrgBooking
                         ? 'Government / org charge account — check-in allowed without payment.\n'
-                            'Outstanding balance: ₱${balanceDue.toStringAsFixed(2)} '
+                            'Outstanding balance: ${formatMoney(balanceDue)} '
                             '(collect later in Gov/Org Booking).'
                         : stayPaid
                             ? 'Already paid (E-wallet)'
-                                '${amountAlreadyPaid > 0.009 ? ' — ₱${amountAlreadyPaid.toStringAsFixed(2)} received' : ''}.\n'
+                                '${amountAlreadyPaid > 0.009 ? ' — ${formatMoney(amountAlreadyPaid)} received' : ''}.\n'
                                 'No check-in payment needed.'
-                            : 'Remaining balance: ₱${balanceDue.toStringAsFixed(2)}'
-                                '${amountAlreadyPaid > 0.009 ? '\nAlready paid (E-wallet): ₱${amountAlreadyPaid.toStringAsFixed(2)}' : ''}\n'
+                            : 'Remaining balance: ${formatMoney(balanceDue)}'
+                                '${amountAlreadyPaid > 0.009 ? '\nAlready paid (E-wallet): ${formatMoney(amountAlreadyPaid)}' : ''}\n'
                                 'Company policy: at least ${minPercent.toStringAsFixed(minPercent % 1 == 0 ? 0 : 1)}%'
-                                '${minDue > 0 ? ' (₱${minDue.toStringAsFixed(2)})' : ''} of the remaining balance.',
+                                '${minDue > 0 ? ' (${formatMoney(minDue)})' : ''} of the remaining balance.',
                 style: Theme.of(ctx).textTheme.bodySmall,
               ),
               if (!isOrgBooking && !stayPaid) ...[
@@ -220,7 +220,7 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
                     padding: const EdgeInsets.only(top: 10),
                     child: Text(
                       tendered + 0.009 < minDue
-                          ? 'Need at least ₱${minDue.toStringAsFixed(2)} to check in.'
+                          ? 'Need at least ${formatMoney(minDue)} to check in.'
                           : (change > 0
                               ? 'Change given: ${formatPeso(change)}'
                               : (remaining <= 0.009
@@ -277,7 +277,7 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
                   paid + 0.009 < minDue) {
                 showAppMessage(
                   ctx,
-                  'Enter at least ₱${minDue.toStringAsFixed(2)} '
+                  'Enter at least ${formatMoney(minDue)} '
                   '(${minPercent.toStringAsFixed(minPercent % 1 == 0 ? 0 : 1)}% of the remaining balance).',
                   isError: true,
                 );
@@ -457,8 +457,8 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
   );
   final payNote = payAmount > 0
       ? (changeDue > 0.009
-          ? ' ₱${payAmount.toStringAsFixed(2)} tendered; change given ${formatPeso(changeDue)}.'
-          : ' ₱${payAmount.toStringAsFixed(2)} applied to the room bill.')
+          ? ' ${formatMoney(payAmount)} tendered; change given ${formatPeso(changeDue)}.'
+          : ' ${formatMoney(payAmount)} applied to the room bill.')
       : '';
   showAppMessage(
     context,

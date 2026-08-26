@@ -7,6 +7,7 @@ import '../widgets/insufficient_hotel_credits.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_state_views.dart';
+import '../utils/money_format.dart';
 
 /// Approve or reject public reservation requests (future stays).
 class AdminBookingsScreen extends StatefulWidget {
@@ -99,7 +100,7 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
             Text('Payment reference: $payRef'),
             const SizedBox(height: 6),
             Text(
-              'Total paid: ₱${totalPaid.toStringAsFixed(2)}',
+              'Total paid: ${formatMoney(totalPaid)}',
               style: const TextStyle(fontWeight: FontWeight.w800),
             ),
           ],
@@ -125,7 +126,7 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
         content: Text(
           'Approve prepaid online booking for $guestName?\n\n'
           'Ref: $payRef\n'
-          'Total paid: ₱${totalPaid.toStringAsFixed(2)}',
+          'Total paid: ${formatMoney(totalPaid)}',
         ),
         actions: [
           TextButton(

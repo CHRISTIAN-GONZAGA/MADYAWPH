@@ -3,9 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 import '../dio_client.dart';
+import '../services/app_currency.dart';
+import '../utils/money_format.dart';
 import 'app_input.dart';
-import 'chat_attachment.dart';
-import 'hotel_wallet_pay_now.dart';
+import 'guest_payment_methods.dart';
 import 'payment_redirect.dart';
 
 /// Hotel online payment options for guest booking / status screens.
@@ -17,6 +18,7 @@ class GuestPaymentConfig {
     this.mayaMobile = '',
     this.depositPercent = 50,
     this.paymentMethodsHint = const ['QR Ph'],
+    this.methods = const [],
   });
 
   final bool paymongoConnected;
@@ -26,15 +28,22 @@ class GuestPaymentConfig {
   final double depositPercent;
   final List<String> paymentMethodsHint;
 
+  /// Per-method QR codes the hotel uploaded in Setup → Online payment QRs.
+  final List<GuestPaymentMethod> methods;
+
+  List<GuestPaymentMethod> get payableMethods =>
+      methods.where((m) => m.isConfigured).toList();
+
+  bool get hasMethodQrs => payableMethods.isNotEmpty;
+
   bool get hasManualWallet => gcashMobile.isNotEmpty || mayaMobile.isNotEmpty;
 
   bool get hasStaticQr => qrUrl.isNotEmpty;
 
-  bool get canBookOnline =>
-      paymongoConnected || hasManualWallet || hasStaticQr;
+  bool get canBookOnline => hasMethodQrs || hasManualWallet || hasStaticQr;
 
-  /// PayMongo QR Ph hosted checkout (preferred when connected).
-  bool get usesPaymongoQrPh => paymongoConnected;
+  /// Kept for older screens; guest booking no longer auto-opens PayMongo/GCash.
+  bool get usesPaymongoQrPh => false;
 
   static GuestPaymentConfig fromJson(Map<String, dynamic>? data) {
     if (data == null) return const GuestPaymentConfig();
@@ -50,6 +59,7 @@ class GuestPaymentConfig {
       paymentMethodsHint: hints is List
           ? hints.map((e) => e.toString()).where((e) => e.isNotEmpty).toList()
           : const ['QR Ph'],
+      methods: GuestPaymentMethod.listFrom(data['payment_methods']),
     );
   }
 }
@@ -61,6 +71,7 @@ Future<GuestPaymentConfig> loadGuestPaymentConfig(String hotelId) async {
       '/customer/payment-qr',
       queryParameters: {'hotel_id': hotelId},
     );
+    await AppCurrency.applyFromApi(res.data?['currency']);
     return GuestPaymentConfig.fromJson(res.data);
   } catch (_) {
     return const GuestPaymentConfig();
@@ -94,7 +105,8 @@ Future<bool> startGuestPaymongoCheckout({
   }
 }
 
-/// Clear payment section for guest booking — QR Ph first when PayMongo is connected.
+/// Payment section for guest booking: method buttons with their own QR codes,
+/// plus PayMongo QR Ph checkout when the hotel has it connected.
 class GuestOnlinePaymentPanel extends StatelessWidget {
   const GuestOnlinePaymentPanel({
     super.key,
@@ -127,8 +139,8 @@ class GuestOnlinePaymentPanel extends StatelessWidget {
 
     if (!config.canBookOnline) {
       return Text(
-        'Hotel has not set up online payment yet (PayMongo QR Ph, scan QR, or wallet). '
-        'Try again later or contact the hotel.',
+        'This hotel has not uploaded a payment QR yet. Contact the front desk '
+        'or try again later.',
         style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.error),
       );
     }
@@ -151,70 +163,36 @@ class GuestOnlinePaymentPanel extends StatelessWidget {
           isFullDeposit: isFullDeposit,
         ),
         const SizedBox(height: 12),
-        if (config.usesPaymongoQrPh) ...[
-          _PaymongoQrPhCard(
-            amountDue: amountDue,
-            onPay: onPrimaryAction,
-            loading: primaryLoading,
-            enabled: primaryEnabled,
-            buttonLabel: primaryLabel,
+        GuestPaymentMethodPicker(
+          methods: config.methods,
+          amountLabel: formatMoney(amountDue),
+        ),
+        const SizedBox(height: 12),
+        AppInput(
+          controller: paymentRefController,
+          label: 'Payment reference *',
+          hint: 'Paste the transaction ID shown after you pay',
+        ),
+        const SizedBox(height: 12),
+        FilledButton.icon(
+          onPressed: primaryEnabled && !primaryLoading ? onPrimaryAction : null,
+          icon: primaryLoading
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.send_outlined),
+          label: Text(
+            primaryLabel ??
+                (primaryLoading
+                    ? 'Submitting…'
+                    : 'Submit booking · paid ${formatMoney(amountDue)}'),
           ),
-          if (config.hasStaticQr || config.hasManualWallet) ...[
-            const SizedBox(height: 12),
-            _ManualFallbackSection(
-              config: config,
-              amountDue: amountDue,
-              paymentRefController: paymentRefController,
-            ),
-          ],
-        ] else ...[
-          Text(
-            'Choose how to pay, then enter your transaction reference below.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                  height: 1.35,
-                ),
-          ),
-          const SizedBox(height: 12),
-          if (config.hasStaticQr) ...[
-            _StaticQrSection(qrUrl: config.qrUrl),
-            const SizedBox(height: 12),
-          ],
-          if (config.hasManualWallet) ...[
-            _ManualWalletSection(
-              config: config,
-              amountDue: amountDue,
-            ),
-            const SizedBox(height: 12),
-          ],
-          AppInput(
-            controller: paymentRefController,
-            label: 'Payment reference *',
-            hint: 'Paste GCash / Maya / QR Ph transaction ID after paying',
-          ),
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: primaryEnabled && !primaryLoading ? onPrimaryAction : null,
-            icon: primaryLoading
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.send_outlined),
-            label: Text(
-              primaryLabel ??
-                  (primaryLoading
-                      ? 'Submitting…'
-                      : 'Submit booking · paid ₱${amountDue.toStringAsFixed(2)}'),
-            ),
-          ),
-        ],
+        ),
         const SizedBox(height: 8),
         Text(
-          config.usesPaymongoQrPh
-              ? 'After QR Ph payment, return here — your booking updates automatically while the hotel approves.'
-              : 'Hotel approval is required. You will see confirmation once front desk verifies your payment.',
+          'Hotel approval is required. You will see confirmation once front desk verifies your payment.',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: scheme.onSurfaceVariant,
                 height: 1.35,
@@ -253,7 +231,6 @@ class _GuestOnlinePaymentPendingCardState
     extends State<GuestOnlinePaymentPendingCard> {
   GuestPaymentConfig? _config;
   var _loadingConfig = true;
-  var _openingCheckout = false;
 
   @override
   void initState() {
@@ -279,23 +256,6 @@ class _GuestOnlinePaymentPendingCardState
     if (balance != null && balance > 0) return balance;
     if (total > paid) return total - paid;
     return total;
-  }
-
-  Future<void> _payWithQrPh() async {
-    if (_openingCheckout) return;
-    setState(() => _openingCheckout = true);
-    try {
-      final opened = await startGuestPaymongoCheckout(
-        context: context,
-        hotelId: widget.hotelId,
-        reference: widget.reference,
-        guestEmail: widget.guestEmail,
-        guestPhone: widget.guestPhone,
-      );
-      if (opened) widget.onPaymentStarted?.call();
-    } finally {
-      if (mounted) setState(() => _openingCheckout = false);
-    }
   }
 
   @override
@@ -327,14 +287,14 @@ class _GuestOnlinePaymentPendingCardState
             const SizedBox(height: 8),
             if (depositLabel != null && depositPct! < 100)
               Text(
-                '$depositLabel deposit · ₱${_amountDue.toStringAsFixed(2)} due now',
+                '$depositLabel deposit · ${formatMoney(_amountDue)} due now',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
               )
             else if (_amountDue > 0)
               Text(
-                'Amount due: ₱${_amountDue.toStringAsFixed(2)}',
+                'Amount due: ${formatMoney(_amountDue)}',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -349,76 +309,18 @@ class _GuestOnlinePaymentPendingCardState
             const SizedBox(height: 12),
             if (_loadingConfig)
               const Center(child: CircularProgressIndicator())
-            else if (cfg != null && cfg.usesPaymongoQrPh) ...[
-              _PaymongoQrPhCard(
-                amountDue: _amountDue,
-                onPay: _payWithQrPh,
-                loading: _openingCheckout,
-                enabled: true,
-                buttonLabel: _openingCheckout
-                    ? 'Opening QR Ph…'
-                    : 'Pay with QR Ph · ₱${_amountDue.toStringAsFixed(2)}',
-                compact: true,
-              ),
-              if (cfg.hasStaticQr || cfg.hasManualWallet) ...[
-                const SizedBox(height: 8),
-                ExpansionTile(
-                  tilePadding: EdgeInsets.zero,
-                  title: Text(
-                    'Backup: scan hotel QR / wallet',
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                  subtitle: const Text(
-                    'Use this if PayMongo checkout is unavailable.',
-                  ),
-                  children: [
-                    if (cfg.hasStaticQr) ...[
-                      _StaticQrSection(qrUrl: cfg.qrUrl),
-                      const SizedBox(height: 8),
-                    ],
-                    if (cfg.hasManualWallet)
-                      _ManualWalletSection(config: cfg, amountDue: _amountDue),
-                    const SizedBox(height: 8),
-                    Text(
-                      paymentRef.isEmpty
-                          ? 'After paying, send your transaction reference to the hotel.'
-                          : 'Reference on file: $paymentRef',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                ),
-              ],
-            ] else if (cfg != null && cfg.hasStaticQr) ...[
+            else ...[
               Text(
-                'Scan the hotel QR, pay ₱${_amountDue.toStringAsFixed(2)}, '
-                'then contact the hotel with your transaction reference.',
+                'Pick a method, pay ${formatMoney(_amountDue)}, then send the '
+                'hotel your transaction reference.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 12),
-              Center(
-                child: NetworkMediaImage(
-                  url: cfg.qrUrl,
-                  width: 200,
-                  height: 200,
-                  fit: BoxFit.contain,
-                ),
+              GuestPaymentMethodPicker(
+                methods: cfg?.methods ?? const [],
+                amountLabel: formatMoney(_amountDue),
               ),
-              if (cfg.hasManualWallet) ...[
-                const SizedBox(height: 12),
-                _ManualWalletSection(config: cfg, amountDue: _amountDue),
-              ],
-            ] else if (cfg != null && cfg.hasManualWallet)
-              _ManualWalletSection(config: cfg, amountDue: _amountDue)
-            else
-              Text(
-                'Ask the hotel to enable PayMongo QR Ph or add a payment QR.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.error,
-                    ),
-              ),
+            ],
           ],
         ),
       ),
@@ -466,284 +368,13 @@ class _AmountDueBanner extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             isFullDeposit
-                ? 'Pay ₱${amountDue.toStringAsFixed(2)} now (stay total)'
-                : 'Pay ₱${amountDue.toStringAsFixed(2)} now · Stay total ₱${stayTotal.toStringAsFixed(2)}',
+                ? 'Pay ${formatMoney(amountDue)} now (stay total)'
+                : 'Pay ${formatMoney(amountDue)} now · Stay total ${formatMoney(stayTotal)}',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w700,
                 ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PaymongoQrPhCard extends StatelessWidget {
-  const _PaymongoQrPhCard({
-    required this.amountDue,
-    required this.onPay,
-    required this.loading,
-    required this.enabled,
-    this.buttonLabel,
-    this.compact = false,
-  });
-
-  final double amountDue;
-  final VoidCallback? onPay;
-  final bool loading;
-  final bool enabled;
-  final String? buttonLabel;
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: scheme.primaryContainer.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: scheme.primary.withValues(alpha: 0.45)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.qr_code_2_rounded, color: scheme.primary, size: 32),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'QR Ph (recommended)',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: scheme.primary,
-                          ),
-                    ),
-                    Text(
-                      'Secure PayMongo checkout · scan with any bank or e-wallet app',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                            height: 1.3,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (!compact) ...[
-            const SizedBox(height: 14),
-            _PaymentStepRow(
-              step: '1',
-              text: 'Tap the button below — your browser opens a secure payment page.',
-            ),
-            const SizedBox(height: 6),
-            _PaymentStepRow(
-              step: '2',
-              text: 'Scan the QR Ph code with GCash, Maya, your bank app, or other QR Ph wallet.',
-            ),
-            const SizedBox(height: 6),
-            _PaymentStepRow(
-              step: '3',
-              text: 'Return to this app — payment is recorded automatically.',
-            ),
-          ],
-          const SizedBox(height: 14),
-          FilledButton.icon(
-            onPressed: enabled && !loading ? onPay : null,
-            icon: loading
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.qr_code_scanner),
-            label: Text(
-              buttonLabel ??
-                  (loading
-                      ? 'Opening QR Ph…'
-                      : 'Pay with QR Ph · ₱${amountDue.toStringAsFixed(2)}'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PaymentStepRow extends StatelessWidget {
-  const _PaymentStepRow({required this.step, required this.text});
-
-  final String step;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        CircleAvatar(
-          radius: 12,
-          backgroundColor: scheme.primary,
-          child: Text(
-            step,
-            style: TextStyle(
-              color: scheme.onPrimary,
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Text(
-              text,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(height: 1.35),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ManualFallbackSection extends StatelessWidget {
-  const _ManualFallbackSection({
-    required this.config,
-    required this.amountDue,
-    required this.paymentRefController,
-  });
-
-  final GuestPaymentConfig config;
-  final double amountDue;
-  final TextEditingController paymentRefController;
-
-  @override
-  Widget build(BuildContext context) {
-    return ExpansionTile(
-      tilePadding: EdgeInsets.zero,
-      title: Text(
-        'Manual fallback (not QR Ph checkout)',
-        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-      ),
-      subtitle: const Text(
-        'Only if QR Ph checkout fails — send to hotel wallet or scan their QR, then paste reference.',
-      ),
-      children: [
-        if (config.hasStaticQr) ...[
-          _StaticQrSection(qrUrl: config.qrUrl),
-          const SizedBox(height: 8),
-        ],
-        if (config.hasManualWallet)
-          _ManualWalletSection(config: config, amountDue: amountDue),
-        const SizedBox(height: 8),
-        AppInput(
-          controller: paymentRefController,
-          label: 'Manual payment reference',
-          hint: 'Only if you paid outside QR Ph checkout',
-        ),
-        const SizedBox(height: 8),
-      ],
-    );
-  }
-}
-
-class _StaticQrSection extends StatelessWidget {
-  const _StaticQrSection({required this.qrUrl});
-
-  final String qrUrl;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        const Text(
-          'Scan hotel QR Ph',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 8),
-        NetworkMediaImage(
-          url: qrUrl,
-          width: 200,
-          height: 200,
-          fit: BoxFit.contain,
-        ),
-      ],
-    );
-  }
-}
-
-class _ManualWalletSection extends StatelessWidget {
-  const _ManualWalletSection({
-    required this.config,
-    required this.amountDue,
-  });
-
-  final GuestPaymentConfig config;
-  final double amountDue;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Send Money (manual)',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Opens GCash or Maya — you copy the hotel number and amount yourself. '
-            'This is not the same as QR Ph checkout above.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                  height: 1.35,
-                ),
-          ),
-          const SizedBox(height: 10),
-          if (config.gcashMobile.isNotEmpty)
-            OutlinedButton.icon(
-              onPressed: () => HotelWalletPayNow.pay(
-                context: context,
-                wallet: HotelWalletApp.gcash,
-                mobile: config.gcashMobile,
-                amountPesos: amountDue,
-              ),
-              icon: const Icon(Icons.account_balance_wallet_outlined),
-              label: Text('GCash Send Money · ${config.gcashMobile}'),
-            ),
-          if (config.gcashMobile.isNotEmpty && config.mayaMobile.isNotEmpty)
-            const SizedBox(height: 8),
-          if (config.mayaMobile.isNotEmpty)
-            OutlinedButton.icon(
-              onPressed: () => HotelWalletPayNow.pay(
-                context: context,
-                wallet: HotelWalletApp.maya,
-                mobile: config.mayaMobile,
-                amountPesos: amountDue,
-              ),
-              icon: const Icon(Icons.payments_outlined),
-              label: Text('Maya Send Money · ${config.mayaMobile}'),
-            ),
         ],
       ),
     );

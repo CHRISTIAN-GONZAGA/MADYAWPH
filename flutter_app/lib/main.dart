@@ -5,6 +5,7 @@ import 'intro/app_bootstrap.dart';
 import 'locale_controller.dart';
 import 'navigation_keys.dart';
 import 'portal_session_lifecycle.dart';
+import 'services/app_currency.dart';
 import 'services/guest_room_deep_link.dart';
 import 'theme_controller.dart';
 import 'ui/app_theme.dart';
@@ -17,6 +18,7 @@ Future<void> main() async {
     loadThemeSeedColor(),
     loadThemeMode(),
     AppLocales.hydrate(),
+    AppCurrency.load(),
     GuestRoomDeepLink.initialize(),
   ]);
   runApp(const MadyawPhApp());
@@ -36,25 +38,27 @@ class MadyawPhApp extends StatelessWidget {
             return ValueListenableBuilder<Locale>(
               valueListenable: appLocaleNotifier,
               builder: (context, appLocale, _) {
-                return PortalSessionLifecycle(
-                  child: MaterialApp(
-                    navigatorKey: appNavigatorKey,
-                    title: 'MADYAWPH',
-                    debugShowCheckedModeBanner: false,
-                    locale: appLocale,
-                    supportedLocales: AppLocales.supported,
-                    localizationsDelegates: const [
-                      GlobalMaterialLocalizations.delegate,
-                      GlobalWidgetsLocalizations.delegate,
-                      GlobalCupertinoLocalizations.delegate,
-                    ],
-                    themeAnimationDuration: UiTokens.dStd,
-                    themeAnimationCurve: UiTokens.easeOperational,
-                    scrollBehavior: const LuxuryScrollBehavior(),
-                    themeMode: mode,
-                    theme: AppTheme.light(seed),
-                    darkTheme: AppTheme.dark(seed),
-                    home: const AppBootstrap(),
+                return CurrencyBuilder(
+                  builder: (context, _) => PortalSessionLifecycle(
+                    child: MaterialApp(
+                      navigatorKey: appNavigatorKey,
+                      title: 'MADYAWPH',
+                      debugShowCheckedModeBanner: false,
+                      locale: appLocale,
+                      supportedLocales: AppLocales.supported,
+                      localizationsDelegates: const [
+                        GlobalMaterialLocalizations.delegate,
+                        GlobalWidgetsLocalizations.delegate,
+                        GlobalCupertinoLocalizations.delegate,
+                      ],
+                      themeAnimationDuration: UiTokens.dStd,
+                      themeAnimationCurve: UiTokens.easeOperational,
+                      scrollBehavior: const LuxuryScrollBehavior(),
+                      themeMode: mode,
+                      theme: AppTheme.light(seed),
+                      darkTheme: AppTheme.dark(seed),
+                      home: const AppBootstrap(),
+                    ),
                   ),
                 );
               },

@@ -233,7 +233,7 @@ class AppStrings {
       'leave_screen': 'Leave',
       'complete_online_payment': 'Complete online payment',
       'pay_qr_hint':
-          'Tap Pay with QR Ph to open secure checkout, or scan the hotel QR and paste your reference. The hotel verifies payment when approving.',
+          'Choose QR Ph, GCash, PayMaya, Maribank, or bank transfer, scan the hotel QR, then paste your reference. The hotel verifies payment when approving.',
       'amount_label': 'Amount: ₱{n}',
       'room_ticket': 'ROOM TICKET',
       'lbl_hotel': 'Hotel',
@@ -426,7 +426,7 @@ class AppStrings {
       'leave_screen': 'Umalis',
       'complete_online_payment': 'Kumpletuhin ang online payment',
       'pay_qr_hint':
-          'I-tap ang Pay with QR Ph para sa secure checkout, o i-scan ang QR ng hotel at i-paste ang reference. Biveripika ng hotel ang bayad kapag inaprubahan.',
+          'Pumili ng QR Ph, GCash, PayMaya, Maribank, o bank transfer, i-scan ang QR ng hotel, tapos i-paste ang reference. Biveripika ng hotel ang bayad kapag inaprubahan.',
       'amount_label': 'Halaga: ₱{n}',
       'room_ticket': 'ROOM TICKET',
       'lbl_hotel': 'Hotel',

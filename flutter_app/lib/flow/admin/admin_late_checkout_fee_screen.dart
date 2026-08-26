@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 import '../../../dio_client.dart';
+import '../../utils/money_format.dart';
 
 /// Hotel admin / super admin: late check-out grace period and fee amount.
 class AdminLateCheckoutFeeScreen extends StatefulWidget {
@@ -89,7 +90,7 @@ class _AdminLateCheckoutFeeScreenState
       setState(() => _saving = false);
       showAppMessage(
         context,
-        'Late check-out: $grace min grace · ₱${fee.toStringAsFixed(fee == fee.roundToDouble() ? 0 : 2)} fee.',
+        'Late check-out: $grace min grace · ${formatMoney(fee, decimals: fee == fee.roundToDouble() ? 0 : 2)} fee.',
       );
     } on DioException catch (e) {
       if (!mounted) return;
@@ -103,7 +104,7 @@ class _AdminLateCheckoutFeeScreenState
     final platformNote = (_platformGrace == null && _platformFee == null)
         ? ''
         : ' Platform default: ${_platformGrace ?? 15} min grace, '
-            '₱${(_platformFee ?? 500).toStringAsFixed((_platformFee ?? 500) == (_platformFee ?? 500).roundToDouble() ? 0 : 2)}.';
+            '${formatMoney((_platformFee ?? 500), decimals: (_platformFee ?? 500) == (_platformFee ?? 500).roundToDouble() ? 0 : 2)}.';
 
     return Scaffold(
       appBar: AppBar(title: const Text('Late check-out fee')),

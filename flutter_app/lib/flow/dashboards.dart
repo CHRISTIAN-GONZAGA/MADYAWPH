@@ -9,6 +9,7 @@ import '../auth_storage.dart';
 import '../locale_controller.dart';
 import '../dio_client.dart';
 import '../navigation_keys.dart';
+import '../services/app_currency.dart';
 import '../services/chat_notification_sound.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
@@ -118,6 +119,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     try {
       final res =
           await portalDioWithLongTimeout().get<Map<String, dynamic>>('/admin/dashboard');
+      if (!mounted) return;
+      await AppCurrency.applyFromApi(res.data?['currency']);
       if (!mounted) return;
       setState(() {
         _data = res.data;
@@ -1834,6 +1837,7 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
     try {
       final res =
           await guestDio().get<Map<String, dynamic>>('/guest/dashboard');
+      await AppCurrency.applyFromApi(res.data?['currency']);
       setState(() {
         _data = res.data;
         _loading = false;
@@ -1857,6 +1861,8 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
     try {
       final res =
           await guestDio().get<Map<String, dynamic>>('/guest/dashboard');
+      if (!mounted) return;
+      await AppCurrency.applyFromApi(res.data?['currency']);
       if (!mounted) return;
       setState(() => _data = res.data);
       await _refreshChat(silent: true);

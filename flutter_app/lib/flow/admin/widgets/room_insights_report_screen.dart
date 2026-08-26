@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../dio_client.dart';
 import '../../../widgets/app_scaffold.dart';
 import '../../../widgets/app_state_views.dart';
+import '../../../utils/money_format.dart';
 
 /// Most/least booked rooms, profit leaders, occupancy, maintenance frequency.
 class RoomInsightsReportScreen extends StatefulWidget {
@@ -264,7 +265,7 @@ class _TotalsGrid extends StatelessWidget {
   const _TotalsGrid({required this.totals});
   final Map totals;
 
-  String _money(num? v) => '₱${(v?.toDouble() ?? 0).toStringAsFixed(0)}';
+  String _money(num? v) => formatMoney((v?.toDouble() ?? 0), decimals: 0);
 
   @override
   Widget build(BuildContext context) {
@@ -381,7 +382,7 @@ class _RoomTypeList extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                '₱${revenue.toStringAsFixed(0)}',
+                formatMoney(revenue, decimals: 0),
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
               const Icon(Icons.chevron_right, size: 18),
@@ -394,11 +395,11 @@ class _RoomTypeList extends StatelessWidget {
               MapEntry('Rooms', '${m['rooms'] ?? 0}'),
               MapEntry('Bookings', '${m['bookings'] ?? 0}'),
               MapEntry('Occupancy', '${occupancy.toStringAsFixed(1)}%'),
-              MapEntry('Revenue', '₱${revenue.toStringAsFixed(2)}'),
+              MapEntry('Revenue', formatMoney(revenue)),
               if (m['avg_revenue'] != null)
                 MapEntry(
                   'Avg revenue',
-                  '₱${((m['avg_revenue'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}',
+                  formatMoney(((m['avg_revenue'] as num?)?.toDouble() ?? 0)),
                 ),
               if (m['nights'] != null) MapEntry('Nights', '${m['nights']}'),
             ],
@@ -433,7 +434,7 @@ class _RoomRankList extends StatelessWidget {
     final v = m[secondaryKey];
     if (v == null) return null;
     if (secondaryIsMoney) {
-      return '₱${((v as num?)?.toDouble() ?? 0).toStringAsFixed(0)} ${secondaryLabel ?? ''}'
+      return '${formatMoney(((v as num?)?.toDouble() ?? 0), decimals: 0)} ${secondaryLabel ?? ''}'
           .trim();
     }
     if (v is num) {
@@ -458,7 +459,7 @@ class _RoomRankList extends StatelessWidget {
             : (m['room_type'] ?? '').toString();
         final metric = m[metricKey];
         final metricText = isMoney
-            ? '₱${((metric as num?)?.toDouble() ?? 0).toStringAsFixed(0)}'
+            ? formatMoney(((metric as num?)?.toDouble() ?? 0), decimals: 0)
             : metricKey == 'status'
                 ? (metric ?? '').toString()
                 : '${metric ?? 0} $metricLabel';
@@ -504,7 +505,7 @@ class _RoomRankList extends StatelessWidget {
               if (m['revenue'] != null)
                 MapEntry(
                   'Revenue',
-                  '₱${((m['revenue'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}',
+                  formatMoney(((m['revenue'] as num?)?.toDouble() ?? 0)),
                 ),
               if (m['status'] != null) MapEntry('Status', '${m['status']}'),
               if (m['maintenance_count'] != null ||

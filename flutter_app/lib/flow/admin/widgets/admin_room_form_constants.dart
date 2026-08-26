@@ -1,3 +1,5 @@
+import '../../../utils/money_format.dart';
+
 const adminRoomTypeOptions = ['Single', 'Double', 'Suite', 'Deluxe'];
 
 const adminRoomStatusOptions = [
@@ -66,8 +68,8 @@ String safeAdminRoomRateLabel(Map<String, dynamic> room) {
     final nightly = parseAdminDouble(room['price_per_night']);
     final price = block > 0 ? block : nightly;
     final hours = parseAdminInt(room['block_hours'], 1);
-    return '₱${price.toStringAsFixed(0)} / $hours hr';
+    return '${formatMoney(price, decimals: 0)} / $hours hr';
   }
   final nightly = parseAdminDouble(room['price_per_night']);
-  return '₱${nightly.toStringAsFixed(0)} / night';
+  return '${formatMoney(nightly, decimals: 0)} / night';
 }

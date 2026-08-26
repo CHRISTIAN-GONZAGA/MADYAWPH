@@ -131,14 +131,14 @@ class _FrontDeskSalesReportScreenState extends State<FrontDeskSalesReportScreen>
                     child: _Metric(
                       label: 'Today’s sales',
                       value:
-                          '₱${parseJsonDouble(totals['display_total'] ?? totals['sales']).toStringAsFixed(2)}',
+                          formatMoney(parseJsonDouble(totals['display_total'] ?? totals['sales'])),
                     ),
                   ),
                   Expanded(
                     child: _Metric(
                       label: 'Payments',
                       value:
-                          '₱${parseJsonDouble(totals['payments']).toStringAsFixed(2)}',
+                          formatMoney(parseJsonDouble(totals['payments'])),
                     ),
                   ),
                   Expanded(
@@ -177,7 +177,7 @@ class _FrontDeskSalesReportScreenState extends State<FrontDeskSalesReportScreen>
                 ),
                 title: Text(name, style: const TextStyle(fontWeight: FontWeight.w700)),
                 subtitle: Text(
-                  'Today: ₱${sales.toStringAsFixed(2)} · $orders orders\n'
+                  'Today: ${formatMoney(sales)} · $orders orders\n'
                   'Cash · e-wallet · bank · daily → annual',
                 ),
                 isThreeLine: true,
@@ -523,7 +523,7 @@ class _FrontDeskAccountSalesScreenState
                     ),
                   ),
                   Text(
-                    '₱${typeTotal.toStringAsFixed(2)}',
+                    formatMoney(typeTotal),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           fontWeight: FontWeight.w700,
                         ),
@@ -576,7 +576,7 @@ class _FrontDeskAccountSalesScreenState
                           ),
                         ),
                         Text(
-                          '₱${total.toStringAsFixed(2)}',
+                          formatMoney(total),
                           style: const TextStyle(fontWeight: FontWeight.w800),
                         ),
                         if (period != null) ...[
@@ -651,7 +651,7 @@ class _FrontDeskAccountSalesScreenState
               style: const TextStyle(fontWeight: FontWeight.w800),
             ),
             subtitle: Text(
-              '${groups[key]!.length} txn(s) · ₱${groups[key]!.fold<double>(0, (s, t) => s + parseJsonDouble(t['amount'])).toStringAsFixed(2)}',
+              '${groups[key]!.length} txn(s) · ${formatMoney(groups[key]!.fold<double>(0, (s, t) => s + parseJsonDouble(t['amount'])))}',
             ),
             children: [
               for (final tx in groups[key]!) _transactionTile(tx),
@@ -687,7 +687,7 @@ class _FrontDeskAccountSalesScreenState
         ].where((s) => s.isNotEmpty).join(' · '),
       ),
       trailing: Text(
-        complimentary ? 'Free' : '₱${amount.toStringAsFixed(2)}',
+        complimentary ? 'Free' : formatMoney(amount),
         style: const TextStyle(fontWeight: FontWeight.w700),
       ),
     );
@@ -736,7 +736,7 @@ class _FrontDeskAccountSalesScreenState
                 ),
               ),
               Text(
-                '₱${total.toStringAsFixed(2)}',
+                formatMoney(total),
                 style: const TextStyle(fontWeight: FontWeight.w800),
               ),
             ],
@@ -792,15 +792,15 @@ class _FrontDeskAccountSalesScreenState
             Text(range, style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 10),
             Text(
-              '₱${parseJsonDouble(period['display_total'] ?? period['total_sales']).toStringAsFixed(2)}',
+              formatMoney(parseJsonDouble(period['display_total'] ?? period['total_sales'])),
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w800,
                   ),
             ),
             const SizedBox(height: 4),
             Text(
-              'Sales ₱${parseJsonDouble(period['total_sales']).toStringAsFixed(2)}'
-              ' · Payments ₱${parseJsonDouble(period['payments_collected']).toStringAsFixed(2)}'
+              'Sales ${formatMoney(parseJsonDouble(period['total_sales']))}'
+              ' · Payments ${formatMoney(parseJsonDouble(period['payments_collected']))}'
               ' · ${period['order_count'] ?? 0} orders',
               style: Theme.of(context).textTheme.bodySmall,
             ),
@@ -1043,14 +1043,14 @@ class _FrontDeskAccountSalesScreenState
                                         child: _Metric(
                                           label: 'Sales',
                                           value:
-                                              '₱${parseJsonDouble(summary['display_total'] ?? summary['total_sales']).toStringAsFixed(2)}',
+                                              formatMoney(parseJsonDouble(summary['display_total'] ?? summary['total_sales'])),
                                         ),
                                       ),
                                       Expanded(
                                         child: _Metric(
                                           label: 'Payments',
                                           value:
-                                              '₱${parseJsonDouble(summary['payments_collected']).toStringAsFixed(2)}',
+                                              formatMoney(parseJsonDouble(summary['payments_collected'])),
                                         ),
                                       ),
                                       Expanded(

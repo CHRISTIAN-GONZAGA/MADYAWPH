@@ -391,6 +391,7 @@ class GuestPortalApiController extends Controller
                 'price' => (float) $item->price,
             ]),
             'freeBreakfast' => $breakfastState,
+            'currency' => \App\Support\HotelCurrencySupport::forHotel((string) $hotelId),
         ]);
     }
 

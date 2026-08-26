@@ -21,6 +21,7 @@ import 'online_payment_qr_block.dart';
 import 'device_guest_welcome_sms.dart';
 import 'walk_in_check_in_deposit_dialog.dart';
 import 'booking_confirmation_summary_dialog.dart';
+import '../../../utils/money_format.dart';
 
 /// Group walk-in booking — same steps as single room: calendar → guest form → submit.
 Future<bool> showAdminMultiRoomWalkInBooking({
@@ -874,7 +875,7 @@ Map<String, dynamic>? _buildMultiRoomWalkInPayload({
     if (minDue > 0 && deposit + 0.009 < minDue) {
       showAppMessage(
         dialogContext,
-        'Enter a deposit of at least ₱${minDue.toStringAsFixed(2)} '
+        'Enter a deposit of at least ${formatMoney(minDue)} '
         '(${minCheckInPercentLabel(minDepositPercent)}% of the stay total).',
         isError: true,
       );

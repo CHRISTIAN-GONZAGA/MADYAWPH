@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
 import '../../../widgets/admin_month_calendar.dart';
+import '../../../utils/money_format.dart';
 
 /// Amenity product sales only (menu purchases / requests) — not room bookings.
 class AdminSalesPanel extends StatefulWidget {
@@ -124,7 +125,7 @@ class _AdminSalesPanelState extends State<AdminSalesPanel> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '₱${(_daySales?['gross_sales'] ?? 0).toString()}',
+                  formatMoney(parseJsonDouble(_daySales?['gross_sales'])),
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.w800,
                         color: Theme.of(context).colorScheme.primary,
@@ -220,7 +221,8 @@ class _SummaryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final net = (data?['net_revenue'] ?? data?['gross_revenue'] ?? 0).toString();
+    final net =
+        parseJsonDouble(data?['net_revenue'] ?? data?['gross_revenue']);
     final orders = '${data?['orders'] ?? 0}';
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -228,7 +230,7 @@ class _SummaryRow extends StatelessWidget {
         title: Text(label),
         subtitle: Text('$orders product order(s)'),
         trailing: Text(
-          '₱$net',
+          formatMoney(net),
           style: const TextStyle(fontWeight: FontWeight.w700),
         ),
       ),

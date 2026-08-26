@@ -381,7 +381,7 @@ class _BookingsSectionState extends State<BookingsSection>
             ),
             _detailRow('Type', '${b['booking_type'] ?? 'local'}'),
             _detailRow('Status', '${_bookingStatusLabel(b)} / ${_paymentStatusLabel(b['payment_status'])}'),
-            _detailRow('Total', '₱${(b['total_amount'] as num?) ?? 0}'),
+            _detailRow('Total', formatMoney((b['total_amount'] as num?) ?? 0)),
             _detailRow('Booked on', '${b['date_booked'] ?? b['created_at'] ?? '—'}'),
             const SizedBox(height: 12),
             FilledButton.icon(
@@ -448,7 +448,7 @@ class _BookingsSectionState extends State<BookingsSection>
             ),
             _detailRow(
               'Total paid',
-              '₱${((r['amount_paid'] as num?) ?? (r['estimated_total'] as num?) ?? (r['total_amount'] as num?) ?? 0).toStringAsFixed(2)}',
+              formatMoney(((r['amount_paid'] as num?) ?? (r['estimated_total'] as num?) ?? (r['total_amount'] as num?) ?? 0)),
             ),
             const SizedBox(height: 12),
             if (pending) ...[
@@ -576,20 +576,20 @@ class _BookingsSectionState extends State<BookingsSection>
               Text('Payment reference: $payRef'),
               const SizedBox(height: 6),
               Text(
-                'Stay total: ₱${stayTotal.toStringAsFixed(2)}',
+                'Stay total: ${formatMoney(stayTotal)}',
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 4),
               Text(
                 depositPct != null && depositPct < 100
-                    ? 'Deposit paid (${depositPct % 1 == 0 ? depositPct.toStringAsFixed(0) : depositPct.toStringAsFixed(1)}%): ₱${totalPaid.toStringAsFixed(2)}'
-                    : 'Amount paid: ₱${totalPaid.toStringAsFixed(2)}',
+                    ? 'Deposit paid (${depositPct % 1 == 0 ? depositPct.toStringAsFixed(0) : depositPct.toStringAsFixed(1)}%): ${formatMoney(totalPaid)}'
+                    : 'Amount paid: ${formatMoney(totalPaid)}',
                 style: const TextStyle(fontWeight: FontWeight.w800),
               ),
               if (balanceDue > 0.009) ...[
                 const SizedBox(height: 4),
                 Text(
-                  'Balance due at hotel: ₱${balanceDue.toStringAsFixed(2)}',
+                  'Balance due at hotel: ${formatMoney(balanceDue)}',
                 ),
               ],
               const SizedBox(height: 10),
@@ -620,8 +620,8 @@ class _BookingsSectionState extends State<BookingsSection>
       'Confirm approval?',
       'Approve this online booking for $guestName?\n\n'
       'Ref: $payRef\n'
-      'Paid now: ₱${totalPaid.toStringAsFixed(2)}\n'
-      '${balanceDue > 0.009 ? 'Balance later: ₱${balanceDue.toStringAsFixed(2)}\n\n' : '\n'}'
+      'Paid now: ${formatMoney(totalPaid)}\n'
+      '${balanceDue > 0.009 ? 'Balance later: ${formatMoney(balanceDue)}\n\n' : '\n'}'
       'This may deduct platform credits from your hotel wallet.',
     )) {
       return;
@@ -650,10 +650,10 @@ class _BookingsSectionState extends State<BookingsSection>
           : 'Reservation approved. Will activate on check-in date.';
       if (fee > 0) {
         msg += ' ${feePercent.toStringAsFixed(0)}% platform fee'
-            ' (₱${fee.toStringAsFixed(2)}'
-            '${roomTotal != null ? ' of ₱${roomTotal.toStringAsFixed(2)} booking total' : ''})'
+            ' (${formatMoney(fee)}'
+            '${roomTotal != null ? ' of ${formatMoney(roomTotal)} booking total' : ''})'
             ' deducted from hotel credits'
-            '${balance != null ? '. Balance: ₱${balance.toStringAsFixed(2)}' : ''}.';
+            '${balance != null ? '. Balance: ${formatMoney(balance)}' : ''}.';
       }
       showAppMessage(context, msg);
       await widget.onChanged();
@@ -818,7 +818,7 @@ class _BookingsSectionState extends State<BookingsSection>
                 _detailRow('Date booked', '${b['date_booked'] ?? b['created_at'] ?? '—'}'),
                 _detailRow(
                   'Total',
-                  '₱${((b['total_amount'] as num?) ?? 0).toStringAsFixed(0)}',
+                  formatMoney(((b['total_amount'] as num?) ?? 0), decimals: 0),
                 ),
                 const SizedBox(height: 8),
                 OutlinedButton.icon(

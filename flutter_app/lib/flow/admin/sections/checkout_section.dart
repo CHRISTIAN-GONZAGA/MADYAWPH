@@ -8,6 +8,7 @@ import '../widgets/admin_room_navigation.dart';
 import '../widgets/collectibles_summary_dialog.dart';
 import '../widgets/hotel_totals_reports_sheet.dart';
 import '../widgets/stay_receipt_dialog.dart';
+import '../../../utils/money_format.dart';
 
 class CheckoutSection extends StatefulWidget {
   const CheckoutSection({
@@ -166,7 +167,7 @@ class _CheckoutSectionState extends State<CheckoutSection> {
         ? '…'
         : _cashError != null
             ? '—'
-            : '₱${_cashOnHand.toStringAsFixed(2)}';
+            : formatMoney(_cashOnHand);
 
     return RefreshIndicator(
       onRefresh: _refreshAll,
@@ -196,7 +197,7 @@ class _CheckoutSectionState extends State<CheckoutSection> {
                             style: Theme.of(context).textTheme.labelLarge,
                           ),
                           Text(
-                            '₱${collectibles.toStringAsFixed(2)}',
+                            formatMoney(collectibles),
                             style: Theme.of(context)
                                 .textTheme
                                 .headlineMedium

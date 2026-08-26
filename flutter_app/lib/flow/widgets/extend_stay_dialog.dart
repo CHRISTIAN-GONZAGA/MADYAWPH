@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../admin/widgets/hourly_billing.dart';
+import '../../utils/money_format.dart';
 
 /// Hourly stay extension: one block (category stay rate) or per-hour extras.
 Future<Map<String, dynamic>?> showExtendStayDialog(
@@ -143,7 +144,7 @@ class _HourlyExtendDialogState extends State<_HourlyExtendDialog> {
               value: 'block',
               groupValue: _mode,
               title: Text(
-                'One more stay (${widget.blockHours} hr) — ₱${widget.blockFee.toStringAsFixed(0)}',
+                'One more stay (${widget.blockHours} hr) — ${formatMoney(widget.blockFee, decimals: 0)}',
               ),
               onChanged: (v) {
                 if (v != null) setState(() => _mode = v);
@@ -154,7 +155,7 @@ class _HourlyExtendDialogState extends State<_HourlyExtendDialog> {
               value: 'hours',
               groupValue: _mode,
               title: Text(
-                'Extra hours — ₱${widget.pricePerExtraHour.toStringAsFixed(0)}/hr',
+                'Extra hours — ${formatMoney(widget.pricePerExtraHour, decimals: 0)}/hr',
               ),
               onChanged: (v) {
                 if (v != null) setState(() => _mode = v);
@@ -180,7 +181,7 @@ class _HourlyExtendDialogState extends State<_HourlyExtendDialog> {
                   return DropdownMenuItem(
                     value: h,
                     child: Text(
-                      '$h hour${h == 1 ? '' : 's'} — ₱${fee.toStringAsFixed(0)}',
+                      '$h hour${h == 1 ? '' : 's'} — ${formatMoney(fee, decimals: 0)}',
                     ),
                   );
                 },
@@ -192,7 +193,7 @@ class _HourlyExtendDialogState extends State<_HourlyExtendDialog> {
           ],
           const SizedBox(height: 12),
           Text(
-            'Extension fee: ₱${_previewFee.toStringAsFixed(0)}',
+            'Extension fee: ${formatMoney(_previewFee, decimals: 0)}',
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w700,
                 ),

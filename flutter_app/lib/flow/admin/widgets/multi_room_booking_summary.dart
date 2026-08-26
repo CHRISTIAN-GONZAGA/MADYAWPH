@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../../utils/money_format.dart';
 import 'hourly_billing.dart';
+
+export '../../../utils/money_format.dart' show formatPeso;
 
 typedef MultiRoomChargeLine = ({String roomNumber, double amount});
 
@@ -23,8 +26,6 @@ List<MultiRoomChargeLine> computeMultiRoomChargeLines({
 
 double multiRoomGrossTotal(List<MultiRoomChargeLine> lines) =>
     lines.fold<double>(0, (sum, line) => sum + line.amount);
-
-String formatPeso(double amount) => '₱${amount.toStringAsFixed(2)}';
 
 /// Per-room breakdown and total amount due for a group walk-in booking.
 class MultiRoomBookingTotalSummary extends StatelessWidget {

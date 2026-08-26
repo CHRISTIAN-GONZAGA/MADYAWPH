@@ -312,6 +312,8 @@ class CustomerPortalApiController extends Controller
         return response()->json([
             'qr_url' => ChatAttachmentUrl::fromStoredUrl($stored) ?? '',
             'has_qr' => $stored !== '',
+            'payment_methods' => \App\Support\HotelPaymentMethodSupport::all($settings),
+            'currency' => \App\Support\HotelCurrencySupport::fromSettings($settings),
             'online_booking_deposit_percent' => OnlineBookingDepositSupport::percentForHotel($hotelId),
             'payment_gcash_mobile' => $wallets['payment_gcash_mobile'],
             'payment_maya_mobile' => $wallets['payment_maya_mobile'],

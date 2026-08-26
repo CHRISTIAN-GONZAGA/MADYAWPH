@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../dio_client.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/app_state_views.dart';
+import '../utils/money_format.dart';
 
 /// Completed stays surfaced when rooms leave checkout → maintenance (guest cleared).
 class GuestListHistoryScreen extends StatefulWidget {
@@ -139,7 +140,7 @@ class _GuestListHistoryScreenState extends State<GuestListHistoryScreen> {
                               : payment,
                         ),
                       if (total != null)
-                        _detail('Total', '₱${total.toStringAsFixed(0)}'),
+                        _detail('Total', formatMoney(total, decimals: 0)),
                     ],
                   ),
                 ),

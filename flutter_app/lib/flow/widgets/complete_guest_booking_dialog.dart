@@ -12,6 +12,7 @@ import '../../widgets/guest_online_payment.dart';
 import '../admin/widgets/free_breakfast_selection.dart';
 import '../admin/widgets/booking_mode_field.dart';
 import '../../widgets/admin_time_slot_field.dart';
+import '../../utils/money_format.dart';
 
 /// Result from [showCompleteGuestBookingDialog].
 class CompleteGuestBookingPayload {
@@ -406,12 +407,11 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
     }
     if (config.showOnlinePayment) {
       if (!_guestPay.canBookOnline) {
-        _snack('Hotel has not set up PayMongo, a payment QR, or a wallet number yet.');
+        _snack('Hotel has not uploaded a payment QR yet.');
         return;
       }
-      if (!_guestPay.usesPaymongoQrPh &&
-          _paymentRefCtrl.text.trim().length < 4) {
-        _snack('Enter your GCash / Maya / QR Ph payment reference.');
+      if (_paymentRefCtrl.text.trim().length < 4) {
+        _snack('Pay using one of the QR codes, then paste your payment reference.');
         return;
       }
     }
@@ -757,7 +757,7 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
             const Center(child: CircularProgressIndicator())
           else if (!_guestPay.canBookOnline)
             const Text(
-              'Hotel has not set up PayMongo, a payment QR, or a wallet number yet. Online booking is unavailable until they do.',
+              'This hotel has not uploaded a payment QR yet. Online booking is unavailable until they do.',
               style: TextStyle(fontSize: 12),
             )
           else
@@ -769,9 +769,7 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
               isFullDeposit: true,
               paymentRefController: _paymentRefCtrl,
               onPrimaryAction: _submit,
-              primaryLabel: _guestPay.usesPaymongoQrPh
-                  ? 'Continue — pay with QR Ph after submit'
-                  : 'Continue',
+              primaryLabel: 'Continue',
             ),
         ],
       ],
@@ -782,8 +780,8 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
           config.reserveMode
               ? 'The hotel will approve your dates. You will be notified when the stay is activated on check-in day.'
               : 'Duration: $durationLabel\n'
-                  'Estimated: ₱${estTotal.toStringAsFixed(2)}'
-                  '${discountPct > 0 ? ' → ₱${estAfterDiscount.toStringAsFixed(2)} after discount' : ''}',
+                  'Estimated: ${formatMoney(estTotal)}'
+                  '${discountPct > 0 ? ' → ${formatMoney(estAfterDiscount)} after discount' : ''}',
         ),
       ),
     ];

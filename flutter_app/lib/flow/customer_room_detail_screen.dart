@@ -14,6 +14,7 @@ import 'admin/widgets/hourly_billing.dart';
 import 'customer_booking_status_screen.dart';
 import 'customer_search_context.dart';
 import 'member_login_screen.dart';
+import '../utils/money_format.dart';
 
 /// Room detail + guest booking form for the public customer portal.
 /// Submits via POST /customer/reservations (admin approval in Bookings tab).
@@ -64,7 +65,6 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
   XFile? _guestIdFile;
   GuestPaymentConfig _paymentConfig = const GuestPaymentConfig();
   var _qrLoading = false;
-  var _creatingCheckout = false;
   var _guestFieldsReady = false;
   var _adults = 2;
   var _children = 0;
@@ -296,10 +296,10 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
       return;
     }
     final paymentRef = _paymentRefCtrl.text.trim();
-    if (!_paymentConfig.usesPaymongoQrPh && paymentRef.length < 4) {
+    if (paymentRef.length < 4) {
       showAppMessage(
         context,
-        'Pay first (QR Ph scan or Send Money), then paste your payment reference.',
+        'Pay first using one of the QR codes, then paste your payment reference.',
       );
       return;
     }
@@ -337,9 +337,7 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
       'guests_female': _guestsFemale,
     };
     if (email.isNotEmpty) payload['guest_email'] = email;
-    if (!_paymentConfig.usesPaymongoQrPh || paymentRef.length >= 4) {
-      payload['payment_reference'] = paymentRef;
-    }
+    payload['payment_reference'] = paymentRef;
     if (widget.searchContext != null) {
       payload['rooms'] = widget.searchContext!.rooms;
     }
@@ -398,30 +396,6 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
       if (reservation != null) {
         final ref = (reservation['external_reference'] ?? '').toString();
         if (ref.isEmpty) return;
-
-        if (_paymentConfig.usesPaymongoQrPh && paymentRef.length < 4) {
-          setState(() => _creatingCheckout = true);
-          try {
-            final opened = await startGuestPaymongoCheckout(
-              context: context,
-              hotelId: widget.hotelId,
-              reference: ref,
-              guestEmail: email,
-              guestPhone: phone,
-            );
-            if (!mounted) return;
-            if (!opened) {
-              showAppMessage(
-                context,
-                'Reservation saved, but QR Ph checkout could not be opened. '
-                'Open your booking status and tap Pay with QR Ph.',
-                isError: true,
-              );
-            }
-          } finally {
-            if (mounted) setState(() => _creatingCheckout = false);
-          }
-        }
 
         if (!mounted) return;
         await Navigator.of(context).pushAndRemoveUntil(
@@ -920,7 +894,7 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
             if (staySummary.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
-                'Stay: $staySummary · Total ₱${estAfterDiscount.toStringAsFixed(2)}'
+                'Stay: $staySummary · Total ${formatMoney(estAfterDiscount)}'
                     '${discountPct > 0 ? ' (after discount)' : ''}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: scheme.onSurfaceVariant,
@@ -946,24 +920,22 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
                 depositPctLabel: depositPctLabel,
                 isFullDeposit: isFullDeposit,
                 paymentRefController: _paymentRefCtrl,
-                onPrimaryAction: (_submitting || _creatingCheckout)
+                onPrimaryAction: _submitting
                     ? null
                     : () => _submit(
                           reserve: _fromSearch ? true : widget.preferReserve,
                         ),
-                primaryLoading: _submitting || _creatingCheckout,
-                primaryEnabled: !_submitting && !_creatingCheckout,
-                primaryLabel: _paymentConfig.usesPaymongoQrPh
-                    ? (_submitting || _creatingCheckout
-                        ? 'Opening QR Ph…'
-                        : 'Book & pay with QR Ph · ₱${depositDue.toStringAsFixed(2)}')
-                    : null,
+                primaryLoading: _submitting,
+                primaryEnabled: !_submitting,
+                primaryLabel: _submitting
+                    ? 'Submitting…'
+                    : 'Submit booking · paid ${formatMoney(depositDue)}',
               ),
             if (!isFullDeposit) ...[
               const SizedBox(height: 8),
               Text(
                 'Balance at hotel after deposit: '
-                '₱${(estAfterDiscount - depositDue).clamp(0, double.infinity).toStringAsFixed(2)}',
+                '${formatMoney((estAfterDiscount - depositDue).clamp(0, double.infinity))}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),

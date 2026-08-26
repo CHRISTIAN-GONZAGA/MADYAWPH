@@ -245,8 +245,8 @@ void main() {
     expect(find.text('Select room · Family Room'), findsOneWidget);
     expect(find.text('Room 201'), findsOneWidget);
     expect(find.text('Room 202'), findsOneWidget);
-    expect(find.textContaining('₱1800 / night'), findsOneWidget);
-    expect(find.textContaining('₱2000 / night'), findsOneWidget);
+    expect(find.textContaining('₱1,800 / night'), findsOneWidget);
+    expect(find.textContaining('₱2,000 / night'), findsOneWidget);
 
     await tester.tap(find.text('Room 202'));
     await tester.pumpAndSettle();

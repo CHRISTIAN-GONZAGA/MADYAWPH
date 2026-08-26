@@ -127,7 +127,7 @@ Future<bool> showChargeAmenityToRoomDialog({
                   '${guest != '—' ? ' ($guest)' : ''} as complimentary (no charge)?'
               : 'Add $name × $quantity to room $roomNo'
                   '${guest != '—' ? ' ($guest)' : ''}?\n\n'
-                  'Total: ₱${lineTotal.toStringAsFixed(2)}',
+                  'Total: ${formatMoney(lineTotal)}',
         ),
         actions: [
           TextButton(
@@ -594,7 +594,7 @@ class _InHouseRoomPickerDialogState extends State<_InHouseRoomPickerDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              '${widget.productName} · ₱${widget.unitPrice.toStringAsFixed(2)} each',
+              '${widget.productName} · ${formatMoney(widget.unitPrice)} each',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),
@@ -687,7 +687,7 @@ class _InHouseRoomPickerDialogState extends State<_InHouseRoomPickerDialog> {
             Text(
               _complimentary
                   ? 'Line total: Complimentary (₱0.00)'
-                  : 'Line total: ₱${lineTotal.toStringAsFixed(2)}',
+                  : 'Line total: ${formatMoney(lineTotal)}',
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w800,
                   ),

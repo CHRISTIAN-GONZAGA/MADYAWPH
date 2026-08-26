@@ -412,8 +412,8 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
                   alignment: Alignment.centerLeft,
                   child: Text(
                     'Duration: $durationLabel\n'
-                    'Estimated: ₱${estTotal.toStringAsFixed(2)}'
-                    '${discountPct > 0 ? ' → ₱${estAfterDiscount.toStringAsFixed(2)} after discount' : ''}',
+                    'Estimated: ${formatMoney(estTotal)}'
+                    '${discountPct > 0 ? ' → ${formatMoney(estAfterDiscount)} after discount' : ''}',
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -742,7 +742,7 @@ Map<String, dynamic>? _buildWalkInPayload({
     if (minDue > 0 && deposit + 0.009 < minDue) {
       showAppMessage(
         dialogContext,
-        'Enter a deposit of at least ₱${minDue.toStringAsFixed(2)} '
+        'Enter a deposit of at least ${formatMoney(minDue)} '
         '(${minCheckInPercentLabel(minDepositPercent)}% of the stay total).',
         isError: true,
       );
