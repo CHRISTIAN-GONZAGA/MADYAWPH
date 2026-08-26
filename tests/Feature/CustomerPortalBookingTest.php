@@ -192,6 +192,46 @@ class CustomerPortalBookingTest extends TestCase
         $response->assertJsonStructure(['reservation' => ['external_reference']]);
     }
 
+    public function test_customer_reservation_stores_payment_screenshot(): void
+    {
+        $hotel = Hotel::create(['name' => 'Receipt Hotel', 'location' => 'Loc']);
+        $this->seedHotelCredits($hotel);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '206',
+            'room_type' => 'Single',
+            'price_per_night' => 1800,
+            'status' => RoomStatus::AVAILABLE->value,
+        ]);
+
+        $response = $this->post('/api/v1/customer/reservations', [
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'guest_name' => 'Receipt Guest',
+            'guest_email' => 'receipt@example.com',
+            'guest_phone' => '09179876544',
+            'check_in' => Carbon::today()->addDays(3)->toDateString(),
+            'check_out' => Carbon::today()->addDays(5)->toDateString(),
+            'discount_type' => 'none',
+            'payment_method' => 'Online',
+            'payment_reference' => 'REF-SHOT-001',
+            'payment_screenshot_file' => UploadedFile::fake()->createWithContent(
+                'receipt.png',
+                base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
+            ),
+        ], ['Accept' => 'application/json']);
+
+        $response->assertOk();
+        $this->assertNotEmpty($response->json('reservation.payment_screenshot_url'));
+
+        $reservation = ExternalReservation::withoutGlobalScopes()
+            ->where('external_reference', $response->json('reservation.external_reference'))
+            ->first();
+        $this->assertNotNull($reservation);
+        $meta = is_array($reservation->metadata) ? $reservation->metadata : [];
+        $this->assertNotEmpty($meta['payment_screenshot_url'] ?? null);
+    }
+
     public function test_customer_online_reservation_includes_payment_reference(): void
     {
         $hotel = Hotel::create(['name' => 'Online Pay Hotel', 'location' => 'Loc']);

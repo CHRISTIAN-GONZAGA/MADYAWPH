@@ -194,6 +194,7 @@ class HotelSubscriptionService
         User $actor,
         string $paymentReference,
         ?float $amount = null,
+        ?string $screenshotUrl = null,
     ): array {
         $payload = $this->statusPayload($hotel, $actor);
         if (($payload['status'] ?? '') === self::STATUS_PROCESSING) {
@@ -218,6 +219,12 @@ class HotelSubscriptionService
                 'payment_reference' => ['Reference number is required.'],
             ]);
         }
+        $proof = trim((string) $screenshotUrl);
+        if ($proof === '') {
+            throw ValidationException::withMessages([
+                'image_file' => ['Upload a screenshot of the payment.'],
+            ]);
+        }
 
         $breakdown = $this->subscriptionFeeBreakdown($hotel);
         $fee = $amount !== null && $amount > 0 ? round($amount, 2) : $breakdown['amount'];
@@ -235,6 +242,7 @@ class HotelSubscriptionService
             'hotel_name' => (string) ($hotel->name ?? ''),
             'amount' => $fee,
             'payment_reference' => $ref,
+            'payment_screenshot_url' => $proof,
             'status' => 'pending',
             'requested_by_user_id' => (string) $actor->id,
             'requested_by_name' => (string) ($actor->name ?? ''),
@@ -315,6 +323,11 @@ class HotelSubscriptionService
             'hotel_name' => (string) ($r->hotel_name ?? ''),
             'amount' => (float) ($r->amount ?? 0),
             'payment_reference' => (string) ($r->payment_reference ?? ''),
+            'payment_screenshot_url' => ChatAttachmentUrl::fromStoredUrl(
+                filled($r->payment_screenshot_url ?? null)
+                    ? (string) $r->payment_screenshot_url
+                    : null
+            ),
             'status' => EnumHelper::toString($r->status ?? ''),
             'requested_by_name' => (string) ($r->requested_by_name ?? ''),
             'requested_by_role' => EnumHelper::toString($r->requested_by_role ?? ''),

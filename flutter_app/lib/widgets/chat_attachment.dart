@@ -114,7 +114,8 @@ class ChatAttachment {
         trimmed.startsWith('platform-qr/') ||
         trimmed.startsWith('payment-qr/') ||
         trimmed.startsWith('bookings/') ||
-        trimmed.startsWith('reseller-ids/')) {
+        trimmed.startsWith('reseller-ids/') ||
+        trimmed.startsWith('payment-proof/')) {
       return '$origin/api/v1/chat/media?f=${Uri.encodeComponent(trimmed)}';
     }
 

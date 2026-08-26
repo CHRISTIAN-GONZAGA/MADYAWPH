@@ -225,6 +225,7 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
         $validated = $request->validate([
             'amount' => ['required', 'numeric', 'min:100'],
             'payment_reference' => ['required', 'string', 'max:120'],
+            'image_file' => array_merge(['required'], array_slice(\App\Support\RoomImageUploadRules::fileRules(), 1)),
         ]);
 
         $hotel = Hotel::withoutGlobalScopes()->findOrFail((string) $request->user()->hotel_id);
@@ -239,11 +240,17 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
             ], 422);
         }
 
+        $screenshot = \App\Support\RoomMediaStorage::store(
+            $request->file('image_file'),
+            'payment-proof'
+        );
+
         $row = \App\Models\CreditWalletRequest::create([
             'hotel_id' => (string) $hotel->id,
             'hotel_name' => (string) $hotel->name,
             'amount' => (float) $validated['amount'],
             'payment_reference' => trim((string) $validated['payment_reference']),
+            'payment_screenshot_url' => $screenshot,
             'status' => 'pending',
             'requested_by_user_id' => (string) $request->user()->id,
             'requested_by_name' => (string) ($request->user()->name ?? 'Admin'),

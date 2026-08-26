@@ -1,10 +1,12 @@
 import 'package:dio/dio.dart';
 import 'package:gloretto_mobile/widgets/app_notice.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../dio_client.dart';
 import 'chat_attachment.dart';
 import 'hotel_credits_policy.dart';
+import 'payment_proof_picker.dart';
 import 'payment_redirect.dart';
 
 /// True when the API rejected confirmation because hotel wallet credits are too low.
@@ -61,13 +63,14 @@ Future<bool?> showInsufficientHotelCreditsDialog(
 }
 
 /// Recharge flow shared by booking approval and settings.
-/// PayMongo checkout plus manual platform QR Ph (central admin screenshot).
+/// PayMongo checkout (instant) or scan the platform QR and wait for approval.
 Future<void> showHotelCreditsRechargeDialog(BuildContext context) async {
   final amountCtrl = TextEditingController(text: '1000');
   final refCtrl = TextEditingController();
-  var method = 'qrph';
+  var method = 'paymongo';
   var qrUrl = '';
   var paymongoEnabled = true;
+  XFile? proof;
   try {
     final info = await publicDio().get<Map<String, dynamic>>('/platform/info');
     qrUrl = ChatAttachment.resolveMediaUrl(
@@ -75,7 +78,7 @@ Future<void> showHotelCreditsRechargeDialog(BuildContext context) async {
     );
     paymongoEnabled = info.data?['paymongo_checkout_enabled'] != false;
   } catch (_) {}
-  if (!paymongoEnabled) method = 'qrph_manual';
+  if (!paymongoEnabled) method = 'qr';
   if (!context.mounted) {
     amountCtrl.dispose();
     refCtrl.dispose();
@@ -93,7 +96,7 @@ Future<void> showHotelCreditsRechargeDialog(BuildContext context) async {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'PayMongo is instant. Or scan the platform QR Ph posted by central admin and submit the reference for approval.',
+                'Pay with PayMongo to add credits automatically, or scan the platform QR and submit a reference plus screenshot for central admin approval.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 12),
@@ -105,35 +108,23 @@ Future<void> showHotelCreditsRechargeDialog(BuildContext context) async {
                   border: OutlineInputBorder(),
                 ),
               ),
-              const SizedBox(height: 10),
-              DropdownButtonFormField<String>(
-                value: method,
-                items: [
-                  if (paymongoEnabled)
-                    const DropdownMenuItem(
-                      value: 'qrph',
-                      child: Text('QR Ph — PayMongo (opens in browser)'),
-                    ),
-                  const DropdownMenuItem(
-                    value: 'qrph_manual',
-                    child: Text('QR Ph — scan platform QR (manual approval)'),
-                  ),
-                  const DropdownMenuItem(
-                    value: 'gcash',
-                    child: Text('GCash (online)'),
-                  ),
-                  const DropdownMenuItem(
-                    value: 'paymaya',
-                    child: Text('PayMaya (online)'),
-                  ),
-                ],
-                onChanged: (v) => setLocal(() => method = v ?? method),
-                decoration: const InputDecoration(
-                  labelText: 'Payment method',
-                  border: OutlineInputBorder(),
+              const SizedBox(height: 12),
+              if (paymongoEnabled)
+                _RechargeChoice(
+                  selected: method == 'paymongo',
+                  title: 'Pay with PayMongo',
+                  subtitle: 'Credits apply automatically after payment succeeds.',
+                  onTap: () => setLocal(() => method = 'paymongo'),
                 ),
+              if (paymongoEnabled) const SizedBox(height: 8),
+              _RechargeChoice(
+                selected: method == 'qr',
+                title: 'Scan QR',
+                subtitle:
+                    'Pay with the QR uploaded by central admin, then wait for approval.',
+                onTap: () => setLocal(() => method = 'qr'),
               ),
-              if (method == 'qrph_manual') ...[
+              if (method == 'qr') ...[
                 const SizedBox(height: 12),
                 if (qrUrl.isNotEmpty)
                   Center(
@@ -152,7 +143,7 @@ Future<void> showHotelCreditsRechargeDialog(BuildContext context) async {
                     child: ListTile(
                       title: Text('Platform QR Ph not uploaded yet'),
                       subtitle: Text(
-                        'Ask central admin to post the hotel credit-wallet QR screenshot.',
+                        'Ask central admin to post the hotel credit-wallet QR.',
                       ),
                     ),
                   ),
@@ -163,6 +154,11 @@ Future<void> showHotelCreditsRechargeDialog(BuildContext context) async {
                     labelText: 'Payment reference / transaction ID',
                     border: OutlineInputBorder(),
                   ),
+                ),
+                const SizedBox(height: 10),
+                PaymentProofPicker(
+                  file: proof,
+                  onChanged: (file) => setLocal(() => proof = file),
                 ),
               ],
             ],
@@ -175,23 +171,22 @@ Future<void> showHotelCreditsRechargeDialog(BuildContext context) async {
           ),
           FilledButton(
             onPressed: () {
-              if (method == 'qrph_manual') {
+              final amount = double.tryParse(amountCtrl.text.trim()) ?? 0;
+              if (amount < 100) return;
+              if (method == 'qr') {
                 if (qrUrl.isEmpty) return;
                 if (refCtrl.text.trim().isEmpty) return;
+                if (proof == null) return;
               }
               Navigator.of(context).pop({
-                'amount': double.tryParse(amountCtrl.text.trim()) ?? 0,
+                'amount': amount,
                 'method': method,
-                if (method == 'qrph_manual')
-                  'payment_reference': refCtrl.text.trim(),
+                if (method == 'qr') 'payment_reference': refCtrl.text.trim(),
+                if (method == 'qr') 'proof': proof,
               });
             },
             child: Text(
-              method == 'qrph_manual'
-                  ? 'Submit for approval'
-                  : method == 'qrph'
-                      ? 'Continue to PayMongo'
-                      : 'Continue',
+              method == 'qr' ? 'Submit for approval' : 'Continue to PayMongo',
             ),
           ),
         ],
@@ -203,13 +198,17 @@ Future<void> showHotelCreditsRechargeDialog(BuildContext context) async {
   if (payload == null || !context.mounted) return;
 
   try {
-    if (payload['method'] == 'qrph_manual') {
-      final res = await portalDio().post<Map<String, dynamic>>(
-        '/admin/credits/recharge-request',
-        data: {
+    if (payload['method'] == 'qr') {
+      final form = await ChatAttachment.formWithImage(
+        fields: {
           'amount': payload['amount'],
           'payment_reference': payload['payment_reference'],
         },
+        file: payload['proof'] as XFile,
+      );
+      final res = await portalDio().post<Map<String, dynamic>>(
+        '/admin/credits/recharge-request',
+        data: form,
       );
       if (!context.mounted) return;
       showAppMessage(
@@ -223,7 +222,10 @@ Future<void> showHotelCreditsRechargeDialog(BuildContext context) async {
 
     final res = await portalDio().post<Map<String, dynamic>>(
       '/admin/credits/recharge',
-      data: payload,
+      data: {
+        'amount': payload['amount'],
+        'method': 'qrph',
+      },
     );
     if (!context.mounted) return;
     final data = Map<String, dynamic>.from(res.data ?? {});
@@ -286,5 +288,60 @@ Future<void> handleHotelCreditsApprovalError(
     } else if (context.mounted) {
       await showHotelCreditsRechargeDialog(context);
     }
+  }
+}
+
+class _RechargeChoice extends StatelessWidget {
+  const _RechargeChoice({
+    required this.selected,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final bool selected;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: selected ? scheme.primaryContainer : scheme.surfaceContainerHigh,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Icon(
+                selected
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_off,
+                color: selected ? scheme.primary : scheme.outline,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

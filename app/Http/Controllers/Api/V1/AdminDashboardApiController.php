@@ -389,6 +389,11 @@ class AdminDashboardApiController extends Controller
                     return array_merge($r->toArray(), [
                         'payment_method' => (string) ($meta['payment_method'] ?? ''),
                         'payment_reference' => (string) ($meta['payment_reference'] ?? ''),
+                        'payment_screenshot_url' => \App\Support\ChatAttachmentUrl::fromStoredUrl(
+                            filled($meta['payment_screenshot_url'] ?? null)
+                                ? (string) $meta['payment_screenshot_url']
+                                : null
+                        ),
                         'estimated_total' => (float) ($meta['estimated_total'] ?? 0),
                         'amount_paid' => (float) ($meta['amount_paid'] ?? 0),
                         'total_amount' => (float) ($meta['estimated_total'] ?? 0),

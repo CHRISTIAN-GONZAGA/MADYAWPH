@@ -729,6 +729,11 @@ class PlatformAdminController extends Controller
             'hotel_name' => (string) ($r->hotel_name ?? ''),
             'amount' => (float) ($r->amount ?? 0),
             'payment_reference' => (string) ($r->payment_reference ?? ''),
+            'payment_screenshot_url' => ChatAttachmentUrl::fromStoredUrl(
+                filled($r->payment_screenshot_url ?? null)
+                    ? (string) $r->payment_screenshot_url
+                    : null
+            ),
             'status' => EnumHelper::toString($r->status ?? 'pending'),
             'requested_by_name' => (string) ($r->requested_by_name ?? ''),
             'created_at' => optional($r->created_at)->toISOString(),
@@ -749,6 +754,11 @@ class PlatformAdminController extends Controller
             'phone' => (string) ($r->phone ?? ''),
             'amount' => (float) ($r->amount ?? 0),
             'payment_reference' => (string) ($r->payment_reference ?? ''),
+            'payment_screenshot_url' => ChatAttachmentUrl::fromStoredUrl(
+                filled($r->payment_screenshot_url ?? null)
+                    ? (string) $r->payment_screenshot_url
+                    : null
+            ),
             'status' => EnumHelper::toString($r->status ?? 'pending'),
             'member_shid_id' => (string) ($r->member_shid_id ?? ''),
             'member_valid_until' => optional($r->member_valid_until)->toISOString(),

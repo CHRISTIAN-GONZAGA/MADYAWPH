@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../dio_client.dart';
 import '../../../utils/money_format.dart';
 import '../../../widgets/insufficient_hotel_credits.dart';
+import '../../../widgets/payment_proof_picker.dart';
 import '../../../widgets/admin_month_calendar.dart';
 import '../admin_dashboard_models.dart';
 import '../widgets/admin_booking_manage_dialog.dart';
@@ -407,6 +408,11 @@ class _BookingsSectionState extends State<BookingsSection>
     final id = _resolveId(r);
     final status = (r['status'] ?? '').toString();
     final pending = status == 'pending_approval' || status == 'pending';
+    final payShot = (r['payment_screenshot_url'] ??
+            ((r['metadata'] is Map)
+                ? (r['metadata']['payment_screenshot_url'] ?? '')
+                : ''))
+        .toString();
 
     showModalBottomSheet<void>(
       context: context,
@@ -446,6 +452,10 @@ class _BookingsSectionState extends State<BookingsSection>
                           : '—'))
                   .toString(),
             ),
+            if (payShot.trim().isNotEmpty) ...[
+              const SizedBox(height: 10),
+              PaymentProofThumb(url: payShot),
+            ],
             _detailRow(
               'Total paid',
               formatMoney(((r['amount_paid'] as num?) ?? (r['estimated_total'] as num?) ?? (r['total_amount'] as num?) ?? 0)),
@@ -544,6 +554,10 @@ class _BookingsSectionState extends State<BookingsSection>
             metaMap['payment_reference'] ??
             '—')
         .toString();
+    final payShot = (reservation?['payment_screenshot_url'] ??
+            metaMap['payment_screenshot_url'] ??
+            '')
+        .toString();
     final totalPaid = (reservation?['amount_paid'] as num?)?.toDouble() ??
         (reservation?['estimated_total'] as num?)?.toDouble() ??
         (metaMap['amount_paid'] as num?)?.toDouble() ??
@@ -574,6 +588,8 @@ class _BookingsSectionState extends State<BookingsSection>
                   style: const TextStyle(fontWeight: FontWeight.w700)),
               const SizedBox(height: 6),
               Text('Payment reference: $payRef'),
+              const SizedBox(height: 10),
+              PaymentProofThumb(url: payShot),
               const SizedBox(height: 6),
               Text(
                 'Stay total: ${formatMoney(stayTotal)}',

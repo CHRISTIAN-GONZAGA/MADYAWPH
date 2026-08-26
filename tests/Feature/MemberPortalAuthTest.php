@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\MemberSubscriptionRequest;
 use App\Models\User;
 use App\Services\MemberSubscriptionApprovalService;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
@@ -35,6 +36,28 @@ class MemberPortalAuthTest extends TestCase
         $row = MemberSubscriptionRequest::query()->where('username', 'ana_member')->first();
         $this->assertNotNull($row);
         $this->assertTrue(Hash::check('secret12', (string) $row->password));
+    }
+
+    public function test_register_stores_payment_screenshot(): void
+    {
+        $this->post('/api/v1/member/register', [
+            'full_name' => 'Ana Receipt',
+            'email' => 'ana.receipt@example.com',
+            'phone' => '09171234567',
+            'username' => 'ana_receipt',
+            'password' => 'secret12',
+            'password_confirmation' => 'secret12',
+            'payment_reference' => 'PAY-SHOT-1',
+            'payment_screenshot_file' => UploadedFile::fake()->createWithContent(
+                'receipt.png',
+                base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
+            ),
+        ], ['Accept' => 'application/json'])
+            ->assertCreated();
+
+        $row = MemberSubscriptionRequest::query()->where('username', 'ana_receipt')->first();
+        $this->assertNotNull($row);
+        $this->assertNotEmpty((string) ($row->payment_screenshot_url ?? ''));
     }
 
     public function test_login_dashboard_and_logout_flow(): void

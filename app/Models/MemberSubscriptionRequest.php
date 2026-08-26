@@ -14,6 +14,7 @@ class MemberSubscriptionRequest extends Model
         'password',
         'amount',
         'payment_reference',
+        'payment_screenshot_url',
         'status',
         'member_valid_until',
         'member_shid_id',

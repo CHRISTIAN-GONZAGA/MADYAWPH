@@ -11,6 +11,7 @@ class HotelSubscriptionPaymentRequest extends Model
         'hotel_name',
         'amount',
         'payment_reference',
+        'payment_screenshot_url',
         'status',
         'requested_by_user_id',
         'requested_by_name',

@@ -7,6 +7,7 @@ import '../widgets/insufficient_hotel_credits.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_state_views.dart';
+import '../widgets/payment_proof_picker.dart';
 import '../utils/money_format.dart';
 
 /// Approve or reject public reservation requests (future stays).
@@ -79,6 +80,10 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
             metaMap['payment_reference'] ??
             '—')
         .toString();
+    final payShot = (reservation?['payment_screenshot_url'] ??
+            metaMap['payment_screenshot_url'] ??
+            '')
+        .toString();
     final totalPaid = (reservation?['amount_paid'] as num?)?.toDouble() ??
         (reservation?['estimated_total'] as num?)?.toDouble() ??
         (metaMap['amount_paid'] as num?)?.toDouble() ??
@@ -90,20 +95,24 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         title: const Text('Review online payment'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Guest: $guestName',
-                style: const TextStyle(fontWeight: FontWeight.w700)),
-            const SizedBox(height: 6),
-            Text('Payment reference: $payRef'),
-            const SizedBox(height: 6),
-            Text(
-              'Total paid: ${formatMoney(totalPaid)}',
-              style: const TextStyle(fontWeight: FontWeight.w800),
-            ),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Guest: $guestName',
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              Text('Payment reference: $payRef'),
+              const SizedBox(height: 10),
+              PaymentProofThumb(url: payShot),
+              const SizedBox(height: 6),
+              Text(
+                'Total paid: ${formatMoney(totalPaid)}',
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(

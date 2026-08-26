@@ -3,11 +3,13 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:gloretto_mobile/widgets/app_notice.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../dio_client.dart';
 import '../widgets/app_input.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/chat_attachment.dart';
+import '../widgets/payment_proof_picker.dart';
 import 'member_login_screen.dart';
 
 /// Guest membership registration (paid via QR Ph, or FREE when fee is 0).
@@ -27,6 +29,7 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
   final _passwordCtrl = TextEditingController();
   final _password2Ctrl = TextEditingController();
   final _refCtrl = TextEditingController();
+  XFile? _paymentProof;
   String _memberQrRaw = '';
   double _fee = 300;
   double _pointsEarnPercent = 2;
@@ -141,6 +144,10 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
       setState(() => _error = 'Please enter your payment reference.');
       return;
     }
+    if (!_isFree && _paymentProof == null) {
+      setState(() => _error = 'Upload a screenshot of your payment receipt.');
+      return;
+    }
     if (_passwordCtrl.text != _password2Ctrl.text) {
       setState(() => _error = 'Passwords do not match.');
       return;
@@ -153,19 +160,33 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
     try {
       final username = _usernameCtrl.text.trim().toLowerCase();
       final password = _passwordCtrl.text;
-      final res = await publicDio().post<Map<String, dynamic>>(
-        '/member/register',
-        data: {
-          'full_name': _nameCtrl.text.trim(),
-          'email': _emailCtrl.text.trim(),
-          'phone': _phoneCtrl.text.trim(),
-          'username': username,
-          'password': password,
-          'password_confirmation': password,
-          if (_refCtrl.text.trim().isNotEmpty)
-            'payment_reference': _refCtrl.text.trim(),
-        },
-      );
+      final fields = <String, dynamic>{
+        'full_name': _nameCtrl.text.trim(),
+        'email': _emailCtrl.text.trim(),
+        'phone': _phoneCtrl.text.trim(),
+        'username': username,
+        'password': password,
+        'password_confirmation': password,
+        if (_refCtrl.text.trim().isNotEmpty)
+          'payment_reference': _refCtrl.text.trim(),
+      };
+      final Response<Map<String, dynamic>> res;
+      if (_paymentProof != null) {
+        final form = await ChatAttachment.formWithImage(
+          fields: fields,
+          file: _paymentProof!,
+          fileField: 'payment_screenshot_file',
+        );
+        res = await publicDio().post<Map<String, dynamic>>(
+          '/member/register',
+          data: form,
+        );
+      } else {
+        res = await publicDio().post<Map<String, dynamic>>(
+          '/member/register',
+          data: fields,
+        );
+      }
       final requestId = (res.data?['request_id'] ?? '').toString();
       if (!mounted || requestId.isEmpty) return;
       await Navigator.of(context).pushReplacement(
@@ -270,6 +291,18 @@ class _MemberRegistrationScreenState extends State<MemberRegistrationScreen> {
                   AppInput(
                     controller: _refCtrl,
                     label: 'Payment reference / transaction ID',
+                  ),
+                  const SizedBox(height: 12),
+                  PaymentProofPicker(
+                    file: _paymentProof,
+                    onChanged: (file) => setState(() => _paymentProof = file),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Upload a screenshot of your payment receipt.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
                   ),
                 ] else ...[
                   const SizedBox(height: 12),
@@ -487,7 +520,8 @@ class _MemberQrPhPaymentCard extends StatelessWidget {
             Text(
               '1. Scan the platform QR Ph code (₱${fee.toStringAsFixed(0)})\n'
               '2. Copy your transaction reference\n'
-              '3. Complete the form below and register',
+              '3. Upload a screenshot of your payment receipt\n'
+              '4. Complete the form below and register',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: scheme.onSurfaceVariant,
                     height: 1.45,

@@ -10,6 +10,7 @@ use App\Models\MemberSubscriptionRequest;
 use App\Models\PlatformSetting;
 use App\Models\User;
 use App\Services\CentralAdminAccountService;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Config;
 use Tests\TestCase;
 
@@ -58,6 +59,47 @@ class PlatformAdminTest extends TestCase
             ->first();
         $this->assertNotNull($credit);
         $this->assertSame(10000.0, (float) $credit->current_credits);
+    }
+
+    public function test_hotel_credit_recharge_request_requires_screenshot_and_shows_on_platform_list(): void
+    {
+        $hotel = Hotel::create(['name' => 'Proof Credit Hotel', 'location' => 'City']);
+        $hotelAdmin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'creditproof',
+            'email' => 'creditproof@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $central = app(CentralAdminAccountService::class)->ensureUser();
+        $png = base64_decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+        );
+
+        $this->actingAs($hotelAdmin)
+            ->postJson('/api/v1/admin/credits/recharge-request', [
+                'amount' => 1500,
+                'payment_reference' => 'QRPH-NO-SHOT',
+            ])
+            ->assertStatus(422);
+
+        $this->actingAs($hotelAdmin)
+            ->post('/api/v1/admin/credits/recharge-request', [
+                'amount' => 1500,
+                'payment_reference' => 'QRPH-SHOT-1',
+                'image_file' => UploadedFile::fake()->createWithContent('proof.png', $png),
+            ], ['Accept' => 'application/json'])
+            ->assertCreated();
+
+        $listed = collect($this->actingAs($central)
+            ->getJson('/api/v1/platform/credit-requests')
+            ->assertOk()
+            ->json('data') ?? []);
+        $row = $listed->first(
+            fn ($item) => is_array($item) && ($item['payment_reference'] ?? '') === 'QRPH-SHOT-1'
+        );
+        $this->assertIsArray($row);
+        $this->assertNotEmpty($row['payment_screenshot_url'] ?? null);
     }
 
     public function test_central_admin_can_approve_member_subscription(): void

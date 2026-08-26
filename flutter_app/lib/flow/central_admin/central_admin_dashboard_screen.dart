@@ -7,6 +7,7 @@ import '../../auth_storage.dart';
 import '../../dio_client.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/chat_attachment.dart';
+import '../../widgets/payment_proof_picker.dart';
 import '../public_hotel_search_screen.dart';
 import '../portal_sign_out.dart';
 
@@ -1565,7 +1566,7 @@ class _ApprovalsSection extends StatelessWidget {
         const _PlatformSectionHeader(
           icon: Icons.pending_actions_outlined,
           title: 'Approvals',
-          subtitle: 'Credits, members, subscriptions, and new hotels',
+          subtitle: 'Credits and hotel subscriptions — review QR payments, then approve',
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -1676,14 +1677,16 @@ class _SubscriptionCard extends StatelessWidget {
               style: const TextStyle(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 4),
-            Text(
-              'Ref: ${(item['payment_reference'] ?? '—')} · '
-              '₱${((item['amount'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}',
-            ),
+            Text('Ref: ${(item['payment_reference'] ?? '—')} · '
+              '₱${((item['amount'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}'),
             Text(
               'Requested by ${(item['requested_by_name'] ?? '—')} '
               '(${item['requested_by_role'] ?? 'admin'})',
               style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 10),
+            PaymentProofThumb(
+              url: (item['payment_screenshot_url'] ?? '').toString(),
             ),
             const SizedBox(height: 12),
             Row(
@@ -1845,6 +1848,10 @@ class _CreditCard extends StatelessWidget {
             const SizedBox(height: 12),
             Text('Ref: ${item['payment_reference']}'),
             Text('Requested by: ${item['requested_by_name'] ?? '—'}'),
+            const SizedBox(height: 10),
+            PaymentProofThumb(
+              url: (item['payment_screenshot_url'] ?? '').toString(),
+            ),
             const SizedBox(height: 14),
             Row(
               children: [
@@ -1904,6 +1911,10 @@ class _MemberCard extends StatelessWidget {
             Text(item['email']?.toString() ?? ''),
             Text(item['phone']?.toString() ?? ''),
             Text('Ref: ${item['payment_reference']}'),
+            const SizedBox(height: 10),
+            PaymentProofThumb(
+              url: (item['payment_screenshot_url'] ?? '').toString(),
+            ),
             const SizedBox(height: 14),
             Row(
               children: [
@@ -2441,7 +2452,7 @@ class _QrSettingsSectionState extends State<_QrSettingsSection> {
         const _PlatformSectionHeader(
           icon: Icons.qr_code_2_outlined,
           title: 'QR Ph images',
-          subtitle: 'Backup QR Ph for hotels and guests who do not use PayMongo checkout. Upload a screenshot of your receiving QR. Hotels and members see these images when they pay.',
+          subtitle: 'Upload your QR Ph for hotels that pay subscription or wallet top-ups without PayMongo. Those payments appear under Approvals until you confirm them.',
         ),
         const SizedBox(height: 8),
         Padding(

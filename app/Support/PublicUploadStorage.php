@@ -27,6 +27,7 @@ final class PublicUploadStorage
         'payment-qr/',
         'reseller-ids/',
         'bookings/',
+        'payment-proof/',
     ];
 
     /** @var list<string> */
@@ -39,6 +40,7 @@ final class PublicUploadStorage
         'payment-qr',
         'reseller-ids',
         'bookings',
+        'payment-proof',
     ];
 
     /** @var list<string> */

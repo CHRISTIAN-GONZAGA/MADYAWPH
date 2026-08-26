@@ -63,6 +63,7 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
   final _paymentRefCtrl = TextEditingController();
   XFile? _discountIdFile;
   XFile? _guestIdFile;
+  XFile? _paymentProofFile;
   GuestPaymentConfig _paymentConfig = const GuestPaymentConfig();
   var _qrLoading = false;
   var _guestFieldsReady = false;
@@ -303,6 +304,13 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
       );
       return;
     }
+    if (_paymentProofFile == null) {
+      showAppMessage(
+        context,
+        'Upload a screenshot of your payment receipt.',
+      );
+      return;
+    }
     if (!_paymentConfig.canBookOnline) {
       showAppMessage(
         context,
@@ -354,10 +362,11 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
       final discount = _hasMemberDiscount ? 'none' : _discountType;
       final hasDiscountFile = discount != 'none' && _discountIdFile != null;
       final hasGuestId = _guestIdFile != null;
+      final hasProof = _paymentProofFile != null;
       final dio = customerBookingDio();
 
       final Response<Map<String, dynamic>> res;
-      if (hasDiscountFile || hasGuestId) {
+      if (hasDiscountFile || hasGuestId || hasProof) {
         final map = <String, dynamic>{};
         for (final entry in payload.entries) {
           final v = entry.value;
@@ -380,6 +389,14 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
             filename: _discountIdFile!.name.isNotEmpty
                 ? _discountIdFile!.name
                 : 'discount_id.jpg',
+          );
+        }
+        if (hasProof) {
+          map['payment_screenshot_file'] = await MultipartFile.fromFile(
+            _paymentProofFile!.path,
+            filename: _paymentProofFile!.name.isNotEmpty
+                ? _paymentProofFile!.name
+                : 'payment_receipt.jpg',
           );
         }
         res = await dio.post<Map<String, dynamic>>(
@@ -920,6 +937,9 @@ class _CustomerRoomDetailScreenState extends State<CustomerRoomDetailScreen> {
                 depositPctLabel: depositPctLabel,
                 isFullDeposit: isFullDeposit,
                 paymentRefController: _paymentRefCtrl,
+                paymentProofFile: _paymentProofFile,
+                onPaymentProofChanged: (file) =>
+                    setState(() => _paymentProofFile = file),
                 onPrimaryAction: _submitting
                     ? null
                     : () => _submit(

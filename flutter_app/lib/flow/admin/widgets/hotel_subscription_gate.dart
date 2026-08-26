@@ -1,11 +1,14 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../dio_client.dart';
 import '../../../utils/money_format.dart';
 import '../../../widgets/app_scaffold.dart';
 import '../../../widgets/chat_attachment.dart';
+import '../../../widgets/payment_brand_logo.dart';
+import '../../../widgets/payment_proof_picker.dart';
 import '../../../widgets/payment_redirect.dart';
 
 /// Blocks hotel portal access when subscription trial/payment is due.
@@ -51,11 +54,14 @@ class _HotelSubscriptionGateScreenState extends State<HotelSubscriptionGateScree
   final _refCtrl = TextEditingController();
   bool _busy = false;
   String? _error;
+  String _method = 'paymongo';
+  XFile? _proof;
 
   @override
   void initState() {
     super.initState();
     _data = Map<String, dynamic>.from(widget.initial);
+    if (!_paymongoCheckout) _method = 'qr';
   }
 
   @override
@@ -119,14 +125,22 @@ class _HotelSubscriptionGateScreenState extends State<HotelSubscriptionGateScree
       setState(() => _error = 'Enter the payment reference number.');
       return;
     }
+    if (_proof == null) {
+      setState(() => _error = 'Upload a screenshot of the payment.');
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
+      final form = await ChatAttachment.formWithImage(
+        fields: {'payment_reference': ref},
+        file: _proof!,
+      );
       final res = await portalDio().post<Map<String, dynamic>>(
         '/hotel/subscription/payment',
-        data: {'payment_reference': ref},
+        data: form,
       );
       if (!mounted) return;
       setState(() {
@@ -225,7 +239,7 @@ class _HotelSubscriptionGateScreenState extends State<HotelSubscriptionGateScree
             const SizedBox(height: 8),
             Text(
               _showPayUi
-                  ? 'Your free trial has ended. Pay via PayMongo QR Ph (opens in your browser), or scan the platform QR and submit a reference for manual approval.'
+                  ? 'Your free trial has ended. Pay with PayMongo to renew automatically, or scan the platform QR and submit a reference plus screenshot for central admin approval.'
                   : 'Your hotel subscription payment is required. Ask an admin or super admin to complete payment.',
               style: TextStyle(color: scheme.onSurfaceVariant),
             ),
@@ -250,79 +264,89 @@ class _HotelSubscriptionGateScreenState extends State<HotelSubscriptionGateScree
                 ),
               ],
               const SizedBox(height: 12),
-              if (_paymongoCheckout) ...[
+              if (_paymongoCheckout)
+                _PayChoiceCard(
+                  selected: _method == 'paymongo',
+                  title: 'Pay with PayMongo',
+                  subtitle:
+                      'Opens checkout in your browser. Subscription renews automatically when payment succeeds.',
+                  leading: const PaymentBrandLogo(methodKey: 'qrph', size: 36),
+                  onTap: _busy
+                      ? null
+                      : () => setState(() => _method = 'paymongo'),
+                ),
+              if (_paymongoCheckout) const SizedBox(height: 8),
+              _PayChoiceCard(
+                selected: _method == 'qr',
+                title: 'Scan QR',
+                subtitle:
+                    'Pay with the QR uploaded by central admin, then send the reference and a screenshot for approval.',
+                leading: const PaymentBrandLogo(methodKey: 'qrph', size: 36),
+                onTap: _busy ? null : () => setState(() => _method = 'qr'),
+              ),
+              if (_method == 'paymongo' && _paymongoCheckout) ...[
+                const SizedBox(height: 16),
                 FilledButton.icon(
                   onPressed: _busy || !_canSubmit ? null : _payWithQrPh,
-                  icon: const Icon(Icons.qr_code_scanner),
-                  label: Text('Pay with QR Ph · ${formatPeso(fee)}'),
+                  icon: const Icon(Icons.open_in_new),
+                  label: Text('Continue to PayMongo · ${formatPeso(fee)}'),
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  'Opens PayMongo checkout in your browser. Subscription activates automatically after payment.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Or pay with the platform QR Ph (backup)',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Scan the QR uploaded by central admin, then submit the transaction reference for approval.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                ),
-                const SizedBox(height: 8),
               ],
-              if (qr.isNotEmpty)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: NetworkMediaImage(
-                    url: qr,
-                    fit: BoxFit.contain,
-                    height: 240,
-                    width: double.infinity,
-                  ),
-                )
-              else
-                const Card(
-                  child: ListTile(
-                    title: Text('Backup QR Ph not posted yet'),
-                    subtitle: Text(
-                      'Central admin must upload the hotel subscription QR screenshot under Platform → QR.',
+              if (_method == 'qr') ...[
+                const SizedBox(height: 16),
+                if (qr.isNotEmpty)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: NetworkMediaImage(
+                      url: qr,
+                      fit: BoxFit.contain,
+                      height: 240,
+                      width: double.infinity,
+                    ),
+                  )
+                else
+                  const Card(
+                    child: ListTile(
+                      title: Text('Platform QR Ph not posted yet'),
+                      subtitle: Text(
+                        'Central admin must upload the hotel subscription QR under Platform → QR.',
+                      ),
                     ),
                   ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _refCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Payment reference number',
+                    border: OutlineInputBorder(),
+                  ),
+                  textInputAction: TextInputAction.done,
                 ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _refCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Payment reference number',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 12),
+                PaymentProofPicker(
+                  file: _proof,
+                  onChanged: (file) => setState(() => _proof = file),
                 ),
-                textInputAction: TextInputAction.done,
-                onSubmitted: (_) => _canSubmit ? _submit() : null,
-              ),
-              if (_error != null) ...[
+                if (_error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(_error!, style: TextStyle(color: scheme.error)),
+                ],
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: _busy || !_canSubmit || qr.isEmpty ? null : _submit,
+                  child: _busy
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Submit for approval'),
+                ),
+              ],
+              if (_method != 'qr' && _error != null) ...[
                 const SizedBox(height: 8),
                 Text(_error!, style: TextStyle(color: scheme.error)),
               ],
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: _busy || !_canSubmit ? null : _submit,
-                child: _busy
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Submit for approval'),
-              ),
             ],
             const SizedBox(height: 12),
             TextButton(
@@ -333,6 +357,68 @@ class _HotelSubscriptionGateScreenState extends State<HotelSubscriptionGateScree
               child: const Text('Close app'),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PayChoiceCard extends StatelessWidget {
+  const _PayChoiceCard({
+    required this.selected,
+    required this.title,
+    required this.subtitle,
+    required this.leading,
+    required this.onTap,
+  });
+
+  final bool selected;
+  final String title;
+  final String subtitle;
+  final Widget leading;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: selected ? scheme.primaryContainer : scheme.surfaceContainerHigh,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              leading,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                selected
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_off,
+                color: selected ? scheme.primary : scheme.outline,
+              ),
+            ],
+          ),
         ),
       ),
     );

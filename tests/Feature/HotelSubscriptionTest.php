@@ -7,6 +7,7 @@ use App\Models\Hotel;
 use App\Models\HotelSubscriptionPaymentRequest;
 use App\Models\User;
 use App\Services\HotelSubscriptionService;
+use Illuminate\Http\UploadedFile;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -75,9 +76,10 @@ class HotelSubscriptionTest extends TestCase
             0.01
         );
 
-        $submit = $this->postJson('/api/v1/hotel/subscription/payment', [
+        $submit = $this->post('/api/v1/hotel/subscription/payment', [
             'payment_reference' => 'REF-SUB-001',
-        ]);
+            'image_file' => $this->fakePaymentProof(),
+        ], ['Accept' => 'application/json']);
         $submit->assertOk();
         $submit->assertJsonPath('status', 'processing');
 
@@ -87,6 +89,17 @@ class HotelSubscriptionTest extends TestCase
             ->first();
         $this->assertNotNull($pending);
         $this->assertEqualsWithDelta($expected, (float) $pending->amount, 0.01);
+        $this->assertNotEmpty((string) ($pending->payment_screenshot_url ?? ''));
+
+        Sanctum::actingAs($central);
+        $listed = collect($this->getJson('/api/v1/platform/subscription-requests')
+            ->assertOk()
+            ->json('data') ?? []);
+        $row = $listed->first(
+            fn ($item) => is_array($item) && ($item['id'] ?? '') === (string) $pending->id
+        );
+        $this->assertIsArray($row);
+        $this->assertNotEmpty($row['payment_screenshot_url'] ?? null);
 
         Sanctum::actingAs($central);
         $approve = $this->postJson('/api/v1/platform/subscription-requests/'.(string) $pending->id.'/approve');
@@ -155,5 +168,36 @@ class HotelSubscriptionTest extends TestCase
         $res->assertJsonPath('status', 'payment_required');
         $res->assertJsonPath('can_submit_payment', false);
         $res->assertJsonPath('show_payment_ui', false);
+    }
+
+    public function test_manual_subscription_payment_requires_screenshot(): void
+    {
+        $hotel = Hotel::create([
+            'name' => 'Proof Hotel',
+            'location' => 'City',
+            'subscription_trial_ends_at' => now()->subDay(),
+            'subscription_status' => HotelSubscriptionService::STATUS_PAYMENT_REQUIRED,
+        ]);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'proofadmin',
+            'email' => 'proofadmin@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+
+        Sanctum::actingAs($admin);
+        $this->postJson('/api/v1/hotel/subscription/payment', [
+            'payment_reference' => 'REF-NO-SHOT',
+        ])->assertStatus(422);
+    }
+
+    private function fakePaymentProof(): UploadedFile
+    {
+        $png = base64_decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+        );
+
+        return UploadedFile::fake()->createWithContent('proof.png', $png);
     }
 }

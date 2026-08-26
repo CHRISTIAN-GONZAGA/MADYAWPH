@@ -33,6 +33,7 @@ use App\Support\OnlineBookingDepositSupport;
 use App\Support\PriceRounding;
 use App\Support\PublicUploadStorage;
 use App\Support\RoomBillingSupport;
+use App\Support\RoomImageUploadRules;
 use App\Support\SafeModelAttributes;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -405,6 +406,7 @@ class CustomerPortalApiController extends Controller
         $validated = $this->validateCustomerStay($request);
         $validated = $this->mergeDiscountIntoValidated($request, $validated);
         $validated = $this->mergeGuestIdIntoValidated($request, $validated);
+        $validated = $this->mergePaymentScreenshotIntoValidated($request, $validated);
         $validated = $this->mergePaymentIntoValidated($validated);
 
         return $this->createPendingReservation($validated);
@@ -516,6 +518,7 @@ class CustomerPortalApiController extends Controller
                     'guest_id_url' => $validated['guest_id_url'] ?? null,
                     'payment_method' => $validated['payment_method'] ?? 'Online',
                     'payment_reference' => $validated['payment_reference'] ?? null,
+                    'payment_screenshot_url' => $validated['payment_screenshot_url'] ?? null,
                     'estimated_total' => $total,
                     'total_amount' => $total,
                     'amount_paid' => $amountPaid,
@@ -704,6 +707,7 @@ class CustomerPortalApiController extends Controller
             'guest_id_file' => ['nullable', 'image', 'max:5120'],
             'payment_method' => ['required', 'string', 'in:Online'],
             'payment_reference' => ['nullable', 'string', 'min:4', 'max:120'],
+            'payment_screenshot_file' => RoomImageUploadRules::fileRules(),
             'rooms' => ['nullable', 'integer', 'min:1', 'max:10'],
             'adults' => ['nullable', 'integer', 'min:1', 'max:30'],
             'children' => ['nullable', 'integer', 'min:0', 'max:20'],
@@ -733,6 +737,32 @@ class CustomerPortalApiController extends Controller
             Log::warning('Guest ID upload failed', ['message' => $e->getMessage()]);
             throw ValidationException::withMessages([
                 'guest_id_file' => ['Could not upload your ID photo. Please try again with a smaller image.'],
+            ]);
+        }
+
+        return $validated;
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return array<string, mixed>
+     */
+    private function mergePaymentScreenshotIntoValidated(Request $request, array $validated): array
+    {
+        if (! $request->hasFile('payment_screenshot_file')) {
+            return $validated;
+        }
+
+        try {
+            $path = PublicUploadStorage::store(
+                $request->file('payment_screenshot_file'),
+                'payment-proof'
+            );
+            $validated['payment_screenshot_url'] = ChatAttachmentUrl::forPath($path);
+        } catch (Throwable $e) {
+            Log::warning('Payment screenshot upload failed', ['message' => $e->getMessage()]);
+            throw ValidationException::withMessages([
+                'payment_screenshot_file' => ['Could not upload your payment screenshot. Try a smaller JPG or PNG.'],
             ]);
         }
 
@@ -1155,6 +1185,11 @@ class CustomerPortalApiController extends Controller
             'booking_reference' => $booking ? (string) $booking->booking_reference : '',
             'payment_method' => (string) ($meta['payment_method'] ?? 'Cash'),
             'payment_reference' => (string) ($meta['payment_reference'] ?? ''),
+            'payment_screenshot_url' => ChatAttachmentUrl::fromStoredUrl(
+                filled($meta['payment_screenshot_url'] ?? null)
+                    ? (string) $meta['payment_screenshot_url']
+                    : null
+            ),
             'estimated_total' => (float) ($meta['estimated_total'] ?? 0),
             'amount_paid' => (float) ($meta['amount_paid'] ?? 0),
             'deposit_percent' => isset($meta['deposit_percent']) ? (float) $meta['deposit_percent'] : null,

@@ -29,6 +29,7 @@ class CompleteGuestBookingPayload {
     this.checkOutTime,
     this.guestIdFile,
     this.discountIdFile,
+    this.paymentScreenshotFile,
     this.adults = 1,
     this.children = 0,
     this.guestsMale = 0,
@@ -51,6 +52,7 @@ class CompleteGuestBookingPayload {
   final TimeOfDay? checkOutTime;
   final XFile? guestIdFile;
   final XFile? discountIdFile;
+  final XFile? paymentScreenshotFile;
   final int adults;
   final int children;
   final int guestsMale;
@@ -215,6 +217,7 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
   var _bookingMode = BookingModeOptions.defaultValue;
   XFile? _guestIdFile;
   XFile? _discountIdFile;
+  XFile? _paymentProofFile;
   GuestPaymentConfig _guestPay = const GuestPaymentConfig();
   var _qrLoading = false;
 
@@ -414,6 +417,10 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
         _snack('Pay using one of the QR codes, then paste your payment reference.');
         return;
       }
+      if (_paymentProofFile == null) {
+        _snack('Upload a screenshot of your payment receipt.');
+        return;
+      }
     }
 
     Navigator.of(context).pop(
@@ -431,6 +438,7 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
         checkOutTime: config.showAdminTimeSlots ? _checkOutTime : null,
         guestIdFile: _guestIdFile,
         discountIdFile: _discountIdFile,
+        paymentScreenshotFile: _paymentProofFile,
         bookingMode: config.showAdminPaymentMethods
             ? BookingModeOptions.apiValue(
                 _bookingMode,
@@ -768,6 +776,9 @@ class _CompleteGuestBookingDialogState extends State<_CompleteGuestBookingDialog
               depositPctLabel: '100%',
               isFullDeposit: true,
               paymentRefController: _paymentRefCtrl,
+              paymentProofFile: _paymentProofFile,
+              onPaymentProofChanged: (file) =>
+                  setState(() => _paymentProofFile = file),
               onPrimaryAction: _submit,
               primaryLabel: 'Continue',
             ),

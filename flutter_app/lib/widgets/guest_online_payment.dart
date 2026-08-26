@@ -1,12 +1,14 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:gloretto_mobile/widgets/app_notice.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../dio_client.dart';
 import '../services/app_currency.dart';
 import '../utils/money_format.dart';
 import 'app_input.dart';
 import 'guest_payment_methods.dart';
+import 'payment_proof_picker.dart';
 import 'payment_redirect.dart';
 
 /// Hotel online payment options for guest booking / status screens.
@@ -117,6 +119,8 @@ class GuestOnlinePaymentPanel extends StatelessWidget {
     required this.isFullDeposit,
     required this.paymentRefController,
     required this.onPrimaryAction,
+    this.paymentProofFile,
+    this.onPaymentProofChanged,
     this.primaryLoading = false,
     this.primaryEnabled = true,
     this.primaryLabel,
@@ -129,6 +133,8 @@ class GuestOnlinePaymentPanel extends StatelessWidget {
   final bool isFullDeposit;
   final TextEditingController paymentRefController;
   final VoidCallback? onPrimaryAction;
+  final XFile? paymentProofFile;
+  final ValueChanged<XFile?>? onPaymentProofChanged;
   final bool primaryLoading;
   final bool primaryEnabled;
   final String? primaryLabel;
@@ -173,6 +179,20 @@ class GuestOnlinePaymentPanel extends StatelessWidget {
           label: 'Payment reference *',
           hint: 'Paste the transaction ID shown after you pay',
         ),
+        if (onPaymentProofChanged != null) ...[
+          const SizedBox(height: 12),
+          PaymentProofPicker(
+            file: paymentProofFile,
+            onChanged: onPaymentProofChanged!,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Upload a screenshot of your payment receipt.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+          ),
+        ],
         const SizedBox(height: 12),
         FilledButton.icon(
           onPressed: primaryEnabled && !primaryLoading ? onPrimaryAction : null,

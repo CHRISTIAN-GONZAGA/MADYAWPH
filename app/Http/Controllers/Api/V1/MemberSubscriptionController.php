@@ -11,6 +11,8 @@ use App\Services\PlatformSettingsService;
 use App\Support\EmailOtp;
 use App\Support\MemberPortalStore;
 use App\Support\MessagingFlags;
+use App\Support\RoomImageUploadRules;
+use App\Support\RoomMediaStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -47,6 +49,7 @@ class MemberSubscriptionController extends Controller
                 'string',
                 'max:120',
             ],
+            'payment_screenshot_file' => RoomImageUploadRules::fileRules(),
         ]);
 
         $email = strtolower(trim((string) $validated['email']));
@@ -98,6 +101,14 @@ class MemberSubscriptionController extends Controller
             ], 422);
         }
 
+        $screenshotUrl = null;
+        if ($request->hasFile('payment_screenshot_file')) {
+            $screenshotUrl = RoomMediaStorage::store(
+                $request->file('payment_screenshot_file'),
+                'payment-proof'
+            );
+        }
+
         $row = MemberSubscriptionRequest::create([
             'full_name' => trim((string) $validated['full_name']),
             'email' => $email,
@@ -106,6 +117,7 @@ class MemberSubscriptionController extends Controller
             'password' => (string) $validated['password'],
             'amount' => $fee,
             'payment_reference' => $paymentReference !== '' ? $paymentReference : ($fee <= 0 ? 'FREE' : ''),
+            'payment_screenshot_url' => $screenshotUrl,
             'status' => 'pending',
         ]);
 

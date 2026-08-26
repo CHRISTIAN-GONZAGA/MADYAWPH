@@ -7,6 +7,7 @@ import '../dio_client.dart';
 import '../locale_controller.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/guest_online_payment.dart';
+import '../widgets/payment_proof_picker.dart';
 import '../utils/money_format.dart';
 
 /// Maps instant `/customer/bookings` response + room row for the status ticket UI.
@@ -467,6 +468,7 @@ class _TicketCard extends StatelessWidget {
     final paymentMethod =
         (reservation['payment_method'] ?? 'Cash').toString();
     final paymentRef = (reservation['payment_reference'] ?? '').toString();
+    final payShot = (reservation['payment_screenshot_url'] ?? '').toString();
     final bookingRef = (reservation['booking_reference'] ?? '').toString();
     final resRef = (reservation['external_reference'] ?? '').toString();
 
@@ -500,6 +502,11 @@ class _TicketCard extends StatelessWidget {
             _row(context.tr('lbl_payment'), paymentMethod),
             if (paymentMethod.toLowerCase() == 'online' && paymentRef.isNotEmpty)
               _row(context.tr('lbl_payment_ref'), paymentRef, highlight: true),
+            if (payShot.trim().isNotEmpty) ...[
+              const SizedBox(height: 4),
+              PaymentProofThumb(url: payShot),
+              const SizedBox(height: 10),
+            ],
             if ((reservation['payment_status_label'] ?? '').toString().isNotEmpty)
               _row(
                 'Payment status',

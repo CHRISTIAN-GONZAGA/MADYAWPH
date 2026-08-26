@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'app_notice.dart';
 import 'chat_attachment.dart';
+import 'payment_brand_logo.dart';
 
 /// One payment option a hotel has set up (QR Ph, GCash, PayMaya, Maribank,
 /// bank transfer). Each carries its own QR image and account details.
@@ -202,11 +203,7 @@ class _MethodButton extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                guestPaymentMethodIcon(method.key),
-                size: 18,
-                color: selected ? scheme.onPrimary : scheme.onSurfaceVariant,
-              ),
+              PaymentBrandLogo(methodKey: method.key, size: 22),
               const SizedBox(width: 8),
               Text(
                 method.label,
