@@ -341,6 +341,7 @@ class AdminDashboardApiController extends Controller
                 'isFreeBreakfast' => FreeBreakfastSupport::isBreakfastClaim($claim),
                 'breakfastDate' => (string) ($claim->breakfast_date ?? ''),
                 'visibleAt' => optional($claim->visible_at)->toIso8601String(),
+                'guestNote' => trim((string) ($claim->guest_note ?? '')),
             ]),
             'tasks' => Task::query()->latest()->limit(25)->get(),
             'staff' => StaffMember::query()->limit(25)->get(),

@@ -261,12 +261,21 @@ class RoomCheckoutService
             $guestName = trim((string) ($booking?->guest_name
                 ?? $room->getAttributes()['current_guest_name']
                 ?? 'Guest'));
+            $roomNumber = (string) ($room->room_number ?? '');
+            $customMessage = \App\Support\GuestWelcomeMessageSupport::renderForHotel(
+                (string) $room->hotel_id,
+                [
+                    'guest_name' => $guestName !== '' ? $guestName : 'Guest',
+                    'hotel_name' => $hotelName,
+                    'room_number' => $roomNumber,
+                ]
+            );
 
             app(AppEmailService::class)->sendGuestCheckInWelcome(
                 email: $email,
                 hotelName: $hotelName,
                 guestName: $guestName !== '' ? $guestName : 'Guest',
-                roomNumber: (string) ($room->room_number ?? ''),
+                roomNumber: $roomNumber,
                 roomPassword: $accessCode,
                 checkInDate: optional($booking?->check_in_date)->toDateString()
                     ?? SafeModelAttributes::carbonFromModel($room, 'current_check_in')?->toDateString(),
@@ -275,6 +284,7 @@ class RoomCheckoutService
                 bookingReference: $booking?->booking_reference
                     ? (string) $booking->booking_reference
                     : null,
+                customMessage: $customMessage,
             );
         } catch (\Throwable $e) {
             Log::warning('Check-in welcome email skipped', [

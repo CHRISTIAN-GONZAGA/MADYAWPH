@@ -90,4 +90,73 @@ class ResendEmailTest extends TestCase
                 && $mail->hasTo('alex.guest@gmail.com');
         });
     }
+
+    public function test_check_in_welcome_email_uses_hotel_custom_message(): void
+    {
+        config([
+            'services.messaging.email_enabled' => true,
+            'mail.default' => 'resend',
+            'mail.from.address' => 'noreply@madyaw.test',
+            'mail.from.name' => 'MADYAW',
+            'services.resend.key' => 're_test_key',
+        ]);
+        Mail::fake();
+
+        $hotel = Hotel::create(['name' => 'Custom Inn', 'location' => 'Butuan']);
+        \App\Models\SystemSetting::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'theme_color' => '#2563eb',
+            'theme_mode' => 'light',
+            'guest_welcome_message' => 'Hello {guest_name}, welcome to {hotel_name} room {room_number}!',
+        ]);
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'custom_admin',
+            'email' => 'custom-admin@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+        $frontDesk = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'custom_fo',
+            'email' => 'custom-fo@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::FRONTDESK,
+        ]);
+        $room = Room::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_number' => '502',
+            'room_type' => 'Deluxe',
+            'price_per_night' => 2000,
+            'status' => RoomStatus::BOOKED->value,
+            'current_guest_name' => 'Sam Guest',
+        ]);
+        Booking::withoutGlobalScopes()->create([
+            'hotel_id' => (string) $hotel->id,
+            'room_id' => (string) $room->id,
+            'booking_reference' => 'BK-WELCOME-1',
+            'guest_name' => 'Sam Guest',
+            'guest_email' => 'sam.guest@gmail.com',
+            'check_in_date' => now()->toDateString(),
+            'check_out_date' => now()->addDay()->toDateString(),
+            'nights' => 1,
+            'total_amount' => 2000,
+            'status' => BookingStatus::BOOKED,
+        ]);
+
+        Sanctum::actingAs($admin);
+        $this->patchJson('/api/v1/admin/settings/guest-welcome-message', [
+            'guest_welcome_message' => 'Hello {guest_name}, welcome to {hotel_name} room {room_number}!',
+        ])->assertOk();
+
+        Sanctum::actingAs($frontDesk);
+        $this->patchJson('/api/v1/admin/rooms/'.$room->id.'/status', [
+            'status' => 'checked_in',
+        ])->assertOk();
+
+        Mail::assertSent(GuestCheckInWelcomeMail::class, function (GuestCheckInWelcomeMail $mail) {
+            return $mail->hasTo('sam.guest@gmail.com')
+                && $mail->customMessage === 'Hello Sam Guest, welcome to Custom Inn room 502!';
+        });
+    }
 }

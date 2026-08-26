@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 import '../auth_storage.dart';
 import 'flow_state.dart';
@@ -62,6 +63,16 @@ Future<void> signOutPortalToRoleSelection(BuildContext context) async {
 
 /// Confirmation prompt, then sign out back to role selection.
 Future<void> confirmAndSignOutPortalToRoleSelection(BuildContext context) async {
+  if (await AuthStorage.hasPortalShiftLock()) {
+    if (!context.mounted) return;
+    final lockedContext = context;
+    showAppMessage(
+      lockedContext,
+      'You cannot sign out until you clock out at the end of your shift.',
+      isError: true,
+    );
+    return;
+  }
   final confirmed = await confirmPortalSignOut(context);
   if (!confirmed || !context.mounted) return;
   await signOutPortalToRoleSelection(context);

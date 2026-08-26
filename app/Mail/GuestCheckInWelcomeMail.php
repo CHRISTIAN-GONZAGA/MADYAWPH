@@ -20,6 +20,7 @@ class GuestCheckInWelcomeMail extends Mailable
         public readonly ?string $checkInDate = null,
         public readonly ?string $checkOutDate = null,
         public readonly ?string $bookingReference = null,
+        public readonly ?string $customMessage = null,
     ) {}
 
     public function envelope(): Envelope

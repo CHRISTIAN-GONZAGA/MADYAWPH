@@ -677,6 +677,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           onOpenAccountSettings: widget.onOpenAccountSettings,
           onRefreshAfterNav: widget.onRefresh,
           onSignOut: widget.onSignOut,
+          signOutLocked: widget.isFrontDesk && _shift != null,
         ),
         sections.length,
       ),

@@ -15,8 +15,8 @@
                         <h1 style="margin:0 0 12px;font-size:26px;color:#1a237e;line-height:1.3;">
                             Welcome to {{ $hotelName }}!
                         </h1>
-                        <p style="margin:0 0 20px;font-size:16px;line-height:1.55;color:#4a5568;">
-                            Please enjoy your stay!
+                        <p style="margin:0 0 20px;font-size:16px;line-height:1.55;color:#4a5568;white-space:pre-line;">
+                            {{ $customMessage ?: 'Please enjoy your stay!' }}
                         </p>
                         <p style="margin:0 0 20px;font-size:15px;line-height:1.55;color:#4a5568;">
                             Hi {{ $guestName }}, you have been checked in successfully.

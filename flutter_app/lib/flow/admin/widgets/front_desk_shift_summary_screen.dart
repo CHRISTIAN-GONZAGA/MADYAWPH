@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
+import '../../../auth_storage.dart';
 import '../../../widgets/app_scaffold.dart';
 import '../../portal_sign_out.dart';
 import 'front_desk_shift.dart';
@@ -141,6 +142,7 @@ class _FrontDeskShiftSummaryScreenState extends State<FrontDeskShiftSummaryScree
         hotelId: widget.shift.hotelId,
         userId: widget.shift.userId,
       );
+      await AuthStorage.setPortalShiftLock(false);
     }
     if (!mounted) return;
     if (widget.logoutOnFinish) {

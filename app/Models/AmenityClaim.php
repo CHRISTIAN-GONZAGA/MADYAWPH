@@ -26,6 +26,7 @@ class AmenityClaim extends Model
         'is_free_breakfast',
         'breakfast_date',
         'visible_at',
+        'guest_note',
     ];
 
     protected function casts(): array

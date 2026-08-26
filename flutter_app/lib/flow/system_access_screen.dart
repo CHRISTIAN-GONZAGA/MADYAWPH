@@ -51,6 +51,23 @@ class _SystemAccessScreenState extends State<SystemAccessScreen> {
   void initState() {
     super.initState();
     warmPublicApi();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _autoResumeFrontDesk();
+    });
+  }
+
+  Future<void> _autoResumeFrontDesk() async {
+    final role = await AuthStorage.portalRole();
+    final token = await AuthStorage.portalToken();
+    if (!mounted || role != 'frontdesk' || token == null || token.isEmpty) {
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await _tryResumeWithSavedToken('frontdesk');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
@@ -139,6 +156,10 @@ class _SystemAccessScreenState extends State<SystemAccessScreen> {
       if (e.response?.statusCode == 401 || e.response?.statusCode == 403) {
         await AuthStorage.clearPortalAuth();
         return false;
+      }
+      if (savedRole == 'frontdesk') {
+        await _openDashboard(const AdminDashboardScreen(isFrontDesk: true));
+        return true;
       }
       rethrow;
     }

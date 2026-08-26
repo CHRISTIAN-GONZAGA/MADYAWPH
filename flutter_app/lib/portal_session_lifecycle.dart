@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../auth_storage.dart';
 
-/// Records when hotel staff leave the app and clears portal auth after 60 minutes.
+/// Records when hotel staff leave the app. Front desk is never timed out
+/// while signed in; other portal roles clear after 60 minutes in the background.
 class PortalSessionLifecycle extends StatefulWidget {
   const PortalSessionLifecycle({super.key, required this.child});
 

@@ -3189,6 +3189,45 @@ Route::patch('/admin/settings/breakfast-time', function (Request $request) {
     ));
 })->middleware('role:admin,super_admin')->name('api.v1.admin.settings.breakfast-time.update');
 
+Route::get('/admin/settings/guest-welcome-message', function (Request $request) {
+    $hotelId = (string) $request->user()->hotel_id;
+    $settings = SystemSetting::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->first();
+
+    return response()->json(\App\Support\GuestWelcomeMessageSupport::payload($settings));
+})->middleware('role:admin,super_admin')->name('api.v1.admin.settings.guest-welcome-message.show');
+
+Route::patch('/admin/settings/guest-welcome-message', function (Request $request) {
+    $validated = $request->validate([
+        'guest_welcome_message' => ['nullable', 'string', 'max:'.\App\Support\GuestWelcomeMessageSupport::MAX_LENGTH],
+    ]);
+    $message = trim((string) ($validated['guest_welcome_message'] ?? ''));
+
+    $hotelId = (string) $request->user()->hotel_id;
+    $settings = SystemSetting::withoutGlobalScopes()->firstOrCreate(
+        ['hotel_id' => $hotelId],
+        [
+            'theme_color' => '#2563eb',
+            'theme_mode' => 'light',
+            'sound_notifications_enabled' => false,
+        ]
+    );
+    $settings->update(['guest_welcome_message' => $message !== '' ? $message : null]);
+
+    app(ActivityLogService::class)->log(
+        $hotelId,
+        $request->user(),
+        'Updated guest check-in welcome message',
+        ['length' => strlen($message)]
+    );
+
+    return response()->json(array_merge(
+        ['ok' => true],
+        \App\Support\GuestWelcomeMessageSupport::payload($settings->fresh())
+    ));
+})->middleware('role:admin,super_admin')->name('api.v1.admin.settings.guest-welcome-message.update');
+
 Route::get('/admin/payments/paymongo/status', [HotelPayMongoController::class, 'status'])
     ->middleware('role:admin,super_admin')
     ->name('api.v1.admin.payments.paymongo.status');

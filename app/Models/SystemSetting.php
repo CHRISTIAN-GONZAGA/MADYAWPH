@@ -34,6 +34,7 @@ class SystemSetting extends Model
         'late_checkout_fee_amount',
         'early_check_in_grace_minutes',
         'early_check_in_fee_amount',
+        'guest_welcome_message',
     ];
 
     protected function casts(): array

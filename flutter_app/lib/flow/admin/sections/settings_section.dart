@@ -15,6 +15,7 @@ import '../admin_room_fee_presets_screen.dart';
 import '../admin_cancellation_retention_screen.dart';
 import '../admin_currency_screen.dart';
 import '../admin_breakfast_time_screen.dart';
+import '../admin_guest_welcome_message_screen.dart';
 import '../admin_min_check_in_payment_screen.dart';
 import '../admin_online_booking_deposit_screen.dart';
 import '../admin_early_check_in_fee_screen.dart';
@@ -33,6 +34,7 @@ class SettingsSection extends StatelessWidget {
     required this.onOpenAccountSettings,
     required this.onRefreshAfterNav,
     this.onSignOut,
+    this.signOutLocked = false,
     this.creditsLocked = false,
     this.isFrontDesk = false,
     this.isSuperAdmin = false,
@@ -50,6 +52,7 @@ class SettingsSection extends StatelessWidget {
   final VoidCallback onOpenAccountSettings;
   final Future<void> Function() onRefreshAfterNav;
   final VoidCallback? onSignOut;
+  final bool signOutLocked;
 
   bool get _opsEnabled => isFrontDesk || !creditsLocked;
 
@@ -310,6 +313,21 @@ class SettingsSection extends StatelessWidget {
                     );
                   },
                 ),
+              if (!isFrontDesk)
+                _SettingsTile(
+                  icon: Icons.mail_outline,
+                  title: 'Guest welcome email',
+                  subtitle:
+                      'Custom check-in greeting sent to walk-in and online guests',
+                  enabled: !creditsLocked,
+                  onTap: () {
+                    Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AdminGuestWelcomeMessageScreen(),
+                      ),
+                    );
+                  },
+                ),
             ],
           ),
           _SettingsGroup(
@@ -424,9 +442,11 @@ class SettingsSection extends StatelessWidget {
               _SettingsTile(
                 icon: Icons.logout,
                 title: 'Sign out',
-                subtitle: 'Return to role selection',
-                enabled: true,
-                onTap: onSignOut!,
+                subtitle: signOutLocked
+                    ? 'Clock out at the end of your shift first'
+                    : 'Return to role selection',
+                enabled: !signOutLocked,
+                onTap: signOutLocked ? () {} : onSignOut!,
               ),
           ],
         ),

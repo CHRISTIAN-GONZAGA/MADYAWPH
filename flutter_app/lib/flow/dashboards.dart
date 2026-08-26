@@ -1041,14 +1041,15 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
               ),
             ),
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
-          PopupMenuButton<String>(
-            onSelected: (v) {
-              if (v == 'out') _signOut();
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'out', child: Text('Sign out')),
-            ],
-          ),
+          if (_shift == null)
+            PopupMenuButton<String>(
+              onSelected: (v) {
+                if (v == 'out') _signOut();
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'out', child: Text('Sign out')),
+              ],
+            ),
         ],
       ),
       body: _buildBody(),
@@ -2082,11 +2083,22 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
               return '$name × $qty';
             })
             .join(', ');
-        return 'Already selected for $dateBit: $dishes';
+        final note = (breakfast['guestNote'] ??
+                selections
+                    .map((row) => (row['guestNote'] ?? '').toString().trim())
+                    .firstWhere((n) => n.isNotEmpty, orElse: () => ''))
+            .toString()
+            .trim();
+        final noteBit = note.isEmpty ? '' : ' Note: $note';
+        return 'Already selected for $dateBit: $dishes$noteBit';
       }
       final name = (claim['amenityName'] ?? 'Breakfast').toString();
       final qty = claim['quantity'] ?? 1;
-      return 'Already selected for $dateBit: $name × $qty';
+      final note = (claim['guestNote'] ?? breakfast['guestNote'] ?? '')
+          .toString()
+          .trim();
+      final noteBit = note.isEmpty ? '' : ' Note: $note';
+      return 'Already selected for $dateBit: $name × $qty$noteBit';
     }
     return (breakfast['reason'] ??
             'Complimentary breakfast when your stay includes a morning')
@@ -2144,6 +2156,7 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
     if (items.isNotEmpty) {
       qtys[(items.first['id'] ?? '').toString()] = remaining;
     }
+    final noteCtrl = TextEditingController();
 
     final payload = await showDialog<Map<String, dynamic>>(
       context: context,
@@ -2154,7 +2167,7 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
             insetPadding:
                 const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 440, maxHeight: 560),
+              constraints: const BoxConstraints(maxWidth: 440, maxHeight: 640),
               child: Padding(
                 padding: const EdgeInsets.all(22),
                 child: Column(
@@ -2176,7 +2189,7 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
                     ),
                     const SizedBox(height: 16),
                     ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 280),
+                      constraints: const BoxConstraints(maxHeight: 220),
                       child: ListView.separated(
                         shrinkWrap: true,
                         itemCount: items.length,
@@ -2225,7 +2238,18 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
                       'Selected $total of $remaining',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: noteCtrl,
+                      maxLines: 3,
+                      maxLength: 500,
+                      decoration: const InputDecoration(
+                        labelText: 'Note for the kitchen (optional)',
+                        hintText: 'Allergies, extra toast, no onions…',
+                        alignLabelWithHint: true,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
@@ -2251,8 +2275,10 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
                               );
                               return;
                             }
+                            final note = noteCtrl.text.trim();
                             Navigator.of(context).pop({
                               'selections': selections,
+                              if (note.isNotEmpty) 'guest_note': note,
                             });
                           },
                           child: Text(isPreselect ? 'Save selection' : 'Claim'),
@@ -2267,6 +2293,7 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
         },
       ),
     );
+    noteCtrl.dispose();
     if (payload == null) return;
 
     await _runGuestAction('Free breakfast', () async {

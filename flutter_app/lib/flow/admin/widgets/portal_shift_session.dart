@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../auth_storage.dart';
 import '../../../dio_client.dart';
 import 'front_desk_shift.dart';
 import 'front_desk_shift_setup_dialog.dart';
@@ -35,6 +36,13 @@ class PortalShiftSession {
     );
     if (!context.mounted) return shift;
 
+    shift ??= await _restoreFromServer(
+      hotelId: hotelId,
+      userId: userId,
+      staffName: staffName,
+    );
+    if (!context.mounted) return shift;
+
     if (shift == null && !shiftPromptShown) {
       onPromptShown?.call(true);
       shift = await showFrontDeskShiftSetupDialog(
@@ -60,21 +68,49 @@ class PortalShiftSession {
           // Local shift still works if sync fails; admin summary may lag.
         }
       }
-    } else if (shift != null) {
-      // Re-assert active session on server (e.g. after app restart).
-      try {
-        await portalDio().post<Map<String, dynamic>>(
-          '/frontdesk-shifts/start',
-          data: {
-            'started_at': shift.startedAt.toIso8601String(),
-            'scheduled_time_out': shift.scheduledTimeOut.toIso8601String(),
-            'staff_name': shift.staffName,
-          },
-        );
-      } catch (_) {}
+    }
+
+    if (shift != null) {
+      await AuthStorage.setPortalShiftLock(true);
     }
 
     return shift;
+  }
+
+  static Future<FrontDeskShift?> _restoreFromServer({
+    required String hotelId,
+    required String userId,
+    required String staffName,
+  }) async {
+    try {
+      final res = await portalDio().get<Map<String, dynamic>>(
+        '/frontdesk-shifts/active',
+      );
+      final sessions = res.data?['sessions'];
+      if (sessions is! List) return null;
+      for (final raw in sessions) {
+        if (raw is! Map) continue;
+        final map = Map<String, dynamic>.from(raw);
+        if ((map['user_id'] ?? '').toString() != userId) continue;
+        final startedRaw = (map['started_at'] ?? '').toString();
+        final outRaw = (map['scheduled_time_out'] ?? '').toString();
+        if (startedRaw.isEmpty || outRaw.isEmpty) continue;
+        final startedAt = DateTime.tryParse(startedRaw);
+        final scheduledOut = DateTime.tryParse(outRaw);
+        if (startedAt == null || scheduledOut == null) continue;
+        final shift = FrontDeskShift(
+          userId: userId,
+          hotelId: hotelId,
+          staffName: (map['staff_name'] ?? staffName).toString(),
+          scheduledTimeIn: startedAt,
+          scheduledTimeOut: scheduledOut,
+          startedAt: startedAt,
+        );
+        await FrontDeskShiftStorage.save(shift);
+        return shift;
+      }
+    } catch (_) {}
+    return null;
   }
 
   static Future<void> handleTimeOut({
@@ -95,6 +131,7 @@ class PortalShiftSession {
       hotelId: shift.hotelId,
       userId: shift.userId,
     );
+    await AuthStorage.setPortalShiftLock(false);
     if (!context.mounted) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(

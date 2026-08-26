@@ -389,6 +389,9 @@ final class FreeBreakfastSupport
             'nextEligibleDate' => $nextDate,
             'reason' => $reason,
             'claim' => $primaryClaim ? self::presentGuestClaim($primaryClaim, $displayDate ?? $today) : null,
+            'guestNote' => $primaryClaim
+                ? trim((string) ($primaryClaim->guest_note ?? ''))
+                : '',
             'selections' => $claimsForDate->map(
                 fn (AmenityClaim $claim) => self::presentGuestClaim($claim, $displayDate ?? $today)
             )->values(),
@@ -592,6 +595,7 @@ final class FreeBreakfastSupport
             'quantity' => (int) ($claim->quantity ?? 0),
             'status' => (string) ($claim->status ?? ''),
             'breakfastDate' => self::claimBreakfastDate($claim) ?: $fallbackDate,
+            'guestNote' => trim((string) ($claim->guest_note ?? '')),
         ];
     }
 

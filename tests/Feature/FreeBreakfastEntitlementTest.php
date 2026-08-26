@@ -331,6 +331,50 @@ class FreeBreakfastEntitlementTest extends TestCase
             ->assertStatus(422);
     }
 
+    public function test_guest_breakfast_note_is_stored_and_shown_to_kitchen_after_lead_time(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-26 10:00:00', 'Asia/Manila'));
+        [$token, $item, $hotel] = $this->seedStay(
+            checkIn: '2026-08-26 10:00:00',
+            checkOut: '2026-08-27 12:00:00',
+            nights: 1,
+            adults: 1,
+            returnContext: true,
+        );
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'breakfast_note_admin',
+            'email' => 'breakfast-note-admin@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/guest/amenities/claim', [
+                'amenityItemId' => (string) $item->id,
+                'quantity' => 1,
+                'guest_note' => 'No onions, extra toast please',
+            ])
+            ->assertCreated();
+
+        $claim = AmenityClaim::withoutGlobalScopes()
+            ->where('hotel_id', (string) $hotel->id)
+            ->first();
+        $this->assertNotNull($claim);
+        $this->assertSame('No onions, extra toast please', (string) $claim->guest_note);
+
+        Carbon::setTestNow(Carbon::parse('2026-08-27 05:00:00', 'Asia/Manila'));
+        $shown = $this->actingAs($admin)
+            ->getJson('/api/v1/admin/dashboard')
+            ->assertOk()
+            ->json('amenityClaims');
+        $row = collect($shown ?? [])->first(
+            fn ($item) => is_array($item) && ($item['isFreeBreakfast'] ?? false)
+        );
+        $this->assertIsArray($row);
+        $this->assertSame('No onions, extra toast please', $row['guestNote'] ?? null);
+    }
+
     /**
      * @return array{0: string, 1: AmenityMenuItem}|array{0: string, 1: AmenityMenuItem, 2: Hotel, 3: Room}
      */

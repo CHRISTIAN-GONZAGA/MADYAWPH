@@ -405,6 +405,7 @@ class GuestPortalApiController extends Controller
             'selections' => ['required_without:amenityItemId', 'array', 'min:1'],
             'selections.*.amenityItemId' => ['required', 'string'],
             'selections.*.quantity' => ['required', 'integer', 'min:1', 'max:20'],
+            'guest_note' => ['nullable', 'string', 'max:500'],
         ]);
         $hotelId = (string) $portal['hotel_id'];
         $roomId = (string) $portal['room_id'];
@@ -473,6 +474,10 @@ class GuestPortalApiController extends Controller
         $isFreeBreakfast = $breakfastQty > 0;
         $breakfastDate = null;
         $visibleAt = null;
+        $guestNote = trim((string) ($validated['guest_note'] ?? ''));
+        if ($guestNote === '') {
+            $guestNote = null;
+        }
         if ($isFreeBreakfast) {
             $check = FreeBreakfastSupport::validateFreeClaim($booking, $existingClaims, $breakfastQty, $room);
             if (! $check['ok']) {
@@ -503,6 +508,7 @@ class GuestPortalApiController extends Controller
                 'is_free_breakfast' => (bool) $row['isFreeBreakfast'],
                 'breakfast_date' => $breakfastDate,
                 'visible_at' => $visibleAt,
+                'guest_note' => $guestNote,
             ]);
             $created[] = $claim;
 

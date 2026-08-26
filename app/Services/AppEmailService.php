@@ -59,6 +59,7 @@ class AppEmailService
         ?string $checkInDate = null,
         ?string $checkOutDate = null,
         ?string $bookingReference = null,
+        ?string $customMessage = null,
     ): EmailSendResult {
         $normalized = $this->normalizeEmail($email);
         if ($normalized === null) {
@@ -89,6 +90,7 @@ class AppEmailService
                 checkInDate: $checkInDate,
                 checkOutDate: $checkOutDate,
                 bookingReference: $bookingReference,
+                customMessage: $customMessage,
             ),
             'Guest check-in welcome email',
             'Could not send welcome email.',

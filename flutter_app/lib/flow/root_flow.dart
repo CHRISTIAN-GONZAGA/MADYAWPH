@@ -22,6 +22,8 @@ class FlowRoot extends StatefulWidget {
 }
 
 class _FlowRootState extends State<FlowRoot> {
+  var _staffResumeInFlight = false;
+
   @override
   void initState() {
     super.initState();
@@ -33,7 +35,27 @@ class _FlowRootState extends State<FlowRoot> {
     });
   }
 
+  Widget _dashboardForRole(String role) {
+    return switch (role) {
+      'frontdesk' => const AdminDashboardScreen(isFrontDesk: true),
+      'staff' => const StaffDashboardScreen(),
+      'owner' => const OwnerDashboardScreen(),
+      'super_admin' => const AdminDashboardScreen(isSuperAdmin: true),
+      _ => const AdminDashboardScreen(),
+    };
+  }
+
   Future<void> _resumeHotelStaffSession() async {
+    if (_staffResumeInFlight) return;
+    _staffResumeInFlight = true;
+    try {
+      await _resumeHotelStaffSessionBody();
+    } finally {
+      _staffResumeInFlight = false;
+    }
+  }
+
+  Future<void> _resumeHotelStaffSessionBody() async {
     await AuthStorage.enforcePortalSessionTimeout();
     final role = await AuthStorage.portalRole();
     final token = await AuthStorage.portalToken();
@@ -51,6 +73,27 @@ class _FlowRootState extends State<FlowRoot> {
     const staffRoles = {'admin', 'frontdesk', 'staff', 'super_admin', 'owner'};
     if (role == null || !staffRoles.contains(role)) return;
 
+    hotelSessionNotifier.value = HotelSession(
+      hotelId: hotelId,
+      hotelName: hotelName ?? 'Hotel',
+    );
+
+    Future<void> openDashboard(String resolvedRole) async {
+      if (!mounted) return;
+      if (resolvedRole != 'frontdesk') {
+        final allowed = await ensureHotelSubscriptionAccess(context);
+        if (!allowed || !mounted) {
+          await AuthStorage.clearPortalAuth();
+          return;
+        }
+      }
+      if (!mounted) return;
+      await Navigator.of(context).pushAndRemoveUntil(
+        LuxuryPageRoute<void>(builder: (_) => _dashboardForRole(resolvedRole)),
+        (_) => false,
+      );
+    }
+
     try {
       final res = await portalDio().get<Map<String, dynamic>>('/auth/session');
       if (!mounted) return;
@@ -61,31 +104,13 @@ class _FlowRootState extends State<FlowRoot> {
         await AuthStorage.clearPortalAuth();
         return;
       }
-
-      hotelSessionNotifier.value = HotelSession(
-        hotelId: hotelId,
-        hotelName: hotelName ?? 'Hotel',
-      );
-
-      final allowed = await ensureHotelSubscriptionAccess(context);
-      if (!allowed || !mounted) {
-        await AuthStorage.clearPortalAuth();
+      await openDashboard(apiRole);
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      if (role == 'frontdesk' && status != 401 && status != 403) {
+        await openDashboard('frontdesk');
         return;
       }
-
-      final screen = switch (apiRole) {
-        'frontdesk' => const AdminDashboardScreen(isFrontDesk: true),
-        'staff' => const StaffDashboardScreen(),
-        'owner' => const OwnerDashboardScreen(),
-        'super_admin' => const AdminDashboardScreen(isSuperAdmin: true),
-        _ => const AdminDashboardScreen(),
-      };
-
-      await Navigator.of(context).pushAndRemoveUntil(
-        LuxuryPageRoute<void>(builder: (_) => screen),
-        (_) => false,
-      );
-    } on DioException catch (_) {
       await AuthStorage.clearPortalAuth();
     }
   }

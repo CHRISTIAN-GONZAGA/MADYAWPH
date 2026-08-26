@@ -827,9 +827,20 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
                                   .toString(),
                             ),
                             subtitle: Text(
-                              'Room ${c['roomNumber'] ?? c['room_number'] ?? '—'} · '
-                              'Qty ${c['quantity'] ?? 1} · $status',
+                              [
+                                'Room ${c['roomNumber'] ?? c['room_number'] ?? '—'} · '
+                                    'Qty ${c['quantity'] ?? 1} · $status',
+                                if ((c['guestNote'] ?? c['guest_note'] ?? '')
+                                    .toString()
+                                    .trim()
+                                    .isNotEmpty)
+                                  'Note: ${(c['guestNote'] ?? c['guest_note']).toString().trim()}',
+                              ].join('\n'),
                             ),
+                            isThreeLine: (c['guestNote'] ?? c['guest_note'] ?? '')
+                                .toString()
+                                .trim()
+                                .isNotEmpty,
                             trailing: isDone
                                 ? null
                                 : FilledButton(
@@ -1010,8 +1021,15 @@ class _AmenitiesSectionState extends State<AmenitiesSection> {
               '${c['amenityName'] ?? c['amenity_name'] ?? 'Item'}',
             ),
             subtitle: Text(
-              'Room ${c['roomNumber'] ?? c['room_number']} · '
-              'Qty ${c['quantity'] ?? 1} · $status',
+              [
+                'Room ${c['roomNumber'] ?? c['room_number']} · '
+                    'Qty ${c['quantity'] ?? 1} · $status',
+                if ((c['guestNote'] ?? c['guest_note'] ?? '')
+                    .toString()
+                    .trim()
+                    .isNotEmpty)
+                  'Note: ${(c['guestNote'] ?? c['guest_note']).toString().trim()}',
+              ].join('\n'),
             ),
             isThreeLine: true,
             trailing: fulfilled

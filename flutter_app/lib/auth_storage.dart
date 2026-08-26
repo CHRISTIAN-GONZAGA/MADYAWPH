@@ -38,6 +38,7 @@ class AuthStorage {
   static const _kCustomerGuestEmail = 'customer_guest_email';
   static const _kCustomerGuestPhone = 'customer_guest_phone';
   static const _kPortalPausedAtMs = 'portal_paused_at_ms';
+  static const _kPortalShiftLock = 'portal_shift_lock';
 
   static const portalIdleTimeout = Duration(minutes: 60);
 
@@ -268,8 +269,20 @@ class AuthStorage {
     await clearPortalPaused();
   }
 
+  static Future<bool> isFrontDeskSession() async {
+    final role = await portalRole();
+    return role == 'frontdesk';
+  }
+
+  /// Front desk stays signed in until they clock out — no idle logout.
+  static Future<bool> shouldKeepPortalSession() async {
+    if (await isFrontDeskSession()) return true;
+    return hasPortalShiftLock();
+  }
+
   static Future<void> markPortalPaused() async {
     await _ensureMigrated();
+    if (await shouldKeepPortalSession()) return;
     final token = await portalToken();
     if (token == null || token.isEmpty) return;
     await (await _preferences()).setInt(
@@ -283,10 +296,28 @@ class AuthStorage {
     await (await _preferences()).remove(_kPortalPausedAtMs);
   }
 
+  /// Front desk with an open shift stays signed in until they clock out.
+  static Future<void> setPortalShiftLock(bool locked) async {
+    await _ensureMigrated();
+    final prefs = await _preferences();
+    if (locked) {
+      await prefs.setBool(_kPortalShiftLock, true);
+      await clearPortalPaused();
+      return;
+    }
+    await prefs.remove(_kPortalShiftLock);
+  }
+
+  static Future<bool> hasPortalShiftLock() async {
+    await _ensureMigrated();
+    return (await _preferences()).getBool(_kPortalShiftLock) == true;
+  }
+
   static Future<bool> isPortalSessionExpired() async {
     await _ensureMigrated();
     final token = await portalToken();
     if (token == null || token.isEmpty) return false;
+    if (await shouldKeepPortalSession()) return false;
     final ms = (await _preferences()).getInt(_kPortalPausedAtMs);
     if (ms == null) return false;
     final pausedAt = DateTime.fromMillisecondsSinceEpoch(ms);
