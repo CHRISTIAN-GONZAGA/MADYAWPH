@@ -25,6 +25,7 @@ class SystemSetting extends Model
         'currency_code',
         'currency_symbol',
         'currency_rate',
+        'breakfast_serving_time',
         'room_fee_presets',
         'cancellation_retention_percent',
         'min_check_in_payment_percent',

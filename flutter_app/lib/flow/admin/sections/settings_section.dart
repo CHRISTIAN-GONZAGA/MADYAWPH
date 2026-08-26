@@ -14,6 +14,7 @@ import '../admin_portal_users_screen.dart';
 import '../admin_room_fee_presets_screen.dart';
 import '../admin_cancellation_retention_screen.dart';
 import '../admin_currency_screen.dart';
+import '../admin_breakfast_time_screen.dart';
 import '../admin_min_check_in_payment_screen.dart';
 import '../admin_online_booking_deposit_screen.dart';
 import '../admin_early_check_in_fee_screen.dart';
@@ -294,6 +295,21 @@ class SettingsSection extends StatelessWidget {
                   );
                 },
               ),
+              if (!isFrontDesk)
+                _SettingsTile(
+                  icon: Icons.free_breakfast_outlined,
+                  title: 'Breakfast time',
+                  subtitle:
+                      'Serving hour — kitchen sees guest pre-orders 2 hours before',
+                  enabled: !creditsLocked,
+                  onTap: () {
+                    Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AdminBreakfastTimeScreen(),
+                      ),
+                    );
+                  },
+                ),
             ],
           ),
           _SettingsGroup(

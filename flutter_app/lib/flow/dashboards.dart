@@ -2036,13 +2036,82 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
     });
   }
 
+  bool _guestCanClaimBreakfast(Map<String, dynamic> breakfast) {
+    if (breakfast['canClaim'] == true) return true;
+    return breakfast['canClaimToday'] == true;
+  }
+
+  int _guestBreakfastRemaining(Map<String, dynamic> breakfast) {
+    return (breakfast['remaining'] as num?)?.toInt() ??
+        (breakfast['remainingToday'] as num?)?.toInt() ??
+        (breakfast['quota'] as num?)?.toInt() ??
+        0;
+  }
+
+  String _guestBreakfastSubtitle(Map<String, dynamic> breakfast) {
+    if (_guestCanClaimBreakfast(breakfast)) {
+      final remaining = _guestBreakfastRemaining(breakfast);
+      final guests = breakfast['guestCount'] ?? remaining;
+      final dateLabel =
+          (breakfast['claimForDateLabel'] ?? '').toString().trim();
+      final kitchen =
+          (breakfast['kitchenVisibleLabel'] ?? '').toString().trim();
+      if (breakfast['canPreselect'] == true && dateLabel.isNotEmpty) {
+        final kitchenBit =
+            kitchen.isEmpty ? '' : ' Kitchen sees it from $kitchen.';
+        return 'Tap to choose $remaining of $guests serving(s) for $dateLabel.$kitchenBit';
+      }
+      return 'Tap to claim $remaining of $guests serving(s) this morning';
+    }
+    if (breakfast['alreadyClaimed'] == true) {
+      final selections = (breakfast['selections'] as List<dynamic>? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .toList();
+      final claim =
+          (breakfast['claim'] as Map<String, dynamic>?) ?? const {};
+      final date = (claim['breakfastDate'] ??
+              breakfast['claimForDate'] ??
+              '')
+          .toString();
+      final dateBit = date.isEmpty ? 'today' : date;
+      if (selections.isNotEmpty) {
+        final dishes = selections
+            .map((row) {
+              final name = (row['amenityName'] ?? 'Breakfast').toString();
+              final qty = row['quantity'] ?? 1;
+              return '$name × $qty';
+            })
+            .join(', ');
+        return 'Already selected for $dateBit: $dishes';
+      }
+      final name = (claim['amenityName'] ?? 'Breakfast').toString();
+      final qty = claim['quantity'] ?? 1;
+      return 'Already selected for $dateBit: $name × $qty';
+    }
+    return (breakfast['reason'] ??
+            'Complimentary breakfast when your stay includes a morning')
+        .toString();
+  }
+
+  String _guestBreakfastButtonLabel(Map<String, dynamic> breakfast) {
+    if (_guestCanClaimBreakfast(breakfast)) {
+      final n = _guestBreakfastRemaining(breakfast);
+      if (breakfast['canPreselect'] == true) {
+        return 'Choose breakfast ($n)';
+      }
+      return 'Claim free breakfast ($n)';
+    }
+    if (breakfast['alreadyClaimed'] == true) {
+      return 'Breakfast already selected';
+    }
+    return 'Claim free breakfast';
+  }
+
   Future<void> _claimFreeBreakfast() async {
     final breakfast =
         (_data?['freeBreakfast'] as Map<String, dynamic>?) ?? const {};
-    final canClaim = breakfast['canClaimToday'] == true;
-    final remaining = (breakfast['remainingToday'] as num?)?.toInt() ??
-        (breakfast['quota'] as num?)?.toInt() ??
-        0;
+    final canClaim = _guestCanClaimBreakfast(breakfast);
+    final remaining = _guestBreakfastRemaining(breakfast);
     if (!canClaim || remaining < 1) {
       showAppMessage(
         context,
@@ -2064,102 +2133,151 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
     }
 
     final guests = (breakfast['guestCount'] as num?)?.toInt() ?? remaining;
-    final qtyCtrl = TextEditingController(text: '$remaining');
-    String selectedId = (items.first['id'] ?? '').toString();
+    final dateLabel =
+        (breakfast['claimForDateLabel'] ?? 'this morning').toString();
+    final kitchen =
+        (breakfast['kitchenVisibleLabel'] ?? '').toString().trim();
+    final isPreselect = breakfast['canPreselect'] == true;
+    final qtys = <String, int>{
+      for (final item in items) (item['id'] ?? '').toString(): 0,
+    };
+    if (items.isNotEmpty) {
+      qtys[(items.first['id'] ?? '').toString()] = remaining;
+    }
+
     final payload = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setLocal) => Dialog(
-          insetPadding:
-              const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 440),
-            child: Padding(
-              padding: const EdgeInsets.all(22),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Claim free breakfast',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'This room has $guests registered guest(s). '
-                    'You can claim $remaining serving(s) this morning.',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    key: ValueKey<String>(selectedId),
-                    initialValue: selectedId,
-                    decoration: const InputDecoration(
-                      labelText: 'Breakfast option',
+        builder: (context, setLocal) {
+          final total = qtys.values.fold<int>(0, (sum, n) => sum + n);
+          return Dialog(
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440, maxHeight: 560),
+              child: Padding(
+                padding: const EdgeInsets.all(22),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      isPreselect
+                          ? 'Choose breakfast'
+                          : 'Claim free breakfast',
+                      style: Theme.of(context).textTheme.titleLarge,
                     ),
-                    items: items.map((item) {
-                      final id = (item['id'] ?? '').toString();
-                      final name = (item['amenityName'] ?? '').toString();
-                      return DropdownMenuItem(
-                        value: id,
-                        child: Text(name),
-                      );
-                    }).toList(),
-                    onChanged: (v) =>
-                        setLocal(() => selectedId = v ?? selectedId),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: qtyCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: 'Servings (max $remaining)',
-                      prefixIcon: const Icon(Icons.free_breakfast_outlined),
+                    const SizedBox(height: 8),
+                    Text(
+                      'This room has $guests registered guest(s). '
+                      'Pick up to $remaining serving(s) for $dateLabel.'
+                      '${kitchen.isEmpty ? '' : ' The kitchen will see this from $kitchen.'}',
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
-                  ),
-                  const SizedBox(height: 22),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Cancel'),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton(
-                        onPressed: () {
-                          final qty = int.tryParse(qtyCtrl.text.trim()) ?? 0;
-                          if (qty < 1 || qty > remaining) {
-                            showAppMessage(
-                              context,
-                              'Enter a quantity between 1 and $remaining.',
-                              isError: true,
-                            );
-                            return;
-                          }
-                          Navigator.of(context).pop({
-                            'amenityItemId': selectedId,
-                            'quantity': qty,
-                          });
+                    const SizedBox(height: 16),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 280),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: items.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final item = items[index];
+                          final id = (item['id'] ?? '').toString();
+                          final name =
+                              (item['amenityName'] ?? 'Breakfast').toString();
+                          final qty = qtys[id] ?? 0;
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(name),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  tooltip: 'Fewer',
+                                  onPressed: qty < 1
+                                      ? null
+                                      : () => setLocal(() => qtys[id] = qty - 1),
+                                  icon: const Icon(Icons.remove_circle_outline),
+                                ),
+                                Text(
+                                  '$qty',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.w700),
+                                ),
+                                IconButton(
+                                  tooltip: 'More',
+                                  onPressed: total >= remaining
+                                      ? null
+                                      : () => setLocal(() => qtys[id] = qty + 1),
+                                  icon: const Icon(Icons.add_circle_outline),
+                                ),
+                              ],
+                            ),
+                          );
                         },
-                        child: const Text('Claim'),
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Selected $total of $remaining',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('Cancel'),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: () {
+                            final selections = qtys.entries
+                                .where((e) => e.key.isNotEmpty && e.value > 0)
+                                .map((e) => {
+                                      'amenityItemId': e.key,
+                                      'quantity': e.value,
+                                    })
+                                .toList();
+                            if (selections.isEmpty || total < 1 || total > remaining) {
+                              showAppMessage(
+                                context,
+                                'Pick between 1 and $remaining serving(s).',
+                                isError: true,
+                              );
+                              return;
+                            }
+                            Navigator.of(context).pop({
+                              'selections': selections,
+                            });
+                          },
+                          child: Text(isPreselect ? 'Save selection' : 'Claim'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
     if (payload == null) return;
 
     await _runGuestAction('Free breakfast', () async {
       await guestDio().post('/guest/amenities/claim', data: payload);
+      final kitchenBit = kitchen.isEmpty
+          ? ' The kitchen will see it 2 hours before breakfast.'
+          : ' The kitchen will see it from $kitchen.';
       return {
-        'message':
-            'Free breakfast claimed. The kitchen will see it in Amenities.',
+        'message': isPreselect
+            ? 'Breakfast saved for $dateLabel.$kitchenBit'
+            : 'Free breakfast claimed.$kitchenBit',
       };
     });
   }
@@ -2431,21 +2549,7 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
                   subtitle: () {
                     final fb = (_data?['freeBreakfast'] as Map<String, dynamic>?) ??
                         const {};
-                    if (fb['canClaimToday'] == true) {
-                      final remaining = fb['remainingToday'] ?? fb['quota'] ?? 0;
-                      final guests = fb['guestCount'] ?? remaining;
-                      return 'Tap to claim $remaining of $guests serving(s) this morning';
-                    }
-                    if (fb['alreadyClaimed'] == true) {
-                      final claim =
-                          (fb['claim'] as Map<String, dynamic>?) ?? const {};
-                      final name = (claim['amenityName'] ?? 'Breakfast').toString();
-                      final qty = claim['quantity'] ?? 1;
-                      return 'Already claimed today: $name × $qty';
-                    }
-                    return (fb['reason'] ??
-                            'Complimentary breakfast when your stay includes a morning')
-                        .toString();
+                    return _guestBreakfastSubtitle(fb);
                   }(),
                   icon: Icons.free_breakfast_outlined,
                   onTap: _claimFreeBreakfast,
@@ -2575,14 +2679,7 @@ class _GuestDashboardScreenState extends State<GuestDashboardScreen> {
                             final fb = (_data?['freeBreakfast']
                                     as Map<String, dynamic>?) ??
                                 const {};
-                            if (fb['canClaimToday'] == true) {
-                              final n = fb['remainingToday'] ?? fb['quota'] ?? '';
-                              return 'Claim free breakfast ($n)';
-                            }
-                            if (fb['alreadyClaimed'] == true) {
-                              return 'Breakfast claimed today';
-                            }
-                            return 'Claim free breakfast';
+                            return _guestBreakfastButtonLabel(fb);
                           }(),
                         ),
                       ),

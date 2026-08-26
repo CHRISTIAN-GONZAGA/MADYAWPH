@@ -25,6 +25,7 @@ class AmenityClaim extends Model
         'fulfilled_at',
         'is_free_breakfast',
         'breakfast_date',
+        'visible_at',
     ];
 
     protected function casts(): array
@@ -33,6 +34,7 @@ class AmenityClaim extends Model
             'quantity' => 'integer',
             'claimed_at' => 'datetime',
             'fulfilled_at' => 'datetime',
+            'visible_at' => 'datetime',
             'is_free_breakfast' => 'boolean',
         ];
     }

@@ -3,11 +3,13 @@
 namespace Tests\Feature;
 
 use App\Enums\RoomStatus;
+use App\Enums\UserRole;
 use App\Models\AmenityClaim;
 use App\Models\AmenityMenuItem;
 use App\Models\Booking;
 use App\Models\Hotel;
 use App\Models\Room;
+use App\Models\User;
 use App\Support\GuestPortalStore;
 use Carbon\Carbon;
 use Tests\TestCase;
@@ -84,7 +86,7 @@ class FreeBreakfastEntitlementTest extends TestCase
         $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson('/api/v1/guest/amenities/claim', [
                 'amenityItemId' => (string) $item->id,
-                'quantity' => 1,
+                'quantity' => 3,
             ])
             ->assertStatus(422);
 
@@ -154,6 +156,172 @@ class FreeBreakfastEntitlementTest extends TestCase
             ->getJson('/api/v1/guest/dashboard')
             ->assertOk()
             ->assertJsonPath('freeBreakfast.canClaimToday', false);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/guest/amenities/claim', [
+                'amenityItemId' => (string) $item->id,
+                'quantity' => 1,
+            ])
+            ->assertStatus(422);
+    }
+
+    public function test_guest_can_preselect_breakfast_before_morning_and_staff_see_it_two_hours_early(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-26 10:00:00', 'Asia/Manila'));
+        [$token, $item, $hotel, $room] = $this->seedStay(
+            checkIn: '2026-08-26 10:00:00',
+            checkOut: '2026-08-27 12:00:00',
+            nights: 1,
+            adults: 2,
+            returnContext: true,
+        );
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'breakfast_admin',
+            'email' => 'breakfast-admin@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+
+        $dash = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/v1/guest/dashboard')
+            ->assertOk()
+            ->json();
+
+        $this->assertFalse((bool) ($dash['freeBreakfast']['canClaimToday'] ?? true));
+        $this->assertTrue((bool) ($dash['freeBreakfast']['canClaim'] ?? false));
+        $this->assertTrue((bool) ($dash['freeBreakfast']['canPreselect'] ?? false));
+        $this->assertSame('2026-08-27', $dash['freeBreakfast']['claimForDate'] ?? null);
+        $this->assertSame(2, (int) ($dash['freeBreakfast']['remaining'] ?? 0));
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/guest/amenities/claim', [
+                'amenityItemId' => (string) $item->id,
+                'quantity' => 2,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('breakfastDate', '2026-08-27');
+
+        $after = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/v1/guest/dashboard')
+            ->assertOk()
+            ->json();
+        $this->assertFalse((bool) ($after['freeBreakfast']['canClaim'] ?? true));
+        $this->assertTrue((bool) ($after['freeBreakfast']['alreadyClaimed'] ?? false));
+        $this->assertNotEmpty($after['amenityClaims'] ?? []);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/guest/amenities/claim', [
+                'amenityItemId' => (string) $item->id,
+                'quantity' => 1,
+            ])
+            ->assertStatus(422);
+
+        $hidden = $this->actingAs($admin)
+            ->getJson('/api/v1/admin/dashboard')
+            ->assertOk()
+            ->json('amenityClaims');
+        $breakfastOnStaff = collect($hidden ?? [])
+            ->filter(fn ($row) => (bool) ($row['isFreeBreakfast'] ?? false))
+            ->values();
+        $this->assertCount(0, $breakfastOnStaff);
+
+        Carbon::setTestNow(Carbon::parse('2026-08-27 04:59:00', 'Asia/Manila'));
+        $stillHidden = $this->actingAs($admin)
+            ->getJson('/api/v1/admin/dashboard')
+            ->assertOk()
+            ->json('amenityClaims');
+        $this->assertCount(0, collect($stillHidden ?? [])
+            ->filter(fn ($row) => (bool) ($row['isFreeBreakfast'] ?? false)));
+
+        Carbon::setTestNow(Carbon::parse('2026-08-27 05:00:00', 'Asia/Manila'));
+        $visible = $this->actingAs($admin)
+            ->getJson('/api/v1/admin/dashboard')
+            ->assertOk()
+            ->json('amenityClaims');
+        $shown = collect($visible ?? [])
+            ->filter(fn ($row) => (bool) ($row['isFreeBreakfast'] ?? false))
+            ->values();
+        $this->assertCount(1, $shown);
+        $this->assertSame('2026-08-27', $shown[0]['breakfastDate'] ?? null);
+        $this->assertSame((string) $room->room_number, $shown[0]['roomNumber'] ?? null);
+    }
+
+    public function test_admin_can_set_breakfast_time_and_kitchen_window_follows_it(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-26 10:00:00', 'Asia/Manila'));
+        [$token, $item, $hotel] = $this->seedStay(
+            checkIn: '2026-08-26 10:00:00',
+            checkOut: '2026-08-27 12:00:00',
+            nights: 1,
+            adults: 1,
+            returnContext: true,
+        );
+        $admin = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'breakfast_time_admin',
+            'email' => 'breakfast-time-admin@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::ADMIN,
+        ]);
+
+        $this->actingAs($admin)
+            ->patchJson('/api/v1/admin/settings/breakfast-time', [
+                'breakfast_serving_time' => '08:00',
+            ])
+            ->assertOk()
+            ->assertJsonPath('breakfast_serving_time', '08:00')
+            ->assertJsonPath('kitchen_visible_time', '06:00');
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/guest/amenities/claim', [
+                'amenityItemId' => (string) $item->id,
+                'quantity' => 1,
+            ])
+            ->assertCreated();
+
+        Carbon::setTestNow(Carbon::parse('2026-08-27 05:59:00', 'Asia/Manila'));
+        $hidden = $this->actingAs($admin)
+            ->getJson('/api/v1/admin/dashboard')
+            ->assertOk()
+            ->json('amenityClaims');
+        $this->assertCount(0, collect($hidden ?? [])
+            ->filter(fn ($row) => (bool) ($row['isFreeBreakfast'] ?? false)));
+
+        Carbon::setTestNow(Carbon::parse('2026-08-27 06:00:00', 'Asia/Manila'));
+        $visible = $this->actingAs($admin)
+            ->getJson('/api/v1/admin/dashboard')
+            ->assertOk()
+            ->json('amenityClaims');
+        $this->assertCount(1, collect($visible ?? [])
+            ->filter(fn ($row) => (bool) ($row['isFreeBreakfast'] ?? false)));
+    }
+
+    public function test_two_night_stay_can_preselect_the_second_morning_after_the_first(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-24 16:00:00', 'Asia/Manila'));
+        [$token, $item] = $this->seedStay(
+            checkIn: '2026-08-24 16:00:00',
+            checkOut: '2026-08-26 12:00:00',
+            nights: 2,
+            adults: 1,
+        );
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/guest/amenities/claim', [
+                'amenityItemId' => (string) $item->id,
+                'quantity' => 1,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('breakfastDate', '2026-08-25');
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/guest/amenities/claim', [
+                'amenityItemId' => (string) $item->id,
+                'quantity' => 1,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('breakfastDate', '2026-08-26');
 
         $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson('/api/v1/guest/amenities/claim', [

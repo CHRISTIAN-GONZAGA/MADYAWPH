@@ -351,6 +351,11 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
         $claim = AmenityClaim::query()
             ->where('hotel_id', (string) $request->user()->hotel_id)
             ->findOrFail($id);
+        if (! \App\Support\FreeBreakfastSupport::isVisibleToStaff($claim)) {
+            return response()->json([
+                'message' => 'This breakfast order is not in the kitchen window yet. It appears 2 hours before breakfast.',
+            ], 422);
+        }
         $claim->update([
             'status' => 'fulfilled',
             'fulfilled_at' => now(),
@@ -3137,6 +3142,45 @@ Route::patch('/admin/settings/currency', function (Request $request) {
         'currency' => \App\Support\HotelCurrencySupport::fromSettings($settings->fresh()),
     ]);
 })->middleware('role:admin,super_admin')->name('api.v1.admin.settings.currency.update');
+
+Route::get('/admin/settings/breakfast-time', function (Request $request) {
+    $hotelId = (string) $request->user()->hotel_id;
+    $settings = SystemSetting::withoutGlobalScopes()
+        ->where('hotel_id', $hotelId)
+        ->first();
+
+    return response()->json(\App\Support\FreeBreakfastSupport::servingTimePayload($settings));
+})->middleware('role:admin,super_admin,frontdesk')->name('api.v1.admin.settings.breakfast-time.show');
+
+Route::patch('/admin/settings/breakfast-time', function (Request $request) {
+    $validated = $request->validate([
+        'breakfast_serving_time' => ['required', 'string', 'max:8', 'regex:/^\d{1,2}:\d{2}/'],
+    ]);
+    $time = \App\Support\FreeBreakfastSupport::normalizeServingTime($validated['breakfast_serving_time']);
+
+    $hotelId = (string) $request->user()->hotel_id;
+    $settings = SystemSetting::withoutGlobalScopes()->firstOrCreate(
+        ['hotel_id' => $hotelId],
+        [
+            'theme_color' => '#2563eb',
+            'theme_mode' => 'light',
+            'sound_notifications_enabled' => false,
+        ]
+    );
+    $settings->update(['breakfast_serving_time' => $time]);
+
+    app(ActivityLogService::class)->log(
+        $hotelId,
+        $request->user(),
+        'Updated breakfast serving time',
+        ['breakfast_serving_time' => $time]
+    );
+
+    return response()->json(array_merge(
+        ['ok' => true],
+        \App\Support\FreeBreakfastSupport::servingTimePayload($settings->fresh())
+    ));
+})->middleware('role:admin,super_admin')->name('api.v1.admin.settings.breakfast-time.update');
 
 Route::get('/admin/payments/paymongo/status', [HotelPayMongoController::class, 'status'])
     ->middleware('role:admin,super_admin')

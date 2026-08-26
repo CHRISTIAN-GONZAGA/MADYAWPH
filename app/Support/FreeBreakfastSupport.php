@@ -6,6 +6,7 @@ use App\Models\AmenityClaim;
 use App\Models\AmenityMenuItem;
 use App\Models\Booking;
 use App\Models\Room;
+use App\Models\SystemSetting;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
@@ -17,8 +18,14 @@ use Illuminate\Support\Collection;
  */
 final class FreeBreakfastSupport
 {
+    /** Default local breakfast serving time when the hotel has not set one. */
+    public const DEFAULT_SERVING_TIME = '07:00';
+
     /** Local hour guests are considered in-house for breakfast service. */
     public const SERVING_HOUR = 7;
+
+    /** Kitchen / staff dashboards see a pre-order this many hours before serving. */
+    public const STAFF_LEAD_HOURS = 2;
 
     /**
      * Guest must have arrived at or before this local hour on the breakfast
@@ -160,9 +167,10 @@ final class FreeBreakfastSupport
             return [];
         }
 
+        $servingTime = self::servingTimeForHotel((string) ($booking->hotel_id ?? ''));
         while ($cursor->lessThanOrEqualTo($last)) {
             $date = $cursor->toDateString();
-            if (self::isEligibleMorning($checkIn, $checkOut, $cursor)) {
+            if (self::isEligibleMorning($checkIn, $checkOut, $cursor, $servingTime)) {
                 $dates[] = $date;
             }
             $cursor->addDay();
@@ -175,9 +183,11 @@ final class FreeBreakfastSupport
         CarbonInterface $checkIn,
         CarbonInterface $checkOut,
         CarbonInterface $day,
+        ?string $servingTime = null,
     ): bool {
         $tz = self::timezone();
-        $serving = Carbon::parse($day->toDateString().' '.sprintf('%02d:00:00', self::SERVING_HOUR), $tz);
+        $time = self::normalizeServingTime($servingTime);
+        $serving = Carbon::parse($day->toDateString().' '.$time, $tz);
         if ($checkIn->greaterThan($serving) || $checkOut->lessThanOrEqualTo($serving)) {
             return false;
         }
@@ -265,15 +275,49 @@ final class FreeBreakfastSupport
         $todayEligible = in_array($today, $mornings, true);
         $claimedToday = self::claimedQuantityOnDate($booking, $claims, $today);
         $remainingToday = $todayEligible ? max(0, $guestCount - $claimedToday) : 0;
-        $canClaimToday = $guestCount > 0 && $todayEligible && $remainingToday > 0;
+        $servingTime = self::servingTimeForHotel((string) ($booking?->hotel_id ?? ''));
+
+        $claimForDate = null;
+        $remaining = 0;
+        $claimedOnTarget = 0;
+        foreach ($mornings as $date) {
+            if ($date < $today) {
+                continue;
+            }
+            $claimedOnDate = self::claimedQuantityOnDate($booking, $claims, $date);
+            $left = max(0, $guestCount - $claimedOnDate);
+            if ($left > 0) {
+                $claimForDate = $date;
+                $remaining = $left;
+                $claimedOnTarget = $claimedOnDate;
+                break;
+            }
+        }
+
+        $canClaim = $guestCount > 0 && $claimForDate !== null && $remaining > 0;
+        $canClaimToday = $canClaim && $claimForDate === $today;
 
         $nextDate = null;
         foreach ($mornings as $date) {
-            if ($date > $today) {
+            if ($date > ($claimForDate ?? $today)) {
                 $nextDate = $date;
                 break;
             }
         }
+        if ($nextDate === null) {
+            foreach ($mornings as $date) {
+                if ($date > $today) {
+                    $nextDate = $date;
+                    break;
+                }
+            }
+        }
+
+        $futureMornings = array_values(array_filter($mornings, fn (string $date) => $date >= $today));
+        $alreadyClaimed = $guestCount > 0 && $futureMornings !== [] && $claimForDate === null;
+        $kitchenVisibleAt = $claimForDate !== null
+            ? self::kitchenVisibleAt($claimForDate, $servingTime)
+            : null;
 
         $reason = '';
         if ($booking === null) {
@@ -282,15 +326,15 @@ final class FreeBreakfastSupport
             $reason = 'No free breakfast quota for this room. Ask the front desk to confirm registered guests.';
         } elseif ($mornings === []) {
             $reason = 'Complimentary breakfast is not included on short hourly stays. Overnight stays include breakfast each morning.';
-        } elseif (! $todayEligible && $nextDate !== null) {
-            $reason = 'Breakfast for this stay is served in the morning. Next eligible morning: '.$nextDate.'.';
-        } elseif (! $todayEligible) {
+        } elseif ($canClaim && $claimForDate !== $today) {
+            $reason = 'Choose breakfast for '.self::formatDateLabel($claimForDate)
+                .'. The kitchen will see it from '.self::formatClock(
+                    $kitchenVisibleAt?->format('H:i') ?? self::kitchenVisibleTime($servingTime)
+                ).' (2 hours before breakfast).';
+        } elseif ($alreadyClaimed) {
+            $reason = 'Free breakfast for this stay is already selected. There are no more breakfast mornings left.';
+        } elseif (! $canClaim) {
             $reason = 'There is no remaining breakfast morning on this stay.';
-        } elseif ($remainingToday < 1) {
-            $reason = 'Free breakfast for this morning was already claimed. '
-                .($nextDate !== null
-                    ? 'You can claim again on '.$nextDate.'.'
-                    : 'There are no more breakfast mornings on this stay.');
         }
 
         $menuItems = ($menu instanceof Collection ? $menu : collect($menu))
@@ -299,18 +343,27 @@ final class FreeBreakfastSupport
                 && self::isBreakfastItem($item))
             ->values();
 
-        $todaysClaim = self::breakfastClaimsForBooking($booking, $claims)
-            ->first(function (AmenityClaim $claim) use ($today) {
-                $claimDate = trim((string) ($claim->breakfast_date ?? ''));
-                if ($claimDate === '' && $claim->claimed_at instanceof CarbonInterface) {
-                    $claimDate = $claim->claimed_at->timezone(self::timezone())->toDateString();
+        $displayDate = $claimForDate;
+        if ($displayDate === null) {
+            foreach (array_reverse($futureMornings) as $date) {
+                if (self::claimedQuantityOnDate($booking, $claims, $date) > 0) {
+                    $displayDate = $date;
+                    break;
                 }
+            }
+        }
 
-                return $claimDate === $today;
-            });
+        $claimsForDate = $displayDate === null
+            ? collect()
+            : self::breakfastClaimsForBooking($booking, $claims)
+                ->filter(function (AmenityClaim $claim) use ($displayDate) {
+                    return self::claimBreakfastDate($claim) === $displayDate;
+                })
+                ->values();
+        $primaryClaim = $claimsForDate->first();
 
         return [
-            'quota' => $todayEligible ? $remainingToday : 0,
+            'quota' => $canClaim ? $remaining : 0,
             'quotaPerMorning' => $guestCount,
             'guestCount' => $guestCount,
             'morningsTotal' => count($mornings),
@@ -319,17 +372,26 @@ final class FreeBreakfastSupport
             'todayEligible' => $todayEligible,
             'claimedToday' => $claimedToday,
             'remainingToday' => $remainingToday,
+            'remaining' => $remaining,
+            'claimedOnDate' => $claimedOnTarget,
+            'canClaim' => $canClaim,
             'canClaimToday' => $canClaimToday,
-            'alreadyClaimed' => $todayEligible && $remainingToday < 1 && $guestCount > 0,
+            'canPreselect' => $canClaim && $claimForDate !== null && $claimForDate !== $today,
+            'alreadyClaimed' => $alreadyClaimed,
+            'claimForDate' => $claimForDate,
+            'claimForDateLabel' => $claimForDate !== null ? self::formatDateLabel($claimForDate) : null,
+            'breakfastServingTime' => $servingTime,
+            'breakfastServingLabel' => self::formatClock($servingTime),
+            'kitchenVisibleAt' => $kitchenVisibleAt?->toIso8601String(),
+            'kitchenVisibleLabel' => $kitchenVisibleAt !== null
+                ? $kitchenVisibleAt->format('g:i A')
+                : self::formatClock(self::kitchenVisibleTime($servingTime)),
             'nextEligibleDate' => $nextDate,
             'reason' => $reason,
-            'claim' => $todaysClaim ? [
-                'id' => (string) $todaysClaim->id,
-                'amenityName' => (string) ($todaysClaim->amenity_name ?? ''),
-                'quantity' => (int) ($todaysClaim->quantity ?? 0),
-                'status' => (string) ($todaysClaim->status ?? ''),
-                'breakfastDate' => (string) ($todaysClaim->breakfast_date ?? $today),
-            ] : null,
+            'claim' => $primaryClaim ? self::presentGuestClaim($primaryClaim, $displayDate ?? $today) : null,
+            'selections' => $claimsForDate->map(
+                fn (AmenityClaim $claim) => self::presentGuestClaim($claim, $displayDate ?? $today)
+            )->values(),
             'menu' => $menuItems->map(fn (AmenityMenuItem $item) => [
                 'id' => (string) $item->id,
                 'amenityType' => (string) $item->amenity_type,
@@ -341,7 +403,7 @@ final class FreeBreakfastSupport
     }
 
     /**
-     * @return array{ok: bool, message: string, remaining: int, today: string}
+     * @return array{ok: bool, message: string, remaining: int, today: string, breakfastDate: string}
      */
     public static function validateFreeClaim(
         ?Booking $booking,
@@ -350,12 +412,15 @@ final class FreeBreakfastSupport
         ?Room $room = null,
     ): array {
         $state = self::guestState($booking, collect(), $claims, $room);
+        $today = (string) $state['today'];
+        $breakfastDate = (string) ($state['claimForDate'] ?? $today);
         if ($booking === null) {
             return [
                 'ok' => false,
                 'message' => 'Free breakfast is not available without an active stay.',
                 'remaining' => 0,
-                'today' => $state['today'],
+                'today' => $today,
+                'breakfastDate' => $breakfastDate,
             ];
         }
         if ((int) $state['guestCount'] < 1) {
@@ -363,34 +428,31 @@ final class FreeBreakfastSupport
                 'ok' => false,
                 'message' => $state['reason'],
                 'remaining' => 0,
-                'today' => $state['today'],
+                'today' => $today,
+                'breakfastDate' => $breakfastDate,
             ];
         }
-        if (! $state['todayEligible']) {
+        if (! (bool) $state['canClaim']) {
             return [
                 'ok' => false,
                 'message' => $state['reason'] !== ''
                     ? $state['reason']
-                    : 'Complimentary breakfast is not available this morning.',
+                    : 'Complimentary breakfast is not available to claim right now.',
                 'remaining' => 0,
-                'today' => $state['today'],
+                'today' => $today,
+                'breakfastDate' => $breakfastDate,
             ];
         }
-        $remaining = (int) $state['remainingToday'];
-        if ($remaining < 1) {
-            return [
-                'ok' => false,
-                'message' => $state['reason'],
-                'remaining' => 0,
-                'today' => $state['today'],
-            ];
-        }
+        $remaining = (int) $state['remaining'];
         if ($quantity < 1 || $quantity > $remaining) {
+            $label = (string) ($state['claimForDateLabel'] ?? 'this morning');
+
             return [
                 'ok' => false,
-                'message' => "You can request up to {$remaining} free breakfast serving(s) this morning for the guests registered on this room.",
+                'message' => "You can request up to {$remaining} free breakfast serving(s) for {$label} for the guests registered on this room.",
                 'remaining' => $remaining,
-                'today' => $state['today'],
+                'today' => $today,
+                'breakfastDate' => $breakfastDate,
             ];
         }
 
@@ -398,7 +460,138 @@ final class FreeBreakfastSupport
             'ok' => true,
             'message' => '',
             'remaining' => $remaining,
-            'today' => $state['today'],
+            'today' => $breakfastDate,
+            'breakfastDate' => $breakfastDate,
+        ];
+    }
+
+    public static function servingTimeForHotel(?string $hotelId): string
+    {
+        $id = trim((string) $hotelId);
+        if ($id === '') {
+            return self::DEFAULT_SERVING_TIME;
+        }
+        $settings = SystemSetting::withoutGlobalScopes()
+            ->where('hotel_id', $id)
+            ->first();
+
+        return self::normalizeServingTime($settings?->breakfast_serving_time ?? null);
+    }
+
+    public static function normalizeServingTime(mixed $raw): string
+    {
+        $raw = trim((string) $raw);
+        if ($raw === '') {
+            return self::DEFAULT_SERVING_TIME;
+        }
+        if (preg_match('/^(\d{1,2}):(\d{2})/', $raw, $m) === 1) {
+            $hour = (int) $m[1];
+            $minute = (int) $m[2];
+            if ($hour >= 0 && $hour <= 23 && $minute >= 0 && $minute <= 59) {
+                return sprintf('%02d:%02d', $hour, $minute);
+            }
+        }
+
+        return self::DEFAULT_SERVING_TIME;
+    }
+
+    public static function kitchenVisibleTime(string $servingTime): string
+    {
+        return Carbon::parse('2000-01-01 '.self::normalizeServingTime($servingTime), self::timezone())
+            ->subHours(self::STAFF_LEAD_HOURS)
+            ->format('H:i');
+    }
+
+    public static function kitchenVisibleAt(string $breakfastDate, ?string $servingTime = null): Carbon
+    {
+        $time = self::normalizeServingTime($servingTime);
+
+        return Carbon::parse($breakfastDate.' '.$time, self::timezone())
+            ->subHours(self::STAFF_LEAD_HOURS);
+    }
+
+    public static function isVisibleToStaff(
+        AmenityClaim $claim,
+        ?CarbonInterface $now = null,
+        ?string $servingTime = null,
+    ): bool {
+        if (! self::isBreakfastClaim($claim)) {
+            return true;
+        }
+        $now = $now ?? self::now();
+        $visibleAt = $claim->visible_at;
+        if ($visibleAt instanceof CarbonInterface) {
+            return $visibleAt->lessThanOrEqualTo($now);
+        }
+        $date = self::claimBreakfastDate($claim);
+        if ($date === '') {
+            return true;
+        }
+        $time = $servingTime ?? self::servingTimeForHotel((string) ($claim->hotel_id ?? ''));
+
+        return self::kitchenVisibleAt($date, $time)->lessThanOrEqualTo($now);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function servingTimePayload(?SystemSetting $settings): array
+    {
+        $time = self::normalizeServingTime($settings?->breakfast_serving_time ?? null);
+        $visibleClock = self::kitchenVisibleTime($time);
+
+        return [
+            'breakfast_serving_time' => $time,
+            'breakfast_serving_label' => self::formatClock($time),
+            'kitchen_lead_hours' => self::STAFF_LEAD_HOURS,
+            'kitchen_visible_time' => $visibleClock,
+            'kitchen_visible_label' => self::formatClock($visibleClock),
+        ];
+    }
+
+    public static function formatClock(string $hhmm): string
+    {
+        try {
+            return Carbon::parse('2000-01-01 '.self::normalizeServingTime($hhmm), self::timezone())
+                ->format('g:i A');
+        } catch (\Throwable) {
+            return self::normalizeServingTime($hhmm);
+        }
+    }
+
+    public static function formatDateLabel(string $date): string
+    {
+        try {
+            return Carbon::parse($date, self::timezone())->format('j M Y');
+        } catch (\Throwable) {
+            return $date;
+        }
+    }
+
+    public static function claimBreakfastDate(AmenityClaim $claim): string
+    {
+        $claimDate = trim((string) ($claim->breakfast_date ?? ''));
+        if ($claimDate !== '') {
+            return $claimDate;
+        }
+        if ($claim->claimed_at instanceof CarbonInterface) {
+            return $claim->claimed_at->timezone(self::timezone())->toDateString();
+        }
+
+        return '';
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function presentGuestClaim(AmenityClaim $claim, string $fallbackDate): array
+    {
+        return [
+            'id' => (string) $claim->id,
+            'amenityName' => (string) ($claim->amenity_name ?? ''),
+            'quantity' => (int) ($claim->quantity ?? 0),
+            'status' => (string) ($claim->status ?? ''),
+            'breakfastDate' => self::claimBreakfastDate($claim) ?: $fallbackDate,
         ];
     }
 

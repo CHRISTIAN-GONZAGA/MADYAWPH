@@ -382,6 +382,7 @@ class GuestPortalApiController extends Controller
                     'claimedAt' => optional($claim->claimed_at)->toISOString(),
                     'isFreeBreakfast' => FreeBreakfastSupport::isBreakfastClaim($claim),
                     'breakfastDate' => (string) ($claim->breakfast_date ?? ''),
+                    'visibleAt' => optional($claim->visible_at)->toIso8601String(),
                 ])
                 ->values(),
             'amenityMenu' => $paidAmenityMenu->map(fn ($item) => [
@@ -399,23 +400,28 @@ class GuestPortalApiController extends Controller
     {
         $portal = $request->attributes->get('guest_portal');
         $validated = $request->validate([
-            'amenityItemId' => ['required', 'string'],
-            'quantity' => ['required', 'integer', 'min:1', 'max:20'],
+            'amenityItemId' => ['required_without:selections', 'string'],
+            'quantity' => ['required_without:selections', 'integer', 'min:1', 'max:20'],
+            'selections' => ['required_without:amenityItemId', 'array', 'min:1'],
+            'selections.*.amenityItemId' => ['required', 'string'],
+            'selections.*.quantity' => ['required', 'integer', 'min:1', 'max:20'],
         ]);
         $hotelId = (string) $portal['hotel_id'];
         $roomId = (string) $portal['room_id'];
-        $item = AmenityMenuItem::query()
-            ->where('hotel_id', $hotelId)
-            ->where('is_active', true)
-            ->findOrFail($validated['amenityItemId']);
-        if (! AmenityMenuItem::isVisibleToGuests($item)) {
-            return response()->json([
-                'message' => 'This amenity is not available.',
-            ], 422);
+        $lines = [];
+        if (! empty($validated['selections'])) {
+            foreach ($validated['selections'] as $row) {
+                $lines[] = [
+                    'amenityItemId' => (string) $row['amenityItemId'],
+                    'quantity' => (int) $row['quantity'],
+                ];
+            }
+        } else {
+            $lines[] = [
+                'amenityItemId' => (string) $validated['amenityItemId'],
+                'quantity' => (int) $validated['quantity'],
+            ];
         }
-
-        $qty = (int) $validated['quantity'];
-        $isFreeBreakfast = FreeBreakfastSupport::isBreakfastItem($item);
 
         $booking = Booking::query()
             ->where('hotel_id', $hotelId)
@@ -433,63 +439,118 @@ class GuestPortalApiController extends Controller
             ->where('room_id', $roomId)
             ->get();
 
+        $resolved = [];
+        $breakfastQty = 0;
+        $paidQty = 0;
+        foreach ($lines as $line) {
+            $item = AmenityMenuItem::query()
+                ->where('hotel_id', $hotelId)
+                ->where('is_active', true)
+                ->findOrFail($line['amenityItemId']);
+            if (! AmenityMenuItem::isVisibleToGuests($item)) {
+                return response()->json([
+                    'message' => 'This amenity is not available.',
+                ], 422);
+            }
+            $isBreakfast = FreeBreakfastSupport::isBreakfastItem($item);
+            if ($isBreakfast) {
+                $breakfastQty += $line['quantity'];
+            } else {
+                $paidQty += $line['quantity'];
+            }
+            $resolved[] = [
+                'item' => $item,
+                'quantity' => $line['quantity'],
+                'isFreeBreakfast' => $isBreakfast,
+            ];
+        }
+        if ($breakfastQty > 0 && $paidQty > 0) {
+            return response()->json([
+                'message' => 'Free breakfast and paid amenities cannot be requested together.',
+            ], 422);
+        }
+
+        $isFreeBreakfast = $breakfastQty > 0;
         $breakfastDate = null;
+        $visibleAt = null;
         if ($isFreeBreakfast) {
-            $check = FreeBreakfastSupport::validateFreeClaim($booking, $existingClaims, $qty, $room);
+            $check = FreeBreakfastSupport::validateFreeClaim($booking, $existingClaims, $breakfastQty, $room);
             if (! $check['ok']) {
                 return response()->json(['message' => $check['message']], 422);
             }
-            $breakfastDate = $check['today'];
+            $breakfastDate = (string) ($check['breakfastDate'] ?? $check['today']);
+            $servingTime = FreeBreakfastSupport::servingTimeForHotel($hotelId);
+            $visibleAt = FreeBreakfastSupport::kitchenVisibleAt($breakfastDate, $servingTime);
         }
 
-        $claim = AmenityClaim::query()->create([
-            'hotel_id' => $hotelId,
-            'room_id' => $roomId,
-            'booking_id' => $booking ? (string) $booking->id : null,
-            'room_number' => $portal['room_number'],
-            'guest_name' => (string) ($booking?->guest_name ?? 'In-House Guest'),
-            'amenity_type' => (string) $item->amenity_type,
-            'amenity_name' => (string) $item->name,
-            'amenity_item_id' => (string) $item->id,
-            'quantity' => $qty,
-            'status' => 'pending',
-            'claimed_at' => now(),
-            'is_free_breakfast' => $isFreeBreakfast,
-            'breakfast_date' => $breakfastDate,
-        ]);
-
-        if ($booking && ! $isFreeBreakfast) {
-            $chargeAmount = PriceRounding::nearest50(((float) $item->price) * $qty);
-            BillingCharge::withoutGlobalScopes()->create([
+        $created = [];
+        foreach ($resolved as $row) {
+            /** @var AmenityMenuItem $item */
+            $item = $row['item'];
+            $qty = (int) $row['quantity'];
+            $claim = AmenityClaim::query()->create([
                 'hotel_id' => $hotelId,
-                'booking_id' => (string) $booking->id,
                 'room_id' => $roomId,
-                'type' => 'amenity',
-                'label' => "Amenity: {$item->name}",
-                'amount' => $chargeAmount,
+                'booking_id' => $booking ? (string) $booking->id : null,
+                'room_number' => $portal['room_number'],
+                'guest_name' => (string) ($booking?->guest_name ?? 'In-House Guest'),
+                'amenity_type' => (string) $item->amenity_type,
+                'amenity_name' => (string) $item->name,
+                'amenity_item_id' => (string) $item->id,
                 'quantity' => $qty,
-                'is_manual' => false,
-                'metadata' => [
-                    'amenity_item_id' => (string) $item->id,
-                    'unit_price' => (float) $item->price,
-                ],
+                'status' => 'pending',
+                'claimed_at' => now(),
+                'is_free_breakfast' => (bool) $row['isFreeBreakfast'],
+                'breakfast_date' => $breakfastDate,
+                'visible_at' => $visibleAt,
             ]);
+            $created[] = $claim;
+
+            if ($booking && ! $row['isFreeBreakfast']) {
+                $chargeAmount = PriceRounding::nearest50(((float) $item->price) * $qty);
+                BillingCharge::withoutGlobalScopes()->create([
+                    'hotel_id' => $hotelId,
+                    'booking_id' => (string) $booking->id,
+                    'room_id' => $roomId,
+                    'type' => 'amenity',
+                    'label' => "Amenity: {$item->name}",
+                    'amount' => $chargeAmount,
+                    'quantity' => $qty,
+                    'is_manual' => false,
+                    'metadata' => [
+                        'amenity_item_id' => (string) $item->id,
+                        'unit_price' => (float) $item->price,
+                    ],
+                ]);
+            }
+        }
+        if ($booking && $paidQty > 0) {
             app(BookingPaymentService::class)->syncBookingTotalFromCharges($booking->fresh());
         }
 
+        $first = $created[0];
+        $names = collect($created)->map(fn ($claim) => (string) $claim->amenity_name)->unique()->implode(', ');
         app(ActivityLogService::class)->log(
             $hotelId,
             null,
             $isFreeBreakfast
-                ? "Guest claimed free breakfast {$item->name}"
-                : "Guest claimed amenity {$item->name}",
-            ['claim_id' => (string) $claim->id, 'room_id' => $roomId]
+                ? "Guest selected free breakfast {$names}"
+                : "Guest claimed amenity {$names}",
+            [
+                'claim_id' => (string) $first->id,
+                'claim_ids' => collect($created)->map(fn ($claim) => (string) $claim->id)->values()->all(),
+                'room_id' => $roomId,
+                'breakfast_date' => $breakfastDate,
+            ]
         );
 
         return response()->json([
             'ok' => true,
-            'claimId' => (string) $claim->id,
+            'claimId' => (string) $first->id,
+            'claimIds' => collect($created)->map(fn ($claim) => (string) $claim->id)->values()->all(),
             'isFreeBreakfast' => $isFreeBreakfast,
+            'breakfastDate' => $breakfastDate,
+            'visibleAt' => $visibleAt?->toIso8601String(),
         ], 201);
     }
 

@@ -31,6 +31,7 @@ use App\Services\StaffRequestService;
 use App\Support\AdminBookingPresenter;
 use App\Support\BillingChargeTypes;
 use App\Support\BookingTypeResolver;
+use App\Support\FreeBreakfastSupport;
 use App\Support\SafeModelAttributes;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -326,15 +327,20 @@ class AdminDashboardApiController extends Controller
                 'totalSpent' => (float) $credit->total_spent,
                 'transactions' => collect($credit->transactions ?? [])->values(),
             ],
-            'amenityClaims' => AmenityClaim::query()->latest('claimed_at')->limit(50)->get()->map(fn ($claim) => [
+            'amenityClaims' => AmenityClaim::query()->latest('claimed_at')->limit(200)->get()
+                ->filter(fn ($claim) => FreeBreakfastSupport::isVisibleToStaff($claim))
+                ->take(50)
+                ->values()
+                ->map(fn ($claim) => [
                 'id' => (string) $claim->id,
                 'amenityType' => $claim->amenity_type,
                 'amenityName' => $claim->amenity_name,
                 'quantity' => (int) $claim->quantity,
                 'status' => $claim->status,
                 'roomNumber' => $claim->room_number,
-                'isFreeBreakfast' => \App\Support\FreeBreakfastSupport::isBreakfastClaim($claim),
+                'isFreeBreakfast' => FreeBreakfastSupport::isBreakfastClaim($claim),
                 'breakfastDate' => (string) ($claim->breakfast_date ?? ''),
+                'visibleAt' => optional($claim->visible_at)->toIso8601String(),
             ]),
             'tasks' => Task::query()->latest()->limit(25)->get(),
             'staff' => StaffMember::query()->limit(25)->get(),
