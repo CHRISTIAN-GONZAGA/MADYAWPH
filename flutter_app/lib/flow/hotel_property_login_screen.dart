@@ -295,16 +295,8 @@ class _HotelPropertyLoginScreenState extends State<HotelPropertyLoginScreen> {
                               ],
                             ),
                     ),
-                    const SizedBox(height: 16),
-                    Text(
-                      context.tr('test_hotel_hint'),
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: _navy.withValues(alpha: 0.55),
-                          ),
-                    ),
+                    const SizedBox(height: 8),
                     if (widget.onRegisterHotel != null) ...[
-                      const SizedBox(height: 8),
                       TextButton(
                         onPressed: _openRegister,
                         child: Text(context.tr('register_hotel')),

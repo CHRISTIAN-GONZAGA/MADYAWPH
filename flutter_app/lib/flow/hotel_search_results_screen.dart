@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -5,7 +8,9 @@ import '../auth_storage.dart';
 import '../dio_client.dart';
 import '../locale_controller.dart';
 import '../ui/app_visual.dart';
+import '../ui/design_tokens.dart';
 import '../ui/luxury_page_route.dart';
+import '../widgets/app_notice.dart';
 import '../widgets/chat_attachment.dart';
 import 'customer_browse_layout.dart';
 import 'customer_search_context.dart';
@@ -13,18 +18,38 @@ import 'dashboards.dart';
 import 'member_subscription_flow.dart';
 
 /// Hotels that can accommodate the guest's search criteria.
-class HotelSearchResultsScreen extends StatelessWidget {
+class HotelSearchResultsScreen extends StatefulWidget {
   const HotelSearchResultsScreen({
     super.key,
-    required this.hotels,
     required this.search,
+    this.initialHotels = const [],
   });
 
-  final List<Map<String, dynamic>> hotels;
+  final List<Map<String, dynamic>> initialHotels;
   final CustomerSearchContext search;
+
+  @override
+  State<HotelSearchResultsScreen> createState() =>
+      _HotelSearchResultsScreenState();
+}
+
+class _HotelSearchResultsScreenState extends State<HotelSearchResultsScreen> {
+  static const _searchTimeout = Duration(seconds: 95);
+
+  late List<Map<String, dynamic>> _hotels;
+  bool _confirming = true;
+
+  CustomerSearchContext get search => widget.search;
 
   int get _nights =>
       search.checkOut.difference(search.checkIn).inDays.clamp(1, 365);
+
+  @override
+  void initState() {
+    super.initState();
+    _hotels = List<Map<String, dynamic>>.from(widget.initialHotels);
+    unawaited(_confirmAvailability());
+  }
 
   String _fmtDate(DateTime d) {
     const months = [
@@ -32,6 +57,64 @@ class HotelSearchResultsScreen extends StatelessWidget {
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
     ];
     return '${months[d.month - 1]} ${d.day}';
+  }
+
+  List<Map<String, dynamic>> _onlyAvailable(List<Map<String, dynamic>> hotels) {
+    return hotels.where((h) {
+      final available = (h['available_rooms'] as num?)?.toInt() ?? 0;
+      if (available <= 0) return false;
+      return h['can_accommodate'] != false;
+    }).toList();
+  }
+
+  Future<void> _confirmAvailability() async {
+    try {
+      final params = <String, dynamic>{
+        if (search.destinationQuery.trim().isNotEmpty)
+          'q': search.destinationQuery.trim(),
+        ...search.queryParams,
+      };
+      final res = await publicDio()
+          .get<Map<String, dynamic>>(
+            '/hotels/search',
+            queryParameters: params,
+          )
+          .timeout(_searchTimeout);
+      final raw = res.data?['hotels'] as List<dynamic>? ?? const [];
+      final hotels = raw
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      if (!mounted) return;
+      setState(() {
+        _hotels = _onlyAvailable(hotels);
+        _confirming = false;
+      });
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() => _confirming = false);
+      if (_hotels.isNotEmpty) {
+        showAppMessage(context, context.tr('legacy_search_hint'));
+      }
+    } on DioException catch (e) {
+      if (!mounted) return;
+      final fallback = e.response?.statusCode == 404 ||
+          e.response?.statusCode == 501;
+      setState(() {
+        _confirming = false;
+      });
+      if (!fallback) {
+        showAppMessage(
+          context,
+          dioErrorMessage(e),
+          isError: true,
+        );
+      } else if (_hotels.isNotEmpty) {
+        showAppMessage(context, context.tr('legacy_search_hint'));
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _confirming = false);
+    }
   }
 
   Future<void> _openHotel(BuildContext context, Map<String, dynamic> hotel) async {
@@ -53,6 +136,7 @@ class HotelSearchResultsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hotels = _hotels;
     final scheme = Theme.of(context).colorScheme;
     final destination = search.destinationQuery.trim();
     final visual = AppVisual.of(context);
@@ -103,6 +187,17 @@ class HotelSearchResultsScreen extends StatelessWidget {
                   color: scheme.onSurfaceVariant,
                 ),
           ),
+          if (_confirming) ...[
+            const SizedBox(height: 8),
+            Text(
+              context.tr('confirming_availability'),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: UiTokens.luxuryGold,
+                    letterSpacing: 0.4,
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+          ],
         ],
       ),
     );
@@ -121,7 +216,35 @@ class HotelSearchResultsScreen extends StatelessWidget {
     );
 
     Widget resultsBody;
-    if (hotels.isEmpty) {
+    if (_confirming && hotels.isEmpty) {
+      resultsBody = Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.4,
+                  color: scheme.primary,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                context.tr('confirming_availability'),
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      letterSpacing: 0.2,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      );
+    } else if (hotels.isEmpty) {
       resultsBody = _EmptyResults(search: search);
     } else if (wideLandscape) {
       resultsBody = GridView.builder(
@@ -170,17 +293,19 @@ class HotelSearchResultsScreen extends StatelessWidget {
               backgroundColor: Colors.transparent,
               surfaceTintColor: Colors.transparent,
               elevation: 0,
-        title: Text(
-          hotels.isEmpty
-              ? (destination.isNotEmpty
-                  ? context.tr('no_hotels_for_location', {
-                      'location': destination,
-                    })
-                  : context.tr('no_matches'))
-              : context.tr('hotels_found_count', {'n': '${hotels.length}'}),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
+              title: Text(
+                _confirming && hotels.isEmpty
+                    ? context.tr('confirming_availability')
+                    : hotels.isEmpty
+                        ? (destination.isNotEmpty
+                            ? context.tr('no_hotels_for_location', {
+                                'location': destination,
+                              })
+                            : context.tr('no_matches'))
+                        : context.tr('hotels_found_count', {'n': '${hotels.length}'}),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
               actions: [
                 IconButton(
                   tooltip: context.tr('edit_search'),
@@ -189,6 +314,12 @@ class HotelSearchResultsScreen extends StatelessWidget {
                 ),
               ],
             ),
+            if (_confirming)
+              LinearProgressIndicator(
+                minHeight: 2,
+                color: UiTokens.luxuryGold,
+                backgroundColor: scheme.primary.withValues(alpha: 0.12),
+              ),
             if (wideLandscape && hotels.isNotEmpty)
               Expanded(
                 child: Row(

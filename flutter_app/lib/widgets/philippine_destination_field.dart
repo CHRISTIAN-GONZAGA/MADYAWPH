@@ -213,7 +213,12 @@ class _PhilippineDestinationFieldState extends State<PhilippineDestinationField>
         onTapOutside: (_) {},
         decoration: InputDecoration(
           hintText: widget.hintText,
-          prefixIcon: const Icon(Icons.location_on_outlined),
+          filled: true,
+          fillColor: scheme.surfaceContainerLowest,
+          prefixIcon: Icon(
+            Icons.location_on_outlined,
+            color: scheme.primary,
+          ),
           suffixIcon: widget.controller.text.isNotEmpty
               ? IconButton(
                   onPressed: () {

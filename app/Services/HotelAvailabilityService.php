@@ -117,11 +117,14 @@ class HotelAvailabilityService
         ?CarbonInterface $requestedCheckInAt = null,
         ?CarbonInterface $requestedCheckOutAt = null,
         ?string $excludeBookingId = null,
+        ?Room $preloadedRoom = null,
+        mixed $preloadedBookings = null,
+        mixed $preloadedReservations = null,
     ): bool {
         $in = Carbon::parse($checkInDate)->startOfDay();
         $out = Carbon::parse($checkOutDate)->startOfDay();
 
-        $room = Room::withoutGlobalScopes()
+        $room = $preloadedRoom ?? Room::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
             ->where(function ($query) use ($roomId): void {
                 $query->where('id', $roomId)->orWhere('_id', $roomId);
@@ -136,6 +139,7 @@ class HotelAvailabilityService
             $excludeReservationId,
             $requestedCheckInAt,
             $requestedCheckOutAt,
+            $preloadedReservations,
         )) {
             return true;
         }
@@ -146,15 +150,17 @@ class HotelAvailabilityService
 
         // Pass Carbon bounds (not Y-m-d strings). Mongo stores cast dates as UTC
         // instants of local midnight; string compares miss same-day stays in UTC+ offsets.
-        $bookings = Booking::withoutGlobalScopes()
-            ->where('hotel_id', $hotelId)
-            ->whereNotIn('status', [
-                BookingStatus::CANCELLED->value,
-                BookingStatus::COMPLETED->value,
-            ])
-            ->where('check_in_date', '<=', $out)
-            ->where('check_out_date', '>=', $in)
-            ->get();
+        $bookings = $preloadedBookings !== null
+            ? collect($preloadedBookings)
+            : Booking::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
+                ->whereNotIn('status', [
+                    BookingStatus::CANCELLED->value,
+                    BookingStatus::COMPLETED->value,
+                ])
+                ->where('check_in_date', '<=', $out)
+                ->where('check_out_date', '>=', $in)
+                ->get();
 
         foreach ($bookings as $booking) {
             if ($excludeBookingId !== null && (string) $booking->id === $excludeBookingId) {
@@ -439,13 +445,16 @@ class HotelAvailabilityService
         ?string $excludeReservationId,
         ?CarbonInterface $requestedCheckInAt = null,
         ?CarbonInterface $requestedCheckOutAt = null,
+        mixed $preloadedReservations = null,
     ): bool {
-        $reservations = ExternalReservation::withoutGlobalScopes()
-            ->where('hotel_id', $hotelId)
-            ->whereIn('status', ['pending_approval', 'approved', 'reserved', 'booked'])
-            ->where('check_in_date', '<=', $checkOut)
-            ->where('check_out_date', '>=', $checkIn)
-            ->get();
+        $reservations = $preloadedReservations !== null
+            ? collect($preloadedReservations)
+            : ExternalReservation::withoutGlobalScopes()
+                ->where('hotel_id', $hotelId)
+                ->whereIn('status', ['pending_approval', 'approved', 'reserved', 'booked'])
+                ->where('check_in_date', '<=', $checkOut)
+                ->where('check_out_date', '>=', $checkIn)
+                ->get();
 
         $requestStart = $requestedCheckInAt ?? Carbon::parse($checkIn)->startOfDay();
         $requestEnd = $requestedCheckOutAt ?? Carbon::parse($checkOut)->endOfDay();
@@ -574,7 +583,7 @@ class HotelAvailabilityService
         ?string $query = null,
     ): array {
         $roomsNeeded = max(1, $roomsNeeded);
-        $q = strtolower(trim((string) $query ?? ''));
+        $q = strtolower(trim((string) ($query ?? '')));
 
         $hotels = Hotel::withoutGlobalScopes()
             ->select(
@@ -592,29 +601,109 @@ class HotelAvailabilityService
             )
             ->orderBy('name')
             ->get()
-            ->filter(fn (Hotel $hotel) => \App\Support\HotelRegistrationStatus::isPubliclyListed($hotel))
-            ->values();
+            ->filter(fn (Hotel $hotel) => \App\Support\HotelRegistrationStatus::isPubliclyListed($hotel));
 
-        $stats = HotelDirectory::priceStatsForHotels(
-            $hotels->map(fn ($h) => (string) $h->id)->all()
-        );
+        if ($q !== '') {
+            $hotels = $hotels->filter(fn (Hotel $hotel) => $this->hotelMatchesQuery($hotel, $q));
+        }
+
+        $hotels = $hotels->values();
+        $hotelIds = $hotels->map(fn (Hotel $hotel) => (string) $hotel->id)->all();
+        if ($hotelIds === []) {
+            return [];
+        }
+
+        $stats = HotelDirectory::priceStatsForHotels($hotelIds);
+
+        $in = Carbon::parse($checkIn)->startOfDay();
+        $outDate = Carbon::parse($checkOut)->startOfDay();
+        $inDateString = $in->toDateString();
+        $outDateString = $outDate->toDateString();
+
+        $roomsByHotel = Room::withoutGlobalScopes()
+            ->whereIn('hotel_id', $hotelIds)
+            ->get()
+            ->groupBy(fn (Room $room) => (string) $room->hotel_id);
+
+        $bookingsByHotel = Booking::withoutGlobalScopes()
+            ->whereIn('hotel_id', $hotelIds)
+            ->whereNotIn('status', [
+                BookingStatus::CANCELLED->value,
+                BookingStatus::COMPLETED->value,
+            ])
+            ->where('check_in_date', '<=', $outDate)
+            ->where('check_out_date', '>=', $in)
+            ->get()
+            ->groupBy(fn (Booking $booking) => (string) $booking->hotel_id);
+
+        $reservationsByHotel = ExternalReservation::withoutGlobalScopes()
+            ->whereIn('hotel_id', $hotelIds)
+            ->whereIn('status', ['pending_approval', 'approved', 'reserved', 'booked'])
+            ->where('check_in_date', '<=', $outDate)
+            ->where('check_out_date', '>=', $in)
+            ->get()
+            ->groupBy(fn (ExternalReservation $reservation) => (string) $reservation->hotel_id);
+
+        $financial = app(FinancialComputationService::class);
+        $pricing = app(RoomPricingService::class);
 
         $out = [];
         foreach ($hotels as $hotel) {
             $hid = (string) $hotel->id;
-            if ($q !== '' && ! $this->hotelMatchesQuery($hotel, $q)) {
-                continue;
+            $hotelRooms = $roomsByHotel->get($hid, collect());
+            $hotelBookings = $bookingsByHotel->get($hid, collect());
+            $hotelReservations = $reservationsByHotel->get($hid, collect());
+
+            $availableCount = 0;
+            $stayEstimate = 0.0;
+            $minStay = null;
+
+            foreach ($hotelRooms as $room) {
+                $status = $room->status?->value ?? (string) $room->status;
+                if (in_array($status, [RoomStatus::MAINTENANCE->value, RoomStatus::CLEANING->value], true)) {
+                    continue;
+                }
+                if ($this->activeRoomOccupancyOverlaps($room, $checkIn, $checkOut)) {
+                    continue;
+                }
+                if ($this->roomHasStayConflict(
+                    (string) $room->id,
+                    $hid,
+                    $inDateString,
+                    $outDateString,
+                    null,
+                    null,
+                    null,
+                    null,
+                    $room,
+                    $hotelBookings,
+                    $hotelReservations,
+                )) {
+                    continue;
+                }
+
+                $availableCount++;
+                try {
+                    $charge = CustomerStayPricing::computeCharge(
+                        $room,
+                        $checkIn,
+                        $checkOut,
+                        $financial,
+                        $pricing,
+                    );
+                    $amount = (float) $charge['amount'];
+                    if ($minStay === null || $amount < $minStay) {
+                        $minStay = $amount;
+                    }
+                } catch (\Throwable) {
+                    // Keep counting the room even if a stay estimate cannot be priced.
+                }
             }
-            $availableCount = count($this->availableRoomIdsForStay($hid, $checkIn, $checkOut));
+
             $price = $stats[$hid] ?? ['min_price' => 0.0, 'max_price' => 0.0, 'room_count' => 0];
             $canAccommodate = $availableCount >= $roomsNeeded;
-            $stayEstimate = 0.0;
             if ($canAccommodate) {
-                try {
-                    $stayEstimate = $this->estimateCheapestStayForHotel($hid, $checkIn, $checkOut);
-                } catch (\Throwable) {
-                    $stayEstimate = 0.0;
-                }
+                $stayEstimate = (float) ($minStay ?? 0);
             }
 
             $out[] = [

@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 import '../auth_storage.dart';
 import '../branding/madyaw_logo_widget.dart';
@@ -12,6 +11,7 @@ import '../data/philippine_destination_presets.dart';
 import '../dio_client.dart';
 import '../locale_controller.dart';
 import '../ui/app_visual.dart';
+import '../ui/design_tokens.dart';
 import '../ui/luxury_page_route.dart';
 import '../widgets/app_install_share_dialog.dart';
 import '../widgets/language_picker_button.dart';
@@ -84,7 +84,6 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
   }
 
   static const _directoryTimeout = Duration(seconds: 90);
-  static const _searchTimeout = Duration(seconds: 95);
 
   Future<void> _bootstrapHotels() async {
     final cached = await AuthStorage.hotelsDirectoryCache();
@@ -156,31 +155,6 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
       setState(() => _allHotels = flat);
     } else {
       _allHotels = flat;
-    }
-  }
-
-  Future<void> _ensureHotelsLoaded() async {
-    if (_allHotels.isNotEmpty) return;
-    final cached = await AuthStorage.hotelsDirectoryCache();
-    if (cached != null && cached.isNotEmpty) {
-      try {
-        _parseDirectory(jsonDecode(cached), notify: false);
-      } catch (_) {}
-    }
-    if (_allHotels.isNotEmpty) return;
-    try {
-      final res = await publicDio()
-          .get<Map<String, dynamic>>('/hotels')
-          .timeout(_directoryTimeout);
-      final data = res.data;
-      if (data != null) {
-        await AuthStorage.setHotelsDirectoryCache(jsonEncode(data));
-        _parseDirectory(data, notify: false);
-      }
-    } on TimeoutException {
-      return;
-    } on DioException {
-      return;
     }
   }
 
@@ -376,9 +350,6 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
         'children': '$_children',
       });
 
-  String _isoDate(DateTime d) =>
-      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
   static const _locationStopWords = {
     'city',
     'municipality',
@@ -415,7 +386,7 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
     return tokens.every((t) => hay.contains(t));
   }
 
-  List<Map<String, dynamic>> _fallbackDirectorySearch({bool usedLegacyApi = false}) {
+  List<Map<String, dynamic>> _fallbackDirectorySearch() {
     final q = _destinationCtrl.text.trim();
     var list = _allHotels;
     if (q.isNotEmpty) {
@@ -427,61 +398,8 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
         ...h,
         'available_rooms': roomCount,
         'min_price': (h['min_price'] as num?)?.toDouble() ?? 0,
-        if (usedLegacyApi) 'legacy_search': true,
       };
     }).toList();
-  }
-
-  Map<String, dynamic> _searchQueryParams() {
-    return {
-      if (_destinationCtrl.text.trim().isNotEmpty)
-        'q': _destinationCtrl.text.trim(),
-      'check_in': _isoDate(_checkIn),
-      'check_out': _isoDate(_checkOut),
-      'rooms': _rooms,
-      'adults': _adults,
-      'children': _children,
-    };
-  }
-
-  List<Map<String, dynamic>> _onlyAvailableHotels(
-    List<Map<String, dynamic>> hotels,
-  ) {
-    return hotels.where((h) {
-      final available = (h['available_rooms'] as num?)?.toInt() ?? 0;
-      if (available <= 0) return false;
-      return h['can_accommodate'] != false;
-    }).toList();
-  }
-
-  Future<({List<Map<String, dynamic>> hotels, bool usedLegacy})>
-      _fetchSearchResults() async {
-    try {
-      final res = await publicDio().get<Map<String, dynamic>>(
-        '/hotels/search',
-        queryParameters: _searchQueryParams(),
-      );
-      final raw = res.data?['hotels'] as List<dynamic>? ?? const [];
-      final hotels =
-          raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      return (
-        hotels: _onlyAvailableHotels(hotels),
-        usedLegacy: false,
-      );
-    } on DioException catch (e) {
-      if (e.response?.statusCode != 404 && e.response?.statusCode != 501) {
-        rethrow;
-      }
-      if (_allHotels.isEmpty) {
-        await _ensureHotelsLoaded();
-      }
-      return (
-        hotels: _onlyAvailableHotels(
-          _fallbackDirectorySearch(usedLegacyApi: true),
-        ),
-        usedLegacy: true,
-      );
-    }
   }
 
   Future<void> _search() async {
@@ -490,14 +408,6 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _searching = true);
     try {
-      final result = await _fetchSearchResults().timeout(
-        _searchTimeout,
-        onTimeout: () {
-          throw TimeoutException('Hotel search timed out');
-        },
-      );
-      final hotels = result.hotels;
-      final usedLegacy = result.usedLegacy;
       final search = CustomerSearchContext(
         checkIn: _checkIn,
         checkOut: _checkOut,
@@ -506,39 +416,14 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
         children: _children,
         destinationQuery: _destinationCtrl.text.trim(),
       );
-      if (!mounted) return;
-      if (usedLegacy) {
-        showAppMessage(context, context.tr('legacy_search_hint'));
-      }
       await Navigator.of(context).push<void>(
         LuxuryPageRoute<void>(
           builder: (_) => HotelSearchResultsScreen(
-            hotels: hotels,
+            initialHotels: _fallbackDirectorySearch(),
             search: search,
           ),
         ),
       );
-    } on TimeoutException {
-      if (!mounted) return;
-      showAppMessage(
-        context,
-        'Search took too long. Check your connection, then try again.',
-        isError: true,
-        actionLabel: 'Retry',
-        onAction: _search,
-      );
-    } on DioException catch (e) {
-      if (!mounted) return;
-      showAppMessage(
-        context,
-        dioErrorMessage(e),
-        isError: true,
-        actionLabel: 'Retry',
-        onAction: _search,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      showAppMessage(context, '$e');
     } finally {
       if (mounted) setState(() => _searching = false);
     }
@@ -699,52 +584,41 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(4, 0, 4, 14),
+                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 18),
                       child: Column(
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: scheme.primaryContainer
-                                  .withValues(alpha: 0.65),
-                              borderRadius: BorderRadius.circular(24),
-                              border: Border.all(
-                                color: scheme.primary.withValues(alpha: 0.2),
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.travel_explore,
-                                    size: 18, color: scheme.primary),
-                                const SizedBox(width: 8),
-                                Text(
-                                  context.tr('book_a_stay'),
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    color: scheme.onPrimaryContainer,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
+                          Text(
+                            context.tr('reservations_eyebrow').toUpperCase(),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 3.2,
+                              color: UiTokens.luxuryGold,
                             ),
                           ),
-                          const SizedBox(height: 14),
+                          const SizedBox(height: 12),
                           Text(
                             context.tr('where_to_go'),
                             textAlign: TextAlign.center,
-                          style: Theme.of(context)
-                              .textTheme
-                              .headlineMedium
-                              ?.copyWith(
-                                fontWeight: FontWeight.w600,
-                                height: 1.18,
-                              ),
+                            style: Theme.of(context)
+                                .textTheme
+                                .headlineMedium
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w500,
+                                  height: 1.2,
+                                  letterSpacing: -0.3,
+                                ),
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 10),
+                          Container(
+                            width: 44,
+                            height: 1.5,
+                            decoration: BoxDecoration(
+                              color: UiTokens.luxuryGold,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
                           Text(
                             context.tr('search_stays_sub'),
                             textAlign: TextAlign.center,
@@ -753,7 +627,8 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                                 .bodyMedium
                                 ?.copyWith(
                                   color: scheme.onSurfaceVariant,
-                                  height: 1.35,
+                                  height: 1.45,
+                                  letterSpacing: 0.15,
                                 ),
                           ),
                         ],
@@ -804,33 +679,36 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
         DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: visual.radiusLg,
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                scheme.surfaceContainerLow,
-                scheme.surfaceContainerHighest.withValues(alpha: 0.55),
-              ],
-            ),
-            boxShadow: visual.elevatedShadow,
+            color: scheme.surface.withValues(alpha: 0.92),
+            boxShadow: visual.cardShadow,
             border: Border.all(
-              color: scheme.primary.withValues(alpha: 0.12),
+              color: Color.lerp(
+                    scheme.outlineVariant,
+                    UiTokens.luxuryGold,
+                    0.42,
+                  ) ??
+                  UiTokens.luxuryGold.withValues(alpha: 0.45),
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(18),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(10),
+                      width: 42,
+                      height: 42,
                       decoration: BoxDecoration(
-                        color: scheme.primary.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(12),
+                        color: UiTokens.luxuryNavy,
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Icon(Icons.map_outlined, color: scheme.primary),
+                      child: const Icon(
+                        Icons.apartment_outlined,
+                        color: UiTokens.luxuryGold,
+                        size: 22,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -838,16 +716,24 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            context.tr('find_your_room'),
+                            context.tr('stay_details'),
                             style: Theme.of(context)
                                 .textTheme
-                                .titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w800),
+                                .titleSmall
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.2,
+                                ),
                           ),
+                          const SizedBox(height: 2),
                           Text(
                             context.tr('tap_city_search'),
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
                                   color: scheme.onSurfaceVariant,
+                                  height: 1.3,
                                 ),
                           ),
                         ],
@@ -855,7 +741,16 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
+                Text(
+                  context.tr('destination_label').toUpperCase(),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        letterSpacing: 1.4,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                ),
+                const SizedBox(height: 8),
                 PhilippineDestinationField(
                   controller: _destinationCtrl,
                   hintText: context.tr('browse_ph_cities'),
@@ -865,16 +760,18 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                     });
                   },
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 16),
                 Text(
-                  context.tr('popular_destinations'),
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
+                  context.tr('popular_destinations').toUpperCase(),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        letterSpacing: 1.4,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.onSurfaceVariant,
                       ),
                 ),
                 const SizedBox(height: 10),
                 SizedBox(
-                  height: 42,
+                  height: 44,
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     itemCount: PhilippineDestinationPresets.popular.length + 1,
@@ -882,8 +779,15 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                     itemBuilder: (context, i) {
                       if (i == PhilippineDestinationPresets.popular.length) {
                         return ActionChip(
-                          avatar: const Icon(Icons.grid_view, size: 18),
+                          avatar: Icon(
+                            Icons.grid_view_outlined,
+                            size: 16,
+                            color: scheme.primary,
+                          ),
                           label: Text(context.tr('all_cities')),
+                          side: BorderSide(
+                            color: scheme.outlineVariant.withValues(alpha: 0.8),
+                          ),
                           onPressed: _openDestinationPicker,
                         );
                       }
@@ -891,22 +795,35 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                       final selected =
                           _selectedPresetQuery == preset.searchQuery;
                       return FilterChip(
+                        showCheckmark: false,
+                        avatar: Icon(
+                          Icons.place_outlined,
+                          size: 16,
+                          color: selected
+                              ? scheme.onPrimaryContainer
+                              : scheme.primary,
+                        ),
                         label: Text(
-                          '${preset.icon} ${preset.label}',
+                          preset.label,
                           style: TextStyle(
                             fontWeight:
-                                selected ? FontWeight.w700 : FontWeight.w500,
+                                selected ? FontWeight.w600 : FontWeight.w500,
+                            letterSpacing: 0.15,
                           ),
                         ),
                         selected: selected,
                         selectedColor: scheme.primaryContainer,
-                        checkmarkColor: scheme.primary,
+                        side: BorderSide(
+                          color: selected
+                              ? scheme.primary.withValues(alpha: 0.35)
+                              : scheme.outlineVariant.withValues(alpha: 0.8),
+                        ),
                         onSelected: (_) => _selectPreset(preset),
                       );
                     },
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
                 Row(
                   children: [
                     Expanded(
@@ -917,32 +834,26 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                       ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: Column(
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: scheme.primaryContainer,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              context.tr('nights_count', {
-                                'n': '$_nightCount',
-                              }),
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: scheme.onPrimaryContainer,
-                              ),
+                          Text(
+                            context.tr('nights_count', {
+                              'n': '$_nightCount',
+                            }),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.3,
+                              color: scheme.onSurfaceVariant,
                             ),
                           ),
                           const SizedBox(height: 4),
-                          Icon(Icons.arrow_forward,
-                              size: 16, color: scheme.outline),
+                          const Icon(
+                            Icons.arrow_forward,
+                            size: 16,
+                            color: UiTokens.luxuryGold,
+                          ),
                         ],
                       ),
                     ),
@@ -955,119 +866,94 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                     ),
                   ],
                 ),
-                const SizedBox(height: 14),
-                InkWell(
-                  onTap: _pickGuests,
-                  borderRadius: BorderRadius.circular(14),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 14,
-                    ),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: scheme.outlineVariant),
-                      color: scheme.surfaceContainerLowest,
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.people_outline, color: scheme.primary),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                context.tr('guests'),
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelSmall
-                                    ?.copyWith(color: scheme.onSurfaceVariant),
-                              ),
-                              Text(
-                                _guestPartyLine(context),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Icon(Icons.chevron_right, color: scheme.outline),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    gradient: LinearGradient(
-                      colors: [
-                        scheme.primary,
-                        scheme.primary.withValues(alpha: 0.82),
-                      ],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: scheme.primary.withValues(alpha: 0.28),
-                        blurRadius: 14,
-                        offset: const Offset(0, 6),
+                const SizedBox(height: 12),
+                Material(
+                  color: scheme.surfaceContainerLowest,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    onTap: _pickGuests,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 13,
                       ),
-                    ],
-                  ),
-                  child: SizedBox(
-                    height: 54,
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: _searching ? null : _search,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.transparent,
-                        shadowColor: Colors.transparent,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        elevation: 0,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: scheme.outlineVariant),
                       ),
-                      child: _searching
-                          ? Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
+                      child: Row(
+                        children: [
+                          Icon(Icons.people_outline, color: scheme.primary),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const SizedBox(
-                                  width: 22,
-                                  height: 22,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.5,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
                                 Text(
-                                  context.tr('search_hotels_btn'),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white,
-                                  ),
+                                  context.tr('guests').toUpperCase(),
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelSmall
+                                      ?.copyWith(
+                                        color: scheme.onSurfaceVariant,
+                                        letterSpacing: 1.1,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                 ),
-                              ],
-                            )
-                          : Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(Icons.search, size: 22),
-                                const SizedBox(width: 10),
+                                const SizedBox(height: 2),
                                 Text(
-                                  context.tr('search_hotels_btn'),
+                                  _guestPartyLine(context),
                                   style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 0.3,
-                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                               ],
                             ),
+                          ),
+                          Icon(Icons.chevron_right, color: scheme.outline),
+                        ],
+                      ),
                     ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  height: 52,
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: _searching ? null : _search,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: UiTokens.luxuryNavy,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor:
+                          UiTokens.luxuryNavy.withValues(alpha: 0.7),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(
+                          color: UiTokens.luxuryGold.withValues(alpha: 0.7),
+                        ),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: _searching
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Text(
+                            context.tr('search_hotels_btn'),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 1.1,
+                              fontSize: 14,
+                            ),
+                          ),
                   ),
                 ),
               ],
@@ -1254,9 +1140,11 @@ class _DateTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                label,
+                label.toUpperCase(),
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: scheme.onSurfaceVariant,
+                      letterSpacing: 1.1,
+                      fontWeight: FontWeight.w600,
                     ),
               ),
               const SizedBox(height: 4),

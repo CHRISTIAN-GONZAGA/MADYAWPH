@@ -60,25 +60,43 @@ class PortalAuthController extends Controller
         $checkIn = Carbon::parse($validated['check_in'])->startOfDay();
         $checkOut = Carbon::parse($validated['check_out'])->startOfDay();
         $roomsNeeded = max(1, (int) ($validated['rooms'] ?? 1));
+        $query = $validated['q'] ?? null;
+        $adults = (int) ($validated['adults'] ?? 2);
+        $children = (int) ($validated['children'] ?? 0);
 
-        $hotels = $availability->searchAccommodatingHotels(
-            $checkIn,
-            $checkOut,
+        $build = function () use ($availability, $checkIn, $checkOut, $roomsNeeded, $query, $adults, $children): array {
+            $hotels = $availability->searchAccommodatingHotels(
+                $checkIn,
+                $checkOut,
+                $roomsNeeded,
+                $query,
+            );
+
+            return [
+                'hotels' => $hotels,
+                'meta' => [
+                    'check_in' => $checkIn->toDateString(),
+                    'check_out' => $checkOut->toDateString(),
+                    'rooms' => $roomsNeeded,
+                    'adults' => $adults,
+                    'children' => $children,
+                    'count' => count($hotels),
+                ],
+            ];
+        };
+
+        if (app()->environment('testing')) {
+            return response()->json($build());
+        }
+
+        $cacheKey = 'api.v1.hotels.search.'.md5(json_encode([
+            strtolower(trim((string) ($query ?? ''))),
+            $checkIn->toDateString(),
+            $checkOut->toDateString(),
             $roomsNeeded,
-            $validated['q'] ?? null,
-        );
+        ]));
 
-        return response()->json([
-            'hotels' => $hotels,
-            'meta' => [
-                'check_in' => $checkIn->toDateString(),
-                'check_out' => $checkOut->toDateString(),
-                'rooms' => $roomsNeeded,
-                'adults' => (int) ($validated['adults'] ?? 2),
-                'children' => (int) ($validated['children'] ?? 0),
-                'count' => count($hotels),
-            ],
-        ]);
+        return response()->json(Cache::remember($cacheKey, now()->addSeconds(45), $build));
     }
 
     public function philippineLocations(): JsonResponse
