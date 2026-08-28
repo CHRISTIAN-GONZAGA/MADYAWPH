@@ -150,6 +150,38 @@ class AdminDashboardApiController extends Controller
             ]);
         }
 
+        $reservationDocsByBookingId = [];
+        $reservationDocsByRoomId = [];
+        foreach (ExternalReservation::query()->where('hotel_id', $hotelId)->get() as $reservation) {
+            $meta = is_array($reservation->metadata) ? $reservation->metadata : [];
+            $docs = [
+                'guest_id_url' => $meta['guest_id_url'] ?? null,
+                'discount_id_url' => $meta['discount_id_url'] ?? null,
+                'payment_screenshot_url' => $meta['payment_screenshot_url'] ?? null,
+            ];
+            if (filled($reservation->booking_id)) {
+                $reservationDocsByBookingId[(string) $reservation->booking_id] = $docs;
+            }
+            if (filled($reservation->assigned_room_id)) {
+                $reservationDocsByRoomId[(string) $reservation->assigned_room_id] = $docs;
+            }
+        }
+
+        $bookingsList = $bookingsList->map(function (array $row) use ($reservationDocsByBookingId) {
+            $docs = $reservationDocsByBookingId[(string) ($row['id'] ?? '')] ?? [];
+            foreach (['guest_id_url', 'discount_id_url', 'payment_screenshot_url'] as $key) {
+                if (trim((string) ($row[$key] ?? '')) !== '') {
+                    continue;
+                }
+                if (! filled($docs[$key] ?? null)) {
+                    continue;
+                }
+                $row[$key] = (string) (\App\Support\ChatAttachmentUrl::fromStoredUrl($docs[$key]) ?? '');
+            }
+
+            return $row;
+        })->values();
+
         $payload = [
             'auth' => ['user' => array_merge([
                 'id' => (string) $user->id,
@@ -168,7 +200,7 @@ class AdminDashboardApiController extends Controller
                     'user_id' => (string) $user->id,
                 ]))->theme_color,
             ],
-            'rooms' => $rooms->map(function ($room) use ($latestBookingsByRoom, $hotelId, $categoriesById) {
+            'rooms' => $rooms->map(function ($room) use ($latestBookingsByRoom, $hotelId, $categoriesById, $reservationDocsByBookingId, $reservationDocsByRoomId) {
                 try {
                     $roomStatus = $room->status instanceof RoomStatus
                         ? $room->status->value
@@ -259,7 +291,27 @@ class AdminDashboardApiController extends Controller
                             'guests_female' => (int) ($booking->guests_female ?? 0),
                             'guests_hispanic' => (int) ($booking->guests_hispanic ?? 0),
                             'guest_nationality' => (string) ($booking->guest_nationality ?? ''),
-                            'guest_id_url' => (string) ($booking->guest_id_url ?? ''),
+                            'guest_id_url' => (string) (\App\Support\ChatAttachmentUrl::fromStoredUrl(
+                                filled($booking->guest_id_url ?? null)
+                                    ? (string) $booking->guest_id_url
+                                    : (($reservationDocsByBookingId[(string) $booking->id] ?? [])['guest_id_url']
+                                        ?? ($reservationDocsByRoomId[(string) $room->id] ?? [])['guest_id_url']
+                                        ?? null)
+                            ) ?? ''),
+                            'discount_id_url' => (string) (\App\Support\ChatAttachmentUrl::fromStoredUrl(
+                                filled($booking->discount_id_url ?? null)
+                                    ? (string) $booking->discount_id_url
+                                    : (($reservationDocsByBookingId[(string) $booking->id] ?? [])['discount_id_url']
+                                        ?? ($reservationDocsByRoomId[(string) $room->id] ?? [])['discount_id_url']
+                                        ?? null)
+                            ) ?? ''),
+                            'payment_screenshot_url' => (string) (\App\Support\ChatAttachmentUrl::fromStoredUrl(
+                                filled($booking->payment_screenshot_url ?? null)
+                                    ? (string) $booking->payment_screenshot_url
+                                    : (($reservationDocsByBookingId[(string) $booking->id] ?? [])['payment_screenshot_url']
+                                        ?? ($reservationDocsByRoomId[(string) $room->id] ?? [])['payment_screenshot_url']
+                                        ?? null)
+                            ) ?? ''),
                             'free_breakfast_options' => \App\Support\FreeBreakfastOptionsSupport::normalize(
                                 $booking->free_breakfast_options ?? []
                             ),
@@ -390,6 +442,16 @@ class AdminDashboardApiController extends Controller
                     return array_merge($r->toArray(), [
                         'payment_method' => (string) ($meta['payment_method'] ?? ''),
                         'payment_reference' => (string) ($meta['payment_reference'] ?? ''),
+                        'guest_id_url' => \App\Support\ChatAttachmentUrl::fromStoredUrl(
+                            filled($meta['guest_id_url'] ?? null)
+                                ? (string) $meta['guest_id_url']
+                                : null
+                        ),
+                        'discount_id_url' => \App\Support\ChatAttachmentUrl::fromStoredUrl(
+                            filled($meta['discount_id_url'] ?? null)
+                                ? (string) $meta['discount_id_url']
+                                : null
+                        ),
                         'payment_screenshot_url' => \App\Support\ChatAttachmentUrl::fromStoredUrl(
                             filled($meta['payment_screenshot_url'] ?? null)
                                 ? (string) $meta['payment_screenshot_url']

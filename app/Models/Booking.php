@@ -61,6 +61,7 @@ class Booking extends Model
         'discount_id_url',
         'guest_id_url',
         'discount_id_verified',
+        'payment_screenshot_url',
         'member_shid_id',
         'adults',
         'children',

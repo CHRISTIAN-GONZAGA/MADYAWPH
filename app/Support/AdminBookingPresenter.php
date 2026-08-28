@@ -75,8 +75,15 @@ final class AdminBookingPresenter
             'created_at' => $createdAt?->toISOString(),
             'date_booked' => $createdAt?->toDateString(),
             'pending_date_change' => is_array($pending) ? $pending : null,
-            'guest_id_url' => SafeModelAttributes::rawString($booking, 'guest_id_url'),
-            'discount_id_url' => SafeModelAttributes::rawString($booking, 'discount_id_url'),
+            'guest_id_url' => (string) (ChatAttachmentUrl::fromStoredUrl(
+                SafeModelAttributes::rawString($booking, 'guest_id_url') ?: null
+            ) ?? ''),
+            'discount_id_url' => (string) (ChatAttachmentUrl::fromStoredUrl(
+                SafeModelAttributes::rawString($booking, 'discount_id_url') ?: null
+            ) ?? ''),
+            'payment_screenshot_url' => (string) (ChatAttachmentUrl::fromStoredUrl(
+                SafeModelAttributes::rawString($booking, 'payment_screenshot_url') ?: null
+            ) ?? ''),
         ];
     }
 }

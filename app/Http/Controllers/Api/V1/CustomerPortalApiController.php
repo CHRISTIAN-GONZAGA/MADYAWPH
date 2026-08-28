@@ -1185,6 +1185,16 @@ class CustomerPortalApiController extends Controller
             'booking_reference' => $booking ? (string) $booking->booking_reference : '',
             'payment_method' => (string) ($meta['payment_method'] ?? 'Cash'),
             'payment_reference' => (string) ($meta['payment_reference'] ?? ''),
+            'guest_id_url' => ChatAttachmentUrl::fromStoredUrl(
+                filled($meta['guest_id_url'] ?? null)
+                    ? (string) $meta['guest_id_url']
+                    : null
+            ),
+            'discount_id_url' => ChatAttachmentUrl::fromStoredUrl(
+                filled($meta['discount_id_url'] ?? null)
+                    ? (string) $meta['discount_id_url']
+                    : null
+            ),
             'payment_screenshot_url' => ChatAttachmentUrl::fromStoredUrl(
                 filled($meta['payment_screenshot_url'] ?? null)
                     ? (string) $meta['payment_screenshot_url']

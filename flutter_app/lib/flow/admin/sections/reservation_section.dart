@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../dio_client.dart';
 import '../../../widgets/insufficient_hotel_credits.dart';
+import '../../../widgets/payment_proof_picker.dart';
 import '../admin_dashboard_models.dart';
 import '../../admin_bookings.dart';
 import '../../admin_chat.dart';
@@ -31,6 +32,59 @@ class _ReservationSectionState extends State<ReservationSection> {
 
   Future<void> _approve(String id) async {
     if (_busy || id.isEmpty) return;
+
+    Map<String, dynamic>? reservation;
+    for (final raw in widget.reservations) {
+      if (raw is! Map) continue;
+      final map = Map<String, dynamic>.from(raw);
+      if (_resolveId(map) == id) {
+        reservation = map;
+        break;
+      }
+    }
+    final reviewOk = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Review guest documents'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Guest: ${(reservation?['guest_name'] ?? 'Guest')}',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+              GuestStayDocuments(
+                guestIdUrl:
+                    GuestStayDocuments.urlFrom(reservation, 'guest_id_url'),
+                paymentScreenshotUrl: GuestStayDocuments.urlFrom(
+                  reservation,
+                  'payment_screenshot_url',
+                ),
+                discountIdUrl:
+                    GuestStayDocuments.urlFrom(reservation, 'discount_id_url'),
+                requireIdAndReceipt: true,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Approve'),
+          ),
+        ],
+      ),
+    );
+    if (reviewOk != true || !mounted) return;
+
     if (!await guardHotelCreditsBeforeApproval(
       context,
       currentCredits: widget.currentCredits,
@@ -78,14 +132,6 @@ class _ReservationSectionState extends State<ReservationSection> {
 
   String _resolveId(Map<String, dynamic> r) =>
       (r['id'] ?? r['_id'] ?? '').toString();
-
-  String _mediaUrl(String raw) {
-    if (raw.isEmpty) return raw;
-    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
-    final base = portalDio().options.baseUrl;
-    final root = base.replaceAll(RegExp(r'/api/v1$'), '');
-    return raw.startsWith('/') ? '$root$raw' : '$root/$raw';
-  }
 
   String _statusLabel(String? s) {
     final v = (s ?? '').toString();
@@ -160,8 +206,9 @@ class _ReservationSectionState extends State<ReservationSection> {
         final r = list[i - 1];
         final id = _resolveId(r);
         final status = _statusLabel(r['status']?.toString());
-        final meta = r['metadata'] as Map<String, dynamic>?;
-        final discountUrl = _mediaUrl(meta?['discount_id_url']?.toString() ?? '');
+        final guestIdUrl = GuestStayDocuments.urlFrom(r, 'guest_id_url');
+        final payShot = GuestStayDocuments.urlFrom(r, 'payment_screenshot_url');
+        final discountUrl = GuestStayDocuments.urlFrom(r, 'discount_id_url');
 
         return Card(
           margin: const EdgeInsets.only(bottom: 12),
@@ -186,26 +233,13 @@ class _ReservationSectionState extends State<ReservationSection> {
                   'Check-in: ${AdminDashboardModels.formatDateRange(r['check_in_date'], r['check_out_date'])}',
                 ),
                 Text('Phone: ${r['guest_phone'] ?? ''}'),
-                if (discountUrl.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'Verification ID',
-                    style: Theme.of(context).textTheme.labelMedium,
-                  ),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.network(
-                      discountUrl,
-                      height: 120,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => SelectableText(
-                        discountUrl,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ),
-                  ),
-                ],
+                const SizedBox(height: 10),
+                GuestStayDocuments(
+                  guestIdUrl: guestIdUrl,
+                  paymentScreenshotUrl: payShot,
+                  discountIdUrl: discountUrl,
+                  requireIdAndReceipt: status == 'Pending',
+                ),
                 const SizedBox(height: 12),
                 Wrap(
                   spacing: 8,

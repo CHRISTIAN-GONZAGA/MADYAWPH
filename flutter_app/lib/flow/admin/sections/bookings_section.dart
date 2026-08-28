@@ -385,6 +385,13 @@ class _BookingsSectionState extends State<BookingsSection>
             _detailRow('Total', formatMoney((b['total_amount'] as num?) ?? 0)),
             _detailRow('Booked on', '${b['date_booked'] ?? b['created_at'] ?? '—'}'),
             const SizedBox(height: 12),
+            GuestStayDocuments(
+              guestIdUrl: GuestStayDocuments.urlFrom(b, 'guest_id_url'),
+              paymentScreenshotUrl:
+                  GuestStayDocuments.urlFrom(b, 'payment_screenshot_url'),
+              discountIdUrl: GuestStayDocuments.urlFrom(b, 'discount_id_url'),
+            ),
+            const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: () async {
                 Navigator.pop(ctx);
@@ -452,10 +459,13 @@ class _BookingsSectionState extends State<BookingsSection>
                           : '—'))
                   .toString(),
             ),
-            if (payShot.trim().isNotEmpty) ...[
-              const SizedBox(height: 10),
-              PaymentProofThumb(url: payShot),
-            ],
+            const SizedBox(height: 10),
+            GuestStayDocuments(
+              guestIdUrl: GuestStayDocuments.urlFrom(r, 'guest_id_url'),
+              paymentScreenshotUrl: payShot,
+              discountIdUrl: GuestStayDocuments.urlFrom(r, 'discount_id_url'),
+              requireIdAndReceipt: true,
+            ),
             _detailRow(
               'Total paid',
               formatMoney(((r['amount_paid'] as num?) ?? (r['estimated_total'] as num?) ?? (r['total_amount'] as num?) ?? 0)),
@@ -588,8 +598,13 @@ class _BookingsSectionState extends State<BookingsSection>
                   style: const TextStyle(fontWeight: FontWeight.w700)),
               const SizedBox(height: 6),
               Text('Payment reference: $payRef'),
-              const SizedBox(height: 10),
-              PaymentProofThumb(url: payShot),
+              const SizedBox(height: 12),
+              GuestStayDocuments(
+                guestIdUrl: GuestStayDocuments.urlFrom(reservation, 'guest_id_url'),
+                paymentScreenshotUrl: payShot,
+                discountIdUrl: GuestStayDocuments.urlFrom(reservation, 'discount_id_url'),
+                requireIdAndReceipt: true,
+              ),
               const SizedBox(height: 6),
               Text(
                 'Stay total: ${formatMoney(stayTotal)}',

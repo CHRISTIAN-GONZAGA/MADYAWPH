@@ -66,15 +66,22 @@ class PaymentProofPicker extends StatelessWidget {
 
 /// Thumbnail of a submitted payment screenshot on the central admin request cards.
 class PaymentProofThumb extends StatelessWidget {
-  const PaymentProofThumb({super.key, required this.url});
+  const PaymentProofThumb({
+    super.key,
+    required this.url,
+    this.label = 'Payment screenshot',
+    this.emptyMessage = 'No payment screenshot attached.',
+  });
 
   final String url;
+  final String label;
+  final String emptyMessage;
 
   @override
   Widget build(BuildContext context) {
     if (url.trim().isEmpty) {
       return Text(
-        'No payment screenshot attached.',
+        emptyMessage,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Theme.of(context).colorScheme.error,
             ),
@@ -85,7 +92,7 @@ class PaymentProofThumb extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Payment screenshot',
+          label,
           style: Theme.of(context).textTheme.labelMedium,
         ),
         const SizedBox(height: 6),
@@ -113,6 +120,81 @@ class PaymentProofThumb extends StatelessWidget {
             ),
           ),
         ),
+      ],
+    );
+  }
+}
+
+/// Valid ID + payment screenshot (and optional discount ID) from an online stay.
+class GuestStayDocuments extends StatelessWidget {
+  const GuestStayDocuments({
+    super.key,
+    this.guestIdUrl = '',
+    this.paymentScreenshotUrl = '',
+    this.discountIdUrl = '',
+    this.requireIdAndReceipt = false,
+  });
+
+  final String guestIdUrl;
+  final String paymentScreenshotUrl;
+  final String discountIdUrl;
+  final bool requireIdAndReceipt;
+
+  static String urlFrom(Map<String, dynamic>? data, String key) {
+    if (data == null) return '';
+    final top = (data[key] ?? '').toString().trim();
+    if (top.isNotEmpty) return top;
+    final meta = data['metadata'];
+    if (meta is Map) {
+      return (meta[key] ?? '').toString().trim();
+    }
+    return '';
+  }
+
+  bool get hasAny =>
+      guestIdUrl.trim().isNotEmpty ||
+      paymentScreenshotUrl.trim().isNotEmpty ||
+      discountIdUrl.trim().isNotEmpty;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!requireIdAndReceipt && !hasAny) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Guest documents',
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Tap an image to enlarge before you approve or check in.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 10),
+        PaymentProofThumb(
+          url: guestIdUrl,
+          label: 'Valid ID',
+          emptyMessage: 'No valid ID attached.',
+        ),
+        const SizedBox(height: 12),
+        PaymentProofThumb(
+          url: paymentScreenshotUrl,
+          label: 'Payment screenshot',
+          emptyMessage: 'No payment screenshot attached.',
+        ),
+        if (discountIdUrl.trim().isNotEmpty) ...[
+          const SizedBox(height: 12),
+          PaymentProofThumb(
+            url: discountIdUrl,
+            label: 'Discount / senior / PWD ID',
+            emptyMessage: '',
+          ),
+        ],
       ],
     );
   }

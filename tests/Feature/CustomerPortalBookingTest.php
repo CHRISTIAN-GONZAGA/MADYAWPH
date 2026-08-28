@@ -215,6 +215,10 @@ class CustomerPortalBookingTest extends TestCase
             'discount_type' => 'none',
             'payment_method' => 'Online',
             'payment_reference' => 'REF-SHOT-001',
+            'guest_id_file' => UploadedFile::fake()->createWithContent(
+                'id.png',
+                base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
+            ),
             'payment_screenshot_file' => UploadedFile::fake()->createWithContent(
                 'receipt.png',
                 base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
@@ -223,6 +227,7 @@ class CustomerPortalBookingTest extends TestCase
 
         $response->assertOk();
         $this->assertNotEmpty($response->json('reservation.payment_screenshot_url'));
+        $this->assertNotEmpty($response->json('reservation.guest_id_url'));
 
         $reservation = ExternalReservation::withoutGlobalScopes()
             ->where('external_reference', $response->json('reservation.external_reference'))
@@ -230,6 +235,7 @@ class CustomerPortalBookingTest extends TestCase
         $this->assertNotNull($reservation);
         $meta = is_array($reservation->metadata) ? $reservation->metadata : [];
         $this->assertNotEmpty($meta['payment_screenshot_url'] ?? null);
+        $this->assertNotEmpty($meta['guest_id_url'] ?? null);
     }
 
     public function test_customer_online_reservation_includes_payment_reference(): void

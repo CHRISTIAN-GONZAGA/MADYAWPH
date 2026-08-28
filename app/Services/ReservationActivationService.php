@@ -143,6 +143,9 @@ class ReservationActivationService
         if (! empty($meta['guest_id_url'])) {
             $bookingAttrs['guest_id_url'] = (string) $meta['guest_id_url'];
         }
+        if (! empty($meta['payment_screenshot_url'])) {
+            $bookingAttrs['payment_screenshot_url'] = (string) $meta['payment_screenshot_url'];
+        }
         if (! empty($meta['member_shid_id'])) {
             $bookingAttrs['member_shid_id'] = (string) $meta['member_shid_id'];
             // Re-evaluate member link at activation (room % discounts are retired).

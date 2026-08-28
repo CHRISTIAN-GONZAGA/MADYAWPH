@@ -104,8 +104,13 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
                   style: const TextStyle(fontWeight: FontWeight.w700)),
               const SizedBox(height: 6),
               Text('Payment reference: $payRef'),
-              const SizedBox(height: 10),
-              PaymentProofThumb(url: payShot),
+              const SizedBox(height: 12),
+              GuestStayDocuments(
+                guestIdUrl: GuestStayDocuments.urlFrom(reservation, 'guest_id_url'),
+                paymentScreenshotUrl: payShot,
+                discountIdUrl: GuestStayDocuments.urlFrom(reservation, 'discount_id_url'),
+                requireIdAndReceipt: true,
+              ),
               const SizedBox(height: 6),
               Text(
                 'Total paid: ${formatMoney(totalPaid)}',

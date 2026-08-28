@@ -5,6 +5,7 @@ import 'package:gloretto_mobile/widgets/app_notice.dart';
 
 import '../../../dio_client.dart';
 import '../../../utils/money_format.dart';
+import '../../../widgets/payment_proof_picker.dart';
 import '../admin_dashboard_models.dart';
 import 'device_guest_welcome_sms.dart';
 import 'hourly_billing.dart';
@@ -158,6 +159,17 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
               Text(
                 staySummary,
                 style: Theme.of(ctx).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 16),
+              GuestStayDocuments(
+                guestIdUrl: GuestStayDocuments.urlFrom(bookingMap, 'guest_id_url'),
+                paymentScreenshotUrl: GuestStayDocuments.urlFrom(
+                  bookingMap,
+                  'payment_screenshot_url',
+                ),
+                discountIdUrl:
+                    GuestStayDocuments.urlFrom(bookingMap, 'discount_id_url'),
+                requireIdAndReceipt: isOnlineStay,
               ),
               const SizedBox(height: 16),
               Text(
