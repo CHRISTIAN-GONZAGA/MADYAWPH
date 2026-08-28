@@ -53,12 +53,6 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
     widget.onFinished();
   }
 
-  void _skip() {
-    if (_ended) return;
-    _timeline.stop();
-    _finish();
-  }
-
   @override
   void dispose() {
     _timeline.dispose();
@@ -82,55 +76,55 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
 
     return Material(
       color: MadyawBrand.introBgBottom,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: _skip,
-        child: AnimatedBuilder(
-          animation: Listenable.merge([_timeline, _breathe]),
-          builder: (context, _) {
-            final hazeIn = Curves.easeOut.transform(_t(0.0, 0.28));
-            final glowIn = Curves.easeOutCubic.transform(_t(0.06, 0.42));
-            final logoIn = Curves.easeOutCubic.transform(_t(0.1, 0.48));
-            final settle = Curves.easeOutBack.transform(_t(0.32, 0.72));
-            final waveIn = Curves.easeOutCubic.transform(_t(0.28, 0.62));
-            final shine = Curves.easeInOut.transform(_t(0.52, 0.82));
-            final exitFade = Curves.easeInCubic.transform(_t(0.88, 1.0));
-            final opacity = (1.0 - exitFade).clamp(0.0, 1.0);
+      child: AnimatedBuilder(
+        animation: Listenable.merge([_timeline, _breathe]),
+        builder: (context, _) {
+          final hazeIn = Curves.easeOut.transform(_t(0.0, 0.28));
+          final glowIn = Curves.easeOutCubic.transform(_t(0.06, 0.42));
+          final logoIn = Curves.easeOutCubic.transform(_t(0.1, 0.48));
+          final settle = Curves.easeOutBack.transform(_t(0.32, 0.72));
+          final waveIn = Curves.easeOutCubic.transform(_t(0.28, 0.62));
+          final shine = Curves.easeInOut.transform(_t(0.52, 0.82));
+          // Fade the mark only — keep the intro canvas opaque so the
+          // MaterialApp primary color never flashes through.
+          final exitFade = Curves.easeInCubic.transform(_t(0.88, 1.0));
+          final markOpacity = (1.0 - exitFade).clamp(0.0, 1.0);
 
-            final breath = reduceMotion ? 0.0 : _breathe.value;
-            final floatY = reduceMotion ? 0.0 : math.sin(breath * math.pi) * 5;
-            final scale = reduceMotion
-                ? 1.0
-                : (0.88 + 0.12 * settle) * (1 + 0.012 * math.sin(breath * math.pi));
-            final lift = reduceMotion ? 0.0 : 28 * (1 - logoIn) + floatY;
+          final breath = reduceMotion ? 0.0 : _breathe.value;
+          final floatY = reduceMotion ? 0.0 : math.sin(breath * math.pi) * 5;
+          final scale = reduceMotion
+              ? 1.0
+              : (0.88 + 0.12 * settle) * (1 + 0.012 * math.sin(breath * math.pi));
+          final lift = reduceMotion ? 0.0 : 28 * (1 - logoIn) + floatY;
 
-            return Opacity(
-              opacity: opacity,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  // Soft brand atmosphere (not a flat grey card).
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Color.lerp(
-                            MadyawBrand.introBgTop,
-                            const Color(0xFFF5F7FB),
-                            1 - hazeIn,
-                          )!,
-                          Color.lerp(
-                            MadyawBrand.introBgBottom,
-                            MadyawBrand.introAccent,
-                            0.35 * hazeIn,
-                          )!,
-                        ],
-                      ),
-                    ),
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color.lerp(
+                        MadyawBrand.introBgTop,
+                        const Color(0xFFF5F7FB),
+                        1 - hazeIn,
+                      )!,
+                      Color.lerp(
+                        MadyawBrand.introBgBottom,
+                        MadyawBrand.introAccent,
+                        0.35 * hazeIn,
+                      )!,
+                    ],
                   ),
-                  // Soft radial bloom behind the mark.
+                ),
+              ),
+              Opacity(
+                opacity: markOpacity,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
                   Center(
                     child: Opacity(
                       opacity: (0.55 + 0.45 * glowIn) * logoIn,
@@ -156,7 +150,6 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
                       ),
                     ),
                   ),
-                  // Ambient ripple rings.
                   if (!reduceMotion)
                     Center(
                       child: CustomPaint(
@@ -168,7 +161,6 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
                         ),
                       ),
                     ),
-                  // Logo + soft under-glow (hides hard PNG edges).
                   Center(
                     child: Transform.translate(
                       offset: Offset(0, lift),
@@ -182,7 +174,6 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
                             child: Stack(
                               alignment: Alignment.center,
                               children: [
-                                // Diffuse halo so the mark floats, not a cutout.
                                 IgnorePointer(
                                   child: ImageFiltered(
                                     imageFilter: ui.ImageFilter.blur(
@@ -216,7 +207,6 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
                                     ),
                                   ),
                                 ),
-                                // Light sweep across the mark.
                                 if (!reduceMotion && shine > 0.01)
                                   IgnorePointer(
                                     child: ClipRect(
@@ -235,11 +225,12 @@ class _MadyawIntroScreenState extends State<MadyawIntroScreen>
                       ),
                     ),
                   ),
-                ],
+                  ],
+                ),
               ),
-            );
-          },
-        ),
+            ],
+          );
+        },
       ),
     );
   }

@@ -5,10 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../auth_storage.dart';
+import '../branding/madyaw_logo_paths.dart';
 import '../dio_client.dart';
 import '../locale_controller.dart';
 import '../ui/app_visual.dart';
-import '../ui/design_tokens.dart';
 import '../ui/luxury_page_route.dart';
 import '../widgets/app_notice.dart';
 import '../widgets/chat_attachment.dart';
@@ -192,7 +192,7 @@ class _HotelSearchResultsScreenState extends State<HotelSearchResultsScreen> {
             Text(
               context.tr('confirming_availability'),
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: UiTokens.luxuryGold,
+                    color: MadyawBrand.brightBlue,
                     letterSpacing: 0.4,
                     fontWeight: FontWeight.w600,
                   ),
@@ -317,8 +317,8 @@ class _HotelSearchResultsScreenState extends State<HotelSearchResultsScreen> {
             if (_confirming)
               LinearProgressIndicator(
                 minHeight: 2,
-                color: UiTokens.luxuryGold,
-                backgroundColor: scheme.primary.withValues(alpha: 0.12),
+                color: MadyawBrand.brightBlue,
+                backgroundColor: MadyawBrand.navy.withValues(alpha: 0.12),
               ),
             if (wideLandscape && hotels.isNotEmpty)
               Expanded(

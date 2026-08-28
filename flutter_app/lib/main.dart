@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'branding/madyaw_logo_paths.dart';
 import 'intro/app_bootstrap.dart';
 import 'locale_controller.dart';
 import 'navigation_keys.dart';
@@ -57,6 +58,7 @@ class MadyawPhApp extends StatelessWidget {
                       themeMode: mode,
                       theme: AppTheme.light(seed),
                       darkTheme: AppTheme.dark(seed),
+                      color: MadyawBrand.introBgBottom,
                       home: const AppBootstrap(),
                     ),
                   ),

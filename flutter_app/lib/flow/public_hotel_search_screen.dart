@@ -6,12 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../auth_storage.dart';
+import '../branding/madyaw_logo_paths.dart';
 import '../branding/madyaw_logo_widget.dart';
 import '../data/philippine_destination_presets.dart';
 import '../dio_client.dart';
 import '../locale_controller.dart';
 import '../ui/app_visual.dart';
-import '../ui/design_tokens.dart';
 import '../ui/luxury_page_route.dart';
 import '../widgets/app_install_share_dialog.dart';
 import '../widgets/language_picker_button.dart';
@@ -161,6 +161,77 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
   int get _nightCount {
     final nights = _checkOut.difference(_checkIn).inDays;
     return nights > 0 ? nights : 1;
+  }
+
+  LinearGradient _searchScaffoldGradient(ColorScheme scheme) {
+    if (scheme.brightness == Brightness.dark) {
+      return LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          const Color(0xFF0E1528),
+          Color.lerp(const Color(0xFF0E1528), MadyawBrand.navy, 0.4)!,
+          const Color(0xFF121A2E),
+        ],
+      );
+    }
+    return const LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [
+        Colors.white,
+        MadyawBrand.introBgTop,
+        MadyawBrand.introBgBottom,
+      ],
+      stops: [0.0, 0.48, 1.0],
+    );
+  }
+
+  Widget _whereToGoHero(BuildContext context, {bool alignStart = false}) {
+    final scheme = Theme.of(context).colorScheme;
+    final align = alignStart ? TextAlign.start : TextAlign.center;
+    final cross = alignStart ? CrossAxisAlignment.start : CrossAxisAlignment.center;
+    return Column(
+      crossAxisAlignment: cross,
+      children: [
+        Text(
+          context.tr('reservations_eyebrow').toUpperCase(),
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 3.2,
+            color: MadyawBrand.navy.withValues(
+              alpha: scheme.brightness == Brightness.dark ? 0.85 : 1,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          context.tr('where_to_go'),
+          textAlign: align,
+          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                fontWeight: FontWeight.w500,
+                height: 1.2,
+                letterSpacing: -0.3,
+                color: scheme.brightness == Brightness.dark
+                    ? Colors.white
+                    : MadyawBrand.navy,
+              ),
+        ),
+        const SizedBox(height: 12),
+        const _MadyawWaveMark(),
+        const SizedBox(height: 12),
+        Text(
+          context.tr('search_stays_sub'),
+          textAlign: align,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+                height: 1.45,
+                letterSpacing: 0.15,
+              ),
+        ),
+      ],
+    );
   }
 
   String _fmtDate(DateTime d) {
@@ -531,21 +602,7 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          context.tr('where_to_go'),
-                          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                                height: 1.18,
-                              ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          context.tr('search_stays_sub'),
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: scheme.onSurfaceVariant,
-                                height: 1.35,
-                              ),
-                        ),
+                        _whereToGoHero(context, alignStart: true),
                       ],
                     ),
                   ),
@@ -585,54 +642,7 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                   children: [
                     Padding(
                       padding: const EdgeInsets.fromLTRB(8, 8, 8, 18),
-                      child: Column(
-                        children: [
-                          Text(
-                            context.tr('reservations_eyebrow').toUpperCase(),
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 3.2,
-                              color: UiTokens.luxuryGold,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            context.tr('where_to_go'),
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context)
-                                .textTheme
-                                .headlineMedium
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w500,
-                                  height: 1.2,
-                                  letterSpacing: -0.3,
-                                ),
-                          ),
-                          const SizedBox(height: 10),
-                          Container(
-                            width: 44,
-                            height: 1.5,
-                            decoration: BoxDecoration(
-                              color: UiTokens.luxuryGold,
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            context.tr('search_stays_sub'),
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.copyWith(
-                                  color: scheme.onSurfaceVariant,
-                                  height: 1.45,
-                                  letterSpacing: 0.15,
-                                ),
-                          ),
-                        ],
-                      ),
+                      child: _whereToGoHero(context),
                     ),
                     _buildSearchScrollContent(
                       context,
@@ -651,7 +661,7 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
     if (embedded) {
       return DecoratedBox(
         decoration: BoxDecoration(
-          gradient: visual.scaffoldGradient(scheme),
+          gradient: _searchScaffoldGradient(scheme),
         ),
         child: content,
       );
@@ -660,7 +670,7 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
     return Scaffold(
       body: DecoratedBox(
         decoration: BoxDecoration(
-          gradient: visual.scaffoldGradient(scheme),
+          gradient: _searchScaffoldGradient(scheme),
         ),
         child: SafeArea(child: content),
       ),
@@ -679,15 +689,12 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
         DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: visual.radiusLg,
-            color: scheme.surface.withValues(alpha: 0.92),
+            color: scheme.brightness == Brightness.dark
+                ? scheme.surface.withValues(alpha: 0.92)
+                : Colors.white,
             boxShadow: visual.cardShadow,
             border: Border.all(
-              color: Color.lerp(
-                    scheme.outlineVariant,
-                    UiTokens.luxuryGold,
-                    0.42,
-                  ) ??
-                  UiTokens.luxuryGold.withValues(alpha: 0.45),
+              color: MadyawBrand.brightBlue.withValues(alpha: 0.28),
             ),
           ),
           child: Padding(
@@ -701,12 +708,12 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                       width: 42,
                       height: 42,
                       decoration: BoxDecoration(
-                        color: UiTokens.luxuryNavy,
+                        color: MadyawBrand.navy,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: const Icon(
                         Icons.apartment_outlined,
-                        color: UiTokens.luxuryGold,
+                        color: Colors.white,
                         size: 22,
                       ),
                     ),
@@ -723,6 +730,9 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                                 ?.copyWith(
                                   fontWeight: FontWeight.w600,
                                   letterSpacing: 0.2,
+                                  color: scheme.brightness == Brightness.dark
+                                      ? Colors.white
+                                      : MadyawBrand.navy,
                                 ),
                           ),
                           const SizedBox(height: 2),
@@ -800,8 +810,8 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                           Icons.place_outlined,
                           size: 16,
                           color: selected
-                              ? scheme.onPrimaryContainer
-                              : scheme.primary,
+                              ? MadyawBrand.navy
+                              : MadyawBrand.brightBlue,
                         ),
                         label: Text(
                           preset.label,
@@ -812,11 +822,11 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                           ),
                         ),
                         selected: selected,
-                        selectedColor: scheme.primaryContainer,
+                        selectedColor: MadyawBrand.introAccent,
                         side: BorderSide(
                           color: selected
-                              ? scheme.primary.withValues(alpha: 0.35)
-                              : scheme.outlineVariant.withValues(alpha: 0.8),
+                              ? MadyawBrand.brightBlue.withValues(alpha: 0.45)
+                              : MadyawBrand.navy.withValues(alpha: 0.12),
                         ),
                         onSelected: (_) => _selectPreset(preset),
                       );
@@ -852,7 +862,7 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                           const Icon(
                             Icons.arrow_forward,
                             size: 16,
-                            color: UiTokens.luxuryGold,
+                            color: MadyawBrand.brightBlue,
                           ),
                         ],
                       ),
@@ -868,9 +878,9 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                 ),
                 const SizedBox(height: 12),
                 Material(
-                  color: scheme.surfaceContainerLowest,
-                  borderRadius: BorderRadius.circular(12),
-                  child: InkWell(
+                    color: scheme.surfaceContainerLowest,
+                    borderRadius: BorderRadius.circular(12),
+                    child: InkWell(
                     onTap: _pickGuests,
                     borderRadius: BorderRadius.circular(12),
                     child: Container(
@@ -881,11 +891,13 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                       ),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: scheme.outlineVariant),
+                        border: Border.all(
+                          color: MadyawBrand.brightBlue.withValues(alpha: 0.22),
+                        ),
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.people_outline, color: scheme.primary),
+                          const Icon(Icons.people_outline, color: MadyawBrand.navy),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Column(
@@ -925,15 +937,12 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
                   child: FilledButton(
                     onPressed: _searching ? null : _search,
                     style: FilledButton.styleFrom(
-                      backgroundColor: UiTokens.luxuryNavy,
+                      backgroundColor: MadyawBrand.brightBlue,
                       foregroundColor: Colors.white,
                       disabledBackgroundColor:
-                          UiTokens.luxuryNavy.withValues(alpha: 0.7),
+                          MadyawBrand.brightBlue.withValues(alpha: 0.55),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(
-                          color: UiTokens.luxuryGold.withValues(alpha: 0.7),
-                        ),
                       ),
                       elevation: 0,
                     ),
@@ -992,15 +1001,15 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            color: scheme.surfaceContainerLow.withValues(alpha: 0.7),
+            color: MadyawBrand.introBgTop.withValues(alpha: 0.85),
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: scheme.outlineVariant.withValues(alpha: 0.4),
+              color: MadyawBrand.brightBlue.withValues(alpha: 0.22),
             ),
           ),
           child: Row(
             children: [
-              Icon(Icons.apartment, size: 20, color: scheme.primary),
+              const Icon(Icons.apartment, size: 20, color: MadyawBrand.navy),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -1134,7 +1143,9 @@ class _DateTile extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: scheme.outlineVariant),
+            border: Border.all(
+              color: MadyawBrand.brightBlue.withValues(alpha: 0.22),
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1150,8 +1161,8 @@ class _DateTile extends StatelessWidget {
               const SizedBox(height: 4),
               Row(
                 children: [
-                  Icon(Icons.calendar_today_outlined,
-                      size: 16, color: scheme.primary),
+                  const Icon(Icons.calendar_today_outlined,
+                      size: 16, color: MadyawBrand.navy),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
@@ -1169,4 +1180,45 @@ class _DateTile extends StatelessWidget {
       ),
     );
   }
+}
+
+class _MadyawWaveMark extends StatelessWidget {
+  const _MadyawWaveMark();
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: const Size(58, 12),
+      painter: _MadyawWavePainter(
+        color: MadyawBrand.brightBlue,
+      ),
+    );
+  }
+}
+
+class _MadyawWavePainter extends CustomPainter {
+  _MadyawWavePainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (var i = 0; i < 3; i++) {
+      final y = size.height * (0.22 + i * 0.3);
+      final paint = Paint()
+        ..color = color.withValues(alpha: 1 - i * 0.28)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.35
+        ..strokeCap = StrokeCap.round;
+      final path = Path()
+        ..moveTo(0, y)
+        ..quadraticBezierTo(size.width * 0.25, y - 3.2, size.width * 0.5, y)
+        ..quadraticBezierTo(size.width * 0.75, y + 3.2, size.width, y);
+      canvas.drawPath(path, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _MadyawWavePainter oldDelegate) =>
+      oldDelegate.color != color;
 }

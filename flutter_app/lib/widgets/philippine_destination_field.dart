@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../branding/madyaw_logo_paths.dart';
 import '../data/philippine_city_index.dart';
 
 /// Destination input with overlay city suggestions that scroll independently
@@ -214,10 +215,12 @@ class _PhilippineDestinationFieldState extends State<PhilippineDestinationField>
         decoration: InputDecoration(
           hintText: widget.hintText,
           filled: true,
-          fillColor: scheme.surfaceContainerLowest,
-          prefixIcon: Icon(
+          fillColor: scheme.brightness == Brightness.dark
+              ? scheme.surfaceContainerLowest
+              : Colors.white,
+          prefixIcon: const Icon(
             Icons.location_on_outlined,
-            color: scheme.primary,
+            color: MadyawBrand.navy,
           ),
           suffixIcon: widget.controller.text.isNotEmpty
               ? IconButton(
