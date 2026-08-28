@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\V1\AdminChatController;
 use App\Http\Controllers\Api\V1\AdminDashboardApiController;
 use App\Http\Controllers\Api\V1\AmenityMenuController;
+use App\Http\Controllers\Api\V1\PlatformChatController;
 use App\Http\Controllers\Api\V1\HotelNotificationEmailController;
 use App\Http\Controllers\Api\V1\HotelPayMongoController;
 use App\Http\Controllers\Api\V1\PortalAuthController;
@@ -4257,6 +4258,8 @@ Route::patch('/admin/settings/early-check-in-fee', function (Request $request) {
 
 Route::get('/admin/chat/inbox', [AdminChatController::class, 'inbox'])->middleware('role:admin,frontdesk');
 Route::get('/admin/chat/rooms/{roomId}', [AdminChatController::class, 'room'])->middleware('role:admin,frontdesk');
+Route::get('/admin/platform-chat/messages', [PlatformChatController::class, 'hotelMessages'])->middleware('role:admin');
+Route::post('/admin/platform-chat/messages', [PlatformChatController::class, 'hotelSend'])->middleware('role:admin');
 
 // Platform central admin (developers) — separate from hotel admins.
 Route::middleware('role:central_admin')->prefix('platform')->group(function () {
@@ -4293,4 +4296,7 @@ Route::middleware('role:central_admin')->prefix('platform')->group(function () {
     Route::get('/subscription-requests', [$platform, 'subscriptionRequests']);
     Route::post('/subscription-requests/{id}/approve', [$platform, 'approveSubscriptionRequest']);
     Route::post('/subscription-requests/{id}/reject', [$platform, 'rejectSubscriptionRequest']);
+    Route::get('/chat/threads', [PlatformChatController::class, 'threads']);
+    Route::get('/chat/hotels/{hotelId}', [PlatformChatController::class, 'hotelThread']);
+    Route::post('/chat/hotels/{hotelId}/reply', [PlatformChatController::class, 'reply']);
 });

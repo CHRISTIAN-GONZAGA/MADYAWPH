@@ -10,6 +10,7 @@ import '../../widgets/chat_attachment.dart';
 import '../../widgets/payment_proof_picker.dart';
 import '../public_hotel_search_screen.dart';
 import '../portal_sign_out.dart';
+import 'platform_chat_section.dart';
 
 const _kPlatformNavy = Color(0xFF1A2B4A);
 const _kPlatformNavyDeep = Color(0xFF0F1A2E);
@@ -697,7 +698,8 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
                       onOpenApprovals: () => setState(() => _section = 3),
                       onOpenRevenue: () => setState(() => _section = 1),
                       onOpenGuests: () => setState(() => _section = 2),
-                      onOpenHotels: () => setState(() => _section = 5),
+                      onOpenHotels: () => setState(() => _section = 6),
+                      onOpenChat: () => setState(() => _section = 4),
                     ),
                     _RevenueSection(
                       revenue: _revenue ?? const {},
@@ -731,6 +733,7 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
                       onApproveHotelRegistration: _approveHotelRegistration,
                       onRejectHotelRegistration: _rejectHotelRegistration,
                     ),
+                    const PlatformChatSection(),
                     _QrSettingsSection(
                       settings: _settings ?? const {},
                       onUploadCredit: () => _uploadQr(kind: 'credit'),
@@ -811,6 +814,11 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
               child: const Icon(Icons.pending_actions),
             ),
             label: 'Approvals',
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.forum_outlined),
+            selectedIcon: Icon(Icons.forum),
+            label: 'Chat',
           ),
           const NavigationDestination(
             icon: Icon(Icons.qr_code_2_outlined),
@@ -907,6 +915,7 @@ class _OverviewSection extends StatelessWidget {
     required this.onOpenRevenue,
     required this.onOpenGuests,
     required this.onOpenHotels,
+    required this.onOpenChat,
   });
 
   final Map<String, dynamic> revenue;
@@ -919,6 +928,7 @@ class _OverviewSection extends StatelessWidget {
   final VoidCallback onOpenRevenue;
   final VoidCallback onOpenGuests;
   final VoidCallback onOpenHotels;
+  final VoidCallback onOpenChat;
 
   @override
   Widget build(BuildContext context) {
@@ -1074,6 +1084,26 @@ class _OverviewSection extends StatelessWidget {
                 ),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: onOpenGuests,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Card(
+              clipBehavior: Clip.antiAlias,
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: _kPlatformGold.withValues(alpha: 0.2),
+                  child: const Icon(Icons.forum_outlined, color: _kPlatformNavy),
+                ),
+                title: const Text(
+                  'Hotel chats',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: const Text('Monitor messages from every hotel'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: onOpenChat,
               ),
             ),
           ),

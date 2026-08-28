@@ -31,6 +31,10 @@ final class HotelScopeGuard
                 ->exists();
         }
 
+        if (PlatformSupportChat::isThread($roomId)) {
+            return PlatformSupportChat::hotelIdFromThread($roomId) === $hotelId;
+        }
+
         if (Room::withoutGlobalScopes()
             ->where('hotel_id', $hotelId)
             ->where('id', $roomId)

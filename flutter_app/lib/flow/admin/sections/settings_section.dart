@@ -5,6 +5,7 @@ import '../../../widgets/language_picker_button.dart';
 import '../../admin_categories.dart';
 import '../../admin_chat.dart';
 import '../../admin_rooms.dart';
+import '../hotel_madyaw_chat_screen.dart';
 import '../../admin_staff.dart';
 import '../../admin_tasks.dart';
 import '../admin_guest_portal_qr_screen.dart';
@@ -112,6 +113,21 @@ class SettingsSection extends StatelessWidget {
                 await onRefreshAfterNav();
               },
             ),
+            if (!isFrontDesk)
+              _SettingsTile(
+                icon: Icons.support_agent_outlined,
+                title: 'Chat with MADYAW',
+                subtitle: 'Message platform support',
+                enabled: true,
+                onTap: () async {
+                  await Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const HotelMadyawChatScreen(),
+                    ),
+                  );
+                  await onRefreshAfterNav();
+                },
+              ),
           ],
         ),
         if (!isFrontDesk) ...[

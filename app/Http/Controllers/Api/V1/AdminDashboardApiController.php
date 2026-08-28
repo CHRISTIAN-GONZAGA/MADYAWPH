@@ -32,6 +32,7 @@ use App\Support\AdminBookingPresenter;
 use App\Support\BillingChargeTypes;
 use App\Support\BookingTypeResolver;
 use App\Support\FreeBreakfastSupport;
+use App\Support\PlatformSupportChat;
 use App\Support\SafeModelAttributes;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -402,8 +403,11 @@ class AdminDashboardApiController extends Controller
             'guestMessages' => GuestMessage::withoutGlobalScopes()
                 ->where('hotel_id', (string) $user->hotel_id)
                 ->latest('sent_at')
-                ->limit(30)
+                ->limit(80)
                 ->get()
+                ->reject(fn ($message) => PlatformSupportChat::isThread($message->room_id))
+                ->take(30)
+                ->values()
                 ->map(fn ($message) => array_merge($message->toArray(), [
                 'is_read' => (bool) ($message->is_read ?? false),
             ])),

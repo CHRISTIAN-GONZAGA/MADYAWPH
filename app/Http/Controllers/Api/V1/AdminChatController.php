@@ -8,6 +8,7 @@ use App\Services\ActivityLogService;
 use App\Support\ChatAttachmentUrl;
 use App\Support\GuestMessageResource;
 use App\Support\HotelScopeGuard;
+use App\Support\PlatformSupportChat;
 use App\Support\SafeModelAttributes;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -32,6 +33,7 @@ class AdminChatController extends Controller
                 $latest = $msgs->first();
                 $roomId = $this->normalizeRoomId($latest?->room_id);
                 $isStaff = str_starts_with($roomId, 'STAFF-ADMIN:');
+                $isPlatform = PlatformSupportChat::isThread($roomId);
                 $sentAt = $latest !== null
                     ? SafeModelAttributes::carbonFromModel($latest, 'sent_at', 'created_at')
                     : null;
@@ -49,6 +51,7 @@ class AdminChatController extends Controller
                         ->filter(fn (GuestMessage $m) => ! $this->isPortalStaffSender($m->sender_role))
                         ->count(),
                     'is_staff_thread' => $isStaff,
+                    'is_platform_thread' => $isPlatform,
                 ];
             };
 
@@ -63,7 +66,7 @@ class AdminChatController extends Controller
                 ->values();
 
             $guestThreads = $threads
-                ->filter(fn (array $t) => ! ($t['is_staff_thread'] ?? false))
+                ->filter(fn (array $t) => ! ($t['is_staff_thread'] ?? false) && ! ($t['is_platform_thread'] ?? false))
                 ->values();
             $staffThreads = $threads
                 ->filter(fn (array $t) => (bool) ($t['is_staff_thread'] ?? false))
@@ -97,6 +100,9 @@ class AdminChatController extends Controller
         try {
             $hotelId = (string) $request->user()->hotel_id;
             $roomId = $this->normalizeRoomId(urldecode($roomId));
+            if (PlatformSupportChat::isThread($roomId)) {
+                return response()->json(['message' => 'Use Chat with MADYAW for platform support.'], 404);
+            }
             HotelScopeGuard::assertRoomBelongsToHotel($hotelId, $roomId);
 
             $viewerLocale = (string) $request->query(
@@ -165,6 +171,9 @@ class AdminChatController extends Controller
 
             $hotelId = (string) $request->user()->hotel_id;
             $roomId = $this->normalizeRoomId($validated['room_id']);
+            if (PlatformSupportChat::isThread($roomId)) {
+                return response()->json(['message' => 'Use Chat with MADYAW for platform support.'], 404);
+            }
             HotelScopeGuard::assertRoomBelongsToHotel($hotelId, $roomId);
 
             $roomNumber = trim((string) ($validated['room_number'] ?? ''));
