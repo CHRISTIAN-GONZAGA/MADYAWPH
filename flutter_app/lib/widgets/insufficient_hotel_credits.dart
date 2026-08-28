@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../dio_client.dart';
+import '../utils/money_format.dart';
 import 'chat_attachment.dart';
 import 'hotel_credits_policy.dart';
 import 'payment_proof_picker.dart';
@@ -27,6 +28,33 @@ bool isHotelCreditsApprovalError(DioException e) {
       (msg.contains('insufficient') ||
           msg.contains('zero') ||
           msg.contains('top up'));
+}
+
+/// Appends the platform wallet fee to an approval success message when charged.
+String approvalMessageWithWalletFee(String base, Map<String, dynamic>? wallet) {
+  final fee = parseJsonDouble(wallet?['fee']);
+  if (fee <= 0) {
+    return base;
+  }
+  final roomTotal = wallet?['room_total'] != null
+      ? parseJsonDouble(wallet?['room_total'])
+      : null;
+  final feePercent = parseJsonDouble(wallet?['fee_percent'], 8);
+  final balance = wallet?['balance_after'] != null
+      ? parseJsonDouble(wallet?['balance_after'])
+      : null;
+  final percentLabel = feePercent == feePercent.roundToDouble()
+      ? feePercent.toStringAsFixed(0)
+      : feePercent.toStringAsFixed(2);
+  var msg = '$base $percentLabel% platform fee (${formatMoney(fee)}';
+  if (roomTotal != null) {
+    msg += ' of ${formatMoney(roomTotal)} booking total';
+  }
+  msg += ') deducted from hotel credits';
+  if (balance != null) {
+    msg += '. Balance: ${formatMoney(balance)}';
+  }
+  return '$msg.';
 }
 
 /// Blocks confirmation when balance is zero or negative (client-side guard).

@@ -448,6 +448,36 @@ class CustomerPortalApiController extends Controller
             $this->financialComputationService,
             $this->roomPricingService,
         );
+        $gross = (float) $charge['amount'];
+        $total = $this->applyDiscountToTotal($gross, (float) ($validated['discount_percent'] ?? 0));
+
+        $actor = Auth::user();
+        $actorRole = $actor && method_exists($actor, 'roleValue')
+            ? (string) $actor->roleValue()
+            : '';
+        // Hotel staff booking via in-portal public customer UI counts as local.
+        $isLocalStaffBooking = in_array($actorRole, [
+            'admin',
+            'super_admin',
+            'frontdesk',
+            'owner',
+            'staff',
+        ], true);
+
+        if (! $isLocalStaffBooking) {
+            $preview = new ExternalReservation([
+                'hotel_id' => $hotelId,
+                'check_in_date' => $window['check_in_date'],
+                'check_out_date' => $window['check_out_date'],
+                'metadata' => [
+                    'estimated_total' => $total,
+                    'total_amount' => $total,
+                    'check_in_time' => $window['check_in_time'] ?? null,
+                    'check_out_time' => $window['check_out_time'] ?? null,
+                ],
+            ]);
+            app(HotelCreditBookingFeeService::class)->assertSufficientForReservation($preview, $room);
+        }
 
         $reservation = DB::transaction(function () use (
             $validated,
@@ -455,6 +485,7 @@ class CustomerPortalApiController extends Controller
             $room,
             $window,
             $charge,
+            $total,
         ) {
             // Lock the room row so concurrent reservation requests cannot both pass.
             $lockedRoom = Room::withoutGlobalScopes()
@@ -477,8 +508,6 @@ class CustomerPortalApiController extends Controller
                 ], 422));
             }
 
-            $gross = (float) $charge['amount'];
-            $total = $this->applyDiscountToTotal($gross, (float) ($validated['discount_percent'] ?? 0));
             $depositPercent = OnlineBookingDepositSupport::percentForHotel($hotelId);
             $depositAmount = OnlineBookingDepositSupport::amountForHotel($hotelId, $total);
             $hasReference = filled(trim((string) ($validated['payment_reference'] ?? '')));
@@ -545,41 +574,21 @@ class CustomerPortalApiController extends Controller
             ]);
         });
 
-        try {
-            $actor = Auth::user();
-            $actorRole = $actor && method_exists($actor, 'roleValue')
-                ? (string) $actor->roleValue()
-                : '';
-            // Hotel staff booking via in-portal public customer UI counts as local.
-            $isLocalStaffBooking = in_array($actorRole, [
-                'admin',
-                'super_admin',
-                'frontdesk',
-                'owner',
-                'staff',
-            ], true);
-
-            if ($isLocalStaffBooking) {
-                $reservation->metadata = array_merge(
-                    is_array($reservation->metadata) ? $reservation->metadata : [],
-                    ['booking_channel' => 'local_portal', 'wallet_fee_skipped' => true],
-                );
-                $reservation->save();
-                $walletFee = [
-                    'fee' => 0.0,
-                    'skipped' => true,
-                    'reason' => 'local_portal_booking',
-                ];
-            } else {
-                $walletFee = app(HotelCreditBookingFeeService::class)->deductForReservationSubmission(
-                    $reservation,
-                    $room,
-                    Auth::id() ? (string) Auth::id() : null,
-                );
-            }
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            $reservation->delete();
-            throw $e;
+        $walletFee = [
+            'fee' => 0.0,
+            'room_total' => $total,
+            'fee_percent' => app(HotelCreditBookingFeeService::class)->feePercent(),
+            'pending_confirmation' => true,
+        ];
+        if ($isLocalStaffBooking) {
+            $reservation->metadata = array_merge(
+                is_array($reservation->metadata) ? $reservation->metadata : [],
+                ['booking_channel' => 'local_portal', 'wallet_fee_skipped' => true],
+            );
+            $reservation->save();
+            $walletFee['skipped'] = true;
+            $walletFee['reason'] = 'local_portal_booking';
+            $walletFee['pending_confirmation'] = false;
         }
 
         app(ActivityLogService::class)->log(

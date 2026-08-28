@@ -51,8 +51,27 @@ class ReservationActivationService
         }
 
         if ((string) ($res->booking_id ?? '') !== '') {
-            return Booking::withoutGlobalScopes()->find($res->booking_id);
+            $existing = Booking::withoutGlobalScopes()->find($res->booking_id);
+            if ($existing) {
+                try {
+                    app(HotelCreditBookingFeeService::class)->deductForReservationConfirmation(
+                        $res,
+                        $room,
+                        null,
+                    );
+                } catch (\Illuminate\Validation\ValidationException) {
+                    // Stay already exists; wallet top-up is handled on the next new booking.
+                }
+
+                return $existing;
+            }
         }
+
+        app(HotelCreditBookingFeeService::class)->deductForReservationConfirmation(
+            $res,
+            $room,
+            null,
+        );
 
         $checkIn = Carbon::parse($res->check_in_date)->startOfDay();
         $checkOut = Carbon::parse($res->check_out_date)->startOfDay();

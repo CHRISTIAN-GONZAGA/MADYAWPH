@@ -671,22 +671,13 @@ class _BookingsSectionState extends State<BookingsSection>
           .post<Map<String, dynamic>>('/admin/reservations/$id/approve');
       if (!mounted) return;
       final activated = res.data?['activated'] == true;
-      final wallet = res.data?['wallet'] as Map<String, dynamic>?;
-      final fee = (wallet?['fee'] as num?)?.toDouble() ?? 0;
-      final roomTotal = (wallet?['room_total'] as num?)?.toDouble();
-      final feePercent = (wallet?['fee_percent'] as num?)?.toDouble() ?? 8;
-      final balance = (wallet?['balance_after'] as num?)?.toDouble();
+      final wallet = res.data?['wallet'] is Map
+          ? Map<String, dynamic>.from(res.data?['wallet'] as Map)
+          : null;
       var msg = activated
           ? 'Reservation approved and converted to booking.'
           : 'Reservation approved. Will activate on check-in date.';
-      if (fee > 0) {
-        msg += ' ${feePercent.toStringAsFixed(0)}% platform fee'
-            ' (${formatMoney(fee)}'
-            '${roomTotal != null ? ' of ${formatMoney(roomTotal)} booking total' : ''})'
-            ' deducted from hotel credits'
-            '${balance != null ? '. Balance: ${formatMoney(balance)}' : ''}.';
-      }
-      showAppMessage(context, msg);
+      showAppMessage(context, approvalMessageWithWalletFee(msg, wallet));
       await widget.onChanged();
     } on DioException catch (e) {
       if (!mounted) return;

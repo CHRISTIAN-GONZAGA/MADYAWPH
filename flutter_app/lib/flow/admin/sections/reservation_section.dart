@@ -94,9 +94,17 @@ class _ReservationSectionState extends State<ReservationSection> {
     }
     setState(() => _busy = true);
     try {
-      await portalDio().post('/admin/reservations/$id/approve');
+      final res = await portalDio().post<Map<String, dynamic>>(
+        '/admin/reservations/$id/approve',
+      );
       if (!mounted) return;
-      showAppMessage(context, 'Reservation approved.');
+      final wallet = res.data?['wallet'] is Map
+          ? Map<String, dynamic>.from(res.data?['wallet'] as Map)
+          : null;
+      showAppMessage(
+        context,
+        approvalMessageWithWalletFee('Reservation approved.', wallet),
+      );
       await widget.onChanged();
     } on DioException catch (e) {
       if (!mounted) return;

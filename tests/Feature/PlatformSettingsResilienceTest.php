@@ -24,5 +24,6 @@ class PlatformSettingsResilienceTest extends TestCase
         $this->assertIsArray($payload);
         $this->assertArrayHasKey('member_monthly_fee', $payload);
         $this->assertArrayHasKey('registration_credit_within_band', $payload);
+        $this->assertSame(8.0, app(PlatformSettingsService::class)->bookingConfirmFeePercent());
     }
 }

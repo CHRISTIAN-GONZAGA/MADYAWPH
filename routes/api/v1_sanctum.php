@@ -2247,6 +2247,17 @@ Route::put('/reservations/{reservation}/assign-room', function (Request $request
         'booking_source' => 'website',
     ], $request->user());
 
+    try {
+        app(HotelCreditBookingFeeService::class)->deductForReservationConfirmation(
+            $reservation,
+            $room,
+            (string) $request->user()->id,
+        );
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        $bookingService->adminCancel($booking, $request->user());
+        throw $e;
+    }
+
     $reservation->update([
         'assigned_room_id' => $validated['room_id'],
         'booking_id' => (string) $booking->id,
@@ -2693,6 +2704,7 @@ Route::post('/admin/reservations/{id}/reject', function (Request $request, strin
     if ((string) ($res->status ?? '') !== 'pending_approval') {
         return response()->json(['message' => 'Only pending reservation requests can be rejected.'], 422);
     }
+    app(HotelCreditBookingFeeService::class)->refundIfChargedForRejectedReservation($res);
     $res->update(['status' => 'rejected']);
 
     $room = Room::withoutGlobalScopes()

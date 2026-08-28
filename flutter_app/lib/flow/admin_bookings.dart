@@ -164,9 +164,19 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
     }
     setState(() => _busy = true);
     try {
-      await portalDio().post<Map<String, dynamic>>('/admin/reservations/$id/approve');
+      final res = await portalDio()
+          .post<Map<String, dynamic>>('/admin/reservations/$id/approve');
       if (!mounted) return;
-      showAppMessage(context, 'Reservation approved. Room is held until check-in date.');
+      final wallet = res.data?['wallet'] is Map
+          ? Map<String, dynamic>.from(res.data?['wallet'] as Map)
+          : null;
+      showAppMessage(
+        context,
+        approvalMessageWithWalletFee(
+          'Reservation approved. Room is held until check-in date.',
+          wallet,
+        ),
+      );
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;

@@ -173,12 +173,20 @@ class PlatformSettingsService
     public function bookingConfirmFeePercent(): float
     {
         $row = $this->row();
-        $fromDb = $row->booking_confirm_fee_percent ?? null;
-        if ($fromDb !== null && (float) $fromDb >= 0) {
-            return (float) $fromDb;
+        $attrs = $row->getAttributes();
+        if (! array_key_exists('booking_confirm_fee_percent', $attrs)) {
+            return (float) config('services.hotel_credits.booking_confirm_fee_percent', 8);
         }
 
-        return (float) config('services.hotel_credits.booking_confirm_fee_percent', 8);
+        $fromDb = $attrs['booking_confirm_fee_percent'];
+        if ($fromDb === null || $fromDb === '') {
+            return (float) config('services.hotel_credits.booking_confirm_fee_percent', 8);
+        }
+        if (! is_numeric($fromDb)) {
+            return (float) config('services.hotel_credits.booking_confirm_fee_percent', 8);
+        }
+
+        return max(0.0, min(100.0, (float) $fromDb));
     }
 
     public function minCheckInPaymentPercent(): float
