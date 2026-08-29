@@ -711,9 +711,7 @@ class PlatformAdminController extends Controller
             ]);
 
             return response()->json([
-                'message' => config('app.debug')
-                    ? $e->getMessage()
-                    : 'Server error while loading '.$context.'.',
+                'message' => 'Server error while loading '.$context.'.',
             ], 500);
         }
     }

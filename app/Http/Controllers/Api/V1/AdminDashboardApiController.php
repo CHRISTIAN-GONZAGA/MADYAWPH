@@ -485,7 +485,7 @@ class AdminDashboardApiController extends Controller
             ]);
 
             return response()->json([
-                'message' => config('app.debug') ? $e->getMessage() : 'Server error while loading admin dashboard.',
+                'message' => 'Server error while loading admin dashboard.',
             ], 500);
         }
     }

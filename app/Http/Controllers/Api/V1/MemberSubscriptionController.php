@@ -231,10 +231,6 @@ class MemberSubscriptionController extends Controller
                 : ($mail->error ?? 'Reset code could not be sent by email.'),
         ];
 
-        if (! $mail->sent && config('app.debug')) {
-            $payload['debug_code'] = $code;
-        }
-
         return response()->json($payload, $mail->sent ? 200 : 503);
     }
 

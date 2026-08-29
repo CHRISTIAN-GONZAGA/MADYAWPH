@@ -1,7 +1,4 @@
-import 'dart:convert';
-
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -113,11 +110,10 @@ class _AdminRoomEditScreenState extends State<AdminRoomEditScreen> {
       _existingImageUrl = (_room['image_url'] ?? '').toString().trim();
 
       if (_roomId.isEmpty) {
-        _renderError = 'Room id is missing after normalization.\n'
-            'Raw keys: ${_room.keys.join(', ')}';
+        _renderError = 'This room could not be opened. Go back and try again.';
       }
-    } catch (e, stack) {
-      _renderError = AdminDevErrorPanel.formatError(e, stack);
+    } catch (_) {
+      _renderError = 'This room could not be opened. Go back and try again.';
       _room = Map<String, dynamic>.from(widget.room);
       _nameCtrl = TextEditingController();
       _roomNoCtrl = TextEditingController();
@@ -144,19 +140,6 @@ class _AdminRoomEditScreenState extends State<AdminRoomEditScreen> {
     super.dispose();
   }
 
-  String _debugDump() {
-    return const JsonEncoder.withIndent('  ').convert({
-      'room_id': _roomId,
-      'room_type': _roomType,
-      'status': _status,
-      'billing_mode': _roomBillingMode,
-      'floor': _selectedFloor,
-      'category_label': widget.categoryLabel,
-      'raw_room': _room,
-      'category_defaults': widget.categoryDefaults,
-    });
-  }
-
   Future<void> _save() async {
     if (_saving || _roomId.isEmpty || _renderError != null) return;
     setState(() => _saving = true);
@@ -181,10 +164,10 @@ class _AdminRoomEditScreenState extends State<AdminRoomEditScreen> {
       setState(() {
         _renderError = dioErrorMessage(e);
       });
-    } catch (e, stack) {
+    } catch (_) {
       if (!mounted) return;
       setState(() {
-        _renderError = AdminDevErrorPanel.formatError(e, stack);
+        _renderError = 'Could not save this room. Please try again.';
       });
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -223,8 +206,7 @@ class _AdminRoomEditScreenState extends State<AdminRoomEditScreen> {
           ? AdminDevErrorPanel(
               title: 'Room editor failed to load',
               message: _renderError!,
-              details: kDebugMode ? _debugDump() : null,
-              hint: 'Pull back and try again, or copy this error for support.',
+              hint: 'Go back and try again.',
             )
           : _EditForm(
               nameCtrl: _nameCtrl,
@@ -478,11 +460,7 @@ Future<Map<String, dynamic>?> showAdminRoomPickerSheet(
           padding: const EdgeInsets.all(24),
           child: AdminDevErrorPanel(
             title: 'No rooms to show',
-            message: 'The API returned ${rooms.length} room(s) for '
-                '"$categoryLabel", but none could be listed.',
-            details: rooms
-                .map((r) => AdminDashboardModels.roomIdOf(r))
-                .join(', '),
+            message: 'No rooms could be listed for "$categoryLabel".',
             hint: 'Pull to refresh on Room categories, then try again.',
           ),
         );

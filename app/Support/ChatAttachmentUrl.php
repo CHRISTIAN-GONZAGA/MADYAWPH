@@ -30,7 +30,8 @@ final class ChatAttachmentUrl
 
         $stored = trim($stored);
 
-        if (str_contains($stored, '/api/v1/chat/media')) {
+        if (str_contains($stored, '/api/v1/chat/media')
+            || str_contains($stored, '/uploads/payment-qr/')) {
             return self::normalizeAppHost($stored);
         }
 

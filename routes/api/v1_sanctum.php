@@ -3453,9 +3453,7 @@ Route::post('/admin/portal-users', function (Request $request) {
         ]);
 
         return response()->json([
-            'message' => config('app.debug')
-                ? $e->getMessage()
-                : 'Could not create portal account. Try a different email or contact support.',
+            'message' => 'Could not create portal account. Try a different email or contact support.',
         ], 500);
     }
 
@@ -3567,9 +3565,7 @@ Route::put('/admin/portal-users/{target}', function (Request $request, string $t
         ]);
 
         return response()->json([
-            'message' => config('app.debug')
-                ? $e->getMessage()
-                : 'Could not update portal account.',
+            'message' => 'Could not update portal account.',
         ], 500);
     }
 

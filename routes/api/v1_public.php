@@ -218,15 +218,8 @@ Route::post('/otp/send', function (Request $request, AppEmailService $emailServi
     ];
     if (! $mail->sent) {
         $payload['message'] = $mail->error ?? 'Email could not be sent.';
-        if (config('app.debug')) {
-            $payload['debug_code'] = $otp;
-        }
 
         return response()->json($payload, 503);
-    }
-
-    if (config('app.debug') && config('mail.default') === 'log') {
-        $payload['debug_code'] = $otp;
     }
 
     return response()->json($payload);

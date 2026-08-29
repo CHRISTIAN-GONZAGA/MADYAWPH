@@ -69,6 +69,7 @@ class HotelPaymentMethodQrTest extends TestCase
         $this->assertTrue($byKey->has('qrph'));
         $this->assertTrue($byKey->has('paymaya'));
         $this->assertNotSame('', (string) $byKey['gcash']['qr_url']);
+        $this->assertStringContainsString('/uploads/payment-qr/', (string) $byKey['gcash']['qr_url']);
         $this->assertSame('1234-5678-9012', $byKey['bank_transfer']['account_number']);
         $this->assertFalse((bool) ($byKey['paymaya']['configured'] ?? true));
     }

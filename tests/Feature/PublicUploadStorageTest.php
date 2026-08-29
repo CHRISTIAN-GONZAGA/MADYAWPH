@@ -58,6 +58,15 @@ class PublicUploadStorageTest extends TestCase
         $path = PublicUploadStorage::store($file, 'payment-qr');
         $this->assertStringStartsWith('payment-qr/', $path);
         Storage::disk('uploads')->assertExists($path);
+
+        $url = ChatAttachmentUrl::fromStoredUrl($path);
+        $this->assertNotNull($url);
+        $this->assertStringContainsString('/uploads/payment-qr/', (string) $url);
+        $this->assertStringNotContainsString('/api/v1/chat/media', (string) $url);
+
+        $filename = basename($path);
+        $this->get('/uploads/payment-qr/'.$filename)->assertOk();
+        $this->get('/api/v1/chat/media?f='.rawurlencode($path))->assertOk();
     }
 
     public function test_ephemeral_uploads_migrate_to_persistent_root(): void

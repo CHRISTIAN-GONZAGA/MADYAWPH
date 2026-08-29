@@ -1679,7 +1679,7 @@ class _AdminRoomDetailScreenState extends State<AdminRoomDetailScreen> {
     } catch (e, st) {
       debugPrint('AdminRoomDetailScreen build error: $e\n$st');
       return AppErrorView(
-        message: 'Could not display room details ($e).',
+        message: 'Could not display room details. Please try again.',
         onRetry: _load,
       );
     }

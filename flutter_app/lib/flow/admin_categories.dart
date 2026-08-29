@@ -10,7 +10,6 @@ import '../widgets/app_state_views.dart';
 import '../widgets/app_overlay.dart';
 import '../widgets/chat_attachment.dart';
 import 'admin/admin_dashboard_models.dart';
-import 'admin/widgets/admin_dev_error_panel.dart';
 import 'admin/widgets/admin_opaque_scaffold.dart';
 import 'admin/widgets/admin_room_edit_screen.dart';
 import 'admin/widgets/admin_room_editor.dart';
@@ -646,18 +645,12 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
         showAppMessage(context, 'Room updated.');
         await _load();
       }
-    } catch (e, stack) {
+    } catch (_) {
       if (!mounted) return;
-      await pushAdminFullScreen<void>(
+      showAppMessage(
         context,
-        builder: (_) => AdminOpaqueScaffold(
-          appBar: AppBar(title: const Text('Edit room failed')),
-          body: AdminDevErrorPanel(
-            title: 'Could not open room editor',
-            message: AdminDevErrorPanel.formatError(e, stack),
-            hint: 'Copy this error and share it with your developer.',
-          ),
-        ),
+        'Could not open the room editor. Please try again.',
+        isError: true,
       );
     }
   }

@@ -85,9 +85,7 @@ class AdminChatController extends Controller
             report($e);
 
             return response()->json([
-                'message' => config('app.debug')
-                    ? $e->getMessage()
-                    : 'Could not load chat inbox.',
+                'message' => 'Could not load chat inbox.',
                 'guest_threads' => [],
                 'staff_threads' => [],
                 'threads' => [],
@@ -149,9 +147,7 @@ class AdminChatController extends Controller
             report($e);
 
             return response()->json([
-                'message' => config('app.debug')
-                    ? $e->getMessage()
-                    : 'Could not load chat messages.',
+                'message' => 'Could not load chat messages.',
                 'messages' => [],
             ], 500);
         }
@@ -229,9 +225,7 @@ class AdminChatController extends Controller
             report($e);
 
             return response()->json([
-                'message' => config('app.debug')
-                    ? $e->getMessage()
-                    : 'Could not send your reply.',
+                'message' => 'Could not send your reply.',
             ], 500);
         }
     }

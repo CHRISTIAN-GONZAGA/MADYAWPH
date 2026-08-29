@@ -147,7 +147,7 @@ class AppEmailService
                 false,
                 $this->providerName(),
                 $recipients[0],
-                config('app.debug') ? $e->getMessage() : 'Could not send app QR scan notification email.',
+                'Could not send app QR scan notification email.',
             );
         }
     }
@@ -211,7 +211,7 @@ class AppEmailService
                 false,
                 $this->providerName(),
                 $recipients[0],
-                config('app.debug') ? $e->getMessage() : 'Could not send room scan notification email.',
+                'Could not send room scan notification email.',
             );
         }
     }
@@ -297,7 +297,7 @@ class AppEmailService
                 false,
                 $this->providerName(),
                 $recipients[0],
-                config('app.debug') ? $e->getMessage() : 'Could not send owner notification email.',
+                'Could not send owner notification email.',
             );
         }
     }
@@ -385,7 +385,7 @@ class AppEmailService
                 false,
                 $this->providerName(),
                 $recipients[0],
-                config('app.debug') ? $e->getMessage() : 'Could not send check-in alert email.',
+                'Could not send check-in alert email.',
             );
         }
     }
@@ -450,7 +450,7 @@ class AppEmailService
                 false,
                 $this->providerName(),
                 $recipients[0],
-                config('app.debug') ? $e->getMessage() : 'Could not send sales report email.',
+                'Could not send sales report email.',
             );
         }
     }
@@ -492,7 +492,7 @@ class AppEmailService
                 false,
                 $this->providerName(),
                 $to,
-                config('app.debug') ? $e->getMessage() : $genericError,
+                $genericError,
             );
         }
     }

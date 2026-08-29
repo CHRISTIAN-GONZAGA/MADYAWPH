@@ -1276,7 +1276,7 @@ class CustomerPortalApiController extends Controller
         report($e);
 
         return response()->json([
-            'message' => config('app.debug') ? $e->getMessage() : $message,
+            'message' => $message,
         ], 500);
     }
 

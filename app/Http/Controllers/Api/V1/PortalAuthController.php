@@ -209,10 +209,6 @@ class PortalAuthController extends Controller
                 : ($mail->error ?? 'Reset code could not be sent by email.'),
         ];
 
-        if (! $mail->sent && config('app.debug')) {
-            $payload['debug_code'] = $code;
-        }
-
         return response()->json($payload, $mail->sent ? 200 : 503);
     }
 
@@ -361,10 +357,6 @@ class PortalAuthController extends Controller
                 'email' => $mail->toArray(),
                 'message' => $mail->error ?? 'Could not send verification email.',
             ];
-            if (config('app.debug')) {
-                $payload['debug_code'] = $code;
-            }
-
             return response()->json($payload, 503);
         }
 
@@ -376,10 +368,6 @@ class PortalAuthController extends Controller
             'expires_in_seconds' => $ttlMinutes * 60,
             'message' => 'Verification code sent to '.$this->appEmailService->maskEmail($email).'.',
         ];
-
-        if (config('app.debug') && config('mail.default') === 'log') {
-            $response['debug_code'] = $code;
-        }
 
         return response()->json($response);
     }
@@ -465,10 +453,6 @@ class PortalAuthController extends Controller
                 'email' => $mail->toArray(),
                 'message' => $mail->error ?? 'Could not resend verification email.',
             ];
-            if (config('app.debug')) {
-                $payload['debug_code'] = $code;
-            }
-
             return response()->json($payload, 503);
         }
 
@@ -479,10 +463,6 @@ class PortalAuthController extends Controller
             'expires_in_seconds' => $ttlMinutes * 60,
             'message' => 'A new verification code was sent.',
         ];
-
-        if (config('app.debug') && config('mail.default') === 'log') {
-            $response['debug_code'] = $code;
-        }
 
         return response()->json($response);
     }
@@ -557,9 +537,7 @@ class PortalAuthController extends Controller
             report($e);
 
             return response()->json([
-                'message' => config('app.debug')
-                    ? $e->getMessage()
-                    : 'Could not issue an access token. Check server logs and database configuration.',
+                'message' => 'Could not issue an access token. Check server logs and database configuration.',
             ], 500);
         }
 
@@ -640,9 +618,7 @@ class PortalAuthController extends Controller
             report($e);
 
             return response()->json([
-                'message' => config('app.debug')
-                    ? $e->getMessage()
-                    : 'Server error during platform sign-in.',
+                'message' => 'Server error during platform sign-in.',
             ], 500);
         }
     }
@@ -707,10 +683,6 @@ class PortalAuthController extends Controller
                 ? 'Reset code sent to '.$this->appEmailService->maskEmail($email).'.'
                 : ($mail->error ?? 'Reset code could not be sent by email.'),
         ];
-
-        if (! $mail->sent && config('app.debug')) {
-            $payload['debug_code'] = $code;
-        }
 
         return response()->json($payload, $mail->sent ? 200 : 503);
     }

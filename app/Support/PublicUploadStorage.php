@@ -176,11 +176,23 @@ final class PublicUploadStorage
         }
 
         if ($disk !== null) {
-            return url('/api/v1/chat/media?f='.rawurlencode($path));
+            return self::httpUrlForPath($path);
         }
 
         if (self::diskName() === 's3' && self::s3Configured()) {
             return Storage::disk('s3')->url($path);
+        }
+
+        return self::httpUrlForPath($path);
+    }
+
+    private static function httpUrlForPath(string $path): string
+    {
+        if (str_starts_with($path, 'payment-qr/')) {
+            $filename = basename($path);
+            if ($filename !== '' && $filename !== '.' && $filename !== '..') {
+                return url('/uploads/payment-qr/'.$filename);
+            }
         }
 
         return url('/api/v1/chat/media?f='.rawurlencode($path));

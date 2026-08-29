@@ -5,6 +5,7 @@
  * All product UX is served by the Flutter app against /api/v1/* (Sanctum + guest tokens).
  */
 
+use App\Http\Controllers\Api\V1\ChatMediaController;
 use App\Http\Controllers\PayMongoWebhookController;
 use App\Http\Controllers\QrScanWebController;
 use App\Http\Controllers\XenditWebhookController;
@@ -12,6 +13,15 @@ use Illuminate\Support\Facades\Route;
 
 Route::post('/webhooks/xendit', [XenditWebhookController::class, 'handle'])->name('webhooks.xendit');
 Route::post('/webhooks/paymongo', [PayMongoWebhookController::class, 'handle'])->name('webhooks.paymongo');
+
+/**
+ * Public payment QR images on the persistent uploads disk
+ * (FILESYSTEM_UPLOAD_ROOT, e.g. /var/data/uploads/payment-qr on Render).
+ * Existing /api/v1/chat/media?f=payment-qr/… URLs keep working for the app.
+ */
+Route::get('/uploads/payment-qr/{filename}', [ChatMediaController::class, 'showPaymentQr'])
+    ->where('filename', '[A-Za-z0-9._-]+')
+    ->name('uploads.payment-qr');
 
 /** Public QR landings — phone cameras open these HTTPS links and trigger scan emails. */
 Route::get('/qr/app', [QrScanWebController::class, 'appInstall'])->name('qr.app');

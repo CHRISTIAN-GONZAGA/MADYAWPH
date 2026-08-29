@@ -15,6 +15,29 @@ class ChatMediaController extends Controller
         $path = (string) $request->query('f', '');
         $path = ltrim(str_replace('\\', '/', $path), '/');
 
+        return $this->serveRelativePath($path);
+    }
+
+    /**
+     * Public payment QR files on the persistent uploads disk
+     * (e.g. /var/data/uploads/payment-qr/{filename} on Render).
+     */
+    public function showPaymentQr(string $filename): Response
+    {
+        $filename = basename(rawurldecode(str_replace('\\', '/', $filename)));
+        if (! preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]{0,200}\.(jpe?g|png|gif|webp)$/i', $filename)) {
+            abort(404);
+        }
+
+        $response = $this->serveRelativePath('payment-qr/'.$filename);
+        $response->headers->set('Access-Control-Allow-Origin', '*');
+        $response->headers->set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+
+        return $response;
+    }
+
+    private function serveRelativePath(string $path): Response
+    {
         if (! PublicUploadStorage::isAllowedPath($path)) {
             abort(404);
         }
@@ -29,7 +52,7 @@ class ChatMediaController extends Controller
         }
 
         $absolute = Storage::disk($disk)->path($path);
-        $mime = match (strtolower(pathinfo($path, PATHINFO_EXTENSION))) {
+        $mime = match (strtolower((string) pathinfo($path, PATHINFO_EXTENSION))) {
             'png' => 'image/png',
             'gif' => 'image/gif',
             'webp' => 'image/webp',

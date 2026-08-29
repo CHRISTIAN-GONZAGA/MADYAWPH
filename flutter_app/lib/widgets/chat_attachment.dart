@@ -74,6 +74,18 @@ class ChatAttachment {
       return '$origin$trimmed';
     }
 
+    if (trimmed.contains('/uploads/payment-qr/')) {
+      if (trimmed.startsWith('http')) {
+        final uri = Uri.tryParse(trimmed);
+        if (uri != null &&
+            {'localhost', '127.0.0.1', '10.0.2.2'}.contains(uri.host)) {
+          return '$origin${uri.path}${uri.hasQuery ? '?${uri.query}' : ''}';
+        }
+        return trimmed;
+      }
+      return trimmed.startsWith('/') ? '$origin$trimmed' : '$origin/$trimmed';
+    }
+
     if (trimmed.startsWith('chat/')) {
       return '$origin/api/v1/chat/media?f=${Uri.encodeComponent(trimmed)}';
     }

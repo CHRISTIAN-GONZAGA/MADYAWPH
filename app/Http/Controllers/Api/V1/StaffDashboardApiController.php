@@ -107,9 +107,7 @@ class StaffDashboardApiController extends Controller
             report($e);
 
             return response()->json([
-                'message' => config('app.debug')
-                    ? $e->getMessage()
-                    : 'Server error while loading staff dashboard.',
+                'message' => 'Server error while loading staff dashboard.',
             ], 500);
         }
     }
