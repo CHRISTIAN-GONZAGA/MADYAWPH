@@ -28,7 +28,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.gloretto.gloretto_mobile"
+        applicationId = "ph.madyaw.app"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

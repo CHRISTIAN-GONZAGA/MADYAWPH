@@ -26,7 +26,7 @@ class LegalPagesTest extends TestCase
     {
         $this->get('/.well-known/assetlinks.json')
             ->assertOk()
-            ->assertJsonPath('0.target.package_name', 'com.gloretto.gloretto_mobile')
+            ->assertJsonPath('0.target.package_name', 'ph.madyaw.app')
             ->assertJsonFragment([
                 '6B:25:85:01:10:B1:C6:2E:4D:40:B8:9D:7C:14:64:30:1F:C0:7B:68:3A:FA:D0:AD:B4:AC:92:78:7B:D4:6A:F1',
             ])

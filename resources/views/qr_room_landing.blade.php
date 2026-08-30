@@ -50,7 +50,7 @@
 (function () {
     var roomUrl = @json($roomDeepLink);
     var customScheme = @json($customSchemeUrl ?? '');
-    var packageName = 'com.gloretto.gloretto_mobile';
+    var packageName = 'ph.madyaw.app';
 
     function copyRoomLink() {
         if (!roomUrl || !navigator.clipboard) return;

@@ -104,7 +104,7 @@ Upload `build/app/outputs/bundle/release/app-release.aab` to Play Console (**int
 - Content rating, target audience **18+**
 - After Play App Signing is enabled, add the **App signing** certificate SHA-256 to Render `ANDROID_APP_LINKS_SHA256` so room QR App Links keep working
 
-Package name `com.gloretto.gloretto_mobile` cannot change after the first upload.
+Package name `ph.madyaw.app` cannot change after the first upload.
 
 ## Laravel side
 

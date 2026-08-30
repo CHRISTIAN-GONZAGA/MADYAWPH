@@ -51,7 +51,7 @@ Route::get('/.well-known/assetlinks.json', function () {
             'relation' => ['delegate_permission/common.handle_all_urls'],
             'target' => [
                 'namespace' => 'android_app',
-                'package_name' => env('ANDROID_APP_PACKAGE', 'com.gloretto.gloretto_mobile'),
+                'package_name' => env('ANDROID_APP_PACKAGE', 'ph.madyaw.app'),
                 'sha256_cert_fingerprints' => $fingerprints,
             ],
         ],
