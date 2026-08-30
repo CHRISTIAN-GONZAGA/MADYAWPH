@@ -198,7 +198,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         setState(() {});
       }
     });
-    // Pre-ask SEND_SMS so check-in can text the guest silently from this phone.
+    // Warm the SMS composer channel (no SEND_SMS permission on the Play build).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       DeviceGuestWelcomeSms.ensurePermission();
     });

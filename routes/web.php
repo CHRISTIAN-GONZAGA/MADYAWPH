@@ -34,11 +34,17 @@ Route::get('/qr/hotel/{hotelId}/{token}', [QrScanWebController::class, 'hotel'])
 
 /** Android App Links verification (opens MADYAW for /qr/room/* HTTPS links). */
 Route::get('/.well-known/assetlinks.json', function () {
-    $fingerprints = array_values(array_unique(array_filter([
-        env('ANDROID_APP_LINKS_SHA256'),
-        // Debug / current release signing (flutter build apk --release uses debug key).
+    $fromEnv = array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('ANDROID_APP_LINKS_SHA256', '')),
+    )));
+    $fingerprints = array_values(array_unique(array_filter(array_merge($fromEnv, [
+        // Upload keystore (Play Console upload). After Play App Signing is on,
+        // also add the App signing certificate SHA-256 from Play Console.
+        '6B:25:85:01:10:B1:C6:2E:4D:40:B8:9D:7C:14:64:30:1F:C0:7B:68:3A:FA:D0:AD:B4:AC:92:78:7B:D4:6A:F1',
+        // Debug keystore (local `flutter run` / unsigned-debug App Links).
         'C0:F1:80:21:95:10:99:28:18:7B:1E:89:CA:89:70:48:CA:65:74:7A:20:28:77:85:AE:72:AB:FA:4A:1F:54:E0',
-    ])));
+    ]))));
 
     return response()->json([
         [
@@ -53,6 +59,9 @@ Route::get('/.well-known/assetlinks.json', function () {
         'Content-Type' => 'application/json',
     ]);
 });
+
+Route::view('/privacy', 'privacy')->name('privacy');
+Route::view('/terms', 'terms')->name('terms');
 
 Route::get('/', function () {
     return view('mobile_api_home', [

@@ -3,10 +3,10 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// Sends guest welcome SMS from the front-desk phone's own SIM (device load).
+/// Sends guest welcome SMS from the front-desk phone.
 ///
-/// Android: silent send via [SmsManager] — never opens the Messages app.
-/// iOS: Apple blocks silent SMS; returns [DeviceSmsMode.failed] with guidance.
+/// Android: opens the Messages composer (Play Store disallows SEND_SMS here).
+/// iOS: Apple blocks background SMS; returns [DeviceSmsMode.failed] with guidance.
 /// Never throws into check-in — failures are returned as [DeviceSmsOutcome].
 class DeviceGuestWelcomeSms {
   DeviceGuestWelcomeSms._();
@@ -48,7 +48,7 @@ class DeviceGuestWelcomeSms {
     return buffer.toString().trim();
   }
 
-  /// Ask for SEND_SMS ahead of check-in so the first send is silent.
+  /// No runtime SMS permission on the Play build (composer only).
   static Future<bool> ensurePermission() async {
     if (kIsWeb || !Platform.isAndroid) return false;
     try {
@@ -63,7 +63,7 @@ class DeviceGuestWelcomeSms {
     }
   }
 
-  /// Silent device-SIM send. Check-in must already have succeeded.
+  /// Opens Messages with the welcome text. Check-in must already have succeeded.
   static Future<DeviceSmsOutcome> sendWelcome({
     required String guestPhone,
     required String hotelName,
@@ -106,12 +106,16 @@ class DeviceGuestWelcomeSms {
       });
       final map = raw is Map ? Map<String, dynamic>.from(raw) : const {};
       if (map['sent'] == true) {
+        final mode = (map['mode'] ?? '').toString();
+        if (mode == 'composer') {
+          return DeviceSmsOutcome.openedComposer();
+        }
         return DeviceSmsOutcome.sentDirect();
       }
       final mode = (map['mode'] ?? '').toString();
       if (mode == 'permission_denied') {
         return DeviceSmsOutcome.failed(
-          'SMS permission denied. Enable SMS for MADYAW in Android settings, then try again.',
+          'Could not open Messages. Install a Messages app, then try again.',
         );
       }
       final detail = (map['error'] ?? map['message'] ?? 'SMS was not sent.')
@@ -145,7 +149,7 @@ class DeviceGuestWelcomeSms {
   }
 }
 
-enum DeviceSmsMode { sentDirect, skipped, failed }
+enum DeviceSmsMode { sentDirect, openedComposer, skipped, failed }
 
 class DeviceSmsOutcome {
   const DeviceSmsOutcome._(this.mode, this.message);
@@ -158,11 +162,17 @@ class DeviceSmsOutcome {
         'Welcome SMS sent from this phone.',
       );
 
+  factory DeviceSmsOutcome.openedComposer() => const DeviceSmsOutcome._(
+        DeviceSmsMode.openedComposer,
+        'Messages opened. Tap Send to text the guest from this phone.',
+      );
+
   factory DeviceSmsOutcome.skipped(String reason) =>
       DeviceSmsOutcome._(DeviceSmsMode.skipped, reason);
 
   factory DeviceSmsOutcome.failed(String reason) =>
       DeviceSmsOutcome._(DeviceSmsMode.failed, reason);
 
-  bool get didSend => mode == DeviceSmsMode.sentDirect;
+  bool get didSend =>
+      mode == DeviceSmsMode.sentDirect || mode == DeviceSmsMode.openedComposer;
 }

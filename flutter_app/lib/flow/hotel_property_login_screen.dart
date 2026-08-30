@@ -1,8 +1,10 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../auth_storage.dart';
+import '../config.dart';
 import '../dio_client.dart';
 import '../locale_controller.dart';
 import '../ui/app_visual.dart';
@@ -302,6 +304,25 @@ class _HotelPropertyLoginScreenState extends State<HotelPropertyLoginScreen> {
                         child: Text(context.tr('register_hotel')),
                       ),
                     ],
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        TextButton(
+                          onPressed: () => launchUrl(
+                            Uri.parse(kPrivacyPolicyUrl),
+                            mode: LaunchMode.externalApplication,
+                          ),
+                          child: const Text('Privacy'),
+                        ),
+                        TextButton(
+                          onPressed: () => launchUrl(
+                            Uri.parse(kTermsOfServiceUrl),
+                            mode: LaunchMode.externalApplication,
+                          ),
+                          child: const Text('Terms'),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),

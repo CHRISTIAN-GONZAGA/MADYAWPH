@@ -6,8 +6,10 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../auth_storage.dart';
+import '../config.dart';
 import '../services/nearby_hotels.dart';
 import '../branding/madyaw_logo_widget.dart';
 import 'hotel_how_to.dart';
@@ -1006,6 +1008,22 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
             tooltip: context.tr('how_to'),
             onPressed: () => HotelHowToGuide.show(context),
             icon: const Icon(Icons.help_outline),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'Legal',
+            onSelected: (value) {
+              final url = value == 'privacy'
+                  ? kPrivacyPolicyUrl
+                  : kTermsOfServiceUrl;
+              launchUrl(
+                Uri.parse(url),
+                mode: LaunchMode.externalApplication,
+              );
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'privacy', child: Text('Privacy')),
+              PopupMenuItem(value: 'terms', child: Text('Terms')),
+            ],
           ),
         ],
       ),

@@ -137,7 +137,7 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
           : 'Check-in now · overnight through ${formatAdminCheckInDate(checkOutAt)} '
               '(checkout ${_formatClock(checkOutAt)})');
 
-  // Ask for SEND_SMS before check-in so the welcome SMS can go out silently.
+  // Warm the SMS composer channel (Play build does not request SEND_SMS).
   await DeviceGuestWelcomeSms.ensurePermission();
   if (!context.mounted) return false;
 
@@ -446,9 +446,7 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
         const Duration(seconds: 30),
         onTimeout: () => DeviceSmsOutcome.failed('SMS timed out.'),
       );
-      if (smsResult.didSend) {
-        smsNote = ' Welcome SMS sent from this phone.';
-      } else if (smsResult.message.isNotEmpty) {
+      if (smsResult.didSend || smsResult.message.isNotEmpty) {
         smsNote = ' ${smsResult.message}';
       }
     }

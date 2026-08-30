@@ -80,9 +80,31 @@ Implement:
 
 ## Play Store
 
-1. `flutter build appbundle`
-2. Upload `.aab` to Google Play Console (internal testing first).
-3. Complete **Data safety** and privacy policy (describe Laravel/Mongo data use).
+Release builds sign with `android/key.properties` + `android/upload-keystore.jks` (gitignored). Create them once:
+
+```powershell
+cd flutter_app\android
+powershell -ExecutionPolicy Bypass -File .\create_upload_keystore.ps1
+```
+
+Back up the `.jks` and `key.properties` off this PC. Losing them means you cannot update the listing.
+
+```powershell
+cd flutter_app
+flutter build appbundle --release --dart-define=API_BASE_URL=https://madyawph.onrender.com/api/v1
+```
+
+Upload `build/app/outputs/bundle/release/app-release.aab` to Play Console (**internal testing** first).
+
+**Play Console must have:**
+
+- Privacy policy URL: `https://madyawph.onrender.com/privacy` (deploy the API so `/privacy` and `/terms` are live)
+- Data safety: account info, photos (ID / payment proof), location (nearby hotels), financial info (bookings / PayMongo / Xendit). No advertising ID. SMS is not a declared permission — staff open Messages and tap Send.
+- App access: reviewer hotel-admin + guest (or room) logins
+- Content rating, target audience **18+**
+- After Play App Signing is enabled, add the **App signing** certificate SHA-256 to Render `ANDROID_APP_LINKS_SHA256` so room QR App Links keep working
+
+Package name `com.gloretto.gloretto_mobile` cannot change after the first upload.
 
 ## Laravel side
 

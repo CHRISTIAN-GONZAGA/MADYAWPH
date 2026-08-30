@@ -1,5 +1,9 @@
+import 'package:flutter/foundation.dart';
+
 /// Set at build time, e.g.:
 /// flutter run --dart-define=API_BASE_URL=https://your-app.onrender.com/api/v1
+///
+/// If unset: debug/profile use the Android emulator host; release uses production.
 ///
 /// Defensive normalization:
 /// - Accepts base URLs like:
@@ -9,11 +13,14 @@
 ///   - https://host/api/
 ///   - https://host (we will append /api/v1)
 /// - Normalizes to end with `/api/v1` (no trailing slash).
+const _apiBaseUrlFromEnv = String.fromEnvironment('API_BASE_URL');
+
 final String kApiBaseUrl = _normalizeApiBaseUrl(
-  const String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:8000/api/v1',
-  ),
+  _apiBaseUrlFromEnv.isNotEmpty
+      ? _apiBaseUrlFromEnv
+      : (kReleaseMode
+          ? 'https://madyawph.onrender.com/api/v1'
+          : 'http://10.0.2.2:8000/api/v1'),
 );
 
 String _normalizeApiBaseUrl(String raw) {
@@ -56,3 +63,8 @@ final String kAppInstallUrl = const String.fromEnvironment(
 
 /// Tracking URL for the share-app QR (emails on scan, then redirects to Drive).
 String get kAppInstallQrUrl => '$kApiOrigin/qr/app';
+
+/// Public legal pages (Play Console privacy URL).
+String get kPrivacyPolicyUrl => '$kApiOrigin/privacy';
+
+String get kTermsOfServiceUrl => '$kApiOrigin/terms';

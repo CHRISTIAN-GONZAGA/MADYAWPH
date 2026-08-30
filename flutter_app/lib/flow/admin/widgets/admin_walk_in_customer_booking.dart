@@ -627,9 +627,7 @@ Future<bool> showAdminWalkInCustomerStyleBooking({
             const Duration(seconds: 30),
             onTimeout: () => DeviceSmsOutcome.failed('SMS timed out.'),
           );
-          if (smsResult.didSend) {
-            smsNote = ' Welcome SMS sent from this phone.';
-          } else if (smsResult.message.isNotEmpty) {
+          if (smsResult.didSend || smsResult.message.isNotEmpty) {
             smsNote = ' ${smsResult.message}';
           }
         }
