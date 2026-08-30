@@ -632,8 +632,12 @@ class ReportController extends Controller
             'year' => now()->subYears(5)->startOfYear(),
             default => now()->subDays(30)->startOfDay(),
         };
-        $from = isset($validated['from']) ? Carbon::parse($validated['from'])->startOfDay() : $defaultFrom;
-        $to = isset($validated['to']) ? Carbon::parse($validated['to'])->endOfDay() : now()->endOfDay();
+        $from = isset($validated['from'])
+            ? $this->parseReportBound((string) $validated['from'], end: false)
+            : $defaultFrom;
+        $to = isset($validated['to'])
+            ? $this->parseReportBound((string) $validated['to'], end: true)
+            : now()->endOfDay();
 
         return [$from, $to];
     }

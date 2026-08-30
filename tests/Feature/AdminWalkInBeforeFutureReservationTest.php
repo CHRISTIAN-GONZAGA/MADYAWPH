@@ -18,10 +18,10 @@ class AdminWalkInBeforeFutureReservationTest extends TestCase
         $this->seedHotelCredits($hotel);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
-            'name' => 'admin',
+            'name' => 'frontdesk',
             'email' => 'admin-future@test.local',
             'password' => bcrypt('secret123'),
-            'role' => UserRole::ADMIN,
+            'role' => UserRole::FRONTDESK,
         ]);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,
@@ -72,10 +72,10 @@ class AdminWalkInBeforeFutureReservationTest extends TestCase
         $this->seedHotelCredits($hotel);
         $admin = User::create([
             'hotel_id' => (string) $hotel->id,
-            'name' => 'admin2',
+            'name' => 'frontdesk2',
             'email' => 'admin-conflict@test.local',
             'password' => bcrypt('secret123'),
-            'role' => UserRole::ADMIN,
+            'role' => UserRole::FRONTDESK,
         ]);
         $room = Room::withoutGlobalScopes()->create([
             'hotel_id' => (string) $hotel->id,

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../auth_storage.dart';
 import '../../../dio_client.dart';
 import '../../../utils/money_format.dart';
 import '../../../widgets/app_scaffold.dart';
@@ -33,9 +34,9 @@ Future<bool> ensureHotelSubscriptionAccess(BuildContext context) async {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(dioErrorMessage(e))),
     );
-    return true;
+    return false;
   } catch (_) {
-    return true;
+    return false;
   }
 }
 
@@ -56,12 +57,17 @@ class _HotelSubscriptionGateScreenState extends State<HotelSubscriptionGateScree
   String? _error;
   String _method = 'paymongo';
   XFile? _proof;
+  String _role = '';
 
   @override
   void initState() {
     super.initState();
     _data = Map<String, dynamic>.from(widget.initial);
     if (!_paymongoCheckout) _method = 'qr';
+    AuthStorage.portalRole().then((role) {
+      if (!mounted) return;
+      setState(() => _role = (role ?? '').toLowerCase());
+    });
   }
 
   @override
@@ -71,8 +77,19 @@ class _HotelSubscriptionGateScreenState extends State<HotelSubscriptionGateScree
   }
 
   String get _status => (_data['status'] ?? '').toString();
-  bool get _showPayUi => _data['show_payment_ui'] == true;
-  bool get _canSubmit => _data['can_submit_payment'] == true;
+  bool get _isHotelPayer {
+    if (_role == 'frontdesk' ||
+        _role == 'staff' ||
+        _role == 'owner' ||
+        _role == 'public_customer') {
+      return false;
+    }
+    return _role.isEmpty || _role == 'admin' || _role == 'super_admin';
+  }
+  bool get _showPayUi =>
+      _isHotelPayer && _data['show_payment_ui'] == true;
+  bool get _canSubmit =>
+      _isHotelPayer && _data['can_submit_payment'] == true;
   bool get _paymongoCheckout => _data['paymongo_checkout_enabled'] == true;
 
   Future<void> _payWithQrPh() async {
@@ -91,7 +108,14 @@ class _HotelSubscriptionGateScreenState extends State<HotelSubscriptionGateScree
       }
       if (!mounted) return;
       setState(() => _busy = false);
-      await _refresh();
+      for (var i = 0; i < 8; i++) {
+        await _refresh();
+        if (!mounted || _status == 'active' || _status == 'trial') {
+          return;
+        }
+        await Future<void>.delayed(const Duration(seconds: 2));
+        if (!mounted) return;
+      }
     } on DioException catch (e) {
       if (!mounted) return;
       setState(() {

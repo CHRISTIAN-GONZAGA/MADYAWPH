@@ -402,10 +402,17 @@ Future<bool> showAdminOnlineAwareCheckInDialog(
   // make this look like a failure (Book tab refresh depends on returning true).
   if (!context.mounted) return true;
 
-  final guestEmail = AdminDashboardModels.guestEmail(room);
-  final emailNote = guestEmail.isEmpty
+  final welcomeEmail = checkInResponse?['welcome_email'];
+  final welcomeEmailMap = welcomeEmail is Map
+      ? Map<String, dynamic>.from(welcomeEmail)
+      : const <String, dynamic>{};
+  final emailNote = welcomeEmailMap.isEmpty
       ? ''
-      : ' Welcome email queued for $guestEmail (if email is configured).';
+      : welcomeEmailMap['sent'] == true
+          ? ' ${welcomeEmailMap['message'] ?? 'Welcome email sent.'}'
+          : (welcomeEmailMap['message'] ?? '').toString().trim().isEmpty
+              ? ''
+              : ' ${welcomeEmailMap['message']}';
 
   var smsNote = '';
   try {

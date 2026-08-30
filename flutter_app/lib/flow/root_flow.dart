@@ -80,12 +80,10 @@ class _FlowRootState extends State<FlowRoot> {
 
     Future<void> openDashboard(String resolvedRole) async {
       if (!mounted) return;
-      if (resolvedRole != 'frontdesk') {
-        final allowed = await ensureHotelSubscriptionAccess(context);
-        if (!allowed || !mounted) {
-          await AuthStorage.clearPortalAuth();
-          return;
-        }
+      final allowed = await ensureHotelSubscriptionAccess(context);
+      if (!allowed || !mounted) {
+        await AuthStorage.clearPortalAuth();
+        return;
       }
       if (!mounted) return;
       await Navigator.of(context).pushAndRemoveUntil(

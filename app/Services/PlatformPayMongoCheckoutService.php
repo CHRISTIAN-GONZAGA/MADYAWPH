@@ -58,6 +58,13 @@ class PlatformPayMongoCheckoutService
         User $actor,
         ?float $amount = null,
     ): array {
+        if (! in_array($actor->roleValue(), ['admin', 'super_admin'], true)) {
+            return [
+                'ok' => false,
+                'message' => 'Only hotel admin or super admin can pay the subscription.',
+            ];
+        }
+
         $payload = $this->subscriptions->statusPayload($hotel, $actor);
         if (($payload['status'] ?? '') === HotelSubscriptionService::STATUS_PROCESSING) {
             return ['ok' => false, 'message' => 'A payment is already being processed.'];

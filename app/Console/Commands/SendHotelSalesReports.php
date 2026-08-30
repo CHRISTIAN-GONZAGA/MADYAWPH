@@ -112,7 +112,7 @@ class SendHotelSalesReports extends Command
 
             $recipients = HotelNotificationRecipients::salesReportEmails($hotelId);
             if ($recipients === []) {
-                $this->warn("Skipping {$hotelName}: no owner Gmail configured (set hotels.owner_email).");
+                $this->warn("Skipping {$hotelName}: no sales-report recipients (owner_email or hotel admin/owner Gmail).");
                 Log::warning('Hotel sales report skipped: no owner email', [
                     'hotel_id' => $hotelId,
                     'period' => $period,

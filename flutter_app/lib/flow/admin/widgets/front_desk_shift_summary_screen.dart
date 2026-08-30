@@ -42,6 +42,7 @@ class _FrontDeskShiftSummaryScreenState extends State<FrontDeskShiftSummaryScree
   bool _finishing = false;
   bool _ownerEmailSent = false;
   bool _ownerEmailBusy = false;
+  String? _ownerEmailNote;
 
   @override
   void initState() {
@@ -93,7 +94,7 @@ class _FrontDeskShiftSummaryScreenState extends State<FrontDeskShiftSummaryScree
     if (_ownerEmailSent || _ownerEmailBusy) return;
     setState(() => _ownerEmailBusy = true);
     try {
-      await portalDio().post<Map<String, dynamic>>(
+      final res = await portalDio().post<Map<String, dynamic>>(
         '/reports/shift-summary/email',
         data: {
           'time_in': widget.shift.startedAt.toIso8601String(),
@@ -102,9 +103,24 @@ class _FrontDeskShiftSummaryScreenState extends State<FrontDeskShiftSummaryScree
         },
       );
       if (!mounted) return;
-      setState(() => _ownerEmailSent = true);
-    } catch (_) {
-      // Non-blocking: staff can still finish / download PDF if email fails.
+      setState(() {
+        _ownerEmailSent = res.data?['sent'] == true;
+        _ownerEmailNote = (res.data?['message'] ??
+                'Shift sales summary emailed to the owner.')
+            .toString();
+      });
+    } on DioException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _ownerEmailSent = false;
+        _ownerEmailNote = dioErrorMessage(e);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _ownerEmailSent = false;
+        _ownerEmailNote = '$e';
+      });
     } finally {
       if (mounted) setState(() => _ownerEmailBusy = false);
     }
@@ -226,13 +242,15 @@ class _FrontDeskShiftSummaryScreenState extends State<FrontDeskShiftSummaryScree
                           const [],
                     ),
                     const SizedBox(height: 24),
-                    if (_ownerEmailSent)
+                    if (_ownerEmailNote != null)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 12),
                         child: Text(
-                          'Shift sales summary emailed to the owner.',
+                          _ownerEmailNote!,
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Theme.of(context).colorScheme.primary,
+                                color: _ownerEmailSent
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Theme.of(context).colorScheme.error,
                               ),
                         ),
                       ),

@@ -640,6 +640,10 @@ Route::middleware('role:admin,frontdesk')->group(function (): void {
                 'room_access_password' => (string) ($result['room']->current_access_code ?? ''),
                 'hotel_name' => trim((string) ($hotel?->name ?? '')),
             ] : null,
+            'welcome_email' => $nextStatus === RoomStatus::CHECKED_IN->value
+                ? $roomCheckoutService->lastGuestWelcomeEmail
+                : null,
+            'check_in_payment' => $result['check_in_payment'] ?? null,
             'receipt_url' => $receipt['receipt_url'] ?? null,
             'receipt' => $receipt,
         ]);
@@ -2514,8 +2518,8 @@ Route::get('/reports/expenses', [ReportController::class, 'listExpenses'])->midd
 Route::post('/reports/expenses', [ReportController::class, 'storeExpense'])->middleware('role:admin,super_admin');
 Route::delete('/reports/expenses/{id}', [ReportController::class, 'deleteExpense'])->middleware('role:admin,super_admin');
 Route::get('/hotel/subscription', [\App\Http\Controllers\Api\HotelSubscriptionController::class, 'status'])->middleware('role:admin,frontdesk,staff,super_admin,owner');
-Route::post('/hotel/subscription/payment', [\App\Http\Controllers\Api\HotelSubscriptionController::class, 'submitPayment'])->middleware('role:admin,super_admin,owner');
-Route::post('/hotel/subscription/payment/checkout', [\App\Http\Controllers\Api\HotelSubscriptionController::class, 'startCheckoutPayment'])->middleware('role:admin,super_admin,owner');
+    Route::post('/hotel/subscription/payment', [\App\Http\Controllers\Api\HotelSubscriptionController::class, 'submitPayment'])->middleware('role:admin,super_admin');
+    Route::post('/hotel/subscription/payment/checkout', [\App\Http\Controllers\Api\HotelSubscriptionController::class, 'startCheckoutPayment'])->middleware('role:admin,super_admin');
 Route::get('/reports/shift-summary', [ReportController::class, 'shiftSummary'])->middleware('role:admin,frontdesk,staff');
 Route::get('/reports/shift-summary/pdf', [ReportController::class, 'shiftSummaryPdf'])->middleware('role:admin,frontdesk,staff');
 Route::post('/reports/shift-summary/email', [ReportController::class, 'shiftSummaryEmail'])->middleware('role:admin,frontdesk,staff');

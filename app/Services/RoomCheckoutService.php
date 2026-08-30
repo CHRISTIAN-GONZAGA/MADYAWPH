@@ -27,6 +27,9 @@ use Illuminate\Validation\ValidationException;
 
 class RoomCheckoutService
 {
+    /** @var array{sent: bool, message: string}|null */
+    public ?array $lastGuestWelcomeEmail = null;
+
     public function __construct(
         private readonly ActivityLogService $activityLogService,
         private readonly StayTimingFeeService $stayTimingFeeService,
@@ -248,6 +251,7 @@ class RoomCheckoutService
     ): void {
         $email = trim((string) ($booking?->guest_email ?? ''));
         if ($email === '') {
+            $this->lastGuestWelcomeEmail = null;
             return;
         }
 
@@ -271,7 +275,7 @@ class RoomCheckoutService
                 ]
             );
 
-            app(AppEmailService::class)->sendGuestCheckInWelcome(
+            $sent = app(AppEmailService::class)->sendGuestCheckInWelcome(
                 email: $email,
                 hotelName: $hotelName,
                 guestName: $guestName !== '' ? $guestName : 'Guest',
@@ -286,7 +290,17 @@ class RoomCheckoutService
                     : null,
                 customMessage: $customMessage,
             );
+            $this->lastGuestWelcomeEmail = [
+                'sent' => $sent->sent,
+                'message' => $sent->sent
+                    ? 'Welcome email sent to '.$email.'.'
+                    : (string) ($sent->error ?? 'Welcome email was not sent.'),
+            ];
         } catch (\Throwable $e) {
+            $this->lastGuestWelcomeEmail = [
+                'sent' => false,
+                'message' => $e->getMessage(),
+            ];
             Log::warning('Check-in welcome email skipped', [
                 'room_id' => (string) $room->id,
                 'booking_id' => $booking ? (string) $booking->id : null,

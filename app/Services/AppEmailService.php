@@ -563,7 +563,12 @@ class AppEmailService
             return (string) config('mail.mailers.smtp.host') !== '';
         }
 
-        return in_array($mailer, ['log', 'array'], true);
+        // log/array only count as configured outside production (tests / local).
+        if (in_array($mailer, ['log', 'array'], true)) {
+            return ! app()->environment('production');
+        }
+
+        return false;
     }
 
     public function providerName(): ?string

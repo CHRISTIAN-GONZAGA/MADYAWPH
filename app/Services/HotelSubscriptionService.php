@@ -140,7 +140,7 @@ class HotelSubscriptionService
         }
 
         $role = $viewer?->roleValue() ?? '';
-        $canPay = in_array($role, ['admin', 'super_admin', 'owner'], true);
+        $canPay = in_array($role, ['admin', 'super_admin'], true);
         $row = $this->platformSettings->row();
         $fee = $this->subscriptionFeeBreakdown($hotel);
 
@@ -207,7 +207,7 @@ class HotelSubscriptionService
                 'status' => ['Subscription payment is not required right now.'],
             ]);
         }
-        if (! in_array($actor->roleValue(), ['admin', 'super_admin', 'owner'], true)) {
+        if (! in_array($actor->roleValue(), ['admin', 'super_admin'], true)) {
             throw ValidationException::withMessages([
                 'role' => ['Only admin or super admin can submit subscription payment.'],
             ]);

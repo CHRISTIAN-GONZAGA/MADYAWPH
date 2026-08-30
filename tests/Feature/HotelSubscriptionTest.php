@@ -168,6 +168,41 @@ class HotelSubscriptionTest extends TestCase
         $res->assertJsonPath('status', 'payment_required');
         $res->assertJsonPath('can_submit_payment', false);
         $res->assertJsonPath('show_payment_ui', false);
+
+        $this->postJson('/api/v1/hotel/subscription/payment/checkout')
+            ->assertForbidden();
+        $this->post('/api/v1/hotel/subscription/payment', [
+            'payment_reference' => 'FO-SHOULD-FAIL',
+            'image_file' => $this->fakePaymentProof(),
+        ], ['Accept' => 'application/json'])->assertForbidden();
+    }
+
+    public function test_owner_cannot_submit_or_see_subscription_pay_ui(): void
+    {
+        $hotel = Hotel::create([
+            'name' => 'Owner Past Due',
+            'location' => 'City',
+            'subscription_trial_ends_at' => now()->subDays(2),
+            'subscription_status' => HotelSubscriptionService::STATUS_PAYMENT_REQUIRED,
+        ]);
+        $owner = User::create([
+            'hotel_id' => (string) $hotel->id,
+            'name' => 'ownerdue',
+            'email' => 'ownerdue@test.local',
+            'password' => bcrypt('secret123'),
+            'role' => UserRole::OWNER,
+        ]);
+
+        Sanctum::actingAs($owner);
+        $this->getJson('/api/v1/hotel/subscription')
+            ->assertOk()
+            ->assertJsonPath('status', 'payment_required')
+            ->assertJsonPath('can_submit_payment', false)
+            ->assertJsonPath('show_payment_ui', false);
+
+        $denied = $this->postJson('/api/v1/hotel/subscription/payment/checkout');
+        $this->assertContains($denied->status(), [403, 422]);
+        $this->assertNotSame('ok', $denied->json('ok'));
     }
 
     public function test_manual_subscription_payment_requires_screenshot(): void
