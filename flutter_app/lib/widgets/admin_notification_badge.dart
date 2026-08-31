@@ -40,9 +40,9 @@ class AdminNotificationBadge extends StatelessWidget {
           ),
         ],
       ),
-      alignment: Alignment.center,
       child: Text(
         label,
+        textAlign: TextAlign.center,
         style: TextStyle(
           color: Colors.white,
           fontSize: fontSize,

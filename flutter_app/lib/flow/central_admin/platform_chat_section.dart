@@ -209,6 +209,8 @@ class _PlatformChatSectionState extends State<PlatformChatSection> {
           ),
           title: Text(
             (thread['hotel_name'] ?? 'Hotel').toString(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontWeight: unread > 0 ? FontWeight.w800 : FontWeight.w600,
             ),
@@ -219,7 +221,13 @@ class _PlatformChatSectionState extends State<PlatformChatSection> {
             overflow: TextOverflow.ellipsis,
           ),
           trailing: unread > 0
-              ? AdminNotificationBadge(count: unread, color: _kPlatformGold)
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AdminNotificationBadge(count: unread, color: _kPlatformGold),
+                    const Icon(Icons.chevron_right),
+                  ],
+                )
               : const Icon(Icons.chevron_right),
           onTap: () => _openHotel(thread),
         ),
