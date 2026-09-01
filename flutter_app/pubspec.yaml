@@ -1,7 +1,7 @@
 name: gloretto_mobile
 description: Gloretto hotel management client (Laravel API on Render).
 publish_to: "none"
-version: 1.0.0+2
+version: 1.0.0+3
 
 environment:
   sdk: ">=3.5.0 <4.0.0"

@@ -7,7 +7,6 @@ import 'package:flutter/services.dart';
 
 import '../auth_storage.dart';
 import '../branding/madyaw_logo_paths.dart';
-import '../branding/madyaw_logo_widget.dart';
 import '../data/philippine_destination_presets.dart';
 import '../dio_client.dart';
 import '../locale_controller.dart';
@@ -42,7 +41,6 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
   final _destinationCtrl = TextEditingController();
   List<Map<String, dynamic>> _allHotels = const [];
   bool _loading = false;
-  bool _refreshingDirectory = false;
   bool _searching = false;
   String? _error;
   String? _selectedPresetQuery;
@@ -93,7 +91,7 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
       } catch (_) {}
     }
     if (mounted) setState(() => _error = null);
-    unawaited(_refreshHotelsDirectory(showSpinner: false));
+    unawaited(_refreshHotelsDirectory());
   }
 
   Future<void> _loadHotels() async {
@@ -101,14 +99,11 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
       _loading = true;
       _error = null;
     });
-    await _refreshHotelsDirectory(showSpinner: true);
+    await _refreshHotelsDirectory();
     if (mounted) setState(() => _loading = false);
   }
 
-  Future<void> _refreshHotelsDirectory({required bool showSpinner}) async {
-    if (showSpinner && mounted) {
-      setState(() => _refreshingDirectory = true);
-    }
+  Future<void> _refreshHotelsDirectory() async {
     try {
       final res = await publicDio()
           .get<Map<String, dynamic>>('/hotels')
@@ -133,8 +128,6 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
       if (_allHotels.isEmpty && mounted) {
         setState(() => _error = '$e');
       }
-    } finally {
-      if (mounted) setState(() => _refreshingDirectory = false);
     }
   }
 
@@ -543,12 +536,11 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
             padding: EdgeInsets.fromLTRB(16, wideLandscape ? 6 : 10, 12, 0),
             child: Row(
               children: [
-                MadyawLogoWidget(
-                  size: wideLandscape ? 44 : 52,
-                  glowStrength: 0.15,
-                  showWordmark: true,
-                  showBrandLine: false,
-                  brandReveal: 1,
+                Image.asset(
+                  'assets/branding/madyaw_logo.png',
+                  height: wideLandscape ? 58 : 68,
+                  fit: BoxFit.contain,
+                  filterQuality: FilterQuality.high,
                 ),
                 const Spacer(),
                 const LanguagePickerButton(),
@@ -997,48 +989,6 @@ class _PublicHotelSearchScreenState extends State<PublicHotelSearchScreen>
             child: Text(context.tr('retry')),
           ),
         ],
-        const SizedBox(height: 18),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: MadyawBrand.introBgTop.withValues(alpha: 0.85),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: MadyawBrand.brightBlue.withValues(alpha: 0.22),
-            ),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.apartment, size: 20, color: MadyawBrand.navy),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  _allHotels.isEmpty && (_loading || _refreshingDirectory)
-                      ? 'Loading properties…'
-                      : context.tr('properties_nationwide', {
-                          'n': '${_allHotels.length}',
-                        }),
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodyMedium
-                      ?.copyWith(fontWeight: FontWeight.w600),
-                ),
-              ),
-              if (_refreshingDirectory && _allHotels.isNotEmpty)
-                SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: scheme.primary,
-                  ),
-                )
-              else
-                Icon(Icons.verified_outlined,
-                    size: 18, color: scheme.tertiary),
-            ],
-          ),
-        ),
         if (showMemberLogin) ...[
           const SizedBox(height: 28),
           const Divider(),
