@@ -11,6 +11,8 @@
         h1 { font-size: 1.6rem; margin: 0 0 0.35rem; }
         h2 { font-size: 1.1rem; margin: 1.6rem 0 0.45rem; }
         p, li { color: #243044; }
+        ol { padding-left: 1.25rem; }
+        ol li { margin: 0.45rem 0; }
         .meta { color: #5b6573; font-size: 0.92rem; margin: 0 0 1.4rem; }
         a { color: #1d4ed8; }
         nav { margin-bottom: 1.5rem; font-size: 0.95rem; }
@@ -22,6 +24,7 @@
         <a href="{{ url('/') }}">Home</a>
         <a href="{{ url('/privacy') }}">Privacy</a>
         <a href="{{ url('/terms') }}">Terms</a>
+        <a href="{{ url('/account-deletion') }}">Delete account</a>
     </nav>
     <h1>{{ $title }}</h1>
     <p class="meta">Last updated: 30 August 2026 · MADYAW hotel operations app</p>

@@ -62,6 +62,7 @@ Route::get('/.well-known/assetlinks.json', function () {
 
 Route::view('/privacy', 'privacy')->name('privacy');
 Route::view('/terms', 'terms')->name('terms');
+Route::view('/account-deletion', 'account_deletion')->name('account-deletion');
 
 Route::get('/', function () {
     return view('mobile_api_home', [

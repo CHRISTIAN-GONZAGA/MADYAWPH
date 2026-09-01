@@ -39,7 +39,7 @@
 <p>MADYAW is built for adult hotel staff and adult guests. It is not directed at children under 18. Do not create an account for a child.</p>
 
 <h2>Your choices</h2>
-<p>You can deny camera or location permission; nearby-hotel search and QR / photo features will be limited. You can close the Messages composer without sending a welcome text. You can request access or correction of your MADYAW account by contacting us through in-app <strong>Chat with MADYAW</strong> (hotel admin) or the email on the Google Play listing.</p>
+<p>You can deny camera or location permission; nearby-hotel search and QR / photo features will be limited. You can close the Messages composer without sending a welcome text. You can request access, correction, or deletion of your MADYAW account through in-app <strong>Chat with MADYAW</strong> (hotel admin) or the email on the Google Play listing. Full deletion steps: <a href="{{ url('/account-deletion') }}">Delete your MADYAW account</a>.</p>
 
 <h2>Contact</h2>
 <p>Privacy questions: use Chat with MADYAW in the app, or the developer contact email shown on the Google Play store listing for MADYAW.</p>

@@ -304,8 +304,8 @@ class _HotelPropertyLoginScreenState extends State<HotelPropertyLoginScreen> {
                         child: Text(context.tr('register_hotel')),
                       ),
                     ],
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    Wrap(
+                      alignment: WrapAlignment.center,
                       children: [
                         TextButton(
                           onPressed: () => launchUrl(
@@ -320,6 +320,13 @@ class _HotelPropertyLoginScreenState extends State<HotelPropertyLoginScreen> {
                             mode: LaunchMode.externalApplication,
                           ),
                           child: const Text('Terms'),
+                        ),
+                        TextButton(
+                          onPressed: () => launchUrl(
+                            Uri.parse(kAccountDeletionUrl),
+                            mode: LaunchMode.externalApplication,
+                          ),
+                          child: const Text('Delete account'),
                         ),
                       ],
                     ),

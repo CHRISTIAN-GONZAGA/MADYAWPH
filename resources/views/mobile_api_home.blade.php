@@ -41,6 +41,8 @@
         <a href="{{ url('/privacy') }}">Privacy Policy</a>
         ·
         <a href="{{ url('/terms') }}">Terms of Service</a>
+        ·
+        <a href="{{ url('/account-deletion') }}">Delete account</a>
     </p>
     <p><small>Mobile app: base URL <code>{{ rtrim($apiBaseUrl, '/') }}/v1</code> (see <code>flutter_app/README.md</code>). In a browser, <code>…/api/v1</code> is JSON only; try <code>…/api/v1/hotels</code> to test.</small></p>
 </body>

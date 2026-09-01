@@ -22,6 +22,16 @@ class LegalPagesTest extends TestCase
             ->assertSee('hotel operations', false);
     }
 
+    public function test_account_deletion_page_is_public(): void
+    {
+        $this->get('/account-deletion')
+            ->assertOk()
+            ->assertSee('Delete your MADYAW account')
+            ->assertSee('How to request deletion', false)
+            ->assertSee('Data we delete', false)
+            ->assertSee('Data we keep, and for how long', false);
+    }
+
     public function test_assetlinks_include_upload_and_debug_fingerprints(): void
     {
         $this->get('/.well-known/assetlinks.json')
