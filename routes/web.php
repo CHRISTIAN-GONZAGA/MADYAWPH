@@ -60,8 +60,8 @@ Route::get('/.well-known/assetlinks.json', function () {
     ]);
 });
 
-Route::view('/privacy', 'privacy')->name('privacy');
-Route::view('/terms', 'terms')->name('terms');
+Route::view('/privacy', 'legal')->name('privacy');
+Route::view('/terms', 'legal')->name('terms');
 Route::view('/account-deletion', 'account_deletion')->name('account-deletion');
 
 Route::get('/', function () {

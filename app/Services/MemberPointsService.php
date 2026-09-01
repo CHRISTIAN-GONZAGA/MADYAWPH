@@ -172,6 +172,61 @@ class MemberPointsService
     }
 
     /**
+     * Central-admin manual points grant. Positive whole points only.
+     *
+     * @return array<string, mixed>
+     */
+    public function grantManualPoints(
+        MemberSubscriptionRequest $member,
+        int $points,
+        User $actor,
+        ?string $reason = null,
+    ): array {
+        if ($points < 1) {
+            throw ValidationException::withMessages([
+                'points' => ['Add at least 1 point.'],
+            ]);
+        }
+
+        $balance = (float) ($member->points_balance ?? 0) + $points;
+        $ledger = $this->appendLedger($member, [
+            'id' => (string) Str::uuid(),
+            'type' => 'manual_grant',
+            'points' => $points,
+            'balance_after' => $balance,
+            'transaction_key' => 'manual-'.(string) Str::uuid(),
+            'description' => $reason !== null && trim($reason) !== ''
+                ? trim($reason)
+                : 'Platform points adjustment',
+            'timestamp' => now()->toISOString(),
+            'actor_user_id' => (string) $actor->id,
+        ]);
+
+        $member->forceFill([
+            'points_balance' => $balance,
+            'points_ledger' => $ledger,
+        ])->save();
+
+        $this->activityLog->log(
+            'platform',
+            $actor,
+            'Platform granted member points',
+            [
+                'member_id' => (string) $member->id,
+                'points' => $points,
+                'balance_after' => $balance,
+            ]
+        );
+
+        return [
+            'ok' => true,
+            'points_added' => $points,
+            'points_balance' => (int) round($balance),
+            'points_balance_pesos' => $this->pointsToPesos($balance),
+        ];
+    }
+
+    /**
      * Reverse booking earn points when a linked member stay is cancelled.
      */
     public function reverseBookingPoints(?Booking $booking, ?User $actor = null): void

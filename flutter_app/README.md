@@ -98,7 +98,7 @@ Upload `build/app/outputs/bundle/release/app-release.aab` to Play Console (**int
 
 **Play Console must have:**
 
-- Privacy policy URL: `https://madyawph.onrender.com/privacy` (deploy the API so `/privacy` and `/terms` are live)
+- Privacy policy URL: `https://madyawph.onrender.com/privacy` (same page is terms; delete account: `/account-deletion`)
 - Data safety: account info, photos (ID / payment proof), location (nearby hotels), financial info (bookings / PayMongo / Xendit). No advertising ID. SMS is not a declared permission — staff open Messages and tap Send.
 - App access: reviewer hotel-admin + guest (or room) logins
 - Content rating, target audience **18+**

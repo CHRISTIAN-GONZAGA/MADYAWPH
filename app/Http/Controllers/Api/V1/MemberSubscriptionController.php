@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\MemberSubscriptionRequest;
 use App\Services\AppEmailService;
+use App\Services\AccountDeletionService;
 use App\Services\MemberActiveBookingsService;
 use App\Services\MemberSubscriptionService;
 use App\Services\PlatformSettingsService;
@@ -26,6 +27,7 @@ class MemberSubscriptionController extends Controller
         private readonly MemberSubscriptionService $members,
         private readonly MemberActiveBookingsService $activeBookings,
         private readonly AppEmailService $appEmailService,
+        private readonly AccountDeletionService $accountDeletions,
     ) {
     }
 
@@ -302,9 +304,11 @@ class MemberSubscriptionController extends Controller
         /** @var MemberSubscriptionRequest $member */
         $member = $request->attributes->get('member');
         $shid = (string) ($member->member_shid_id ?? '');
+        $payload = $this->members->serializeForClient($member);
+        $payload['deletion_requested'] = $this->accountDeletions->memberHasPendingRequest($member);
 
         return response()->json([
-            'member' => $this->members->serializeForClient($member),
+            'member' => $payload,
             'active_bookings' => $shid !== ''
                 ? $this->activeBookings->listForShid($shid)
                 : [],
@@ -312,6 +316,29 @@ class MemberSubscriptionController extends Controller
                 ? $this->activeBookings->listCompletedForShid($shid)
                 : [],
         ]);
+    }
+
+    public function requestDeletion(Request $request): JsonResponse
+    {
+        /** @var MemberSubscriptionRequest $member */
+        $member = $request->attributes->get('member');
+        $validated = $request->validate([
+            'notes' => ['nullable', 'string', 'max:500'],
+        ]);
+        $existing = $this->accountDeletions->pendingFor(
+            \App\Models\AccountDeletionRequest::TYPE_MEMBER,
+            (string) $member->id
+        );
+        $row = $this->accountDeletions->requestMemberDeletion(
+            $member,
+            $validated['notes'] ?? null
+        );
+
+        return response()->json([
+            'ok' => true,
+            'already_pending' => $existing !== null,
+            'request' => $this->accountDeletions->serialize($row),
+        ], $existing !== null ? 200 : 201);
     }
 
     public function status(string $id): JsonResponse

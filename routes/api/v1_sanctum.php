@@ -2520,6 +2520,8 @@ Route::delete('/reports/expenses/{id}', [ReportController::class, 'deleteExpense
 Route::get('/hotel/subscription', [\App\Http\Controllers\Api\HotelSubscriptionController::class, 'status'])->middleware('role:admin,frontdesk,staff,super_admin,owner');
     Route::post('/hotel/subscription/payment', [\App\Http\Controllers\Api\HotelSubscriptionController::class, 'submitPayment'])->middleware('role:admin,super_admin');
     Route::post('/hotel/subscription/payment/checkout', [\App\Http\Controllers\Api\HotelSubscriptionController::class, 'startCheckoutPayment'])->middleware('role:admin,super_admin');
+Route::get('/admin/account/deletion-request', [\App\Http\Controllers\Api\V1\AccountDeletionController::class, 'hotelStatus'])->middleware('role:admin,super_admin');
+Route::post('/admin/account/deletion-request', [\App\Http\Controllers\Api\V1\AccountDeletionController::class, 'hotelRequest'])->middleware('role:admin,super_admin');
 Route::get('/reports/shift-summary', [ReportController::class, 'shiftSummary'])->middleware('role:admin,frontdesk,staff');
 Route::get('/reports/shift-summary/pdf', [ReportController::class, 'shiftSummaryPdf'])->middleware('role:admin,frontdesk,staff');
 Route::post('/reports/shift-summary/email', [ReportController::class, 'shiftSummaryEmail'])->middleware('role:admin,frontdesk,staff');
@@ -4296,6 +4298,12 @@ Route::middleware('role:central_admin')->prefix('platform')->group(function () {
     Route::get('/subscription-requests', [$platform, 'subscriptionRequests']);
     Route::post('/subscription-requests/{id}/approve', [$platform, 'approveSubscriptionRequest']);
     Route::post('/subscription-requests/{id}/reject', [$platform, 'rejectSubscriptionRequest']);
+    Route::get('/members', [$platform, 'members']);
+    Route::post('/members/{id}/points', [$platform, 'grantMemberPoints']);
+    Route::delete('/members/{id}', [$platform, 'deleteMember']);
+    Route::get('/deletion-requests', [$platform, 'deletionRequests']);
+    Route::post('/deletion-requests/{id}/approve', [$platform, 'approveDeletionRequest']);
+    Route::post('/deletion-requests/{id}/reject', [$platform, 'rejectDeletionRequest']);
     Route::get('/chat/threads', [PlatformChatController::class, 'threads']);
     Route::get('/chat/hotels/{hotelId}', [PlatformChatController::class, 'hotelThread']);
     Route::post('/chat/hotels/{hotelId}/reply', [PlatformChatController::class, 'reply']);

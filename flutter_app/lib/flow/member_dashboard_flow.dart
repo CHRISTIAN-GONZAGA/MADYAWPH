@@ -109,6 +109,49 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
     Navigator.of(context).popUntil((r) => r.isFirst);
   }
 
+  Future<void> _requestDeletion() async {
+    final pending = _member?['deletion_requested'] == true;
+    if (pending) {
+      showAppMessage(
+        context,
+        'A deletion request is already waiting for MADYAW to confirm.',
+      );
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete account?'),
+        content: const Text(
+          'This sends a request to MADYAW. Your membership stays active until central admin confirms. Then you will not be able to sign in.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Send request'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await memberDio().post<Map<String, dynamic>>('/member/request-deletion');
+      if (!mounted) return;
+      showAppMessage(
+        context,
+        'Deletion request sent. MADYAW will confirm before your account is removed.',
+      );
+      await _load();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
   String get _title {
     switch (_tab) {
       case 1:
@@ -143,6 +186,7 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
             activeBookingCount: _activeBookings.length,
             onRetry: _load,
             onOpenBookings: () => setState(() => _tab = 1),
+            onRequestDeletion: _requestDeletion,
           ),
           _BookingsPanel(
             loading: _loading,
@@ -207,6 +251,7 @@ class _AccountPanel extends StatelessWidget {
     required this.activeBookingCount,
     required this.onRetry,
     required this.onOpenBookings,
+    required this.onRequestDeletion,
   });
 
   final bool loading;
@@ -215,6 +260,7 @@ class _AccountPanel extends StatelessWidget {
   final int activeBookingCount;
   final Future<void> Function() onRetry;
   final VoidCallback onOpenBookings;
+  final VoidCallback onRequestDeletion;
 
   @override
   Widget build(BuildContext context) {
@@ -504,6 +550,21 @@ class _AccountPanel extends StatelessWidget {
                   ],
                 ),
               ),
+              const SizedBox(height: 24),
+              if (m['deletion_requested'] == true)
+                Text(
+                  'A deletion request is waiting for MADYAW to confirm. You can still use the app until then.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.error,
+                        fontWeight: FontWeight.w700,
+                      ),
+                )
+              else
+                OutlinedButton.icon(
+                  onPressed: onRequestDeletion,
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Delete account'),
+                ),
             ],
           );
         },

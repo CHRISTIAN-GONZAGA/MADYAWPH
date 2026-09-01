@@ -38,9 +38,7 @@
     <p><small>See <code>.env.example</code> for placeholders and setup steps.</small></p>
 
     <p>
-        <a href="{{ url('/privacy') }}">Privacy Policy</a>
-        ·
-        <a href="{{ url('/terms') }}">Terms of Service</a>
+        <a href="{{ url('/privacy') }}">Privacy &amp; terms</a>
         ·
         <a href="{{ url('/account-deletion') }}">Delete account</a>
     </p>

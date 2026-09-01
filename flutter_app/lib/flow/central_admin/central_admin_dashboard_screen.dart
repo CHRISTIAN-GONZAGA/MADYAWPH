@@ -11,6 +11,7 @@ import '../../widgets/payment_proof_picker.dart';
 import '../public_hotel_search_screen.dart';
 import '../portal_sign_out.dart';
 import 'platform_chat_section.dart';
+import 'platform_members_section.dart';
 
 const _kPlatformNavy = Color(0xFF1A2B4A);
 const _kPlatformNavyDeep = Color(0xFF0F1A2E);
@@ -59,6 +60,8 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
   List<dynamic> _subscriptionRequests = const [];
   List<dynamic> _hotelRegistrations = const [];
   List<dynamic> _hotels = const [];
+  List<dynamic> _members = const [];
+  List<dynamic> _deletionRequests = const [];
   bool _loading = true;
   String? _error;
 
@@ -83,6 +86,11 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
         final s = (e['status'] ?? e['registration_status'] ?? '').toString();
         return s == 'pending';
       })
+      .length;
+
+  int get _pendingDeletions => _deletionRequests
+      .whereType<Map<String, dynamic>>()
+      .where((e) => (e['status'] ?? '') == 'pending')
       .length;
 
   int get _depletedHotels => _hotels
@@ -167,6 +175,20 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
         if (!mounted) return;
         setState(() {
           _hotels = (res.data?['data'] as List?) ?? const [];
+        });
+      }),
+      guard('Members', () async {
+        final res = await portalDio().get<Map<String, dynamic>>('/platform/members');
+        if (!mounted) return;
+        setState(() {
+          _members = (res.data?['data'] as List?) ?? const [];
+        });
+      }),
+      guard('Deletion requests', () async {
+        final res = await portalDio().get<Map<String, dynamic>>('/platform/deletion-requests');
+        if (!mounted) return;
+        setState(() {
+          _deletionRequests = (res.data?['data'] as List?) ?? const [];
         });
       }),
     ]);
@@ -497,6 +519,123 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
     }
   }
 
+  Future<void> _approveDeletion(String id) async {
+    HapticFeedback.lightImpact();
+    try {
+      await portalDio().post('/platform/deletion-requests/$id/approve');
+      if (!mounted) return;
+      showAppMessage(context, 'Account deleted.');
+      await _loadAll();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
+  Future<void> _rejectDeletion(String id) async {
+    try {
+      await portalDio().post('/platform/deletion-requests/$id/reject');
+      if (!mounted) return;
+      showAppMessage(context, 'Deletion request rejected.');
+      await _loadAll();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
+  Future<void> _addMemberPoints(String id, String name) async {
+    final pointsCtrl = TextEditingController(text: '100');
+    final reasonCtrl = TextEditingController(text: 'Platform adjustment');
+    final payload = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Add points — $name'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: pointsCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Points'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: reasonCtrl,
+              decoration: const InputDecoration(labelText: 'Reason (optional)'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final pts = int.tryParse(pointsCtrl.text.trim()) ?? 0;
+              Navigator.pop(ctx, {
+                'points': pts,
+                'reason': reasonCtrl.text.trim(),
+              });
+            },
+            child: const Text('Add points'),
+          ),
+        ],
+      ),
+    );
+    pointsCtrl.dispose();
+    reasonCtrl.dispose();
+    if (payload == null) return;
+    final pts = (payload['points'] as int?) ?? 0;
+    if (pts < 1) {
+      if (!mounted) return;
+      showAppMessage(context, 'Enter at least 1 point.', isError: true);
+      return;
+    }
+    try {
+      await portalDio().post('/platform/members/$id/points', data: payload);
+      if (!mounted) return;
+      showAppMessage(context, 'Added $pts points.');
+      await _loadAll();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
+  Future<void> _deleteMember(String id, String name) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete member?'),
+        content: Text(
+          'Permanently delete "$name"? They will not be able to sign in.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await portalDio().delete('/platform/members/$id');
+      if (!mounted) return;
+      showAppMessage(context, 'Member deleted.');
+      await _loadAll();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
   Future<void> _grantHotelCredits(String hotelId, String hotelName) async {
     final amountCtrl = TextEditingController(text: '5000');
     final reasonCtrl = TextEditingController(text: 'Platform credit top-up');
@@ -602,7 +741,8 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
     final pendingTotal = _pendingCredits +
         _pendingMembers +
         _pendingSubscriptions +
-        _pendingHotelRegistrations;
+        _pendingHotelRegistrations +
+        _pendingDeletions;
 
     return AppScaffold(
       extendBody: false,
@@ -724,6 +864,7 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
                       memberRequests: _memberRequests,
                       subscriptionRequests: _subscriptionRequests,
                       hotelRegistrations: _hotelRegistrations,
+                      deletionRequests: _deletionRequests,
                       onApproveCredit: _approveCredit,
                       onRejectCredit: _rejectCredit,
                       onApproveMember: _approveMember,
@@ -732,6 +873,8 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
                       onRejectSubscription: _rejectSubscription,
                       onApproveHotelRegistration: _approveHotelRegistration,
                       onRejectHotelRegistration: _rejectHotelRegistration,
+                      onApproveDeletion: _approveDeletion,
+                      onRejectDeletion: _rejectDeletion,
                     ),
                     const PlatformChatSection(),
                     _QrSettingsSection(
@@ -757,6 +900,12 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
                       hotels: _hotels,
                       onDelete: _deleteHotel,
                       onGrantCredits: _grantHotelCredits,
+                    ),
+                    PlatformMembersSection(
+                      members: _members,
+                      onRefresh: _loadAll,
+                      onAddPoints: _addMemberPoints,
+                      onDelete: _deleteMember,
                     ),
                   ],
                 ),
@@ -829,6 +978,11 @@ class _CentralAdminDashboardScreenState extends State<CentralAdminDashboardScree
             icon: Icon(Icons.apartment_outlined),
             selectedIcon: Icon(Icons.apartment),
             label: 'Hotels',
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.badge_outlined),
+            selectedIcon: Icon(Icons.badge),
+            label: 'Members',
           ),
         ],
         ),
@@ -1550,6 +1704,7 @@ class _ApprovalsSection extends StatelessWidget {
     required this.memberRequests,
     required this.subscriptionRequests,
     required this.hotelRegistrations,
+    required this.deletionRequests,
     required this.onApproveCredit,
     required this.onRejectCredit,
     required this.onApproveMember,
@@ -1558,6 +1713,8 @@ class _ApprovalsSection extends StatelessWidget {
     required this.onRejectSubscription,
     required this.onApproveHotelRegistration,
     required this.onRejectHotelRegistration,
+    required this.onApproveDeletion,
+    required this.onRejectDeletion,
   });
 
   final int tab;
@@ -1566,6 +1723,7 @@ class _ApprovalsSection extends StatelessWidget {
   final List<dynamic> memberRequests;
   final List<dynamic> subscriptionRequests;
   final List<dynamic> hotelRegistrations;
+  final List<dynamic> deletionRequests;
   final void Function(String id) onApproveCredit;
   final void Function(String id) onRejectCredit;
   final void Function(String id) onApproveMember;
@@ -1574,6 +1732,8 @@ class _ApprovalsSection extends StatelessWidget {
   final void Function(String id) onRejectSubscription;
   final void Function(String id) onApproveHotelRegistration;
   final void Function(String id) onRejectHotelRegistration;
+  final void Function(String id) onApproveDeletion;
+  final void Function(String id) onRejectDeletion;
 
   @override
   Widget build(BuildContext context) {
@@ -1581,6 +1741,7 @@ class _ApprovalsSection extends StatelessWidget {
       1 => memberRequests,
       2 => subscriptionRequests,
       3 => hotelRegistrations,
+      4 => deletionRequests,
       _ => creditRequests,
     };
     final pending = list
@@ -1596,7 +1757,7 @@ class _ApprovalsSection extends StatelessWidget {
         const _PlatformSectionHeader(
           icon: Icons.pending_actions_outlined,
           title: 'Approvals',
-          subtitle: 'Credits and hotel subscriptions — review QR payments, then approve',
+          subtitle: 'Credits, members, hotels, and account deletion requests',
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -1608,6 +1769,7 @@ class _ApprovalsSection extends StatelessWidget {
                 ButtonSegment(value: 1, label: Text('Members')),
                 ButtonSegment(value: 2, label: Text('Subs')),
                 ButtonSegment(value: 3, label: Text('New hotels')),
+                ButtonSegment(value: 4, label: Text('Deletions')),
               ],
               selected: {tab},
               onSelectionChanged: (s) => onTabChanged(s.first),
@@ -1622,6 +1784,7 @@ class _ApprovalsSection extends StatelessWidget {
                       1 => 'No pending member requests.',
                       2 => 'No pending hotel subscription payments.',
                       3 => 'No pending hotel registrations.',
+                      4 => 'No pending account deletions.',
                       _ => 'No pending credit top-ups.',
                     },
                   ),
@@ -1664,6 +1827,15 @@ class _ApprovalsSection extends StatelessWidget {
                         onReject: () => onRejectSubscription(
                           (item['id'] ?? '').toString(),
                         ),
+                      );
+                    }
+                    if (tab == 4) {
+                      return _DeletionRequestCard(
+                        item: item,
+                        onApprove: () =>
+                            onApproveDeletion((item['id'] ?? '').toString()),
+                        onReject: () =>
+                            onRejectDeletion((item['id'] ?? '').toString()),
                       );
                     }
                     return _HotelRegistrationCard(
@@ -1951,6 +2123,69 @@ class _MemberCard extends StatelessWidget {
                 Expanded(child: OutlinedButton(onPressed: onReject, child: const Text('Reject'))),
                 const SizedBox(width: 10),
                 Expanded(child: FilledButton(onPressed: onApprove, child: const Text('Approve'))),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DeletionRequestCard extends StatelessWidget {
+  const _DeletionRequestCard({
+    required this.item,
+    required this.onApprove,
+    required this.onReject,
+  });
+
+  final Map<String, dynamic> item;
+  final VoidCallback onApprove;
+  final VoidCallback onReject;
+
+  @override
+  Widget build(BuildContext context) {
+    final type = (item['account_type'] ?? '').toString();
+    final hotel = type == 'hotel';
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              (item['display_name'] ?? item['hotel_name'] ?? 'Account')
+                  .toString(),
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 4),
+            Text(hotel ? 'Hotel account' : 'Member account'),
+            if ((item['email'] ?? '').toString().isNotEmpty)
+              Text((item['email'] ?? '').toString()),
+            if ((item['username'] ?? '').toString().isNotEmpty)
+              Text('@${item['username']}'),
+            if ((item['member_shid_id'] ?? '').toString().isNotEmpty)
+              Text('SHID: ${item['member_shid_id']}'),
+            if ((item['requested_by_name'] ?? '').toString().isNotEmpty)
+              Text('Requested by ${item['requested_by_name']}'),
+            if ((item['notes'] ?? '').toString().isNotEmpty)
+              Text('Note: ${item['notes']}'),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: onReject,
+                    child: const Text('Reject'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: onApprove,
+                    child: const Text('Confirm delete'),
+                  ),
+                ),
               ],
             ),
           ],

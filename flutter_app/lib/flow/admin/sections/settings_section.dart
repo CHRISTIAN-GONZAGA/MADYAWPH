@@ -1,5 +1,8 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:gloretto_mobile/widgets/app_notice.dart';
 
+import '../../../dio_client.dart';
 import '../../../locale_controller.dart';
 import '../../../widgets/language_picker_button.dart';
 import '../../admin_categories.dart';
@@ -454,6 +457,7 @@ class SettingsSection extends StatelessWidget {
               enabled: isFrontDesk || !creditsLocked,
               onTap: onOpenAccountSettings,
             ),
+            if (!isFrontDesk) const _DeleteHotelAccountTile(),
             if (onSignOut != null)
               _SettingsTile(
                 icon: Icons.logout,
@@ -525,6 +529,96 @@ class _SettingsTile extends StatelessWidget {
         enabled: enabled,
         onTap: enabled ? onTap : null,
       ),
+    );
+  }
+}
+
+class _DeleteHotelAccountTile extends StatefulWidget {
+  const _DeleteHotelAccountTile();
+
+  @override
+  State<_DeleteHotelAccountTile> createState() =>
+      _DeleteHotelAccountTileState();
+}
+
+class _DeleteHotelAccountTileState extends State<_DeleteHotelAccountTile> {
+  bool _pending = false;
+  bool _checking = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshStatus();
+  }
+
+  Future<void> _refreshStatus() async {
+    try {
+      final res = await portalDio()
+          .get<Map<String, dynamic>>('/admin/account/deletion-request');
+      if (!mounted) return;
+      setState(() {
+        _pending = res.data?['deletion_requested'] == true;
+        _checking = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _checking = false);
+    }
+  }
+
+  Future<void> _request() async {
+    if (_pending) {
+      showAppMessage(
+        context,
+        'A deletion request is already waiting for MADYAW to confirm.',
+      );
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete hotel account?'),
+        content: const Text(
+          'This sends a request to MADYAW. The hotel stays online until central admin confirms. Then this property, staff logins, rooms, and credits are removed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Send request'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await portalDio().post('/admin/account/deletion-request');
+      if (!mounted) return;
+      setState(() => _pending = true);
+      showAppMessage(
+        context,
+        'Deletion request sent. MADYAW will confirm before this hotel is removed.',
+      );
+    } on DioException catch (e) {
+      if (!mounted) return;
+      showAppMessage(context, dioErrorMessage(e), isError: true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _SettingsTile(
+      icon: Icons.delete_outline,
+      title: 'Delete account',
+      subtitle: _checking
+          ? 'Checking…'
+          : _pending
+              ? 'Waiting for MADYAW to confirm'
+              : 'Ask MADYAW to close this hotel',
+      onTap: _request,
     );
   }
 }

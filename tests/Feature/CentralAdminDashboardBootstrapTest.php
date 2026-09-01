@@ -110,5 +110,7 @@ class CentralAdminDashboardBootstrapTest extends TestCase
         $this->getJson('/api/v1/platform/member-requests')->assertOk();
         $this->getJson('/api/v1/platform/subscription-requests')->assertOk();
         $this->getJson('/api/v1/platform/hotels')->assertOk();
+        $this->getJson('/api/v1/platform/members')->assertOk();
+        $this->getJson('/api/v1/platform/deletion-requests')->assertOk();
     }
 }

@@ -22,12 +22,11 @@
 <body>
     <nav>
         <a href="{{ url('/') }}">Home</a>
-        <a href="{{ url('/privacy') }}">Privacy</a>
-        <a href="{{ url('/terms') }}">Terms</a>
+        <a href="{{ url('/privacy') }}">Privacy &amp; terms</a>
         <a href="{{ url('/account-deletion') }}">Delete account</a>
     </nav>
     <h1>{{ $title }}</h1>
-    <p class="meta">Last updated: 30 August 2026 · MADYAW hotel operations app</p>
+    <p class="meta">Last updated: 1 September 2026 · MADYAW hotel operations app</p>
     {!! $slot !!}
 </body>
 </html>

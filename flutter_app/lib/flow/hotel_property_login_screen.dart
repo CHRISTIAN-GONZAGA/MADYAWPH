@@ -312,14 +312,7 @@ class _HotelPropertyLoginScreenState extends State<HotelPropertyLoginScreen> {
                             Uri.parse(kPrivacyPolicyUrl),
                             mode: LaunchMode.externalApplication,
                           ),
-                          child: const Text('Privacy'),
-                        ),
-                        TextButton(
-                          onPressed: () => launchUrl(
-                            Uri.parse(kTermsOfServiceUrl),
-                            mode: LaunchMode.externalApplication,
-                          ),
-                          child: const Text('Terms'),
+                          child: const Text('Privacy & terms'),
                         ),
                         TextButton(
                           onPressed: () => launchUrl(

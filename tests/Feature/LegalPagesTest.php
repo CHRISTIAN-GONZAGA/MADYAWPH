@@ -10,15 +10,13 @@ class LegalPagesTest extends TestCase
     {
         $this->get('/privacy')
             ->assertOk()
-            ->assertSee('Privacy Policy')
-            ->assertSee('does not collect an advertising ID', false);
-    }
+            ->assertSee('Privacy & Terms')
+            ->assertSee('does not collect an advertising ID', false)
+            ->assertSee('Terms of service', false);
 
-    public function test_terms_of_service_are_public(): void
-    {
         $this->get('/terms')
             ->assertOk()
-            ->assertSee('Terms of Service')
+            ->assertSee('Privacy & Terms')
             ->assertSee('hotel operations', false);
     }
 
@@ -28,6 +26,8 @@ class LegalPagesTest extends TestCase
             ->assertOk()
             ->assertSee('Delete your MADYAW account')
             ->assertSee('How to request deletion', false)
+            ->assertSee('Delete account', false)
+            ->assertSee('central admin', false)
             ->assertSee('Data we delete', false)
             ->assertSee('Data we keep, and for how long', false);
     }

@@ -176,6 +176,7 @@ Route::get('/member/requests/{id}/status', [\App\Http\Controllers\Api\V1\MemberS
 Route::middleware('member.portal')->group(function (): void {
     Route::get('/member/dashboard', [\App\Http\Controllers\Api\V1\MemberSubscriptionController::class, 'dashboard']);
     Route::post('/member/logout', [\App\Http\Controllers\Api\V1\MemberSubscriptionController::class, 'logout']);
+    Route::post('/member/request-deletion', [\App\Http\Controllers\Api\V1\MemberSubscriptionController::class, 'requestDeletion']);
 });
 Route::post('/auth/forgot/send', [PortalAuthController::class, 'forgotSend'])->middleware('throttle:5,1');
 Route::post('/auth/forgot/reset', [PortalAuthController::class, 'forgotReset'])->middleware('throttle:8,1');

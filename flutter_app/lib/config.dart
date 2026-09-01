@@ -64,9 +64,9 @@ final String kAppInstallUrl = const String.fromEnvironment(
 /// Tracking URL for the share-app QR (emails on scan, then redirects to Drive).
 String get kAppInstallQrUrl => '$kApiOrigin/qr/app';
 
-/// Public legal pages (Play Console privacy and account-deletion URLs).
+/// Public legal pages (Play Console uses the same privacy URL for terms).
 String get kPrivacyPolicyUrl => '$kApiOrigin/privacy';
 
-String get kTermsOfServiceUrl => '$kApiOrigin/terms';
+String get kTermsOfServiceUrl => kPrivacyPolicyUrl;
 
 String get kAccountDeletionUrl => '$kApiOrigin/account-deletion';

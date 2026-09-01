@@ -1012,19 +1012,16 @@ class _ChooseHotelScreenState extends State<ChooseHotelScreen> {
           PopupMenuButton<String>(
             tooltip: 'Legal',
             onSelected: (value) {
-              final url = switch (value) {
-                'privacy' => kPrivacyPolicyUrl,
-                'delete' => kAccountDeletionUrl,
-                _ => kTermsOfServiceUrl,
-              };
+              final url = value == 'delete'
+                  ? kAccountDeletionUrl
+                  : kPrivacyPolicyUrl;
               launchUrl(
                 Uri.parse(url),
                 mode: LaunchMode.externalApplication,
               );
             },
             itemBuilder: (_) => const [
-              PopupMenuItem(value: 'privacy', child: Text('Privacy')),
-              PopupMenuItem(value: 'terms', child: Text('Terms')),
+              PopupMenuItem(value: 'legal', child: Text('Privacy & terms')),
               PopupMenuItem(value: 'delete', child: Text('Delete account')),
             ],
           ),

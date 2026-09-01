@@ -3,19 +3,19 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
-use App\Models\ActivityLog;
-use App\Models\Booking;
 use App\Models\CreditWalletRequest;
 use App\Models\Hotel;
 use App\Models\HotelCredit;
 use App\Models\MemberSubscriptionRequest;
-use App\Models\Room;
 use App\Models\User;
+use App\Services\AccountDeletionService;
 use App\Services\ActivityLogService;
 use App\Services\CreditWalletApprovalService;
+use App\Services\MemberPointsService;
 use App\Services\MemberSubscriptionApprovalService;
 use App\Services\PlatformGuestDemographicsService;
 use App\Services\PlatformHotelCreditService;
+use App\Services\PlatformHotelDeletionService;
 use App\Services\PlatformRevenueAnalyticsService;
 use App\Services\PlatformSettingsService;
 use App\Support\ChatAttachmentUrl;
@@ -41,6 +41,9 @@ class PlatformAdminController extends Controller
         private readonly MemberSubscriptionApprovalService $memberApprovals,
         private readonly ActivityLogService $activityLog,
         private readonly PlatformHotelCreditService $hotelCredits,
+        private readonly PlatformHotelDeletionService $hotelDeletion,
+        private readonly AccountDeletionService $accountDeletions,
+        private readonly MemberPointsService $memberPoints,
     ) {}
 
     public function revenueAnalytics(Request $request): JsonResponse
@@ -601,24 +604,7 @@ class PlatformAdminController extends Controller
     public function deleteHotel(Request $request, string $hotelId): JsonResponse
     {
         $hotel = Hotel::withoutGlobalScopes()->findOrFail($hotelId);
-
-        Room::withoutGlobalScopes()->where('hotel_id', (string) $hotel->id)->delete();
-        Booking::withoutGlobalScopes()->where('hotel_id', (string) $hotel->id)->delete();
-        HotelCredit::withoutGlobalScopes()->where('hotel_id', (string) $hotel->id)->delete();
-        User::withoutGlobalScopes()->where('hotel_id', (string) $hotel->id)->delete();
-        ActivityLog::withoutGlobalScopes()->where('hotel_id', (string) $hotel->id)->delete();
-
-        $name = (string) $hotel->name;
-        $hotel->delete();
-
-        Cache::forget(PortalAuthController::HOTELS_DIRECTORY_CACHE_KEY);
-
-        $this->activityLog->log(
-            'platform',
-            $request->user(),
-            'Platform deleted hotel',
-            ['hotel_id' => $hotelId, 'hotel_name' => $name]
-        );
+        $this->hotelDeletion->delete($hotel, $request->user());
 
         return response()->json(['ok' => true]);
     }
@@ -699,6 +685,122 @@ class PlatformAdminController extends Controller
         ]);
     }
 
+    public function members(Request $request): JsonResponse
+    {
+        return $this->safePlatformResponse('members', function () use ($request) {
+            $validated = $request->validate([
+                'q' => ['nullable', 'string', 'max:80'],
+            ]);
+            $q = strtolower(trim((string) ($validated['q'] ?? '')));
+
+            $rows = MemberSubscriptionRequest::query()
+                ->orderByDesc('created_at')
+                ->limit(400)
+                ->get();
+
+            if ($q !== '') {
+                $rows = $rows->filter(function (MemberSubscriptionRequest $m) use ($q) {
+                    $hay = strtolower(implode(' ', [
+                        (string) ($m->full_name ?? ''),
+                        (string) ($m->email ?? ''),
+                        (string) ($m->username ?? ''),
+                        (string) ($m->phone ?? ''),
+                        (string) ($m->member_shid_id ?? ''),
+                    ]));
+
+                    return str_contains($hay, $q);
+                })->values();
+            }
+
+            $pendingIds = $this->accountDeletionsPendingMemberIds(
+                $rows->map(fn (MemberSubscriptionRequest $m) => (string) $m->id)->all()
+            );
+
+            return response()->json([
+                'data' => $rows->take(200)->map(
+                    fn (MemberSubscriptionRequest $m) => $this->serializePlatformMember(
+                        $m,
+                        in_array((string) $m->id, $pendingIds, true)
+                    )
+                )->values(),
+            ]);
+        });
+    }
+
+    public function grantMemberPoints(Request $request, string $id): JsonResponse
+    {
+        $validated = $request->validate([
+            'points' => ['required', 'integer', 'min:1', 'max:1000000'],
+            'reason' => ['nullable', 'string', 'max:200'],
+        ]);
+        $member = MemberSubscriptionRequest::query()->findOrFail($id);
+        $result = $this->memberPoints->grantManualPoints(
+            $member,
+            (int) $validated['points'],
+            $request->user(),
+            $validated['reason'] ?? null,
+        );
+
+        $fresh = $member->fresh() ?? $member;
+        $pending = $this->accountDeletions->memberHasPendingRequest($fresh);
+
+        return response()->json([
+            'ok' => true,
+            ...$result,
+            'member' => $this->serializePlatformMember($fresh, $pending),
+        ]);
+    }
+
+    public function deleteMember(Request $request, string $id): JsonResponse
+    {
+        $member = MemberSubscriptionRequest::query()->findOrFail($id);
+        $this->accountDeletions->deleteMember($member, $request->user());
+
+        return response()->json(['ok' => true]);
+    }
+
+    public function deletionRequests(): JsonResponse
+    {
+        return $this->safePlatformResponse('deletion requests', function () {
+            $rows = \App\Models\AccountDeletionRequest::query()
+                ->orderByDesc('created_at')
+                ->limit(200)
+                ->get()
+                ->map(fn ($r) => $this->accountDeletions->serialize($r));
+
+            return response()->json(['data' => $rows]);
+        });
+    }
+
+    public function approveDeletionRequest(Request $request, string $id): JsonResponse
+    {
+        $row = \App\Models\AccountDeletionRequest::query()->findOrFail($id);
+        $updated = $this->accountDeletions->approve($row, $request->user());
+
+        return response()->json([
+            'ok' => true,
+            'request' => $this->accountDeletions->serialize($updated),
+        ]);
+    }
+
+    public function rejectDeletionRequest(Request $request, string $id): JsonResponse
+    {
+        $validated = $request->validate([
+            'notes' => ['nullable', 'string', 'max:500'],
+        ]);
+        $row = \App\Models\AccountDeletionRequest::query()->findOrFail($id);
+        $updated = $this->accountDeletions->reject(
+            $row,
+            $request->user(),
+            $validated['notes'] ?? null
+        );
+
+        return response()->json([
+            'ok' => true,
+            'request' => $this->accountDeletions->serialize($updated),
+        ]);
+    }
+
     private function safePlatformResponse(string $context, callable $callback): JsonResponse
     {
         try {
@@ -763,6 +865,47 @@ class PlatformAdminController extends Controller
             'created_at' => optional($r->created_at)->toISOString(),
             'reviewed_at' => optional($r->reviewed_at)->toISOString(),
             'notes' => (string) ($r->notes ?? ''),
+        ];
+    }
+
+    /**
+     * @param  list<string>  $memberIds
+     * @return list<string>
+     */
+    private function accountDeletionsPendingMemberIds(array $memberIds): array
+    {
+        if ($memberIds === []) {
+            return [];
+        }
+
+        return \App\Models\AccountDeletionRequest::query()
+            ->where('account_type', \App\Models\AccountDeletionRequest::TYPE_MEMBER)
+            ->where('status', \App\Models\AccountDeletionRequest::STATUS_PENDING)
+            ->whereIn('subject_id', $memberIds)
+            ->pluck('subject_id')
+            ->map(fn ($id) => (string) $id)
+            ->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializePlatformMember(MemberSubscriptionRequest $m, bool $deletionPending): array
+    {
+        $points = (float) ($m->points_balance ?? 0);
+
+        return [
+            'id' => (string) $m->id,
+            'full_name' => (string) ($m->full_name ?? ''),
+            'email' => (string) ($m->email ?? ''),
+            'phone' => (string) ($m->phone ?? ''),
+            'username' => (string) ($m->username ?? ''),
+            'status' => EnumHelper::toString($m->status ?? 'pending'),
+            'member_shid_id' => (string) ($m->member_shid_id ?? ''),
+            'member_valid_until' => optional($m->member_valid_until)->toISOString(),
+            'points_balance' => (int) round($points),
+            'created_at' => optional($m->created_at)->toISOString(),
+            'deletion_requested' => $deletionPending,
         ];
     }
 }
